@@ -966,7 +966,7 @@ export default function QRCodePortal() {
                           No students found for {selectedDate} | Section: {selectedSection} | Status: {selected}
                         </td>
                       </tr>
-                    )}}
+                    )}
                   </tbody>
                 </table>
               </div>
