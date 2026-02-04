@@ -1,6 +1,6 @@
 // server/routes/studentRoutes.js
 const express = require('express');
-const studentController = require('../controllers/studentController');
+const studentController = require('../controllers/studentControllerMySQL');
 
 const router = express.Router();
 
@@ -8,19 +8,13 @@ const router = express.Router();
 router.post('/', studentController.createStudent);
 
 // Get all students
-router.get('/', studentController.getStudents);
-
-// Get students by grade level
-router.get('/grade/:gradeLevel', studentController.getStudentsByGradeLevel);
+router.get('/', studentController.getAllStudents);
 
 // Get students by grade and section
-router.get('/grade/:gradeLevel/section/:section', studentController.getStudentsByGradeAndSection);
-
-// Update student grades (must come BEFORE the generic :id route)
-router.put('/:id/grades', studentController.updateGrades);
+router.get('/grade/:grade/section/:section', studentController.getStudentsByGradeAndSection);
 
 // Get a specific student
-router.get('/:id', studentController.getStudent);
+router.get('/:id', studentController.getStudentById);
 
 // Update a student
 router.put('/:id', studentController.updateStudent);
@@ -28,7 +22,6 @@ router.put('/:id', studentController.updateStudent);
 // Delete a specific student
 router.delete('/:id', studentController.deleteStudent);
 
-// Delete all students (and their user accounts)
-router.delete('/', studentController.deleteAllStudents);
+module.exports = router;
 
 module.exports = router;

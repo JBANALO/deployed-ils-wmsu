@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
+const { sendAttendanceEmail } = require('../utils/emailService');
 
 // Path to attendance data file
 const attendanceDataPath = path.join(__dirname, '../../data/attendance.json');
@@ -230,6 +231,73 @@ router.get('/student/:id', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching student attendance:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
+// POST /api/attendance/send-email - Send attendance notification email to parent
+router.post('/send-email', async (req, res) => {
+  try {
+    const {
+      parentEmail,
+      studentName,
+      studentLRN,
+      gradeLevel,
+      section,
+      status,
+      period,
+      time,
+      teacherName
+    } = req.body;
+
+    if (!parentEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Parent email is required'
+      });
+    }
+
+    if (!studentName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Student name is required'
+      });
+    }
+
+    console.log(`📧 Sending attendance email to ${parentEmail} for ${studentName}`);
+
+    const result = await sendAttendanceEmail({
+      parentEmail,
+      studentName,
+      studentLRN,
+      gradeLevel,
+      section,
+      status: status || 'present',
+      period: period || 'morning',
+      time: time || new Date().toLocaleTimeString(),
+      teacherName
+    });
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'Email sent successfully',
+        messageId: result.messageId
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to send email',
+        error: result.error
+      });
+    }
+
+  } catch (error) {
+    console.error('Error sending email:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error',

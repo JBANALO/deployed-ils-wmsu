@@ -75,9 +75,10 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
 
         // Generate QR code for the student
         let qrCodeDataUrl = null;
+        const studentId = lrn; // Use LRN as student ID since user ID might not be available
         try {
           const qrData = {
-            id: authResponse.data.user.id || lrn,
+            id: studentId,
             name: `${student.firstName} ${student.lastName}`,
             lrn: lrn,
             gradeLevel: student.gradeLevel,
@@ -93,17 +94,20 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
 
         // Now create student record in the database
         const fullStudentRecord = {
-          id: authResponse.data.user.id || lrn,
+          id: studentId,
           firstName: student.firstName,
           lastName: student.lastName,
           fullName: `${student.firstName} ${student.lastName}`,
           username: student.username,
           email: student.email,
+          password: defaultPassword,
           lrn: lrn,
           qrCode: qrCodeDataUrl,
           sex: student.sex || 'N/A',
           gradeLevel: student.gradeLevel,
           section: student.section,
+          parentEmail: student.parentEmail || '',
+          parentContact: student.parentContact || '',
           status: 'Active',
           createdAt: new Date().toISOString()
         };
@@ -146,6 +150,11 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
     setImportResults(results);
     setIsImporting(false);
     setStep('complete');
+    
+    // Call onSuccess immediately after import completes (don't wait for modal to close)
+    if (onSuccess) {
+      onSuccess();
+    }
   };
 
   // Function to generate QR code - FIXED

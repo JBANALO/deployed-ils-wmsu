@@ -328,11 +328,11 @@ export default function ClassList() {
             </td>
           </tr>
         ) : (
-          filteredStudents.map((student) => (
+          filteredStudents.map((student, index) => (
             <tr key={student.id} className="hover:bg-gray-50 transition-colors">
               {/* No. */}
-              <td className="px-5 py-2 text-sm font-semibold text-gray-900">
-                {student.id}
+              <td className="px-5 py-2 text-sm font-semibold text-gray-900 text-center">
+                {index + 1}
               </td>
 
               {/* Student Name + Avatar */}

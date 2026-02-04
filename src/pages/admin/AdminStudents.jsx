@@ -552,7 +552,7 @@ export default function AdminStudents() {
       {/* EDIT MODAL */}
       {showEditModal && selectedStudent && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-lg w-full">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold mb-4">Edit Student - {selectedStudent.fullName}</h3>
             <div className="space-y-4">
               <div>
@@ -594,14 +594,30 @@ export default function AdminStudents() {
                   <option value="Female">Female</option>
                 </select>
               </div>
-              <div>
-                <label className="block font-semibold mb-1">Contact</label>
-                <input
-                  type="text"
-                  value={editFormData.contact || ''}
-                  onChange={(e) => setEditFormData({...editFormData, contact: e.target.value})}
-                  className="w-full border p-2 rounded-lg"
-                />
+              <div className="border-t pt-4 mt-4">
+                <h4 className="font-bold text-red-800 mb-3">📧 Parent/Guardian Contact Info</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block font-semibold mb-1">Parent/Guardian Email</label>
+                    <input
+                      type="email"
+                      value={editFormData.parentEmail || ''}
+                      onChange={(e) => setEditFormData({...editFormData, parentEmail: e.target.value})}
+                      placeholder="e.g., parent@gmail.com"
+                      className="w-full border p-2 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">Parent/Guardian Contact Number</label>
+                    <input
+                      type="text"
+                      value={editFormData.parentContact || ''}
+                      onChange={(e) => setEditFormData({...editFormData, parentContact: e.target.value})}
+                      placeholder="e.g., 09171234567"
+                      className="w-full border p-2 rounded-lg"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
             <div className="flex gap-3 mt-6">

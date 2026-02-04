@@ -31,6 +31,7 @@ export default function ReportsPage() {
   const [monthlyAttendance, setMonthlyAttendance] = useState([]);
   const [subjectsData, setSubjectsData] = useState([]);
   const [topStudents, setTopStudents] = useState([]);
+  const [lowestStudents, setLowestStudents] = useState([]);
   const [students, setStudents] = useState([]);
   const [sections, setSections] = useState([]);
   const [stats, setStats] = useState({
@@ -212,6 +213,19 @@ export default function ReportsPage() {
         }));
 
       setTopStudents(topPerformers);
+
+      // Get lowest performing students
+      const lowestPerformers = students
+        .filter(s => s.average && s.average > 0)
+        .sort((a, b) => (a.average || 0) - (b.average || 0))
+        .slice(0, 3)
+        .map((s, idx) => ({
+          rank: idx + 1,
+          name: `${s.lastName}, ${s.firstName}`,
+          avg: s.average || 0
+        }));
+
+      setLowestStudents(lowestPerformers);
 
       // Calculate statistics
       const totalStudents = students.length;
@@ -470,6 +484,47 @@ export default function ReportsPage() {
                       <div className="text-right">
                         <p className="text-xl font-bold text-red-700">{student.avg}</p>
                         <p className="text-base font-semibold text-red-800">With Honors</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200 h-[400px] w-full">
+            <div className="bg-gradient-to-r from-orange-600 to-orange-700 text-white px-6 py-5 text-center">
+              <h3 className="text-2xl font-bold flex items-center justify-center gap-4">
+                <TrophyIcon className="w-6 h-6" />
+                Lowest Performing Students
+              </h3>
+            </div>
+
+            <div className="p-6 h-[calc(100%-90px)] overflow-y-auto">
+              <div className="space-y-6">
+                {loading ? (
+                  <p className="text-center text-gray-500">Loading students...</p>
+                ) : lowestStudents.length === 0 ? (
+                  <p className="text-center text-gray-500">No students found</p>
+                ) : (
+                  lowestStudents.map((student) => (
+                    <div
+                      key={student.rank}
+                      className="flex items-center justify-between p-6 bg-gradient-to-r from-orange-50 to-yellow-50 rounded-2xl border border-orange-200 hover:shadow-lg transition h-[80px]"
+                    >
+                      <div className="flex items-center gap-6">
+                        <div className="text-xl font-bold text-orange-600">
+                          #{student.rank}
+                        </div>
+                        <div>
+                          <p className="text-xl font-bold text-gray-900">{student.name}</p>
+                          <p className="text-base text-gray-600">General Average</p>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <p className="text-xl font-bold text-orange-700">{student.avg}</p>
+                        <p className="text-base font-semibold text-orange-800">Needs Improvement</p>
                       </div>
                     </div>
                   ))

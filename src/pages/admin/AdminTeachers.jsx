@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect } from "react";
-import { UsersIcon, CheckIcon, XMarkIcon, PencilSquareIcon, TrashIcon, EyeIcon, ArrowUpTrayIcon } from "@heroicons/react/24/solid";
+import { UsersIcon, CheckIcon, XMarkIcon, PencilSquareIcon, TrashIcon, EyeIcon, ArrowUpTrayIcon, KeyIcon } from "@heroicons/react/24/solid";
 import { useNavigate } from "react-router-dom";
 import TeacherBulkImportModal from "../../components/modals/TeacherBulkImportModal";
 import api from "../../api/axiosConfig";
@@ -8,6 +8,7 @@ export default function AdminTeachers() {
   const navigate = useNavigate();
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -104,6 +105,11 @@ export default function AdminTeachers() {
   const handleViewTeacher = (teacher) => {
     setSelectedTeacher(teacher);
     setShowViewModal(true);
+  };
+
+  const handleViewCredentials = (teacher) => {
+    setSelectedTeacher(teacher);
+    setShowCredentialsModal(true);
   };
 
   const handleEditTeacher = (teacher) => {
@@ -321,9 +327,16 @@ export default function AdminTeachers() {
                       <button 
                         onClick={() => handleViewTeacher(teacher)}
                         className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                        title="View"
+                        title="View Details"
                       >
                         <EyeIcon className="w-5 h-5" />
+                      </button>
+                      <button 
+                        onClick={() => handleViewCredentials(teacher)}
+                        className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                        title="View Credentials"
+                      >
+                        <KeyIcon className="w-5 h-5" />
                       </button>
                     </td>
                   </tr>
@@ -505,6 +518,79 @@ export default function AdminTeachers() {
                 className="flex-1 bg-red-800 text-white py-2 rounded-lg hover:bg-red-700"
               >
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CREDENTIALS MODAL */}
+      {showCredentialsModal && selectedTeacher && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-md w-full">
+            <h3 className="text-2xl font-bold mb-6 text-red-800">Teacher Credentials</h3>
+            <div className="space-y-4 bg-gray-50 p-4 rounded-lg border-2 border-gray-200">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Teacher Name</label>
+                <p className="text-lg font-bold text-gray-900">{selectedTeacher.firstName} {selectedTeacher.lastName}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Username</label>
+                <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
+                  <p className="text-lg font-mono text-gray-900">{selectedTeacher.username}</p>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(selectedTeacher.username);
+                      alert('Username copied to clipboard!');
+                    }}
+                    className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Email</label>
+                <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
+                  <p className="text-sm font-mono text-gray-900 break-all">{selectedTeacher.email}</p>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(selectedTeacher.email);
+                      alert('Email copied to clipboard!');
+                    }}
+                    className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Password</label>
+                <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
+                  <p className="text-lg font-mono text-gray-900">{selectedTeacher.plainPassword || 'Password123'}</p>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(selectedTeacher.plainPassword || 'Password123');
+                      alert('Password copied to clipboard!');
+                    }}
+                    className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+              <div className="bg-yellow-100 border border-yellow-400 p-3 rounded mt-4">
+                <p className="text-xs text-yellow-800">
+                  <strong>⚠️ Security Note:</strong> These credentials should be shared securely with the teacher. Keep them confidential.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowCredentialsModal(false)}
+                className="flex-1 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600"
+              >
+                Close
               </button>
             </div>
           </div>

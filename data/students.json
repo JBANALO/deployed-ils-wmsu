@@ -53,7 +53,9 @@
     },
     "average": 93.17,
     "lastGradeEditTime": "2026-01-06T18:03:43.680Z",
-    "updatedAt": "2026-01-06T18:03:43.733Z"
+    "updatedAt": "2026-01-28T17:12:12.800Z",
+    "parentEmail": "josiebanalo977@gmail.com",
+    "parentContact": "09052460749"
   },
   {
     "id": "80e0ab6c-13da-4542-8e88-01db4fc1b866",
@@ -68,7 +70,10 @@
     "gradeLevel": "Grade 3",
     "section": "Wisdom",
     "status": "Active",
-    "createdAt": "2025-12-22T20:09:07.853Z"
+    "createdAt": "2025-12-22T20:09:07.853Z",
+    "parentEmail": "hz202300368@wmsu.edu.ph",
+    "parentContact": "09052460749",
+    "updatedAt": "2026-01-29T06:21:43.417Z"
   },
   {
     "id": "84513dd2-e8af-43e8-86f0-9e401341c3b5",

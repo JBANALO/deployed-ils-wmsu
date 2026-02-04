@@ -639,7 +639,9 @@ export default function EditGrades() {
                           {selectedQuarter === 'q1' ? 'Q1' : selectedQuarter === 'q2' ? 'Q2' : selectedQuarter === 'q3' ? 'Q3' : 'Q4'}
                         </th>
                       )}
-                      <th className="px-4 py-3 text-center font-semibold text-gray-700 border bg-blue-50">Average</th>
+                      {selectedQuarter === 'all' && (
+                        <th className="px-4 py-3 text-center font-semibold text-gray-700 border bg-blue-50">Average</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -722,24 +724,28 @@ export default function EditGrades() {
                                   </td>
                                 )}
                             
-                            <td className="px-4 py-3 text-center font-bold text-blue-700 border bg-blue-50">
-                              {calculateSubjectAverage(subject)}
-                            </td>
+                            {selectedQuarter === 'all' && (
+                              <td className="px-4 py-3 text-center font-bold text-blue-700 border bg-blue-50">
+                                {calculateSubjectAverage(subject)}
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
                   </tbody>
                   <tfoot>
-                    <tr className="bg-gray-100">
-                      <td colSpan={selectedQuarter === 'all' ? '6' : '3'} className="px-4 py-4 text-right font-bold text-gray-900 border">
-                        Final Average:
-                      </td>
-                      <td className="px-4 py-4 text-center font-bold text-green-700 border text-2xl">
-                        {calculateFinalAverage()}
-                      </td>
-                    </tr>
+                    {selectedQuarter === 'all' && (
+                      <tr className="bg-gray-100">
+                        <td colSpan="6" className="px-4 py-4 text-right font-bold text-gray-900 border">
+                          Final Average:
+                        </td>
+                        <td className="px-4 py-4 text-center font-bold text-green-700 border text-2xl">
+                          {calculateFinalAverage()}
+                        </td>
+                      </tr>
+                    )}
                     <tr className="bg-gray-50">
-                      <td colSpan={selectedQuarter === 'all' ? '6' : '3'} className="px-4 py-3 text-right font-semibold text-gray-700 border">
+                      <td colSpan={selectedQuarter === 'all' ? "6" : "2"} className="px-4 py-3 text-right font-semibold text-gray-700 border">
                         Remarks:
                       </td>
                       <td className="px-4 py-3 text-center font-semibold border">

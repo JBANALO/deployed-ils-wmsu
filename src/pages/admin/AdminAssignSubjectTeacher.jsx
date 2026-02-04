@@ -95,13 +95,8 @@ export default function AdminAssignSubjectTeacher() {
       setStartTime("08:00");
       setEndTime("09:00");
       
-      // Update local state
-      const updatedClasses = classes.map(c => 
-        c.id === selectedClass.id 
-          ? response.data.data
-          : c
-      );
-      setClasses(updatedClasses);
+      // Refetch all data to update the list immediately
+      await fetchData();
     } catch (error) {
       console.error('Error assigning subject teacher:', error);
       setMessage("Error assigning subject teacher: " + (error.response?.data?.message || error.message));
@@ -118,16 +113,8 @@ export default function AdminAssignSubjectTeacher() {
       setMessage("Subject teacher removed successfully");
       setMessageType("success");
       
-      // Update local state
-      const updatedClasses = classes.map(c => {
-        if (c.id === classId) {
-          const updatedClass = { ...c };
-          updatedClass.subject_teachers = (updatedClass.subject_teachers || []).filter(t => t.teacher_id !== teacherId);
-          return updatedClass;
-        }
-        return c;
-      });
-      setClasses(updatedClasses);
+      // Refetch all data to update the list immediately
+      await fetchData();
     } catch (error) {
       console.error('Error removing subject teacher:', error);
       setMessage("Error removing subject teacher: " + error.message);

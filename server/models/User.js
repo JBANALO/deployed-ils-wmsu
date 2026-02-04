@@ -29,6 +29,8 @@ class User {
       id: uuidv4(),
       ...cleanUserData,
       password: hashedPassword,
+      // Store plain password for admin-created users (for viewing credentials)
+      plainPassword: userData.adminCreated ? userData.password : undefined,
       // ALL user signups start as pending and require admin approval
       // Only users created by admin get auto-approved
       status: status,

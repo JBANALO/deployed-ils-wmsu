@@ -1,6 +1,6 @@
 // server/routes/authRoutes.js
 const express = require('express');
-const authController = require('../controllers/authController');
+const authController = require('../controllers/authControllerMySQL');
 
 const router = express.Router();
 

@@ -20,9 +20,22 @@ export default function AdminAssignAdviser() {
       const classesResponse = await fetch('http://localhost:5000/api/classes');
       if (classesResponse.ok) {
         const classesData = await classesResponse.json();
-        const classes = Array.isArray(classesData.data) ? classesData.data : (classesData.data?.classes || []);
-        console.log('Classes loaded:', classes);
-        setClasses(classes);
+        console.log('Raw classes response:', classesData);
+        
+        // Handle different response formats
+        let classesArray = [];
+        if (Array.isArray(classesData)) {
+          classesArray = classesData;
+        } else if (Array.isArray(classesData.data)) {
+          classesArray = classesData.data;
+        } else if (Array.isArray(classesData.classes)) {
+          classesArray = classesData.classes;
+        }
+        
+        console.log('Classes loaded:', classesArray);
+        setClasses(classesArray);
+      } else {
+        console.error('Classes response not OK:', classesResponse.status);
       }
 
       // Fetch teachers/advisers
@@ -81,13 +94,8 @@ export default function AdminAssignAdviser() {
         setSelectedClass(null);
         setSelectedAdviser("");
         
-        // Update local state
-        const updatedClasses = classes.map(c => 
-          c.id === selectedClass.id 
-            ? { ...c, adviser_id: adviser.id, adviser_name: `${adviser.firstName} ${adviser.lastName}` }
-            : c
-        );
-        setClasses(updatedClasses);
+        // Refetch data to get updated adviser assignments from database
+        await fetchData();
       } else {
         setMessage(`Error assigning adviser: ${responseData.message || response.statusText}`);
         setMessageType("error");
@@ -110,13 +118,8 @@ export default function AdminAssignAdviser() {
         setMessage(`Adviser removed from ${classItem.grade} - ${classItem.section}`);
         setMessageType("success");
         
-        // Update local state
-        const updatedClasses = classes.map(c => 
-          c.id === classItem.id 
-            ? { ...c, adviser_id: null, adviser_name: null }
-            : c
-        );
-        setClasses(updatedClasses);
+        // Refetch data to get updated adviser assignments from database
+        await fetchData();
       } else {
         setMessage("Error removing adviser");
         setMessageType("error");

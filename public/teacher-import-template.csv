@@ -5,3 +5,4 @@ Ana,Reyes,,ana.reyes,Grade 2 Adviser,false,
 Roberto,Mendoza,,roberto.mendoza,Subject Teacher,true,Mathematics; Science
 Teresa,Lopez,,teresa.lopez,Subject Teacher,true,English; Filipino
 Pedro,Ramos,,pedro.ramos,Subject Teacher,true,Science
+node scripts/migrateToMySQL.js

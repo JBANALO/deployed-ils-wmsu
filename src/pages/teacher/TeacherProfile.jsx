@@ -19,59 +19,136 @@ export default function TeacherProfile() {
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        const response = await authService.getCurrentUser();
-        if (response.data && response.data.user) {
-          const user = response.data.user;
+        // First try to get user from localStorage
+        let user = null;
+        const userStr = localStorage.getItem("user");
+        
+        if (userStr) {
+          try {
+            user = JSON.parse(userStr);
+            console.log('User from localStorage:', user);
+          } catch (e) {
+            console.error('Failed to parse user from localStorage:', e);
+          }
+        }
+
+        // Fetch full user details from API using user ID or email
+        if (user && user.id) {
+          try {
+            console.log('Fetching user details for ID:', user.id);
+            const userResponse = await api.get(`/users/${user.id}`);
+            if (userResponse.data && userResponse.data.data) {
+              const fullUserData = userResponse.data.data;
+              console.log('Full user data from API:', fullUserData);
+              
+              // Update user object with complete data
+              user = {
+                ...user,
+                firstName: fullUserData.firstName || fullUserData.firstname || '',
+                lastName: fullUserData.lastName || fullUserData.lastname || '',
+                email: fullUserData.email || user.email || '',
+                role: fullUserData.role || user.role || ''
+              };
+              
+              // Update localStorage with complete data
+              localStorage.setItem('user', JSON.stringify(user));
+            }
+          } catch (err) {
+            console.error('Error fetching full user details:', err);
+            console.log('User ID that failed:', user.id);
+            // If fetch fails, try to use whatever data we have from localStorage
+            console.log('Continuing with localStorage data only');
+          }
+        }
+
+        if (user) {
+          // Set profile data
           setProfileData(prev => ({
             ...prev,
             firstName: user.firstName || "",
             lastName: user.lastName || "",
             email: user.email || "",
-            position: user.position || "Teacher"
+            position: user.role === 'adviser' ? 'Adviser' : user.role === 'subject_teacher' ? 'Subject Teacher' : 'Teacher'
           }));
 
           // Fetch assigned classes/schedule
           if (user.id) {
             try {
-              const classesResponse = await api.get(`/classes/subject-teacher/${user.id}`);
-              const classes = Array.isArray(classesResponse.data.data) ? classesResponse.data.data : [];
-              
-              // Transform classes to schedules
-              // For subject teachers, extract subjects from subject_teachers array
               const scheduleData = [];
-              classes.forEach(cls => {
-                if (cls.subject_teachers && Array.isArray(cls.subject_teachers)) {
-                  cls.subject_teachers.forEach(st => {
-                    if (st.teacher_id === user.id) {
-                      // Convert 24-hour time to 12-hour format
-                      const convertTime = (time24) => {
-                        if (!time24) return '8:00 AM';
-                        const [hours, minutes] = time24.split(':');
-                        const hour = parseInt(hours);
-                        const ampm = hour >= 12 ? 'PM' : 'AM';
-                        const hour12 = hour % 12 || 12;
-                        return `${hour12}:${minutes} ${ampm}`;
-                      };
-                      
-                      scheduleData.push({
-                        id: `${cls.id}-${st.subject}`,
-                        day: st.day || "Monday - Friday",
-                        time: `${convertTime(st.start_time)} - ${convertTime(st.end_time)}`,
-                        subject: st.subject || "",
-                        gradeSection: `${cls.grade || 'Grade'} - ${cls.section || 'Section'}`
-                      });
-                    }
+              
+              // Fetch subject teacher classes
+              try {
+                const subjectTeacherResponse = await api.get(`/classes/subject-teacher/${user.id}`);
+                const subjectTeacherClasses = Array.isArray(subjectTeacherResponse.data.data) ? subjectTeacherResponse.data.data : [];
+                
+                console.log('Subject teacher classes:', subjectTeacherClasses);
+                
+                // Extract schedules from subject teacher assignments
+                subjectTeacherClasses.forEach(cls => {
+                  if (cls.subject_teachers && Array.isArray(cls.subject_teachers)) {
+                    cls.subject_teachers.forEach(st => {
+                      if (st.teacher_id === user.id) {
+                        // Convert 24-hour time to 12-hour format
+                        const convertTime = (time24) => {
+                          if (!time24) return '8:00 AM';
+                          const [hours, minutes] = time24.split(':');
+                          const hour = parseInt(hours);
+                          const ampm = hour >= 12 ? 'PM' : 'AM';
+                          const hour12 = hour % 12 || 12;
+                          return `${hour12}:${minutes} ${ampm}`;
+                        };
+                        
+                        scheduleData.push({
+                          id: `${cls.id}-${st.subject}`,
+                          day: st.day || "Monday - Friday",
+                          time: `${convertTime(st.start_time)} - ${convertTime(st.end_time)}`,
+                          subject: st.subject || "",
+                          gradeSection: `${cls.grade || 'Grade'} - ${cls.section || 'Section'}`
+                        });
+                      }
+                    });
+                  }
+                });
+              } catch (err) {
+                console.error('Error fetching subject teacher classes:', err);
+              }
+
+              // Fetch adviser classes
+              try {
+                const adviserResponse = await api.get(`/classes/adviser/${user.id}`);
+                const adviserClasses = Array.isArray(adviserResponse.data.data) ? adviserResponse.data.data : [];
+                
+                console.log('Adviser classes:', adviserClasses);
+                
+                // Add adviser classes to schedule (usually full day advisory)
+                adviserClasses.forEach(cls => {
+                  scheduleData.push({
+                    id: `adviser-${cls.id}`,
+                    day: "Monday - Friday",
+                    time: "8:00 AM - 3:00 PM",
+                    subject: "Advisory Class",
+                    gradeSection: `${cls.grade || 'Grade'} - ${cls.section || 'Section'}`
                   });
-                }
-              });
+                });
+              } catch (err) {
+                console.error('Error fetching adviser classes:', err);
+              }
+
+              // Extract unique subjects for display
+              const subjects = [...new Set(scheduleData.map(s => s.subject))].filter(Boolean).join(', ');
+              setProfileData(prev => ({
+                ...prev,
+                subjects: subjects || "No subjects assigned yet"
+              }));
               
               setSchedules(scheduleData);
-              console.log('Loaded schedules:', scheduleData);
+              console.log('Final schedules:', scheduleData);
             } catch (err) {
               console.error('Error fetching classes:', err);
-              // Keep default schedules if API fails
             }
           }
+        } else {
+          console.error('No user data found');
         }
       } catch (error) {
         console.error("Failed to fetch user data:", error);
@@ -119,9 +196,46 @@ export default function TeacherProfile() {
   };
 
   const handleSave = async () => {
-    setIsEditing(false);
-    // TODO: Add API call to update user profile on backend
-    alert("Profile updated successfully!");
+    try {
+      // Get user ID from localStorage
+      const userStr = localStorage.getItem("user");
+      if (!userStr) {
+        alert("User not found. Please log in again.");
+        return;
+      }
+
+      const user = JSON.parse(userStr);
+      
+      // Update user profile via API
+      const response = await api.put(`/users/${user.id}`, {
+        firstName: profileData.firstName,
+        lastName: profileData.lastName,
+        email: profileData.email,
+        // Add other fields if needed
+      });
+
+      if (response.data.status === 'success' || response.status === 200) {
+        // Update localStorage with new data
+        const updatedUser = {
+          ...user,
+          firstName: profileData.firstName,
+          lastName: profileData.lastName,
+          email: profileData.email,
+        };
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        
+        alert("Profile updated successfully!");
+        setIsEditing(false);
+        
+        // Refresh data
+        window.location.reload();
+      } else {
+        alert("Failed to update profile. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error saving profile:", error);
+      alert("Error updating profile: " + (error.response?.data?.message || error.message));
+    }
   };
 
   const handleCancel = () => {
@@ -172,7 +286,9 @@ export default function TeacherProfile() {
           {/* Basic Info */}
           <div className="flex-grow">
             <h3 className="text-3xl font-bold text-gray-900 mb-2">
-              Ms. {profileData.firstName} {profileData.lastName}
+              {profileData.firstName || profileData.lastName 
+                ? `${profileData.firstName} ${profileData.lastName}`.trim()
+                : 'Teacher Name'}
             </h3>
             <div className="flex items-center gap-3 mb-4">
               <span className="bg-red-100 text-red-800 px-4 py-1 rounded-full text-sm font-semibold">
@@ -182,6 +298,11 @@ export default function TeacherProfile() {
             </div>
             
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <p className="text-sm font-semibold text-gray-700 mb-1">Email</p>
+              <p className="text-gray-900 font-medium">{profileData.email || 'No email available'}</p>
+            </div>
+            
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mt-3">
               <p className="text-sm font-semibold text-gray-700 mb-1">Subject Taught</p>
               <p className="text-gray-900 font-medium">{profileData.subjects}</p>
             </div>

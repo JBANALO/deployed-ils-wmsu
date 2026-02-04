@@ -82,7 +82,8 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
           role: teacher.role,
           position: teacher.position || '',
           department: teacher.department || 'Elementary',
-          subjectsHandled: teacher.subjectsHandled || []
+          subjectsHandled: teacher.subjectsHandled || [],
+          adminCreated: true  // Mark as admin-created to store plain password
         };
 
         const authResponse = await authService.register(teacherData);

@@ -1,6 +1,6 @@
 const express = require('express');
-const userController = require('../controllers/userController');
-const authController = require('../controllers/authController');
+const userController = require('../controllers/userControllerMySQL');
+const authController = require('../controllers/authControllerMySQL');
 
 const router = express.Router();
 
@@ -9,6 +9,9 @@ router.post('/signup', userController.signup);
 router.post('/signup-batch', userController.signupBatch);
 router.get('/', userController.getAllUsers);
 router.get('/pending-teachers', userController.getPendingTeachers);
+
+// Get user by ID (public for profile viewing)
+router.get('/:id', userController.getUserById);
 
 // Protected routes (require authentication)
 router.use(authController.protect);
