@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { XMarkIcon, CheckIcon, ExclamationTriangleIcon, ArrowDownTrayIcon } from '@heroicons/react/24/solid';
 import { parseCSVFile, validateStudentData, processStudentData, generateEmail, generateUsername } from '../../utils/csvParser';
 import { authService } from '../../api/userService';
+import { API_BASE_URL } from '../../api/config';
 import QRCode from 'qrcode';
 
 export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
@@ -114,7 +115,7 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
 
         // Save to students API
         try {
-          const apiResponse = await fetch('http://localhost:5000/api/students', {
+          const apiResponse = await fetch(`${API_BASE_URL}/students`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

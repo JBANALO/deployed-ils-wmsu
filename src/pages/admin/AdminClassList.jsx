@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { UsersIcon, MagnifyingGlassIcon } from "@heroicons/react/24/solid";
+import { API_BASE_URL } from "../../api/config";
 
 export default function AdminClassList() {
   const { id } = useParams();
@@ -17,7 +18,7 @@ export default function AdminClassList() {
     const fetchClassData = async () => {
       try {
         // Fetch students
-        const response = await fetch('http://localhost:5000/api/students');
+        const response = await fetch(`${API_BASE_URL}/students`);
         if (response.ok) {
           const result = await response.json();
           const allStudents = result.data ? result.data : (Array.isArray(result) ? result : []);
@@ -58,7 +59,7 @@ export default function AdminClassList() {
         }
 
         // Fetch teachers
-        const teachersResponse = await fetch('http://localhost:5000/api/users');
+        const teachersResponse = await fetch(`${API_BASE_URL}/users`);
         if (teachersResponse.ok) {
           const data = await teachersResponse.json();
           const allUsers = data.data?.users || data.users || [];
@@ -92,7 +93,7 @@ export default function AdminClassList() {
       if (!classInfo.grade || !classInfo.section) return;
       
       try {
-        const response = await fetch('http://localhost:5000/api/users');
+        const response = await fetch(`${API_BASE_URL}/users`);
         if (response.ok) {
           const data = await response.json();
           const allUsers = data.data?.users || data.users || [];

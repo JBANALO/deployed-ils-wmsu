@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { UserGroupIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/solid";
+import { API_BASE_URL } from "../../api/config";
 
 export default function AdminAssignAdviser() {
   const [classes, setClasses] = useState([]);
@@ -17,7 +18,7 @@ export default function AdminAssignAdviser() {
   const fetchData = async () => {
     try {
       // Fetch classes with adviser info
-      const classesResponse = await fetch('http://localhost:5000/api/classes');
+      const classesResponse = await fetch(`${API_BASE_URL}/classes`);
       if (classesResponse.ok) {
         const classesData = await classesResponse.json();
         console.log('Raw classes response:', classesData);
@@ -39,7 +40,7 @@ export default function AdminAssignAdviser() {
       }
 
       // Fetch teachers/advisers
-      const teachersResponse = await fetch('http://localhost:5000/api/users');
+      const teachersResponse = await fetch(`${API_BASE_URL}/users`);
       if (teachersResponse.ok) {
         const data = await teachersResponse.json();
         const allUsers = data.data?.users || data.users || [];
@@ -74,7 +75,7 @@ export default function AdminAssignAdviser() {
       console.log('To class:', selectedClass);
       
       const response = await fetch(
-        `http://localhost:5000/api/classes/${selectedClass.id}/assign`,
+        `${API_BASE_URL}/classes/${selectedClass.id}/assign`,
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -110,7 +111,7 @@ export default function AdminAssignAdviser() {
   const handleUnassignAdviser = async (classItem) => {
     try {
       const response = await fetch(
-        `http://localhost:5000/api/classes/${classItem.id}/unassign`,
+        `${API_BASE_URL}/classes/${classItem.id}/unassign`,
         { method: 'PUT' }
       );
 

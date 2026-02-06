@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { BuildingLibraryIcon, ChevronDownIcon, UserGroupIcon } from "@heroicons/react/24/solid";
 import { useNavigate } from "react-router-dom";
+import { API_BASE_URL } from "../../api/config";
 
 export default function AdminClasses() {
   const navigate = useNavigate();
@@ -16,7 +17,7 @@ export default function AdminClasses() {
     const fetchAndOrganizeClasses = async () => {
       try {
         // Fetch students
-        const studentsResponse = await fetch('http://localhost:5000/api/students');
+        const studentsResponse = await fetch(`${API_BASE_URL}/students`);
         if (studentsResponse.ok) {
           const result = await studentsResponse.json();
           const students = result.data ? result.data : (Array.isArray(result) ? result : []);
@@ -30,7 +31,7 @@ export default function AdminClasses() {
 
         // Fetch teachers
         try {
-          const teachersResponse = await fetch('http://localhost:5000/api/users');
+          const teachersResponse = await fetch(`${API_BASE_URL}/users`);
           if (teachersResponse.ok) {
             const data = await teachersResponse.json();
             const allUsers = data.data?.users || data.users || [];

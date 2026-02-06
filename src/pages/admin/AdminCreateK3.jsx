@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { UserCircleIcon } from "@heroicons/react/24/outline";
 import QRCode from 'qrcode';
+import { API_BASE_URL } from "../../api/config";
 
 export default function AdminCreateK3() {
   const [formData, setFormData] = useState({
@@ -79,7 +80,7 @@ export default function AdminCreateK3() {
         profilePic: formData.profilePic || null
       };
 
-      const response = await fetch('http://localhost:5000/api/students', {
+      const response = await fetch(`${API_BASE_URL}/students`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(studentData)

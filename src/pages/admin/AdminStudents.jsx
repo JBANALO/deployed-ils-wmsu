@@ -12,6 +12,7 @@ import {
   KeyIcon
 } from "@heroicons/react/24/solid";
 import BulkImportModal from "../../components/modals/BulkImportModal";
+import { API_BASE_URL } from "../../api/config";
 
 export default function AdminStudents() {
   const navigate = useNavigate();
@@ -37,7 +38,7 @@ export default function AdminStudents() {
   const fetchStudents = async () => {
     try {
       // Try the new backend API first
-      const response = await fetch('http://localhost:5000/api/students');
+      const response = await fetch(`${API_BASE_URL}/students`);
       if (response.ok) {
         const data = await response.json();
         setStudents(Array.isArray(data) ? data : data.data || []);
@@ -50,7 +51,7 @@ export default function AdminStudents() {
       console.error('Error fetching students:', error);
       // Try alternative endpoint if primary fails
       try {
-        const altResponse = await fetch('http://localhost:5000/api/students');
+        const altResponse = await fetch(`${API_BASE_URL}/students`);
         if (altResponse.ok) {
           const data = await altResponse.json();
           setStudents(data);
@@ -106,7 +107,7 @@ export default function AdminStudents() {
 
   const handleUpdateStudent = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/api/students/${selectedStudent.id}`, {
+      const response = await fetch(`${API_BASE_URL}/students/${selectedStudent.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -132,7 +133,7 @@ export default function AdminStudents() {
     if (!window.confirm('Are you sure you want to delete this student?')) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/students/${studentId}`, {
+      const response = await fetch(`${API_BASE_URL}/students/${studentId}`, {
         method: 'DELETE'
       });
 
@@ -205,7 +206,7 @@ export default function AdminStudents() {
     try {
       let successCount = 0;
       for (const studentId of selectedStudents) {
-        const response = await fetch(`http://localhost:5000/api/students/${studentId}`, {
+        const response = await fetch(`${API_BASE_URL}/students/${studentId}`, {
           method: 'DELETE'
         });
         if (response.ok) {

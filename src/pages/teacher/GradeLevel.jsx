@@ -12,6 +12,7 @@ import QRCode from "qrcode";
 import ViewStudentModal from '@/components/modals/ViewStudentModal'
 import EditStudentModal from '@/components/modals/EditStudentModal'
 import DeleteRequestModal from '@/components/modals/DeleteRequestModal'
+import { API_BASE_URL } from '../../api/config';
 
 export default function GradeLevel() {
   const [students, setStudents] = useState([]);
@@ -55,7 +56,7 @@ export default function GradeLevel() {
       // Fetch students (optional, do not block class display if fails)
       try {
         console.log('🔄 Fetching students from API...');
-        const response = await fetch("http://localhost:5000/api/students");
+        const response = await fetch(`${API_BASE_URL}/students`);
         console.log('📡 Students API response status:', response.status);
         if (response.ok) {
           const result = await response.json();
@@ -73,7 +74,7 @@ export default function GradeLevel() {
 
       // Fetch classes assigned to this adviser
       console.log(`Fetching adviser classes for user: ${user.id}`);
-      const classesResponse = await fetch(`http://localhost:5000/api/classes/adviser/${user.id}`);
+      const classesResponse = await fetch(`${API_BASE_URL}/classes/adviser/${user.id}`);
       let adviserClasses = [];
       if (classesResponse.ok) {
         const classesData = await classesResponse.json();
@@ -88,7 +89,7 @@ export default function GradeLevel() {
 
       // Fetch classes assigned to this subject teacher
       console.log(`Fetching subject teacher classes for user: ${user.id}`);
-      const subjectTeacherResponse = await fetch(`http://localhost:5000/api/classes/subject-teacher/${user.id}`);
+      const subjectTeacherResponse = await fetch(`${API_BASE_URL}/classes/subject-teacher/${user.id}`);
       let subjectTeacherClasses = [];
       if (subjectTeacherResponse.ok) {
         const stData = await subjectTeacherResponse.json();
@@ -224,7 +225,7 @@ export default function GradeLevel() {
       }
 
       const updatedData = { ...editFormData, fullName, qrCode: newQrCode };
-      const res = await fetch(`http://localhost:5000/api/students/${selectedStudent.id}`, {
+      const res = await fetch(`${API_BASE_URL}/students/${selectedStudent.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedData),
