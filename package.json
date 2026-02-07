@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --config vite.build.config.js",
+    "dev": "vite",
     "prebuild": "node print-env.js",
-    "build": "vite build --config vite.build.config.js",
+    "build": "vite build",
     "postinstall": "cd server && npm ci --omit=dev",
     "lint": "eslint .",
     "preview": "vite preview",

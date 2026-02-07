@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
     },
     // Expose env variables to the client
     define: {
-      'import.meta.env.VITE_API_URL': JSON.stringify(env.VITE_API_URL || '/api'),
+      'import.meta.env.VITE_API_URL': JSON.stringify(env.VITE_API_URL || 'http://localhost:5000/api'),
     },
     server: {
       port: 5173,

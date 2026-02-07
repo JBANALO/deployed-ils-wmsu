@@ -1,8 +1,7 @@
 import axios from 'axios';
 
 // Get API URL from environment variable with fallbacks
-// In production, always use '/api' (relative path) since frontend and backend are served together
-const apiURL = import.meta.env.PROD ? '/api' : (import.meta.env.VITE_API_URL || 'http://localhost:5000/api');
+const apiURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 console.log('API URL:', apiURL, 'Environment:', import.meta.env.MODE);
 

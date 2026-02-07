@@ -1,6 +1,9 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "deploy": {
-    "startCommand": "node server/server.js"
+    "startCommand": "node server/server.js",
+    "healthcheckPath": "/api",
+    "restartPolicyType": "on-failure",
+    "restartPolicyMaxRetries": 10
   }
 }

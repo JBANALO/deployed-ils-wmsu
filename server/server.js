@@ -11,7 +11,24 @@ const attendanceRoutes = require('./routes/attendanceRoutes');
 
 const app = express();
 
-app.use(cors());
+// CORS - allow Netlify frontend
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5000',
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.some(allowed => origin.startsWith(allowed)) || origin.includes('netlify.app')) {
+      return callback(null, true);
+    }
+    callback(null, true); // Allow all for now
+  },
+  credentials: true
+}));
 app.use(express.json());
 
 // API routes

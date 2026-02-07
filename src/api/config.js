@@ -1,6 +1,5 @@
 // API configuration
-// In production, always use '/api' (relative path) since frontend and backend are served together
-export const API_BASE_URL = import.meta.env.PROD ? '/api' : (import.meta.env.VITE_API_URL || 'http://localhost:5000/api');
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // Helper function to build API URLs
 export const getApiUrl = (endpoint) => {
