@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "vite",
     "prebuild": "node print-env.js",
-    "build": "vite build",
+    "build": "VITE_API_URL=/api vite build && cd server && npm ci --omit=dev",
     "lint": "eslint .",
     "preview": "vite preview",
+    "start": "cd server && node server.js",
     "start:prod": "cd server && npm start"
   },
   "dependencies": {
