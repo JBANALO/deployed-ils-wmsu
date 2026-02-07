@@ -1,20 +1,33 @@
 const mysql = require('mysql2/promise');
 
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'wmsu_ed',
-  port: process.env.DB_PORT || 3306,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-  enableKeepAlive: true,
-  keepAliveInitialDelay: 0,
-  connectTimeout: 60000,
-  acquireTimeout: 60000,
-  timeout: 60000
-});
+// Parse DATABASE_URL if available (Railway MySQL public URL)
+let poolConfig;
+
+if (process.env.DATABASE_URL) {
+  console.log('Using DATABASE_URL for connection');
+  poolConfig = {
+    uri: process.env.DATABASE_URL,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    connectTimeout: 60000
+  };
+} else {
+  console.log('Using individual DB_* variables for connection');
+  poolConfig = {
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'wmsu_ed',
+    port: parseInt(process.env.DB_PORT || '3306'),
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    connectTimeout: 60000
+  };
+}
+
+const pool = mysql.createPool(poolConfig);
 
 pool.getConnection()
   .then(connection => {
