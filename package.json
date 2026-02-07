@@ -1,15 +1,16 @@
 {
-  "name": "se-system",
+  "name": "wmsu-ils-portal",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "prebuild": "node print-env.js",
-    "build": "VITE_API_URL=/api vite build && cd server && npm ci --omit=dev",
+    "build": "vite build",
+    "postinstall": "cd server && npm ci --omit=dev",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "cd server && node server.js",
+    "start": "node server/server.js",
     "start:prod": "cd server && npm start"
   },
   "dependencies": {
