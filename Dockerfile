@@ -1,3 +1,4 @@
+# Force fresh build - Railway Dockerfile deployment
 FROM node:18-alpine
 
 WORKDIR /app
