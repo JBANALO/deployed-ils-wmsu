@@ -3,6 +3,15 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const userRoutes = require('./routes/userRoutes');
+
+// Log environment variables for debugging
+console.log('=== ENVIRONMENT CHECK ===');
+console.log('DB_HOST:', process.env.DB_HOST || 'NOT SET');
+console.log('DB_USER:', process.env.DB_USER || 'NOT SET');
+console.log('DB_NAME:', process.env.DB_NAME || 'NOT SET');
+console.log('DB_PORT:', process.env.DB_PORT || 'NOT SET');
+console.log('NODE_ENV:', process.env.NODE_ENV || 'NOT SET');
+console.log('========================');
 const authRoutes = require('./routes/authRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const classRoutes = require('./routes/classRoutes');
