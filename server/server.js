@@ -2,7 +2,6 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 const userRoutes = require('./routes/userRoutes');
 const authRoutes = require('./routes/authRoutes');
 const studentRoutes = require('./routes/studentRoutes');
@@ -11,7 +10,7 @@ const attendanceRoutes = require('./routes/attendanceRoutes');
 
 const app = express();
 
-// CORS - allow Netlify frontend
+// CORS - allow Vercel frontend
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5000',
@@ -20,16 +19,20 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, etc)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.some(allowed => origin.startsWith(allowed)) || origin.includes('netlify.app')) {
+    if (allowedOrigins.some(allowed => origin.startsWith(allowed)) || origin.includes('vercel.app') || origin.includes('netlify.app')) {
       return callback(null, true);
     }
-    callback(null, true); // Allow all for now
+    callback(null, true);
   },
   credentials: true
 }));
 app.use(express.json());
+
+// API health check
+app.get('/api', (req, res) => {
+  res.json({ message: 'WMSU Portal API is running', status: 'OK' });
+});
 
 // API routes
 app.use('/api/users', userRoutes);
@@ -37,20 +40,6 @@ app.use('/api/auth', authRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/attendance', attendanceRoutes);
-
-// Serve static frontend files from dist folder
-const distPath = path.join(__dirname, '..', 'dist');
-app.use(express.static(distPath));
-
-// API health check
-app.get('/api', (req, res) => {
-  res.json({ message: 'WMSU Portal API is running', status: 'OK' });
-});
-
-// Serve frontend for all other routes (for client-side routing)
-app.get('*', (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
-});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
