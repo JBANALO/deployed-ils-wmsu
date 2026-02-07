@@ -1,17 +1,30 @@
 const mysql = require('mysql2/promise');
 
-// Parse DATABASE_URL if available (Railway MySQL public URL)
+// Parse DATABASE_URL or MYSQL_PUBLIC_URL (Railway MySQL)
 let poolConfig;
+const dbUrl = process.env.DATABASE_URL || process.env.MYSQL_PUBLIC_URL || process.env.MYSQL_URL;
 
-if (process.env.DATABASE_URL) {
-  console.log('Using DATABASE_URL for connection');
-  poolConfig = {
-    uri: process.env.DATABASE_URL,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-    connectTimeout: 60000
-  };
+if (dbUrl) {
+  console.log('Using connection URL:', dbUrl.replace(/:[^:@]+@/, ':****@')); // Hide password
+  try {
+    // Parse mysql://user:pass@host:port/database
+    const url = new URL(dbUrl);
+    poolConfig = {
+      host: url.hostname,
+      port: parseInt(url.port) || 3306,
+      user: url.username,
+      password: url.password,
+      database: url.pathname.slice(1), // remove leading /
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      connectTimeout: 60000
+    };
+    console.log('Connecting to:', url.hostname + ':' + (url.port || 3306));
+  } catch (err) {
+    console.error('Failed to parse DATABASE_URL:', err.message);
+    throw err;
+  }
 } else {
   console.log('Using individual DB_* variables for connection');
   poolConfig = {
