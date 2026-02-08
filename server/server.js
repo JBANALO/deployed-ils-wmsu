@@ -2,6 +2,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const session = require('express-session');
+const passport = require('./config/passport');
 const userRoutes = require('./routes/userRoutes');
 
 // Log environment variables for debugging
@@ -11,6 +13,7 @@ console.log('DB_USER:', process.env.DB_USER || 'NOT SET');
 console.log('DB_NAME:', process.env.DB_NAME || 'NOT SET');
 console.log('DB_PORT:', process.env.DB_PORT || 'NOT SET');
 console.log('NODE_ENV:', process.env.NODE_ENV || 'NOT SET');
+console.log('GOOGLE_CLIENT_ID:', process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET');
 console.log('========================');
 const authRoutes = require('./routes/authRoutes');
 const studentRoutes = require('./routes/studentRoutes');
@@ -37,6 +40,24 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+
+// Session configuration for Passport
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || 'your-session-secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    },
+  })
+);
+
+// Passport initialization
+app.use(passport.initialize());
+app.use(passport.session());
 
 // API health check
 app.get('/api', (req, res) => {

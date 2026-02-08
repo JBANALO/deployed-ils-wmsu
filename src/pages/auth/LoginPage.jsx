@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { EyeIcon, EyeSlashIcon, XMarkIcon } from "@heroicons/react/24/solid";
+import { GoogleLogin } from "@react-oauth/google";
 import { authService } from "../../api/userService";
 
 export default function LoginPage() {
@@ -58,6 +59,27 @@ export default function LoginPage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    try {
+      setIsSubmitting(true);
+      
+      // Create a hidden form to submit to the Google OAuth backend endpoint
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/auth/google/callback`;
+      
+      // Since we're using client-side OAuth, redirect to backend for token exchange
+      window.location.href = `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/auth/google`;
+    } catch (err) {
+      setError('Google sign-in failed. Please try again.');
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleGoogleError = () => {
+    setError('Google sign-in failed. Please try again.');
   };
 
   return (
@@ -130,6 +152,24 @@ export default function LoginPage() {
             {isSubmitting ? "Logging in..." : "Login"}
           </button>
         </form>
+
+        {/* Divider */}
+        <div className="flex items-center gap-3 my-6">
+          <div className="flex-1 border-t border-gray-300"></div>
+          <span className="text-gray-500 text-sm">Or</span>
+          <div className="flex-1 border-t border-gray-300"></div>
+        </div>
+
+        {/* Google Sign-In Button */}
+        <div className="flex justify-center mb-6">
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={handleGoogleError}
+            text="signin_with"
+            theme="outline"
+            size="large"
+          />
+        </div>
 
         <div className="flex justify-between text-sm mt-5 text-gray-600">
           <Link to="/create-account" className="hover:text-red-800 underline">
