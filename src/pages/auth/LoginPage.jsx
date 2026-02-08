@@ -65,13 +65,11 @@ export default function LoginPage() {
     try {
       setIsSubmitting(true);
       
-      // Create a hidden form to submit to the Google OAuth backend endpoint
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/auth/google/callback`;
+      // Get API URL from Vite environment variables (not React App variables)
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
       
-      // Since we're using client-side OAuth, redirect to backend for token exchange
-      window.location.href = `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/auth/google`;
+      // Redirect to backend for Google OAuth flow
+      window.location.href = `${apiUrl}/api/auth/google`;
     } catch (err) {
       setError('Google sign-in failed. Please try again.');
       setIsSubmitting(false);
