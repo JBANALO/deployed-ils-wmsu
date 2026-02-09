@@ -5,6 +5,7 @@ import { Outlet } from "react-router-dom";
 
 export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
     <div className="flex h-screen bg-gray-50 font-montserrat overflow-hidden">
@@ -17,13 +18,23 @@ export default function AdminLayout() {
         />
       )}
 
-      {/* Sidebar */}
-      <AdminSidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+      {/* Sidebar with collapse state management */}
+      <AdminSidebar 
+        sidebarOpen={sidebarOpen} 
+        setSidebarOpen={setSidebarOpen}
+        sidebarCollapsed={sidebarCollapsed}
+        setSidebarCollapsed={setSidebarCollapsed}
+      />
 
       {/* Main content area */}
-      <div className="flex flex-col flex-1 lg:ml-0 overflow-hidden">
+      <div
+        className={`flex flex-col flex-1 transition-all duration-300 overflow-hidden`}
+        style={{
+          marginLeft: sidebarCollapsed ? "5rem" : "16rem",
+        }}
+      >
         <AdminTopbar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
-        <main className="flex-1 overflow-y-auto bg-gray-50 pt-16 lg:pt-0">
+        <main className="flex-1 overflow-y-auto bg-gray-50">
           <div className="px-4 md:px-8 py-6">
             <Outlet />
           </div>
