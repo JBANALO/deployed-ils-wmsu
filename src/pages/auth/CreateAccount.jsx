@@ -66,12 +66,17 @@ export default function CreateAccount() {
       // Call the registration API
       const response = await authService.register(userData);
       
-      setSuccess("✅ Account created! Pending admin approval. You'll be redirected to login...");
+      setSuccess(
+        "✅ Account created successfully!\n" +
+        "Your account is pending admin approval.\n" +
+        "Please wait up to 24 hours for the administrator to review and approve your account.\n" +
+        "You'll be redirected to login shortly..."
+      );
       
       // Redirect to login page - admin must approve first
       setTimeout(() => {
         navigate("/login");
-      }, 2000);
+      }, 3000);
       
     } catch (err) {
       console.error("Registration error:", err);
@@ -107,8 +112,12 @@ export default function CreateAccount() {
           Create New Account
         </h3>
 
-        {error && <p className="text-red-700 mb-3 font-medium">{error}</p>}
-        {success && <p className="text-green-600 mb-3 font-medium">{success}</p>}
+        {error && <p className="text-red-700 mb-3 font-medium text-sm">{error}</p>}
+        {success && (
+          <div className="text-green-700 mb-3 font-medium text-sm bg-green-50 px-4 py-3 rounded-md border border-green-200 whitespace-pre-line">
+            {success}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4 text-left mx-auto max-w-[600px]">
           <div>

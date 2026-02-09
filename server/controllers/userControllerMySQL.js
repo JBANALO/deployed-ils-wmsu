@@ -22,14 +22,18 @@ exports.signup = async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create user
+    // Create user with pending approval status
     const userId = uuidv4();
     await query(
-      'INSERT INTO users (id, firstName, lastName, username, email, password, role, gradeLevel, section, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-      [userId, firstName, lastName, username, email, hashedPassword, role, gradeLevel || null, section || null]
+      'INSERT INTO users (id, firstName, lastName, username, email, password, role, gradeLevel, section, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+      [userId, firstName, lastName, username, email, hashedPassword, role, gradeLevel || null, section || null, 'pending']
     );
 
-    res.status(201).json({ message: 'User created successfully', userId });
+    res.status(201).json({ 
+      message: 'User created successfully. Your account is pending admin approval.',
+      userId,
+      status: 'pending'
+    });
   } catch (error) {
     console.error('Error in signup:', error);
     res.status(500).json({ message: 'Error creating user', error: error.message });
@@ -67,11 +71,11 @@ exports.signupBatch = async (req, res) => {
         const userId = uuidv4();
 
         await query(
-          'INSERT INTO users (id, firstName, lastName, username, email, password, role, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
-          [userId, firstName, lastName, username, email, hashedPassword, role]
+          'INSERT INTO users (id, firstName, lastName, username, email, password, role, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+          [userId, firstName, lastName, username, email, hashedPassword, role, 'pending']
         );
 
-        createdUsers.push({ userId, email, username });
+        createdUsers.push({ userId, email, username, status: 'pending' });
       } catch (error) {
         errors.push({ email: user.email, error: error.message });
       }
@@ -111,9 +115,13 @@ exports.getAllUsers = async (req, res) => {
 exports.getPendingTeachers = async (req, res) => {
   try {
     const teachers = await query(
-      'SELECT id, firstName, lastName, username, email, role, createdAt FROM users WHERE role = "teacher" ORDER BY createdAt DESC'
+      'SELECT id, firstName, lastName, username, email, role, status, createdAt FROM users WHERE role = "teacher" AND status = "pending" ORDER BY createdAt DESC'
     );
-    res.json(teachers);
+    res.json({ 
+      status: 'success',
+      data: { teachers }, 
+      message: `Found ${teachers.length} pending teacher(s)`
+    });
   } catch (error) {
     console.error('Error fetching pending teachers:', error);
     res.status(500).json({ message: 'Error fetching pending teachers', error: error.message });
@@ -266,24 +274,36 @@ exports.updateUser = async (req, res) => {
   }
 };
 
-// Approve teacher
+// Approve teacher and optionally update role
 exports.approveTeacher = async (req, res) => {
   try {
     const { id } = req.params;
+    const { role } = req.body;
 
-    const result = await query(
-      'UPDATE users SET status = "approved", updatedAt = NOW() WHERE id = ? AND role = "teacher"',
-      [id]
-    );
+    let queryStr = 'UPDATE users SET status = "approved", updatedAt = NOW()';
+    const params = [];
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Teacher not found' });
+    if (role) {
+      queryStr += ', role = ?';
+      params.push(role);
     }
 
-    res.json({ message: 'Teacher approved successfully' });
+    queryStr += ' WHERE id = ?';
+    params.push(id);
+
+    const result = await query(queryStr, params);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json({ 
+      status: 'success',
+      message: role ? `User approved and assigned as ${role}` : 'User approved successfully' 
+    });
   } catch (error) {
-    console.error('Error approving teacher:', error);
-    res.status(500).json({ message: 'Error approving teacher', error: error.message });
+    console.error('Error approving user:', error);
+    res.status(500).json({ message: 'Error approving user', error: error.message });
   }
 };
 
