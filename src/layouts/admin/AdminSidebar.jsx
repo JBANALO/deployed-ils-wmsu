@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Bars3Icon,
   Cog6ToothIcon,
@@ -6,14 +7,13 @@ import {
   AcademicCapIcon,
   UsersIcon,
   DocumentChartBarIcon,
-  ChatBubbleLeftEllipsisIcon,
   BuildingLibraryIcon,
-  ClipboardDocumentIcon,
   ClockIcon,
 } from "@heroicons/react/24/solid";
 import { useNavigate, useLocation } from "react-router-dom";
 
-export default function AdminSidebar({ sidebarOpen, setSidebarOpen, sidebarCollapsed, setSidebarCollapsed }) {
+export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
+  const [hoveredItem, setHoveredItem] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -22,7 +22,7 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen, sidebarColla
     { name: "Teachers", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/admin-teachers" },
     { name: "Approvals", icon: <ClockIcon className="w-6 h-6" />, path: "/admin/approvals" },
     { name: "Students", icon: <AcademicCapIcon className="w-6 h-6" />, path: "/admin/admin-students" },
-    { name: "Grades", icon: <ClipboardDocumentIcon className="w-6 h-6" />, path: "/admin/admin-grades" },
+    { name: "Grades", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, path: "/admin/admin-grades" },
     { name: "Classes", icon: <BuildingLibraryIcon className="w-6 h-6" />, path: "/admin/admin-classes" },
     { name: "Assign Adviser", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/assign-adviser" },
     { name: "Assign Subject Teacher", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/assign-subject-teacher" },
@@ -32,75 +32,74 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen, sidebarColla
 
   return (
     <aside
-      className={`
-        bg-[#8f0303] text-white 
-        transition-all duration-300 ease-in-out
-        ${sidebarCollapsed ? "w-20" : "w-64"}
-        h-screen fixed left-0 top-0
-        flex flex-col
-        z-50 overflow-hidden
-      `}
+      className={`fixed top-0 left-0 h-full bg-[#8f0303] text-white flex flex-col justify-between transition-[width] duration-500 ease-in-out z-30 ${
+        sidebarOpen ? "w-64" : "w-20"
+      }`}
     >
-      {/* Hamburger Button */}
-      <div className="p-4 flex items-center justify-between border-b border-red-700">
+      <div className="px-4 py-5 border-b border-red-700/50 flex items-center">
         <button
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          className="p-2 hover:bg-red-700 rounded-lg transition-colors w-full flex items-center justify-center"
-          title={sidebarCollapsed ? "Expand" : "Collapse"}
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="text-white transition-transform duration-300 hover:scale-110"
         >
-          <Bars3Icon className="w-6 h-6" />
+          <Bars3Icon className="w-6 h-6 translate-x-[10px]" />
         </button>
       </div>
 
-      {/* Menu Items */}
-      <nav className="flex-1 overflow-y-auto py-4 space-y-1">
-        {menuItems.map((item) => {
-          const isActive = location.pathname === item.path;
-          
-          return (
+      <nav className="flex flex-col mt-2 space-y-1 flex-1">
+        {menuItems.map((item) => (
+          <div
+            key={item.name}
+            className="relative"
+            onMouseEnter={() => setHoveredItem(item.name)}
+            onMouseLeave={() => setHoveredItem(null)}
+          >
             <button
-              key={item.path}
               onClick={() => navigate(item.path)}
-              className={`
-                w-full flex items-center gap-4 px-4 py-3
-                hover:bg-red-700 transition-colors
-                ${isActive ? "bg-red-700 border-l-4 border-white" : ""}
-                ${sidebarCollapsed ? "justify-center px-0" : "justify-start"}
-              `}
-              title={sidebarCollapsed ? item.name : ""}
+              className={`flex items-center gap-4 px-5 py-3 w-full text-left transition-all duration-300 ease-in-out rounded-md ${
+                location.pathname === item.path
+                  ? "bg-red-700"
+                  : "hover:bg-red-700"
+              }`}
             >
-              <div className="flex-shrink-0">{item.icon}</div>
-              <span
-                className={`
-                  whitespace-nowrap transition-all duration-300
-                  ${sidebarCollapsed ? "opacity-0 w-0 overflow-hidden" : "opacity-100"}
-                `}
+              {item.icon}
+              {sidebarOpen && (
+                <span className="text-sm transition-all duration-300 ease-in-out">
+                  {item.name}
+                </span>
+              )}
+            </button>
+
+            {!sidebarOpen && hoveredItem === item.name && (
+              <div
+                className="absolute left-full top-1/2 -translate-y-1/2 ml-2 bg-black text-white text-xs rounded px-2 py-1 whitespace-nowrap shadow-lg"
+                style={{ animation: "fadeIn 0.2s ease-in-out" }}
               >
                 {item.name}
-              </span>
-            </button>
-          );
-        })}
+              </div>
+            )}
+          </div>
+        ))}
       </nav>
 
-      {/* Settings */}
       <div
-        className={`
-          border-t border-red-700 p-4 flex items-center gap-4
-          hover:bg-red-700 transition-colors cursor-pointer
-          ${sidebarCollapsed ? "justify-center" : "justify-start"}
-        `}
-        title={sidebarCollapsed ? "Settings" : ""}
+        className="relative px-4 py-4 flex items-center gap-3 hover:bg-red-700 transition-all duration-300 ease-in-out cursor-pointer"
+        onMouseEnter={() => setHoveredItem("Settings")}
+        onMouseLeave={() => setHoveredItem(null)}
       >
-        <Cog6ToothIcon className="w-6 h-6 flex-shrink-0" />
-        <span
-          className={`
-            whitespace-nowrap transition-all duration-300
-            ${sidebarCollapsed ? "opacity-0 w-0 overflow-hidden" : "opacity-100"}
-          `}
-        >
-          Settings
-        </span>
+        <Cog6ToothIcon className="w-6 h-6 flex-shrink-0 translate-x-[10px]" />
+        {sidebarOpen && (
+          <span className="text-sm transition-all duration-300 ease-in-out translate-x-[10px]">
+            Settings
+          </span>
+        )}
+        {!sidebarOpen && hoveredItem === "Settings" && (
+          <div
+            className="absolute left-[90px] top-1/2 -translate-y-1/2 bg-black text-white text-xs rounded px-2 py-1 whitespace-nowrap shadow-lg"
+            style={{ animation: "fadeIn 0.2s ease-in-out" }}
+          >
+            Settings
+          </div>
+        )}
       </div>
     </aside>
   );
