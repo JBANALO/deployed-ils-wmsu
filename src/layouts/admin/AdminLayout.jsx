@@ -7,24 +7,26 @@ export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-gray-50 font-montserrat flex-col md:flex-row">
-      {/* Mobile sidebar overlay */}
+    <div className="flex h-screen bg-gray-50 font-montserrat overflow-hidden">
+      {/* Mobile overlay backdrop */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 md:hidden z-20"
+          className="fixed inset-0 bg-black bg-opacity-50 lg:hidden z-40"
           onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
         />
       )}
-      
+
+      {/* Sidebar */}
       <AdminSidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
-      <div
-        className={`flex flex-col flex-1 w-full transition-all duration-500 ease-in-out ${
-          sidebarOpen ? "md:ml-64" : "md:ml-20"
-        } ml-0`}
-      >
+
+      {/* Main content area */}
+      <div className="flex flex-col flex-1 lg:ml-0 overflow-hidden">
         <AdminTopbar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
-        <main className="pt-16 md:pt-20 px-4 md:px-8 pb-6 overflow-y-auto flex-1 bg-gray-50">
-          <Outlet />
+        <main className="flex-1 overflow-y-auto bg-gray-50 pt-16 lg:pt-0">
+          <div className="px-4 md:px-8 py-6">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

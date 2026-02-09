@@ -34,9 +34,14 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
 
   return (
     <aside
-      className={`fixed md:relative top-0 left-0 h-full bg-[#8f0303] text-white flex flex-col justify-between transition-all duration-500 ease-in-out z-40 ${
-        sidebarOpen ? "w-64" : "-translate-x-full md:translate-x-0 md:w-20"
-      }`}
+      className={`
+        fixed lg:static inset-y-0 left-0 z-50
+        w-64 bg-[#8f0303] text-white
+        transform transition-transform duration-300 ease-in-out
+        flex flex-col justify-between
+        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+        lg:translate-x-0 lg:relative lg:w-64
+      `}
     >
       <div className="px-4 py-5 border-b border-red-700/50 flex items-center">
         <button
