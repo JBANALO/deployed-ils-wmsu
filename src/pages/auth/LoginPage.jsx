@@ -55,7 +55,19 @@ export default function LoginPage() {
         navigate("/student/student-dashboard");
       }
     } catch (err) {
-      setError(err.message || "Login failed. Please check your credentials.");
+      const errorMsg = err.message || "Login failed. Please check your credentials.";
+      
+      // Check if error is about pending approval
+      if (errorMsg.includes('pending') || errorMsg.includes('approval')) {
+        setError(
+          "⏳ Your account is pending admin approval.\n" +
+          "Please wait up to 24 hours for the administrator to review and approve your account."
+        );
+      } else if (errorMsg.includes('declined')) {
+        setError("❌ Your account has been declined. Please contact the administrator for more information.");
+      } else {
+        setError(errorMsg);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -106,9 +118,9 @@ export default function LoginPage() {
         </h2>
 
         {error && (
-          <p className="text-red-600 text-sm font-medium mb-4 bg-red-50 px-4 py-2 rounded-md border border-red-200">
+          <div className="text-red-600 text-sm font-medium mb-4 bg-red-50 px-4 py-3 rounded-md border border-red-200 whitespace-pre-line">
             {error}
-          </p>
+          </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4 text-left">
