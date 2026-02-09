@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Bars3Icon,
   Cog6ToothIcon,
@@ -14,8 +13,7 @@ import {
 } from "@heroicons/react/24/solid";
 import { useNavigate, useLocation } from "react-router-dom";
 
-export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
-  const [hoveredItem, setHoveredItem] = useState(null);
+export default function AdminSidebar({ sidebarOpen, setSidebarOpen, sidebarCollapsed, setSidebarCollapsed }) {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -35,62 +33,74 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
   return (
     <aside
       className={`
-        fixed lg:static inset-y-0 left-0 z-50
-        w-64 bg-[#8f0303] text-white
-        transform transition-transform duration-300 ease-in-out
-        flex flex-col justify-between
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-        lg:translate-x-0 lg:relative lg:w-64
+        bg-[#8f0303] text-white 
+        transition-all duration-300 ease-in-out
+        ${sidebarCollapsed ? "w-20" : "w-64"}
+        h-screen fixed left-0 top-0
+        flex flex-col
+        z-50 overflow-hidden
       `}
     >
-      <div className="px-4 py-5 border-b border-red-700/50 flex items-center">
+      {/* Hamburger Button */}
+      <div className="p-4 flex items-center justify-between border-b border-red-700">
         <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="text-white transition-transform duration-300 hover:scale-110"
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          className="p-2 hover:bg-red-700 rounded-lg transition-colors w-full flex items-center justify-center"
+          title={sidebarCollapsed ? "Expand" : "Collapse"}
         >
-          <Bars3Icon className="w-6 h-6 translate-x-[10px]" />
+          <Bars3Icon className="w-6 h-6" />
         </button>
       </div>
 
-      <nav className="flex flex-col mt-2 space-y-1 flex-1">
-        {menuItems.map((item) => (
-          <div
-            key={item.name}
-            className="relative"
-            onMouseEnter={() => setHoveredItem(item.name)}
-            onMouseLeave={() => setHoveredItem(null)}
-          >
+      {/* Menu Items */}
+      <nav className="flex-1 overflow-y-auto py-4 space-y-1">
+        {menuItems.map((item) => {
+          const isActive = location.pathname === item.path;
+          
+          return (
             <button
+              key={item.path}
               onClick={() => navigate(item.path)}
-              className={`flex items-center gap-4 px-5 py-3 w-full text-left transition-all duration-300 ease-in-out rounded-md ${
-                location.pathname === item.path ? "bg-red-700" : "hover:bg-red-700"
-              }`}
+              className={`
+                w-full flex items-center gap-4 px-4 py-3
+                hover:bg-red-700 transition-colors
+                ${isActive ? "bg-red-700 border-l-4 border-white" : ""}
+                ${sidebarCollapsed ? "justify-center px-0" : "justify-start"}
+              `}
+              title={sidebarCollapsed ? item.name : ""}
             >
-              {item.icon}
-              {sidebarOpen && <span className="text-sm">{item.name}</span>}
-            </button>
-
-            {!sidebarOpen && hoveredItem === item.name && (
-              <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 bg-black text-white text-xs rounded px-2 py-1 whitespace-nowrap shadow-lg">
+              <div className="flex-shrink-0">{item.icon}</div>
+              <span
+                className={`
+                  whitespace-nowrap transition-all duration-300
+                  ${sidebarCollapsed ? "opacity-0 w-0 overflow-hidden" : "opacity-100"}
+                `}
+              >
                 {item.name}
-              </div>
-            )}
-          </div>
-        ))}
+              </span>
+            </button>
+          );
+        })}
       </nav>
 
+      {/* Settings */}
       <div
-        className="relative px-4 py-4 flex items-center gap-3 hover:bg-red-700 transition-all duration-300 ease-in-out cursor-pointer"
-        onMouseEnter={() => setHoveredItem("Settings")}
-        onMouseLeave={() => setHoveredItem(null)}
+        className={`
+          border-t border-red-700 p-4 flex items-center gap-4
+          hover:bg-red-700 transition-colors cursor-pointer
+          ${sidebarCollapsed ? "justify-center" : "justify-start"}
+        `}
+        title={sidebarCollapsed ? "Settings" : ""}
       >
-        <Cog6ToothIcon className="w-6 h-6 flex-shrink-0 translate-x-[10px]" />
-        {sidebarOpen && <span className="text-sm translate-x-[10px]">Settings</span>}
-        {!sidebarOpen && hoveredItem === "Settings" && (
-          <div className="absolute left-[90px] top-1/2 -translate-y-1/2 bg-black text-white text-xs rounded px-2 py-1 whitespace-nowrap shadow-lg">
-            Settings
-          </div>
-        )}
+        <Cog6ToothIcon className="w-6 h-6 flex-shrink-0" />
+        <span
+          className={`
+            whitespace-nowrap transition-all duration-300
+            ${sidebarCollapsed ? "opacity-0 w-0 overflow-hidden" : "opacity-100"}
+          `}
+        >
+          Settings
+        </span>
       </div>
     </aside>
   );

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BellIcon, UserCircleIcon, ChevronDownIcon, Bars3Icon } from "@heroicons/react/24/solid";
+import { BellIcon, UserCircleIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
 
 export default function AdminTopbar({ sidebarOpen, setSidebarOpen }) {
   const [showDropdown, setShowDropdown] = useState(false);
@@ -12,22 +12,15 @@ export default function AdminTopbar({ sidebarOpen, setSidebarOpen }) {
   const handleStudents = () => navigate("/admin/admin-students");
 
   return (
-    <header className="fixed lg:static top-0 left-0 right-0 h-16 bg-white shadow-sm border-b border-gray-200 z-40 lg:z-0">
-      <div className="flex items-center justify-between px-4 md:px-8 h-full">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="lg:hidden text-gray-700 hover:text-red-800 transition-colors p-1"
-            aria-label="Toggle sidebar"
-          >
-            <Bars3Icon className="w-6 h-6" />
-          </button>
+    <header className="sticky top-0 bg-white shadow-sm border-b border-gray-200 z-30">
+      <div className="flex items-center justify-between px-6 py-4 h-16">
+        <div className="flex items-center gap-3">
           <img
             src="/wmsu-logo.jpg"
             alt="Logo"
             className="w-10 h-10 rounded-full object-cover flex-shrink-0"
           />
-          <h1 className="text-xs md:text-sm font-semibold leading-tight line-clamp-2">
+          <h1 className="text-sm font-semibold text-gray-900 hidden sm:block">
             WMSU ILS - Elementary (Admin)
           </h1>
         </div>
