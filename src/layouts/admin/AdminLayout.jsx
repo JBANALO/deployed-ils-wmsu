@@ -5,7 +5,7 @@ import { Outlet } from "react-router-dom";
 
 export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // false = expanded (default)
 
   return (
     <div className="flex h-screen bg-gray-50 font-montserrat overflow-hidden">
