@@ -33,21 +33,11 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
   ];
 
   return (
-    <>
-      {/* Mobile Overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 md:hidden z-20"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside
-        className={`fixed md:relative top-0 left-0 h-full bg-[#8f0303] text-white flex flex-col justify-between transition-all duration-500 ease-in-out z-30 ${
-          sidebarOpen ? "w-64" : "-translate-x-full md:translate-x-0 md:w-20"
-        }`}
-      >
+    <aside
+      className={`fixed md:relative top-0 left-0 h-full bg-[#8f0303] text-white flex flex-col justify-between transition-all duration-500 ease-in-out z-40 ${
+        sidebarOpen ? "w-64" : "-translate-x-full md:translate-x-0 md:w-20"
+      }`}
+    >
       <div className="px-4 py-5 border-b border-red-700/50 flex items-center">
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -98,6 +88,5 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
         )}
       </div>
     </aside>
-    </>
   );
 }
