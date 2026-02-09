@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BellIcon, UserCircleIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
 
-export default function AdminTopbar({ sidebarOpen, setSidebarOpen }) {
+export default function AdminTopbar() {
   const [showDropdown, setShowDropdown] = useState(false);
   const navigate = useNavigate();
 
@@ -12,7 +12,7 @@ export default function AdminTopbar({ sidebarOpen, setSidebarOpen }) {
   const handleStudents = () => navigate("/admin/admin-students");
 
   return (
-    <header className="sticky top-0 bg-white shadow-sm border-b border-gray-200 z-30">
+    <header className="bg-white shadow-sm border-b border-gray-200 z-20">
       <div className="flex items-center justify-between px-6 py-4 h-16">
         <div className="flex items-center gap-3">
           <img
@@ -20,7 +20,7 @@ export default function AdminTopbar({ sidebarOpen, setSidebarOpen }) {
             alt="Logo"
             className="w-10 h-10 rounded-full object-cover flex-shrink-0"
           />
-          <h1 className="text-sm font-semibold text-gray-900 hidden sm:block">
+          <h1 className="text-sm font-semibold text-gray-900">
             WMSU ILS - Elementary (Admin)
           </h1>
         </div>
