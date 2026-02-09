@@ -144,37 +144,37 @@ export default function AdminTeachers() {
   };
 
   return (
-    <div className="space-y-10">
-      <div className="bg-white rounded-lg shadow p-5 border border-gray-300 border-b-red-800 border-b-4">
-        <div className="flex items-center gap-4 mb-4">
-          <UsersIcon className="w-20 h-20 text-red-800 transition-transform duration-300 hover:scale-105 translate-x-[5px]" />
-          <h2 className="text-5xl pl-5 font-bold text-gray-900">Teachers Management</h2>
+    <div className="space-y-4 md:space-y-10">
+      <div className="bg-white rounded-lg shadow p-3 md:p-5 border border-gray-300 border-b-red-800 border-b-4">
+        <div className="flex items-center gap-2 md:gap-4 mb-4">
+          <UsersIcon className="w-12 md:w-20 h-12 md:h-20 text-red-800 transition-transform duration-300 hover:scale-105 flex-shrink-0" />
+          <h2 className="text-2xl md:text-5xl pl-0 md:pl-5 font-bold text-gray-900">Teachers Management</h2>
         </div>
       </div>
 
-      <p className="text-gray-600 mb-4">
+      <p className="text-xs md:text-base text-gray-600 mb-4">
         View, verify, edit, or remove teacher accounts. Assign subjects and classes.
       </p>
 
-      <div className="grid grid-cols-3 gap-6">
-        <div className="p-4 bg-red-50 rounded-lg text-center shadow-sm border border-red-100">
-          <h3 className="text-lg font-semibold text-red-800">Total Teachers</h3>
-          <p className="text-2xl font-bold">{teachers.length}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+        <div className="p-3 md:p-4 bg-red-50 rounded-lg text-center shadow-sm border border-red-100">
+          <h3 className="text-sm md:text-lg font-semibold text-red-800">Total Teachers</h3>
+          <p className="text-xl md:text-2xl font-bold">{teachers.length}</p>
         </div>
-        <div className="p-4 bg-red-50 rounded-lg text-center shadow-sm border border-red-100">
-          <h3 className="text-lg font-semibold text-red-800">Subject Teachers</h3>
-          <p className="text-2xl font-bold">{teachers.filter(t => t.role === 'subject_teacher').length}</p>
+        <div className="p-3 md:p-4 bg-red-50 rounded-lg text-center shadow-sm border border-red-100">
+          <h3 className="text-sm md:text-lg font-semibold text-red-800">Subject Teachers</h3>
+          <p className="text-xl md:text-2xl font-bold">{teachers.filter(t => t.role === 'subject_teacher').length}</p>
         </div>
-        <div className="p-4 bg-red-50 rounded-lg text-center shadow-sm border border-red-100">
-          <h3 className="text-lg font-semibold text-red-800">Regular Teachers</h3>
-          <p className="text-2xl font-bold">{teachers.filter(t => t.role === 'teacher' || !t.role).length}</p>
+        <div className="p-3 md:p-4 bg-red-50 rounded-lg text-center shadow-sm border border-red-100">
+          <h3 className="text-sm md:text-lg font-semibold text-red-800">Regular Teachers</h3>
+          <p className="text-xl md:text-2xl font-bold">{teachers.filter(t => t.role === 'teacher' || !t.role).length}</p>
         </div>
       </div>
 
-      <div className="mt-6 flex items-center justify-between">
+      <div className="mt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h3 className="text-xl font-semibold text-red-800 mb-2">Teacher Actions</h3>
-          <ul className="list-disc ml-5 text-gray-700 space-y-1">
+          <h3 className="text-lg md:text-xl font-semibold text-red-800 mb-2">Teacher Actions</h3>
+          <ul className="list-disc ml-5 text-xs md:text-base text-gray-700 space-y-1">
             <li>Add new teachers via bulk import (CSV)</li>
             <li>Search and filter teachers</li>
             <li>View teacher details</li>
@@ -183,20 +183,20 @@ export default function AdminTeachers() {
             <li>Assign subjects for subject teachers</li>
           </ul>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-2 md:gap-3">
           <button
             onClick={() => navigate('/admin/create-teacher')}
-            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold flex items-center gap-2 h-fit"
+            className="bg-blue-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-blue-700 font-semibold flex items-center justify-center gap-2 text-xs md:text-base h-fit"
           >
             <span className="text-lg">+</span>
             Add Teacher
           </button>
           <button
             onClick={() => setShowBulkImportModal(true)}
-            className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 font-semibold flex items-center gap-2 h-fit"
+            className="bg-green-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-green-700 font-semibold flex items-center justify-center gap-2 text-xs md:text-base h-fit"
           >
-            <ArrowUpTrayIcon className="w-5 h-5" />
-            Bulk Import (CSV)
+            <ArrowUpTrayIcon className="w-4 md:w-5 h-4 md:h-5" />
+            Bulk Import
           </button>
         </div>
       </div>
