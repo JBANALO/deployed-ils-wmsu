@@ -202,11 +202,10 @@ exports.addSubjectTeacher = async (req, res) => {
   try {
     const { classId } = req.params;
     const { teacherId, subject } = req.body;
-    const id = uuidv4();
 
     await query(
-      'INSERT INTO subject_teachers (id, class_id, teacher_id, subject, createdAt) VALUES (?, ?, ?, ?, NOW())',
-      [id, classId, teacherId, subject]
+      'INSERT INTO subject_teachers (class_id, teacher_id, subject, assignedAt) VALUES (?, ?, ?, NOW())',
+      [classId, teacherId, subject]
     );
 
     res.status(201).json({ message: 'Subject teacher added', id });
@@ -264,13 +263,10 @@ exports.assignSubjectTeacherToClass = async (req, res) => {
 
     console.log('assignSubjectTeacherToClass - classId:', classId, 'teacher_id:', teacher_id, 'subject:', subject);
 
-    // Generate a unique ID to avoid AUTO_INCREMENT issues
-    const uniqueId = Date.now() + Math.random().toString(36).substr(2, 9);
-    
-    // Insert without relying on AUTO_INCREMENT
+    // Insert without specifying id - let AUTO_INCREMENT handle it
     const result = await query(
-      'INSERT INTO subject_teachers (id, class_id, teacher_id, subject) VALUES (?, ?, ?, ?)',
-      [uniqueId, classId, teacher_id, subject]
+      'INSERT INTO subject_teachers (class_id, teacher_id, teacher_name, subject, day, start_time, end_time, assignedAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
+      [classId, teacher_id, teacher_name, subject, day || 'Monday - Friday', start_time || '08:00', end_time || '09:00']
     );
 
     res.json({ 
