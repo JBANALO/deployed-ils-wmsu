@@ -274,24 +274,25 @@ exports.assignSubjectTeacherToClass = async (req, res) => {
     const { classId } = req.params;
     const { teacher_id, teacher_name, subject, day, start_time, end_time } = req.body;
 
-    console.log('assignSubjectTeacherToClass - classId:', classId, 'teacher_id:', teacher_id, 'subject:', subject);
+    console.log('assignSubjectTeacherToClass - classId:', classId, 'teacher_id:', teacher_id, 'subject:', subject, 'day:', day);
 
     // Try to insert with all fields first
     try {
       const result = await query(
         'INSERT INTO subject_teachers (class_id, teacher_id, teacher_name, subject, day, start_time, end_time, assignedAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
-        [classId, teacher_id, teacher_name, subject, day || 'Monday - Friday', start_time || '08:00', end_time || '09:00']
+        [classId, teacher_id, teacher_name, subject, day, start_time || '08:00', end_time || '09:00']
       );
       
       res.json({ 
         success: true, 
         message: 'Subject teacher assigned successfully',
-        data: { classId, teacher_id, teacher_name, subject }
+        data: { classId, teacher_id, teacher_name, subject, day }
       });
     } catch (err) {
       // If columns don't exist, try inserting without them
       if (err.message && err.message.includes("Unknown column")) {
-        console.log('Columns day/start_time/end_time not found, inserting without them');
+        console.log('⚠️  Schedule columns (day, start_time, end_time) not found. Please run migration: fix_subject_teachers_columns.cjs');
+        console.log('Proceeding with basic insert. Note: Schedule information will not be stored.');
         const result = await query(
           'INSERT INTO subject_teachers (class_id, teacher_id, teacher_name, subject, assignedAt) VALUES (?, ?, ?, ?, NOW())',
           [classId, teacher_id, teacher_name, subject]
@@ -299,8 +300,9 @@ exports.assignSubjectTeacherToClass = async (req, res) => {
         
         res.json({ 
           success: true, 
-          message: 'Subject teacher assigned successfully (schedule columns will be added in database migration)',
-          data: { classId, teacher_id, teacher_name, subject }
+          message: 'Subject teacher assigned (schedule columns not available in database yet)',
+          warning: 'Please run database migration to store schedule information',
+          data: { classId, teacher_id, teacher_name, subject, day }
         });
       } else {
         throw err;
