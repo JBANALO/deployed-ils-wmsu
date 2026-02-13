@@ -208,11 +208,6 @@ export default function CreateAccount() {
           </div>
 
           <hr className="border-gray-400 mt-8 mb-5" />
-          <div className="flex items-center justify-center space-x-3 border border-gray-400 rounded-md p-3 w-[280px] mx-auto">
-            <input id="captcha" type="checkbox" />
-            <span className="text-sm">I’m not a robot</span>
-            <div className="border border-gray-400 p-2 text-[10px] text-gray-500">reCAPTCHA</div>
-          </div>
 
           <div className="flex justify-center space-x-3 mt-8">
             <button
@@ -227,7 +222,7 @@ export default function CreateAccount() {
               className="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2.5 px-6 rounded-md"
               onClick={() => navigate("/login")}
             >
-              Cancel
+              Login
             </button>
           </div>
         </form>

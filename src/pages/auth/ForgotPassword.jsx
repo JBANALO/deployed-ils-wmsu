@@ -39,6 +39,7 @@ export default function ForgotPasswordPage() {
                 </label>
                 <input
                   type="email"
+                  placeholder="email@wmsu.edu.ph"
                   className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black-500"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
