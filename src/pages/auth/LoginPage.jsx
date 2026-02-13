@@ -98,13 +98,6 @@ export default function LoginPage() {
       style={{ backgroundImage: "url('/wmsu-bg-se.png')" }}
     >
       <div className="relative bg-white/95 p-10 rounded-2xl shadow-xl w-[420px] h-auto text-center border border-gray-200">
-        <button
-          onClick={() => navigate("/")}
-          className="absolute top-3 right-3 text-gray-500 hover:text-gray-700 transition"
-        >
-          <XMarkIcon className="w-6 h-6" />
-        </button>
-
         <img
           src="/wmsu-logo.jpg"
           alt="WMSU Logo"
@@ -128,7 +121,7 @@ export default function LoginPage() {
             <label className="text-sm font-medium text-gray-700">Email or Username</label>
             <input
               type="text"
-              placeholder="email@wmsu.edu.ph or username (e.g., hz202305178)"
+              placeholder="email@wmsu.edu.ph"
               className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 transition"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
