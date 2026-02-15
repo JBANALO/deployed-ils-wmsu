@@ -10,7 +10,6 @@ import {
   PrinterIcon,
   ArrowDownTrayIcon,
   XMarkIcon,
-  DocumentArrowDownIcon,
 } from "@heroicons/react/24/solid";
 
 export default function EditGrades() {
@@ -514,8 +513,8 @@ export default function EditGrades() {
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
             title="Export grades as report card"
           >
-            <DocumentArrowDownIcon className="w-5 h-5" />
-            📋 Export Report
+            <img src="/export-icon.svg" alt="Export" className="w-5 h-5" />
+            Export Report
           </button>
         </div>
 
