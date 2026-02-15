@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { DocumentChartBarIcon, ArrowDownTrayIcon } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
+import SF2AttendanceForm from "../../components/SF2AttendanceForm";
 
 export default function AdminReports() {
   const [gradeTrendData, setGradeTrendData] = useState([]);
@@ -21,6 +22,11 @@ export default function AdminReports() {
   const [schoolAverage, setSchoolAverage] = useState(0);
   const [attendanceRate, setAttendanceRate] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [showSF2Modal, setShowSF2Modal] = useState(false);
+  const [students, setStudents] = useState([]);
+  const [attendanceData, setAttendanceData] = useState([]);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     loadReportsData();
@@ -30,16 +36,18 @@ export default function AdminReports() {
     try {
       // Fetch students for grades data
       const studentsRes = await axios.get('/students');
-      const students = Array.isArray(studentsRes.data.data) ? studentsRes.data.data : 
+      const studentsList = Array.isArray(studentsRes.data.data) ? studentsRes.data.data : 
                        Array.isArray(studentsRes.data) ? studentsRes.data : [];
+      setStudents(studentsList);
 
       // Fetch attendance data
       const attendanceRes = await axios.get('/attendance');
       const attendance = Array.isArray(attendanceRes.data.data) ? attendanceRes.data.data : 
                          Array.isArray(attendanceRes.data) ? attendanceRes.data : [];
+      setAttendanceData(attendance);
 
       // Calculate school-wide average
-      const studentsWithGrades = students.filter(s => s.average && s.average > 0);
+      const studentsWithGrades = studentsList.filter(s => s.average && s.average > 0);
       const avgGrade = studentsWithGrades.length > 0 
         ? (studentsWithGrades.reduce((sum, s) => sum + (s.average || 0), 0) / studentsWithGrades.length).toFixed(1)
         : 0;
@@ -49,12 +57,12 @@ export default function AdminReports() {
       const today = new Date().toISOString().split('T')[0];
       const todayAttendance = attendance.filter(a => a.date === today);
       const presentToday = todayAttendance.filter(a => a.status?.toLowerCase() === 'present').length;
-      const rate = students.length > 0 ? Math.round((presentToday / students.length) * 100) : 0;
+      const rate = studentsList.length > 0 ? Math.round((presentToday / studentsList.length) * 100) : 0;
       setAttendanceRate(rate);
 
       // Find top performing class
       const classSummary = {};
-      students.forEach(student => {
+      studentsList.forEach(student => {
         const key = `${student.gradeLevel} - ${student.section}`;
         if (!classSummary[key]) {
           classSummary[key] = { name: key, totalGrade: 0, count: 0 };
@@ -210,6 +218,13 @@ export default function AdminReports() {
 
       <div className="flex gap-4">
         <button 
+          onClick={() => setShowSF2Modal(true)}
+          className="flex items-center gap-2 bg-red-600 text-white px-5 py-3 rounded-lg shadow hover:bg-red-700 transition"
+        >
+          <ArrowDownTrayIcon className="w-6 h-6" />
+          SF2 Form
+        </button>
+        <button 
           onClick={() => window.print()}
           className="flex items-center gap-2 bg-red-800 text-white px-5 py-3 rounded-lg shadow hover:bg-red-900 transition"
         >
@@ -224,6 +239,17 @@ export default function AdminReports() {
           Export CSV
         </button>
       </div>
+
+      {/* SF2 Attendance Form Modal */}
+      <SF2AttendanceForm
+        isOpen={showSF2Modal}
+        onClose={() => setShowSF2Modal(false)}
+        attendanceData={attendanceData}
+        students={students}
+        selectedMonth={selectedMonth}
+        selectedYear={selectedYear}
+        selectedSection="All Sections"
+      />
     </div>
   );
 }

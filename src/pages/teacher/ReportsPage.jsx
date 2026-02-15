@@ -20,9 +20,11 @@ import {
   TableCellsIcon,
 } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
+import SF2AttendanceForm from "../../components/SF2AttendanceForm";
 
 export default function ReportsPage() {
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showSF2Modal, setShowSF2Modal] = useState(false);
   const [selectedSection, setSelectedSection] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1); // 1-12
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -367,6 +369,13 @@ export default function ReportsPage() {
 
               <div className="flex items-center gap-2 ml-auto">
                 <button
+                  onClick={() => setShowSF2Modal(true)}
+                  className="px-4 py-3 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition flex items-center gap-2"
+                >
+                  <DocumentArrowDownIcon className="w-5 h-5" />
+                  SF2 Form
+                </button>
+                <button
                   onClick={exportToCSV}
                   className="px-4 py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition flex items-center gap-2"
                 >
@@ -648,6 +657,17 @@ export default function ReportsPage() {
           </div>
         </>
       )}
+
+      {/* SF2 Attendance Form Modal */}
+      <SF2AttendanceForm
+        isOpen={showSF2Modal}
+        onClose={() => setShowSF2Modal(false)}
+        attendanceData={monthlyAttendance}
+        students={students}
+        selectedMonth={selectedMonth}
+        selectedYear={selectedYear}
+        selectedSection={selectedSection}
+      />
     </div>
   );
 }
