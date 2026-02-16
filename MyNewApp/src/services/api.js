@@ -1,6 +1,6 @@
 // API service for connecting to backend
-// CHANGE THIS IP ADDRESS TO YOUR ACTUAL SERVER IP (from ipconfig)
-const API_BASE_URL = 'http://192.168.0.153:5000/api';
+// Connected to Railway backend
+const API_BASE_URL = 'https://deployed-ils-wmsu-production.up.railway.app/api';
 const TIMEOUT = 10000; // 10 seconds timeout
 
 const fetchWithTimeout = (url, options = {}, timeout = TIMEOUT) => {
