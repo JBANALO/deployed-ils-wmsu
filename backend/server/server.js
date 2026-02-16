@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
+const authRoutes = require('./routes/auth');
 const studentRoutes = require('./routes/students');
 const deleteRequestRoutes = require('./routes/deleteRequests');
 const gradeRoutes = require('./routes/grades');
@@ -16,6 +17,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Routes
+app.use('/api/auth', authRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/delete-requests', deleteRequestRoutes);
 app.use('/api/students', gradeRoutes); // grades under students
