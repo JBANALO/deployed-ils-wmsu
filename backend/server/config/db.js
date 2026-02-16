@@ -25,6 +25,22 @@ const pool = mysql.createPool({
 const createTables = async () => {
   try {
     const queries = [
+      // Users Table (for teachers/admins)
+      `CREATE TABLE IF NOT EXISTS users (
+        id VARCHAR(36) PRIMARY KEY,
+        first_name VARCHAR(100),
+        last_name VARCHAR(100),
+        full_name VARCHAR(300),
+        username VARCHAR(100) UNIQUE,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        role VARCHAR(50) DEFAULT 'teacher',
+        profile_pic LONGTEXT,
+        approval_status VARCHAR(50) DEFAULT 'approved',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )`,
+
       // Students Table
       `CREATE TABLE IF NOT EXISTS students (
         id INT AUTO_INCREMENT PRIMARY KEY,
