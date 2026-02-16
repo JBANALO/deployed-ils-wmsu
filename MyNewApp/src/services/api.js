@@ -1,6 +1,8 @@
 // API service for connecting to backend
-// Connected to Railway backend
-const API_BASE_URL = 'https://deployed-ils-wmsu-production.up.railway.app/api';
+// Connected to local backend (use your machine IP for real device testing)
+// For emulator/simulator: use localhost or 10.0.2.2 (Android) or localhost (iOS)
+// For physical device: use your machine's IP address (e.g., 192.168.x.x)
+const API_BASE_URL = 'http://localhost:3001/api'; // Change to your machine IP if testing on physical device
 const TIMEOUT = 10000; // 10 seconds timeout
 
 const fetchWithTimeout = (url, options = {}, timeout = TIMEOUT) => {
