@@ -42,6 +42,8 @@ export default function AuthProvider({ children }) {
         ? { email: emailOrUsername, password }
         : { username: emailOrUsername, password };
       
+      console.log('Login data:', loginData);
+      
       const response = await fetch('http://192.168.1.169:3001/api/auth/login', {
         method: 'POST',
         headers: {
@@ -49,6 +51,9 @@ export default function AuthProvider({ children }) {
         },
         body: JSON.stringify(loginData),
       });
+
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
 
       const result = await response.json();
       console.log('Login API response:', result);
@@ -70,6 +75,8 @@ export default function AuthProvider({ children }) {
       }
     } catch (error) {
       console.error('Login error:', error);
+      console.error('Error message:', error.message);
+      console.error('Error details:', JSON.stringify(error));
       return { 
         success: false, 
         error: 'Connection failed. Please check your internet connection.' 
