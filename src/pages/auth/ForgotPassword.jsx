@@ -56,10 +56,10 @@ export default function ForgotPasswordPage() {
             </form>
 
             <div className="flex justify-between text-sm mt-5 text-gray-600">
-              <Link to="/login" className="hover:text-gray-800">
+              <Link to="/login" className="hover:text-red-800 underline">
                 Login
               </Link>
-              <Link to="/create-account" className="hover:text-gray-800">
+              <Link to="/create-account" className="hover:text-red-800 underline">
                 Create an Account
               </Link>
             </div>
