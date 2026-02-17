@@ -156,6 +156,7 @@ export default function LoginScreen({ navigation }) {
               <Text style={styles.registerLink}>Register</Text>
             </TouchableOpacity>
           </View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </>
