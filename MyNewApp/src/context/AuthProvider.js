@@ -34,15 +34,18 @@ export default function AuthProvider({ children }) {
 
   const login = async (emailOrUsername, password) => {
     try {
-      console.log('Attempting login with:', emailOrUsername);
+      console.log('=== LOGIN ATTEMPT ===');
+      console.log('Email/Username:', emailOrUsername);
+      console.log('Backend URL: http://192.168.1.169:3001/api/auth/login');
       
-      // Use backend API login instead of Firebase
-      // Send both email and username fields for backend to handle
       const loginData = emailOrUsername.includes('@') 
         ? { email: emailOrUsername, password }
         : { username: emailOrUsername, password };
       
-      console.log('Login data:', loginData);
+      console.log('Sending login data:', JSON.stringify(loginData));
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
       
       const response = await fetch('http://192.168.1.169:3001/api/auth/login', {
         method: 'POST',
@@ -50,22 +53,33 @@ export default function AuthProvider({ children }) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(loginData),
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
 
-      console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers);
+      console.log('Response received! Status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server error response:', errorText);
+        return { 
+          success: false, 
+          error: `Server error: ${response.status}` 
+        };
+      }
 
       const result = await response.json();
-      console.log('Login API response:', result);
+      console.log('Login response:', JSON.stringify(result));
 
       if (result.status === 'success' && result.data && result.data.user) {
-        // Store user and token in AsyncStorage
         const userData = {
           ...result.data.user,
           token: result.token
         };
         await AsyncStorage.setItem('user', JSON.stringify(userData));
         setUser(userData);
+        console.log('✅ Login successful!');
         return { success: true };
       } else {
         return { 
@@ -74,12 +88,27 @@ export default function AuthProvider({ children }) {
         };
       }
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('=== LOGIN ERROR ===');
+      console.error('Error name:', error.name);
       console.error('Error message:', error.message);
-      console.error('Error details:', JSON.stringify(error));
+      console.error('Full error:', error);
+      
+      // Determine specific error type
+      let errorMsg = 'Connection failed. Please check your internet connection.';
+      
+      if (error.name === 'AbortError') {
+        errorMsg = 'Connection timeout - server took too long to respond';
+      } else if (error.message?.includes('Network request')) {
+        errorMsg = 'Network error - cannot reach server at 192.168.1.169:3001';
+      } else if (error.message?.includes('fetch')) {
+        errorMsg = 'Network connection failed - ' + error.message;
+      }
+      
+      console.error('Final error message:', errorMsg);
+      
       return { 
         success: false, 
-        error: 'Connection failed. Please check your internet connection.' 
+        error: errorMsg
       };
     }
   };
