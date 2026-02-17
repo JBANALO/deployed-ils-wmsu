@@ -81,26 +81,30 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
         ))}
       </nav>
 
-      <div
-        className="relative px-4 py-4 flex items-center gap-3 hover:bg-red-700 transition-all duration-300 ease-in-out cursor-pointer"
-        onMouseEnter={() => setHoveredItem("Settings")}
-        onMouseLeave={() => setHoveredItem(null)}
-      >
-        <Cog6ToothIcon className="w-6 h-6 flex-shrink-0 translate-x-[10px]" />
-        {sidebarOpen && (
-          <span className="text-sm transition-all duration-300 ease-in-out translate-x-[10px]">
-            Settings
-          </span>
-        )}
-        {!sidebarOpen && hoveredItem === "Settings" && (
-          <div
-            className="absolute left-[90px] top-1/2 -translate-y-1/2 bg-black text-white text-xs rounded px-2 py-1 whitespace-nowrap shadow-lg"
-            style={{ animation: "fadeIn 0.2s ease-in-out" }}
-          >
-            Settings
-          </div>
-        )}
-      </div>
+        <div
+          onClick={() => navigate("/admin/settings")}
+          className={`relative px-5 py-3 flex items-center gap-4 w-full text-left transition-all duration-300 ease-in-out rounded-md cursor-pointer ${
+            location.pathname === "/admin/settings"
+              ? "bg-red-700"
+              : "hover:bg-red-700"
+          }`}
+          onMouseEnter={() => setHoveredItem("Settings")}
+          onMouseLeave={() => setHoveredItem(null)}
+        >
+          <Cog6ToothIcon className="w-6 h-6" />
+
+          {sidebarOpen && (
+            <span className="text-sm transition-all duration-300 ease-in-out">
+              Settings
+            </span>
+          )}
+
+          {!sidebarOpen && hoveredItem === "Settings" && (
+            <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 bg-black text-white text-xs rounded px-2 py-1 whitespace-nowrap shadow-lg">
+              Settings
+            </div>
+          )}
+        </div>
     </aside>
   );
 }
