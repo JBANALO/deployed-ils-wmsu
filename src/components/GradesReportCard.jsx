@@ -1,6 +1,10 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
+import api from '../api/axiosConfig';
 
-export default function GradesReportCard({ students, quarter, gradeLevel, section, onClose }) {
+export default function GradesReportCard({ students, quarter, gradeLevel, section, classId, onClose }) {
+  const [classSubjects, setClassSubjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+
   const quarterLabels = {
     q1: 'FIRST QUARTER',
     q2: 'SECOND QUARTER',
@@ -8,6 +12,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
     q4: 'FOURTH QUARTER'
   };
 
+  // Fallback subjects by grade (only used if class subjects not found)
   const subjectsByGrade = {
     "Kindergarten": ["Reading", "Writing", "Math Readiness", "Arts", "Physical Education"],
     "Grade 1": ["Mathematics", "English", "Filipino", "Science", "Araling Panlipunan", "MAPEH"],
@@ -15,7 +20,36 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
     "Grade 3": ["Mathematics", "English", "Filipino", "Science", "Araling Panlipunan", "MAPEH"],
   };
 
-  const subjects = subjectsByGrade[gradeLevel] || [];
+  // Fetch class subjects when component mounts
+  useEffect(() => {
+    const fetchClassSubjects = async () => {
+      try {
+        setLoading(true);
+        if (classId) {
+          // If classId is provided, fetch subjects for that class
+          const response = await api.get(`/classes/${classId}/subjects`);
+          setClassSubjects(response.data.subjects || []);
+        } else if (gradeLevel && gradeLevel !== 'All Grades') {
+          // Fallback to hardcoded subjects if no classId
+          setClassSubjects(subjectsByGrade[gradeLevel] || []);
+        } else {
+          // Use all subjects from all grades
+          const allSubjects = [...new Set(Object.values(subjectsByGrade).flat())];
+          setClassSubjects(allSubjects);
+        }
+      } catch (error) {
+        console.error('Error fetching class subjects:', error);
+        // Fallback to hardcoded subjects on error
+        setClassSubjects(subjectsByGrade[gradeLevel] || []);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchClassSubjects();
+  }, [classId, gradeLevel]);
+
+  const subjects = classSubjects.length > 0 ? classSubjects : (subjectsByGrade[gradeLevel] || []);
   const today = new Date().toLocaleDateString();
   const currentYear = new Date().getFullYear();
 

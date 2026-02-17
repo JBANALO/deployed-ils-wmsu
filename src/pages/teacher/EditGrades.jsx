@@ -63,19 +63,32 @@ export default function EditGrades() {
 
   // Update available subjects based on user role and grade level
   useEffect(() => {
-    if (userRole === 'adviser') {
-      // Advisers can edit all subjects for their grade
-      if (selectedGradeLevel === "All Grades") {
-        const allSubjects = [...new Set(Object.values(subjectsByGrade).flat())];
-        setAvailableSubjects(allSubjects);
-      } else {
-        setAvailableSubjects(subjectsByGrade[selectedGradeLevel] || []);
+    const updateSubjects = async () => {
+      if (userRole === 'adviser') {
+        // Advisers can edit all subjects for their grade
+        if (selectedGradeLevel === "All Grades") {
+          const allSubjects = [...new Set(Object.values(subjectsByGrade).flat())];
+          setAvailableSubjects(allSubjects);
+        } else if (selectedGradeLevel && selectedSection && selectedSection !== "All Sections") {
+          // Try to get subjects from API based on class
+          try {
+            const classId = `${selectedGradeLevel.toLowerCase().replace(/\s+/g, '-')}-${selectedSection.toLowerCase().replace(/\s+/g, '-')}`;
+            const response = await api.get(`/classes/${classId}/subjects`);
+            setAvailableSubjects(response.data.subjects || []);
+          } catch (error) {
+            console.error('Error fetching class subjects, using fallback:', error);
+            setAvailableSubjects(subjectsByGrade[selectedGradeLevel] || []);
+          }
+        } else {
+          setAvailableSubjects(subjectsByGrade[selectedGradeLevel] || []);
+        }
+      } else if (userRole === 'subject_teacher' && assignedSubjects.length > 0) {
+        // Subject teachers can only edit their assigned subjects
+        setAvailableSubjects(assignedSubjects);
       }
-    } else if (userRole === 'subject_teacher' && assignedSubjects.length > 0) {
-      // Subject teachers can only edit their assigned subjects
-      setAvailableSubjects(assignedSubjects);
-    }
-  }, [userRole, assignedSubjects, selectedGradeLevel]);
+    };
+    updateSubjects();
+  }, [userRole, assignedSubjects, selectedGradeLevel, selectedSection]);
 
   const fetchStudents = async () => {
     try {
@@ -733,6 +746,10 @@ export default function EditGrades() {
           quarter={selectedQuarter}
           gradeLevel={selectedGradeLevel === "All Grades" ? "All Grades" : selectedGradeLevel}
           section={selectedSection}
+          classId={selectedGradeLevel !== "All Grades" && selectedSection !== "All Sections" 
+            ? `${selectedGradeLevel.toLowerCase().replace(/\s+/g, '-')}-${selectedSection.toLowerCase().replace(/\s+/g, '-')}`
+            : null
+          }
           onClose={() => setShowReportCard(false)}
         />
       )}
