@@ -10,7 +10,8 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
-  Alert
+  Alert,
+  ScrollView
 } from 'react-native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthProvider';
@@ -67,14 +68,18 @@ export default function LoginScreen({ navigation }) {
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-     
-        <View style={styles.header}>
-          <Icon name="school" size={60} color="#fff" />
-          <Text style={styles.headerTitle}>WMSU ElemScan</Text>
-          <Text style={styles.headerSubtitle}>Teacher's Login</Text>
-        </View>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContainer}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.header}>
+            <Icon name="school" size={60} color="#fff" />
+            <Text style={styles.headerTitle}>WMSU ElemScan</Text>
+            <Text style={styles.headerSubtitle}>Teacher's Login</Text>
+          </View>
 
-        <View style={styles.formContainer}>
+          <View style={styles.formContainer}>
           
           <View style={styles.welcomeContainer}>
             <Text style={styles.welcomeText}>Welcome Back!</Text>
@@ -151,7 +156,7 @@ export default function LoginScreen({ navigation }) {
               <Text style={styles.registerLink}>Register</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </>
   );
@@ -161,6 +166,10 @@ const styles = StyleSheet.create({
   container: { 
     flex: 1, 
     backgroundColor: '#f5f5f5' 
+  },
+  scrollContainer: {
+    flexGrow: 1,
+    paddingBottom: 20
   },
   
   header: { 
