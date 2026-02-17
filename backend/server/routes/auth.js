@@ -14,7 +14,8 @@ const SAMPLE_USERS = [
     last_name: 'Banalo',
     full_name: 'Josie Banalo',
     password: 'test123', // In production, use hashed password
-    role: 'teacher',
+    role: 'subject_teacher',
+    subjects_handled: 'Math,Science,English', // Comma-separated list of subjects
     approval_status: 'approved'
   }
 ];
@@ -110,7 +111,8 @@ router.post('/login', async (req, res) => {
       lastName: user.last_name,
       fullName: user.full_name,
       role: user.role,
-      profilePic: user.profile_pic || null
+      profilePic: user.profile_pic || null,
+      subjectsHandled: user.subjects_handled ? user.subjects_handled.split(',').map(s => s.trim()) : []
     };
 
     return res.json({
