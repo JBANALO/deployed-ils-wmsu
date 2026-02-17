@@ -36,6 +36,7 @@ import AdminAssignSubjectTeacher from "./pages/admin/AdminAssignSubjectTeacher.j
 import AdminAttendance from "./pages/admin/AdminAttendance";
 import AdminReports from "./pages/admin/AdminReports";
 import AdminCreateTeacher from "./pages/admin/AdminCreateTeacher.jsx";
+import AdminSettings from "./pages/admin/AdminSettings.jsx";
 
 const GOOGLE_CLIENT_ID = "545992268289-4fp8qedhktkyccfhfdedkjpn2pc6.apps.googleusercontent.com";
 
@@ -83,6 +84,7 @@ function App() {
             <Route path="/admin/admin-attendance" element={<AdminAttendance />} />
             <Route path="/admin/admin-reports" element={<AdminReports />} />
             <Route path="/admin/create-teacher" element={<AdminCreateTeacher />} />
+            <Route path="/admin/settings" element={<AdminSettings />} />
           </Route>
 
           <Route path="*" element={<div className="p-20 text-center text-3xl font-bold">404 - Page Not Found</div>} />
