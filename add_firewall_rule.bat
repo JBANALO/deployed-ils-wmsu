@@ -1,0 +1,6 @@
+@echo off
+echo Adding Windows Firewall rule for Node.js Port 3001...
+netsh advfirewall firewall add rule name="Node.js Port 3001" dir=in action=allow protocol=tcp localport=3001
+echo.
+echo Rule added! Press Enter to close...
+pause

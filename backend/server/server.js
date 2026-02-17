@@ -18,6 +18,10 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Routes
+app.get('/api', (req, res) => {
+  res.json({ message: 'Student Management API Running!', version: '1.0.0' });
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/students', studentRoutes);
