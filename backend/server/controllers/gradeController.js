@@ -11,8 +11,18 @@ const canEnterGrade = (user, student, subject) => {
   }
   
   // Subject teacher can only enter grades for their assigned subjects
-  if (user.role === 'subject_teacher' && user.subjectsHandled && user.subjectsHandled.includes(subject)) {
-    return true;
+  if (user.role === 'subject_teacher') {
+    // Handle both array and comma-separated string formats
+    let subjects = [];
+    if (Array.isArray(user.subjectsHandled)) {
+      subjects = user.subjectsHandled;
+    } else if (typeof user.subjectsHandled === 'string') {
+      subjects = user.subjectsHandled.split(',').map(s => s.trim());
+    }
+    
+    if (subjects.length > 0 && subjects.includes(subject)) {
+      return true;
+    }
   }
   
   // Admin can enter grades for anyone
