@@ -27,7 +27,6 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
     { name: "Assign Adviser", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/assign-adviser" },
     { name: "Assign Subject Teacher", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/assign-subject-teacher" },
     { name: "Attendance", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, path: "/admin/admin-attendance" },
-    { name: "Reports", icon: <DocumentChartBarIcon className="w-6 h-6" />, path: "/admin/admin-reports" },
   ];
 
   return (

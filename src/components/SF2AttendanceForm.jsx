@@ -63,8 +63,8 @@ export default function SF2AttendanceForm({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto">
-      <div className="flexjustify-center items-start p-4 min-h-screen">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 overflow-y-auto hide-scrollbar">
+      <div className="flex justify-center items-start p-4 min-h-screen">
         <div className="bg-white rounded-lg shadow-lg w-full max-w-6xl mt-4">
           {/* Header Controls */}
           <div className="flex justify-between items-center p-6 border-b">
