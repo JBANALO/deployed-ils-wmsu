@@ -408,34 +408,6 @@ const loadDashboardStats = async () => {
                 </div>
               </div>
 
-              {/* Recent Activity Timeline */}
-              <div className="mt-6">
-                <h3 className="text-lg font-semibold mb-3">Recent Activity</h3>
-                <div className="bg-blue-50 rounded-lg p-4 space-y-3">
-                  {loading ? (
-                    <div className="text-center py-4">
-                      <p className="text-gray-500">Loading recent activity...</p>
-                    </div>
-                  ) : recentActivity.length > 0 ? (
-                    recentActivity.map((activity, index) => (
-                      <div key={index} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-b-0">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-2 h-2 bg-${activity.color}-500 rounded-full`}></div>
-                          <div>
-                            <p className="text-sm font-medium">{activity.title}</p>
-                            <p className="text-xs text-gray-500">{activity.subtitle}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-4">
-                      <p className="text-gray-500">No recent activity</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
               {/* Quick Actions */}
               <div className="mt-6">
                 <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
@@ -461,6 +433,34 @@ const loadDashboardStats = async () => {
                     <ArrowDownTrayIcon className="w-6 h-6" />
                     Export CSV
                   </button>
+                </div>
+              </div>
+
+              {/* Recent Activity Timeline */}
+              <div className="mt-6">
+                <h3 className="text-lg font-semibold mb-3">Recent Activity</h3>
+                <div className="bg-blue-50 rounded-lg p-4 space-y-3">
+                  {loading ? (
+                    <div className="text-center py-4">
+                      <p className="text-gray-500">Loading recent activity...</p>
+                    </div>
+                  ) : recentActivity.length > 0 ? (
+                    recentActivity.map((activity, index) => (
+                      <div key={index} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-b-0">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-2 h-2 bg-${activity.color}-500 rounded-full`}></div>
+                          <div>
+                            <p className="text-sm font-medium">{activity.title}</p>
+                            <p className="text-xs text-gray-500">{activity.subtitle}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-gray-500">No recent activity</p>
+                    </div>
+                  )}
                 </div>
               </div>
 

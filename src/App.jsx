@@ -34,9 +34,10 @@ import AdminClassList from "./pages/admin/AdminClassList.jsx";
 import AdminAssignAdviser from "./pages/admin/AdminAssignAdviser.jsx";
 import AdminAssignSubjectTeacher from "./pages/admin/AdminAssignSubjectTeacher.jsx";
 import AdminAttendance from "./pages/admin/AdminAttendance";
-import AdminReports from "./pages/admin/AdminReports";
 import AdminCreateTeacher from "./pages/admin/AdminCreateTeacher.jsx";
 import AdminSettings from "./pages/admin/AdminSettings.jsx";
+
+import { Toaster } from 'react-hot-toast';  
 
 const GOOGLE_CLIENT_ID = "545992268289-4fp8qedhktkyccfhfdedkjpn2pc6.apps.googleusercontent.com";
 
@@ -44,6 +45,31 @@ function App() {
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       <Router>
+        <Toaster 
+          position="top-right"          
+          toastOptions={{
+            duration: 5000,             
+            style: {
+              borderRadius: '10px',
+              background: 'white',
+              color: 'black',
+              border: '1px solid #ccc',
+              padding: '16px',
+              boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+            },
+            error: {
+              style: {
+                borderLeft: '6px solid #B22222', 
+              },
+            },
+            success: {
+              style: {
+                borderLeft: '6px solid #16a34a',
+              },
+            },
+          }}
+        />
+
         <Routes>
           <Route path="/" element={<Navigate to="/create-account" replace />} />
 
@@ -82,7 +108,6 @@ function App() {
             <Route path="/admin/assign-subject-teacher" element={<AdminAssignSubjectTeacher />} />
             <Route path="/admin/admin/classlist/:id" element={<AdminClassList />} />
             <Route path="/admin/admin-attendance" element={<AdminAttendance />} />
-            <Route path="/admin/admin-reports" element={<AdminReports />} />
             <Route path="/admin/create-teacher" element={<AdminCreateTeacher />} />
             <Route path="/admin/settings" element={<AdminSettings />} />
           </Route>

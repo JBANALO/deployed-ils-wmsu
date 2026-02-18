@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { XMarkIcon, CheckIcon, ExclamationTriangleIcon, ArrowDownTrayIcon } from '@heroicons/react/24/solid';
 import { parseCSVFile, processTeacherData, validateTeacherData, generateEmail, generateUsername } from '../../utils/csvParser';
 import { authService } from '../../api/userService';
+import toast from 'react-hot-toast';
 
 export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
   const [step, setStep] = useState('upload'); // 'upload', 'preview', 'importing', 'complete'
@@ -32,6 +33,7 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
     link.href = URL.createObjectURL(blob);
     link.download = 'teacher-import-template.csv';
     link.click();
+    toast.success('Teacher import template downloaded successfully');
   };
 
   const handleFileUpload = async (e) => {
@@ -135,8 +137,8 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 sm:p-6">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between bg-gradient-to-r from-red-800 to-red-900 text-white p-6 sticky top-0">
           <h2 className="text-2xl font-bold">Teacher Bulk Import (CSV)</h2>
