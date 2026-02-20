@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import toast from 'react-hot-toast';
 import { 
   AcademicCapIcon, 
   PencilSquareIcon, 
@@ -116,15 +117,15 @@ export default function AdminStudents() {
       });
 
       if (response.ok) {
-        alert('✅ Student updated successfully!');
+        toast.success('Student updated successfully!');
         fetchStudents(); // Refresh list
         setShowEditModal(false);
       } else {
-        alert('❌ Failed to update student: ' + response.statusText);
+        toast.error('Failed to update student: ' + response.statusText);
       }
     } catch (error) {
       console.error('Error updating student:', error);
-      alert('❌ Failed to update student');
+      toast.error('Failed to update student');
     }
   };
 
@@ -138,14 +139,14 @@ export default function AdminStudents() {
       });
 
       if (response.ok) {
-        alert('✅ Student deleted successfully!');
+        toast.success('Student deleted successfully!');
         fetchStudents(); // Refresh list
       } else {
-        alert('❌ Failed to delete student: ' + response.statusText);
+        toast.error('Failed to delete student: ' + response.statusText);
       }
     } catch (error) {
       console.error('Error deleting student:', error);
-      alert('❌ Failed to delete student');
+      toast.error('Failed to delete student');
     }
   };
 
@@ -195,7 +196,7 @@ export default function AdminStudents() {
   // BULK DELETE
   const handleBulkDelete = async () => {
     if (selectedStudents.size === 0) {
-      alert('Please select students to delete');
+      toast.error('Please select students to delete');
       return;
     }
 
@@ -213,13 +214,13 @@ export default function AdminStudents() {
           successCount++;
         }
       }
-      alert(`✅ Successfully deleted ${successCount} student(s)`);
+      toast.success(`Successfully deleted ${successCount} student(s)`);
       setSelectedStudents(new Set());
       setSelectAll(false);
       fetchStudents();
     } catch (error) {
       console.error('Error deleting students:', error);
-      alert('❌ Error deleting students');
+      toast.error('Error deleting students');
     }
   };
 
@@ -509,7 +510,7 @@ export default function AdminStudents() {
 
       {/* QR CODE MODAL */}
       {showQRModal && selectedStudent && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
             <h3 className="text-xl font-bold mb-4">QR Code - {selectedStudent.fullName}</h3>
             <div className="flex justify-center mb-4">
@@ -552,8 +553,8 @@ export default function AdminStudents() {
 
       {/* EDIT MODAL */}
       {showEditModal && selectedStudent && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto hide-scrollbar">
             <h3 className="text-xl font-bold mb-4">Edit Student - {selectedStudent.fullName}</h3>
             <div className="space-y-4">
               <div>
@@ -641,7 +642,7 @@ export default function AdminStudents() {
 
       {/* VIEW DETAILS MODAL */}
       {showViewModal && selectedStudent && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-lg w-full">
             <h3 className="text-xl font-bold mb-4">Student Details</h3>
             <div className="space-y-3">
@@ -684,7 +685,7 @@ export default function AdminStudents() {
 
       {/* CREDENTIALS MODAL */}
       {showCredentialsModal && selectedStudent && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-8 max-w-md w-full">
             <h3 className="text-2xl font-bold mb-6 text-red-800">Student Credentials</h3>
             <div className="space-y-4 bg-gray-50 p-4 rounded-lg border-2 border-gray-200">
@@ -699,7 +700,7 @@ export default function AdminStudents() {
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(selectedStudent.username);
-                      alert('Username copied to clipboard!');
+                      toast.success('Username copied to clipboard!');
                     }}
                     className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
                   >
@@ -714,7 +715,7 @@ export default function AdminStudents() {
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(selectedStudent.email);
-                      alert('Email copied to clipboard!');
+                      toast.success('Email copied to clipboard!');
                     }}
                     className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
                   >
@@ -729,7 +730,7 @@ export default function AdminStudents() {
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(selectedStudent.password);
-                      alert('Password copied to clipboard!');
+                      toast.success('Password copied to clipboard!');
                     }}
                     className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
                   >

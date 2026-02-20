@@ -3,6 +3,7 @@ import { UsersIcon, CheckIcon, XMarkIcon, PencilSquareIcon, TrashIcon, EyeIcon, 
 import { useNavigate } from "react-router-dom";
 import TeacherBulkImportModal from "../../components/modals/TeacherBulkImportModal";
 import api from "../../api/axiosConfig";
+import toast from 'react-hot-toast';
 
 export default function AdminTeachers() {
   const navigate = useNavigate();
@@ -81,10 +82,10 @@ export default function AdminTeachers() {
         setSelectedTeachers(new Set());
         setSelectAll(false);
         await fetchTeachers();
-        alert(`Successfully deleted ${selectedTeachers.size} teachers`);
+        toast.success(`${selectedTeachers.size} teacher records have been successfully removed`);
       } catch (error) {
         console.error('Error deleting teachers:', error);
-        alert('Failed to delete some teachers');
+        toast.error('Some teacher records could not be removed. Please try again.');
       }
     }
   };
@@ -94,10 +95,10 @@ export default function AdminTeachers() {
       try {
         await api.delete(`/users/${teacherId}`);
         await fetchTeachers();
-        alert('Teacher deleted successfully');
+        toast.success('Teacher record has been successfully removed');
       } catch (error) {
         console.error('Error deleting teacher:', error);
-        alert('Failed to delete teacher');
+        toast.error('Unable to remove teacher record. Please try again.');
       }
     }
   };
@@ -136,10 +137,10 @@ export default function AdminTeachers() {
       
       await fetchTeachers();
       setShowEditModal(false);
-      alert('Teacher updated successfully');
+      toast.success('Teacher information has been successfully updated');
     } catch (error) {
       console.error('Error updating teacher:', error);
-      alert(`Failed to update teacher: ${error.message}`);
+      toast.error(`Unable to update teacher information: ${error.message}`);
     }
   };
 
@@ -215,14 +216,14 @@ export default function AdminTeachers() {
                 onClick={handleBulkDelete}
                 className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 text-sm font-semibold"
               >
-                ðŸ—‘ï¸ Delete {selectedTeachers.size} Selected
+                Delete ~ {selectedTeachers.size} Selected
               </button>
             ) : filteredTeachers.length > 0 && (
               <button
                 onClick={toggleSelectAll}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold"
               >
-                ðŸ“‹ Select All
+                Select All
               </button>
             )}
           </div>
@@ -365,13 +366,10 @@ export default function AdminTeachers() {
 
       {/* VIEW TEACHER MODAL */}
       {showViewModal && selectedTeacher && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 sm:p-6">
           <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-bold text-red-800">Teacher Details</h3>
-              <button onClick={() => setShowViewModal(false)} className="text-gray-500 hover:text-gray-700">
-                <XMarkIcon className="w-6 h-6" />
-              </button>
             </div>
             <div className="space-y-3">
               <div>
@@ -415,13 +413,10 @@ export default function AdminTeachers() {
 
       {/* EDIT TEACHER MODAL */}
       {showEditModal && selectedTeacher && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 sm:p-6">
           <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-bold text-red-800">Edit Teacher</h3>
-              <button onClick={() => setShowEditModal(false)} className="text-gray-500 hover:text-gray-700">
-                <XMarkIcon className="w-6 h-6" />
-              </button>
             </div>
             <div className="space-y-3">
               <div>
@@ -526,7 +521,7 @@ export default function AdminTeachers() {
 
       {/* CREDENTIALS MODAL */}
       {showCredentialsModal && selectedTeacher && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 sm:p-6">
           <div className="bg-white rounded-lg p-8 max-w-md w-full">
             <h3 className="text-2xl font-bold mb-6 text-red-800">Teacher Credentials</h3>
             <div className="space-y-4 bg-gray-50 p-4 rounded-lg border-2 border-gray-200">
@@ -541,7 +536,7 @@ export default function AdminTeachers() {
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(selectedTeacher.username);
-                      alert('Username copied to clipboard!');
+                      toast.success('Username copied to clipboard');
                     }}
                     className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
                   >
@@ -556,7 +551,7 @@ export default function AdminTeachers() {
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(selectedTeacher.email);
-                      alert('Email copied to clipboard!');
+                      toast.success('Email address copied to clipboard');
                     }}
                     className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
                   >
@@ -571,7 +566,7 @@ export default function AdminTeachers() {
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(selectedTeacher.plainPassword || 'Password123');
-                      alert('Password copied to clipboard!');
+                      toast.success('Password copied to clipboard');
                     }}
                     className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
                   >
