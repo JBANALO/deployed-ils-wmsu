@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { CheckCircleIcon, XCircleIcon, ClockIcon } from "@heroicons/react/24/solid";
 import api from "../../api/axiosConfig";
+import toast from 'react-hot-toast';
 
 export default function AdminApprovals() {
   const [pendingUsers, setPendingUsers] = useState([]);
@@ -57,10 +58,10 @@ export default function AdminApprovals() {
       setSelectedUser(null);
       setSelectedRole("");
       await fetchPendingUsers();
-      alert(`✅ User approved as ${roleOptions.find(r => r.value === selectedRole)?.label}!`);
+      toast.success(`User approved as ${roleOptions.find(r => r.value === selectedRole)?.label}!`);
     } catch (error) {
       console.error('Error approving user:', error);
-      alert('Failed to approve user: ' + error.message);
+      toast.error('Failed to approve user: ' + error.message);
     } finally {
       setActionInProgress(false);
     }
@@ -83,10 +84,10 @@ export default function AdminApprovals() {
       setDeclineReason("");
       setSelectedUser(null);
       await fetchPendingUsers();
-      alert('❌ User declined successfully!');
+      toast.success('User declined successfully!');
     } catch (error) {
       console.error('Error declining user:', error);
-      alert('Failed to decline user: ' + error.message);
+      toast.error('Failed to decline user: ' + error.message);
     } finally {
       setActionInProgress(false);
     }

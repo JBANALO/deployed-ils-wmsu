@@ -8,6 +8,7 @@ import {
 } from "@heroicons/react/24/outline";
 import QRCode from "qrcode";
 import axios from "../../api/axiosConfig";
+import toast from 'react-hot-toast';
 import ViewStudentModal from '@/components/modals/ViewStudentModal'
 import EditStudentModal from '@/components/modals/EditStudentModal'
 import DeleteRequestModal from '@/components/modals/DeleteRequestModal'
@@ -117,13 +118,13 @@ export default function ClassList() {
       const response = await axios.put(`/students/${selectedStudent.id}`, updatedData);
 
       if (response.data.success || response.status === 200) {
-        alert('Student updated successfully!');
+        toast.success('Student updated successfully!');
         fetchStudents();
         setShowEditModal(false);
       }
     } catch (error) {
       console.error('Error updating student:', error);
-      alert('Failed to update student');
+      toast.error('Failed to update student');
     }
   };
 
@@ -135,7 +136,7 @@ export default function ClassList() {
 
   const submitDeleteRequest = async () => {
     if (!deleteReason.trim()) {
-      alert("Please provide a reason for deletion.");
+      toast.error('Please provide a reason for deletion.');
       return;
     }
 
@@ -151,19 +152,19 @@ export default function ClassList() {
       });
 
       if (response.data.success || response.status === 200) {
-        alert('Delete request sent to admin for approval!');
+        toast.success('Delete request sent to admin for approval!');
         setShowDeleteRequestModal(false);
         setDeleteReason("");
       } else {
-        alert('Failed to send delete request');
+        toast.error('Failed to send delete request');
       }
     } catch (error) {
       console.error('Error submitting delete request:', error);
       // Check if it's a 404 (endpoint doesn't exist), then show a message
       if (error.response?.status === 404) {
-        alert('Delete request feature coming soon. Please contact admin directly.');
+        toast.error('Delete request feature coming soon. Please contact admin directly.');
       } else {
-        alert('Failed to send delete request');
+        toast.error('Failed to send delete request');
       }
       setShowDeleteRequestModal(false);
     }
