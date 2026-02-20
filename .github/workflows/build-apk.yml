@@ -1,0 +1,56 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, development]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Setup EAS
+        run: npm install -g eas-cli
+      
+      - name: Install dependencies (root)
+        run: npm install
+      
+      - name: Install dependencies (mobile app)
+        run: cd MyNewApp && npm install
+      
+      - name: Authenticate with EAS
+        run: eas login --non-interactive --username ${{ secrets.EAS_USERNAME }} --password ${{ secrets.EAS_PASSWORD }}
+      
+      - name: Build APK
+        run: cd MyNewApp && eas build --platform android --non-interactive --wait
+      
+      - name: Download APK
+        run: |
+          cd MyNewApp
+          BUILD_ID=$(eas build list --platform android --limit 1 --json | jq -r '.[0].id')
+          echo "BUILD_ID=$BUILD_ID" >> $GITHUB_ENV
+          eas build download --id $BUILD_ID --path ./app-release.apk --non-interactive || echo "fallback download"
+      
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release.apk
+          path: MyNewApp/app-release.apk
+          retention-days: 30
+      
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: MyNewApp/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
