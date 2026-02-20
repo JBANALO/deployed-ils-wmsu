@@ -1,8 +1,21 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert, Modal, TextInput, Image, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert, Modal, TextInput, Image, ActivityIndicator, KeyboardAvoidingView } from 'react-native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthProvider';
+import { useAttendance } from '../context/AttendanceContext';
+
+// Detect if running on web
+const isWeb = typeof window !== 'undefined';
+// Safe Platform access - only imported when not on web
+let Platform = null;
+if (!isWeb) {
+  try {
+    Platform = require('react-native').Platform;
+  } catch (e) {
+    Platform = { OS: 'android' };
+  }
+}
 
 export default function ProfileScreen({ navigation }) {
   const { user, userData, logout, refreshUserData, changePassword } = useAuth();
@@ -376,7 +389,7 @@ export default function ProfileScreen({ navigation }) {
         onRequestClose={() => setEditModalVisible(false)}
       >
         <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={isWeb ? 'height' : (Platform?.OS === 'ios' ? 'padding' : 'height')}
           style={styles.modalOverlay}
         >
           <View style={styles.modalContent}>
@@ -494,7 +507,7 @@ export default function ProfileScreen({ navigation }) {
         onRequestClose={() => setChangePasswordModalVisible(false)}
       >
         <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={isWeb ? 'height' : (Platform?.OS === 'ios' ? 'padding' : 'height')}
           style={styles.modalOverlay}
         >
           <View style={styles.modalContent}>

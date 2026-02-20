@@ -3,7 +3,6 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { Platform } from 'react-native';
 import AuthProvider from './context/AuthProvider';
 import { AttendanceProvider } from './context/AttendanceContext';
 
@@ -16,6 +15,18 @@ import ScanQRScreen from './Screens/ScanQRScreen';
 import ProfileScreen from './Screens/ProfileScreen';
 import TermsScreen from './Screens/TermsScreen';
 import ConnectionTest from './components/ConnectionTest';
+
+// Detect if running on web
+const isWeb = typeof window !== 'undefined';
+// Safe Platform access - only imported when not on web
+let Platform = null;
+if (!isWeb) {
+  try {
+    Platform = require('react-native').Platform;
+  } catch (e) {
+    Platform = { OS: 'android' };
+  }
+}
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -36,8 +47,8 @@ function MainTabs() {
           backgroundColor: '#fff',
           borderTopWidth: 1,
           borderTopColor: '#e0e0e0',
-          height: Platform.OS === 'ios' ? 85 : 70, 
-          paddingBottom: Platform.OS === 'ios' ? 20 : 12,
+          height: isWeb ? 70 : (Platform?.OS === 'ios' ? 85 : 70), 
+          paddingBottom: isWeb ? 12 : (Platform?.OS === 'ios' ? 20 : 12),
           paddingTop: 8,
           shadowColor: '#000', 
           shadowOffset: {
