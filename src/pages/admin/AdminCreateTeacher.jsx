@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../../api/userService";
+import { toast } from 'react-toastify';
 
 export default function AdminCreateTeacher() {
   const [formData, setFormData] = useState({
@@ -70,7 +71,7 @@ export default function AdminCreateTeacher() {
         navigate('/admin/approvals');
       }, 2000);
     } catch (err) {
-      console.error('Registration error:', err);
+      toast.error("Registration error: " + (err.message || "Failed to create teacher account."));
       setError(err.message || "Failed to create teacher account.");
     } finally {
       setIsSubmitting(false);

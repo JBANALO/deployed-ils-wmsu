@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { UserCircleIcon } from "@heroicons/react/24/outline";
 import QRCode from 'qrcode';
 import { API_BASE_URL } from "../../api/config";
+import { toast } from 'react-toastify';
 
 export default function AdminCreateK3() {
   const [formData, setFormData] = useState({
@@ -102,8 +103,8 @@ export default function AdminCreateK3() {
         alert(`Failed: ${result.error}`);
       }
     } catch (error) {
-      console.error('Error:', error);
-      alert('Error: ' + error.message);
+      toast.error('Error: ' + error.message);
+      toast.error('Error: ' + error.message);
     }
   };
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { ClipboardDocumentIcon, PencilSquareIcon, TrashIcon, MagnifyingGlassIcon, EyeIcon } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
+import { toast } from 'react-toastify';
 
 export default function AdminGrades() {
   const [students, setStudents] = useState([]);
@@ -55,7 +56,7 @@ export default function AdminGrades() {
 
       setLoading(false);
     } catch (error) {
-      console.error('Error loading grades:', error);
+      toast.error('Error loading grades: ' + error.message);
       setLoading(false);
     }
   };

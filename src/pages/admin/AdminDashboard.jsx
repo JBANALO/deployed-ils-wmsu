@@ -8,6 +8,7 @@ import {
   ClockIcon,
   ArrowDownTrayIcon
 } from "@heroicons/react/24/solid";
+import { toast } from 'react-toastify';
 import axios from "../../api/axiosConfig";
 import SF2AttendanceForm from "../../components/SF2AttendanceForm";
 import { useNavigate } from "react-router-dom";
@@ -218,7 +219,7 @@ const loadDashboardStats = async () => {
     setLoading(false);
 
   } catch (error) {
-    console.error('Error loading dashboard stats:', error);
+    toast.error('Error loading dashboard stats: ' + error.message);
     setLoading(false);
   }
 };

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { CheckCircleIcon, XCircleIcon, ClockIcon } from "@heroicons/react/24/solid";
 import api from "../../api/axiosConfig";
+import { toast } from 'react-toastify';
 
 export default function AdminTeacherApproval() {
   const [pendingTeachers, setPendingTeachers] = useState([]);
@@ -20,7 +21,7 @@ export default function AdminTeacherApproval() {
       setPendingTeachers(response.data?.data?.teachers || []);
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching pending teachers:', error);
+      toast.error('Error fetching pending teachers: ' + error.message);
       setPendingTeachers([]);
       setLoading(false);
     }
@@ -32,10 +33,10 @@ export default function AdminTeacherApproval() {
         setActionInProgress(true);
         await api.post(`/users/${teacherId}/approve`);
         await fetchPendingTeachers();
-        alert('Teacher approved successfully!');
+        toast.success('Teacher approved successfully!');
       } catch (error) {
-        console.error('Error approving teacher:', error);
-        alert('Failed to approve teacher: ' + error.message);
+        toast.error('Error approving teacher: ' + error.message);
+        toast.error('Failed to approve teacher: ' + error.message);
       } finally {
         setActionInProgress(false);
       }
@@ -59,10 +60,10 @@ export default function AdminTeacherApproval() {
       setDeclineReason("");
       setSelectedTeacher(null);
       await fetchPendingTeachers();
-      alert('Teacher declined successfully!');
+      toast.success('Teacher declined successfully!');
     } catch (error) {
-      console.error('Error declining teacher:', error);
-      alert('Failed to decline teacher: ' + error.message);
+      toast.error('Error declining teacher: ' + error.message);
+      toast.error('Failed to decline teacher: ' + error.message);
     } finally {
       setActionInProgress(false);
     }
