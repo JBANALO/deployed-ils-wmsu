@@ -3,7 +3,7 @@ const mysql = require('mysql2/promise');
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 3307,
+  port: process.env.DB_PORT || 3306,
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'wmsu_ed',
@@ -93,6 +93,34 @@ const createTables = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
         UNIQUE KEY unique_student_subject (student_id, subject)
+      )`,
+
+      // Classes Table
+      `CREATE TABLE IF NOT EXISTS classes (
+        id VARCHAR(255) PRIMARY KEY COMMENT 'Unique class identifier',
+        grade VARCHAR(50) NOT NULL,
+        section VARCHAR(100) NOT NULL,
+        adviser_id VARCHAR(255),
+        adviser_name VARCHAR(200),
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY grade_section (grade, section),
+        INDEX idx_adviser (adviser_id),
+        FOREIGN KEY (adviser_id) REFERENCES users(id) ON DELETE SET NULL
+      )`,
+
+      // Subject Teachers Table
+      `CREATE TABLE IF NOT EXISTS subject_teachers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        class_id VARCHAR(255) NOT NULL,
+        teacher_id VARCHAR(255) NOT NULL,
+        teacher_name VARCHAR(200) NOT NULL,
+        subject VARCHAR(100) NOT NULL,
+        assignedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
+        FOREIGN KEY (teacher_id) REFERENCES users(id) ON DELETE CASCADE,
+        INDEX idx_class_teacher (class_id, teacher_id),
+        INDEX idx_subject (subject)
       )`
     ];
 

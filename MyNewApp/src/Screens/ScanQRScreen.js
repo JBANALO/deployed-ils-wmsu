@@ -6,7 +6,7 @@ import { useAttendance } from '../context/AttendanceContext';
 import { useAuth } from '../context/AuthProvider';
 import { attendanceAPI } from '../services/api';
 
-const API_BASE_URL = 'http://192.168.0.153:5000/api';
+const API_BASE_URL = 'https://deployed-ils-wmsu-production.up.railway.app/api';
 
 export default function ScanQRScreen() {
   const [scannedStudent, setScannedStudent] = useState(null);
@@ -82,7 +82,7 @@ export default function ScanQRScreen() {
       if (studentIdFromQR) {
         try {
           // Get all students and check if the scanned student exists
-          const response = await fetch(`http://192.168.0.153:5000/api/students`, {
+          const response = await fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/students`, {
             headers: {
               'Authorization': `Bearer ${user.token}`,
               'Content-Type': 'application/json',

@@ -1,7 +1,19 @@
 // API service for connecting to backend
-// Connected to local backend (using machine IP for physical device)
-const API_BASE_URL = 'http://192.168.1.169:3001/api'; // Machine IP for physical device testing
-const TIMEOUT = 10000; // 10 seconds timeout
+// Supports both development and production environments
+
+// Development: http://192.168.x.x:3001/api (local machine IP)
+// Production: https://deployed-ils-wmsu-production.up.railway.app/api
+
+// For development, replace with your machine's local IP:
+// Get IP on Windows: ipconfig (look for IPv4 Address)
+// Ensure backend is running on port 3001
+
+// Configuration can be changed here:
+const API_BASE_URL = 'https://deployed-ils-wmsu-production.up.railway.app/api'; // Railway production backend
+// For local development, uncomment and set to your machine IP:
+// const API_BASE_URL = 'http://192.168.x.x:3001/api'; // Replace with your machine IP
+
+const TIMEOUT = 30000; // 30 seconds timeout
 
 const fetchWithTimeout = (url, options = {}, timeout = TIMEOUT) => {
   return Promise.race([
@@ -10,6 +22,60 @@ const fetchWithTimeout = (url, options = {}, timeout = TIMEOUT) => {
       setTimeout(() => reject(new Error('Network request timed out')), timeout)
     )
   ]);
+};
+
+export const authAPI = {
+  // Login endpoint
+  login: async (emailOrUsername, password) => {
+    try {
+      const loginData = emailOrUsername.includes('@') 
+        ? { email: emailOrUsername, password }
+        : { username: emailOrUsername, password };
+      
+      const response = await fetchWithTimeout(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(loginData),
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.message || `Server error: ${response.status}`);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
+    }
+  },
+
+  // Get adviser classes
+  getAdviserClasses: async (userId) => {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/classes/adviser/${userId}`);
+      const result = await response.json();
+      return result.data || result;
+    } catch (error) {
+      console.error('Error fetching adviser classes:', error);
+      throw error;
+    }
+  },
+
+  // Get subject teacher classes
+  getSubjectTeacherClasses: async (userId) => {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/classes/subject-teacher/${userId}`);
+      const result = await response.json();
+      return result.data || result;
+    } catch (error) {
+      console.error('Error fetching subject teacher classes:', error);
+      throw error;
+    }
+  }
 };
 
 export const attendanceAPI = {

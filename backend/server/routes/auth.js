@@ -107,12 +107,12 @@ router.post('/login', async (req, res) => {
       id: user.id,
       email: user.email,
       username: user.username,
-      firstName: user.first_name,
-      lastName: user.last_name,
-      fullName: user.full_name,
+      firstName: user.firstName || user.first_name || '',
+      lastName: user.lastName || user.last_name || '',
+      fullName: user.fullName || user.full_name || user.firstName + ' ' + user.lastName || '',
       role: user.role,
-      profilePic: user.profile_pic || null,
-      subjectsHandled: user.subjects_handled ? user.subjects_handled.split(',').map(s => s.trim()) : []
+      profilePic: user.profilePic || user.profile_pic || null,
+      subjectsHandled: user.subjectsHandled || user.subjects_handled ? (user.subjectsHandled || user.subjects_handled).split(',').map(s => s.trim()) : []
     };
 
     return res.json({

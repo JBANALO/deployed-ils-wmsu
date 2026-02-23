@@ -1,7 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, StatusBar, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, StatusBar, Alert, KeyboardAvoidingView } from 'react-native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthProvider';
+
+// Detect if running on web
+const isWeb = typeof window !== 'undefined';
+// Safe Platform access - only imported when not on web
+let Platform = null;
+if (!isWeb) {
+  try {
+    Platform = require('react-native').Platform;
+  } catch (e) {
+    Platform = { OS: 'android' };
+  }
+}
 
 export default function RegisterScreen({ navigation }) {
   const { register } = useAuth();
@@ -101,7 +113,7 @@ export default function RegisterScreen({ navigation }) {
     <>
       <StatusBar backgroundColor="#8B0000" barStyle="light-content" />
       <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={isWeb ? 'height' : (Platform?.OS === 'ios' ? 'padding' : 'height')}
         style={{ flex: 1 }}
       >
         <ScrollView 

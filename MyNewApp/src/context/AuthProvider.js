@@ -1,7 +1,35 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authAPI } from '../services/api'; // Use the new authAPI
 
 const AuthContext = createContext();
+
+// Check if running on web
+const isWeb = typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+
+// Simple localStorage replacement for web
+const storageManager = {
+  getItem: async (key) => {
+    if (isWeb) {
+      return localStorage.getItem(key) || null;
+    }
+    return AsyncStorage.getItem(key);
+  },
+  setItem: async (key, value) => {
+    if (isWeb) {
+      localStorage.setItem(key, value);
+      return;
+    }
+    return AsyncStorage.setItem(key, value);
+  },
+  removeItem: async (key) => {
+    if (isWeb) {
+      localStorage.removeItem(key);
+      return;
+    }
+    return AsyncStorage.removeItem(key);
+  }
+};
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -21,7 +49,7 @@ export default function AuthProvider({ children }) {
 
   const loadStoredUser = async () => {
     try {
-      const storedUser = await AsyncStorage.getItem('user');
+      const storedUser = await storageManager.getItem('user');
       if (storedUser) {
         setUser(JSON.parse(storedUser));
       }
@@ -36,40 +64,8 @@ export default function AuthProvider({ children }) {
     try {
       console.log('=== LOGIN ATTEMPT ===');
       console.log('Email/Username:', emailOrUsername);
-      console.log('Backend URL: http://192.168.1.169:3001/api/auth/login');
       
-      const loginData = emailOrUsername.includes('@') 
-        ? { email: emailOrUsername, password }
-        : { username: emailOrUsername, password };
-      
-      console.log('Sending login data:', JSON.stringify(loginData));
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
-      const response = await fetch('http://192.168.1.169:3001/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(loginData),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-
-      console.log('Response received! Status:', response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Server error response:', errorText);
-        return { 
-          success: false, 
-          error: `Server error: ${response.status}` 
-        };
-      }
-
-      const result = await response.json();
+      const result = await authAPI.login(emailOrUsername, password);
       console.log('Login response:', JSON.stringify(result));
 
       if (result.status === 'success' && result.data && result.data.user) {
@@ -77,7 +73,7 @@ export default function AuthProvider({ children }) {
           ...result.data.user,
           token: result.token
         };
-        await AsyncStorage.setItem('user', JSON.stringify(userData));
+        await storageManager.setItem('user', JSON.stringify(userData));
         setUser(userData);
         console.log('✅ Login successful!');
         return { success: true };
@@ -99,9 +95,11 @@ export default function AuthProvider({ children }) {
       if (error.name === 'AbortError') {
         errorMsg = 'Connection timeout - server took too long to respond';
       } else if (error.message?.includes('Network request')) {
-        errorMsg = 'Network error - cannot reach server at 192.168.1.169:3001';
+        errorMsg = 'Network error - cannot reach server';
       } else if (error.message?.includes('fetch')) {
         errorMsg = 'Network connection failed - ' + error.message;
+      } else {
+        errorMsg = error.message || errorMsg;
       }
       
       console.error('Final error message:', errorMsg);
@@ -113,10 +111,18 @@ export default function AuthProvider({ children }) {
     }
   };
 
+  const register = async (userData) => {
+    // Registration not yet implemented
+    return { 
+      success: false, 
+      error: 'Registration is not yet available. Please contact your administrator.' 
+    };
+  };
+
   const logout = async () => {
     try {
-      await AsyncStorage.removeItem('user');
-      await AsyncStorage.removeItem('token');
+      await storageManager.removeItem('user');
+      await storageManager.removeItem('token');
       setUser(null);
       return { success: true };
     } catch (error) {
@@ -130,6 +136,7 @@ export default function AuthProvider({ children }) {
     loading,
     login,
     logout,
+    register,
   };
 
   return (

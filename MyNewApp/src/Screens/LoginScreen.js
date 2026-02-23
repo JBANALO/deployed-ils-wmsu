@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { 
   View, 
@@ -9,12 +8,23 @@ import {
   ActivityIndicator, 
   StatusBar,
   KeyboardAvoidingView,
-  Platform,
   Alert,
   ScrollView
 } from 'react-native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthProvider';
+
+// Detect if running on web
+const isWeb = typeof window !== 'undefined';
+// Safe Platform access - only imported when not on web
+let Platform = null;
+if (!isWeb) {
+  try {
+    Platform = require('react-native').Platform;
+  } catch (e) {
+    Platform = { OS: 'android' };
+  }
+}
 
 export default function LoginScreen({ navigation }) {
   const { login } = useAuth();
@@ -66,7 +76,7 @@ export default function LoginScreen({ navigation }) {
       <StatusBar backgroundColor="#8B0000" barStyle="light-content" />
       <KeyboardAvoidingView 
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={isWeb ? 'height' : (Platform?.OS === 'ios' ? 'padding' : 'height')}
       >
         <ScrollView 
           contentContainerStyle={styles.scrollContainer}

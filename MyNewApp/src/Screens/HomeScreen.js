@@ -71,7 +71,7 @@ export default function HomeScreen() {
     setLoading(true);
     try {
       // Load students from backend API
-      const response = await fetch(`http://192.168.0.153:5000/api/students?teacherId=${user.id}`, {
+      const response = await fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/students?teacherId=${user.id}`, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
           'Content-Type': 'application/json',

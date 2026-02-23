@@ -139,4 +139,78 @@ router.get('/:classId', async (req, res) => {
   }
 });
 
+// Get classes where user is the adviser
+router.get('/adviser/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const [classes] = await pool.query(`
+      SELECT c.*, 
+             GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects,
+             GROUP_CONCAT(DISTINCT CONCAT_WS(':', st.teacher_id, st.teacher_name, st.subject) SEPARATOR '|') as subject_teachers_list
+      FROM classes c
+      LEFT JOIN subject_teachers st ON c.id = st.class_id
+      WHERE c.adviser_id = ?
+      GROUP BY c.id
+      ORDER BY c.grade, c.section
+    `, [userId]);
+    
+    const classesWithDetails = classes.map(cls => {
+      const subjects = cls.subjects ? cls.subjects.split(',') : [];
+      const subjectTeachersList = cls.subject_teachers_list ? cls.subject_teachers_list.split('|').map(st => {
+        const [teacher_id, teacher_name, subject] = st.split(':');
+        return { teacher_id, teacher_name, subject };
+      }) : [];
+      
+      return {
+        ...cls,
+        subjects,
+        subject_teachers: subjectTeachersList
+      };
+    });
+    
+    res.json({ data: classesWithDetails });
+  } catch (err) {
+    console.error('Error fetching adviser classes:', err);
+    res.status(500).json({ error: 'Failed to fetch adviser classes' });
+  }
+});
+
+// Get classes where user is a subject teacher
+router.get('/subject-teacher/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const [classes] = await pool.query(`
+      SELECT DISTINCT c.*, 
+             GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects,
+             GROUP_CONCAT(DISTINCT CONCAT_WS(':', st.teacher_id, st.teacher_name, st.subject) SEPARATOR '|') as subject_teachers_list
+      FROM classes c
+      INNER JOIN subject_teachers st ON c.id = st.class_id
+      WHERE st.teacher_id = ?
+      GROUP BY c.id
+      ORDER BY c.grade, c.section
+    `, [userId]);
+    
+    const classesWithDetails = classes.map(cls => {
+      const subjects = cls.subjects ? cls.subjects.split(',') : [];
+      const subjectTeachersList = cls.subject_teachers_list ? cls.subject_teachers_list.split('|').map(st => {
+        const [teacher_id, teacher_name, subject] = st.split(':');
+        return { teacher_id, teacher_name, subject };
+      }) : [];
+      
+      return {
+        ...cls,
+        subjects,
+        subject_teachers: subjectTeachersList
+      };
+    });
+    
+    res.json({ data: classesWithDetails });
+  } catch (err) {
+    console.error('Error fetching subject teacher classes:', err);
+    res.status(500).json({ error: 'Failed to fetch subject teacher classes' });
+  }
+});
+
 module.exports = router;
