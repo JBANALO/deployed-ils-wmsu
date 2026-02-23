@@ -1,0 +1,37 @@
+workflows:
+  expo-android-build:
+    name: WMSU ElemScan Android APK
+    instance_type: mac_mini
+    max_build_duration: 120
+    environment:
+      node: latest
+      groups:
+        - expo_credentials
+    triggering:
+      events:
+        - push
+      branch:
+        patterns:
+          - pattern: main
+            include: true
+    scripts:
+      - name: Install root dependencies
+        script: npm ci
+      - name: Navigate and install mobile dependencies
+        script: cd MyNewApp && npm ci
+      - name: Install EAS CLI
+        script: npm install -g eas-cli
+      - name: Build APK via EAS
+        script: |
+          cd MyNewApp
+          eas build --platform android --non-interactive --wait --no-wait
+    artifacts:
+      - MyNewApp/dist/**/*.apk
+      - MyNewApp/build/**/*.apk
+    publishing:
+      email:
+        recipients:
+          - josiebanalo@gmail.com
+        notify:
+          success: true
+          failure: true
