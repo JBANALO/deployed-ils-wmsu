@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { EyeIcon, EyeSlashIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import { GoogleLogin } from "@react-oauth/google";
@@ -12,6 +12,16 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const navigate = useNavigate();
+
+  // Pre-fill email from localStorage if coming from account creation
+  useEffect(() => {
+    const pendingEmail = localStorage.getItem('pendingEmail');
+    if (pendingEmail) {
+      setEmail(pendingEmail);
+      // Clear the stored email after using it
+      localStorage.removeItem('pendingEmail');
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -35,7 +45,7 @@ export default function LoginPage() {
       const response = await authService.login(loginData);
 
       const user = response?.data?.user;
-      const role = user?.role?.toLowerCase();
+      const role = user?.role;
 
       if (!role) {
         setError("Login succeeded but no role was returned.");
@@ -47,27 +57,19 @@ export default function LoginPage() {
         localStorage.setItem('user', JSON.stringify(user));
       }
 
-      if (role === "admin") {
+      // Normalize role for comparison
+      const normalizedRole = role?.toLowerCase().trim();
+      
+      if (normalizedRole === "admin") {
         navigate("/admin/admin-dashboard");
-      } else if (role === "teacher" || role === "subject_teacher" || role === "adviser") {
+      } else if (normalizedRole === "teacher" || normalizedRole === "subject_teacher" || normalizedRole === "adviser") {
         navigate("/teacher/teacher-dashboard");
       } else {
         navigate("/student/student-dashboard");
       }
     } catch (err) {
       const errorMsg = err.message || "Login failed. Please check your credentials.";
-      
-      // Check if error is about pending approval
-      if (errorMsg.includes('pending') || errorMsg.includes('approval')) {
-        setError(
-          "⏳ Your account is pending admin approval.\n" +
-          "Please wait up to 24 hours for the administrator to review and approve your account."
-        );
-      } else if (errorMsg.includes('declined')) {
-        setError("❌ Your account has been declined. Please contact the administrator for more information.");
-      } else {
-        setError(errorMsg);
-      }
+      setError(errorMsg);
     } finally {
       setIsSubmitting(false);
     }

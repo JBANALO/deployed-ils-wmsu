@@ -1,18 +1,10 @@
 import { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { EyeIcon, EyeSlashIcon } from "@heroicons/react/24/solid";
 import { authService } from "../../api/userService";
 import { toast } from 'react-toastify';
 
-export default function CreateAccount() {
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  const isStudent = location.pathname.includes("/student");
-  const isTeacher = location.pathname.includes("/teacher");
-  
-  const role = isStudent ? "Student" : isTeacher ? "Teacher" : "Student";
-
+export default function AdminCreateAccount() {
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -20,7 +12,7 @@ export default function CreateAccount() {
     email: "",
     password: "",
     confirmPassword: "",
-    role: "student", // Default role
+    role: "admin"
   });
 
   const [showPassword, setShowPassword] = useState(false);
@@ -28,6 +20,7 @@ export default function CreateAccount() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const navigate = useNavigate();
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -39,46 +32,57 @@ export default function CreateAccount() {
     setError("");
     setSuccess("");
 
+    // Validate email domain
     if (!formData.email.endsWith("@wmsu.edu.ph")) {
-      setError("Please use your official WMSU email address ending in @wmsu.edu.ph");
+      setError("Please use an official WMSU email address ending in @wmsu.edu.ph");
       return;
     }
 
+    // Validate password match
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
 
+    // Validate password length
+    if (formData.password.length < 6) {
+      setError("Password must be at least 6 characters long.");
+      return;
+    }
+
+    // Validate required fields
+    if (!formData.firstName || !formData.lastName || !formData.username || !formData.email) {
+      setError("All fields are required.");
+      return;
+    }
+
     try {
       setIsSubmitting(true);
-      
-      // Prepare user data for API - always admin role
-      const userData = {
+
+      // Prepare admin account data
+      const adminData = {
         ...formData,
-        role: "admin" // Always admin since only admins create accounts
+        role: "admin"
       };
 
-      // Call the registration API
-      const response = await authService.register(userData);
-      
-      // Store email in localStorage for login page pre-fill
-      localStorage.setItem('pendingEmail', formData.email);
+      // Call registration API
+      const response = await authService.register(adminData);
       
       setSuccess(
-        `Account created successfully!\n` +
-        `Your account has been automatically approved.\n` +
-        `You can now login with your credentials.\n` +
-        `Redirecting to login page... [${Date.now()}]`
+        "✅ Admin account created successfully!\n" +
+        "The account has been auto-approved.\n" +
+        "You can now login with the new credentials.\n" +
+        "Redirecting to login page..."
       );
       
-      // Redirect to login page
+      // Redirect to login page after 3 seconds
       setTimeout(() => {
         navigate("/login");
       }, 3000);
       
     } catch (err) {
-      console.error("Registration error:", err);
-      setError(err.message || "Failed to create account. Please try again.");
+      console.error("Admin account creation error:", err);
+      setError(err.message || "Failed to create admin account. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -100,7 +104,7 @@ export default function CreateAccount() {
           />
           <h2 className="text-[15px] text-red-800 font-bold leading-snug">
             WMSU ILS-Elementary Department: <br />
-            Automated Grades Portal and Students Attendance using QR Code
+            Admin Account Creation Portal
           </h2>
         </div>
 
@@ -110,7 +114,12 @@ export default function CreateAccount() {
           Create New Admin Account
         </h3>
 
-        {error && <p className="text-red-700 mb-3 font-medium text-sm">{error}</p>}
+        {error && (
+          <div className="text-red-700 mb-3 font-medium text-sm bg-red-50 px-4 py-3 rounded-md border border-red-200">
+            {error}
+          </div>
+        )}
+        
         {success && (
           <div className="text-green-700 mb-3 font-medium text-sm bg-green-50 px-4 py-3 rounded-md border border-green-200 whitespace-pre-line">
             {success}
@@ -126,7 +135,7 @@ export default function CreateAccount() {
               value={formData.firstName}
               onChange={handleChange}
               required
-              className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black-500"
+              className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-800"
             />
           </div>
 
@@ -138,7 +147,7 @@ export default function CreateAccount() {
               value={formData.lastName}
               onChange={handleChange}
               required
-              className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black-500"
+              className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-800"
             />
           </div>
 
@@ -150,7 +159,7 @@ export default function CreateAccount() {
               value={formData.username}
               onChange={handleChange}
               required
-              className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black-500"
+              className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-800"
             />
           </div>
 
@@ -162,8 +171,8 @@ export default function CreateAccount() {
               value={formData.email}
               onChange={handleChange}
               required
-              placeholder="example@wmsu.edu.ph"
-              className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black-500"
+              placeholder="admin@wmsu.edu.ph"
+              className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-800"
             />
           </div>
 
@@ -175,7 +184,8 @@ export default function CreateAccount() {
               value={formData.password}
               onChange={handleChange}
               required
-              className="w-full mt-1 p-3 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black-500"
+              minLength="6"
+              className="w-full mt-1 p-3 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-800"
             />
             <button
               type="button"
@@ -194,7 +204,8 @@ export default function CreateAccount() {
               value={formData.confirmPassword}
               onChange={handleChange}
               required
-              className="w-full mt-1 p-3 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-black-500"
+              minLength="6"
+              className="w-full mt-1 p-3 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-800"
             />
             <button
               type="button"
@@ -205,6 +216,13 @@ export default function CreateAccount() {
             </button>
           </div>
 
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mt-6">
+            <p className="text-sm text-blue-800">
+              <strong>Note:</strong> Admin accounts will be automatically approved upon creation.
+              Only use official WMSU email addresses (@wmsu.edu.ph).
+            </p>
+          </div>
+
           <hr className="border-gray-400 mt-8 mb-5" />
 
           <div className="flex justify-center space-x-3 mt-8">
@@ -213,14 +231,14 @@ export default function CreateAccount() {
               disabled={isSubmitting}
               className={`w-full bg-red-800 text-white py-2 px-4 rounded-md hover:bg-red-900 transition duration-200 focus:outline-none focus:ring-2 focus:ring-red-800 focus:ring-opacity-50 ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}
             >
-              {isSubmitting ? 'Creating Account...' : 'Create Account'}
+              {isSubmitting ? 'Creating Admin Account...' : 'Create Admin Account'}
             </button>
             <button
               type="button"
               className="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2.5 px-6 rounded-md"
-              onClick={() => navigate("/login")}
+              onClick={() => navigate("/admin/dashboard")}
             >
-              Login
+              Back to Dashboard
             </button>
           </div>
         </form>

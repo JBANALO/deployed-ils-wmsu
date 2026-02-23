@@ -19,7 +19,7 @@ const StudentPortal = () => {
 
       try {
         console.log('Fetching for studentId:', studentId); // ← DEBUG
-        const res = await fetch(`http://localhost:3001/api/student/portal?studentId=${studentId}`);
+        const res = await fetch(`http://localhost:5000/api/student/portal?studentId=${studentId}`);
         if (!res.ok) throw new Error('Failed to fetch');
         const result = await res.json();
         console.log('Data received:', result); // ← DEBUG
