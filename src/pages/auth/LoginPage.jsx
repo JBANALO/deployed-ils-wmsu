@@ -13,15 +13,7 @@ export default function LoginPage() {
 
   const navigate = useNavigate();
 
-  // Pre-fill email from localStorage if coming from account creation
-  useEffect(() => {
-    const pendingEmail = localStorage.getItem('pendingEmail');
-    if (pendingEmail) {
-      setEmail(pendingEmail);
-      // Clear the stored email after using it
-      localStorage.removeItem('pendingEmail');
-    }
-  }, []);
+  // Removed auto-fill to prevent pre-filled credentials
 
   const handleSubmit = async (e) => {
     e.preventDefault();
