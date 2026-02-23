@@ -38,7 +38,7 @@ export function AttendanceProvider({ children }) {
       );
       
       // Don't use teacherId - just get all attendance data
-      const fetchPromise = fetch(`http://192.168.0.153:5000/api/attendance`, {
+      const fetchPromise = fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/attendance`, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
           'Content-Type': 'application/json',
@@ -83,7 +83,7 @@ export function AttendanceProvider({ children }) {
         status: 'present'
       };
 
-      const response = await fetch('http://192.168.0.153:5000/api/attendance', {
+      const response = await fetch('https://deployed-ils-wmsu-production.up.railway.app/api/attendance', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${user.token}`,
@@ -226,7 +226,7 @@ export function AttendanceProvider({ children }) {
         period: period || getAttendancePeriod()
       };
 
-      const response = await fetch('http://192.168.0.153:5000/api/attendance', {
+      const response = await fetch('https://deployed-ils-wmsu-production.up.railway.app/api/attendance', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${user.token}`,
@@ -263,7 +263,7 @@ export function AttendanceProvider({ children }) {
         period: period || getAttendancePeriod()
       };
 
-      const response = await fetch('http://192.168.0.153:5000/api/attendance', {
+      const response = await fetch('https://deployed-ils-wmsu-production.up.railway.app/api/attendance', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${user.token}`,
@@ -303,7 +303,7 @@ export function AttendanceProvider({ children }) {
         period: period || getAttendancePeriod()
       };
 
-      const response = await fetch('http://192.168.0.153:5000/api/attendance', {
+      const response = await fetch('https://deployed-ils-wmsu-production.up.railway.app/api/attendance', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${user.token}`,

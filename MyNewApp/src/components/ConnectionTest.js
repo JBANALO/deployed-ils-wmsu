@@ -62,7 +62,7 @@ export default function ConnectionTest() {
       />
       
       <Text style={styles.infoText}>
-        Server: http://192.168.0.153:5000/api
+        Server: https://deployed-ils-wmsu-production.up.railway.app/api
       </Text>
     </View>
   );

@@ -28,7 +28,7 @@ export default function GenerateScreen() {
     setLoading(true);
     try {
       // Load students from backend API
-      const response = await fetch(`http://192.168.0.153:5000/api/students?teacherId=${user.id}`, {
+      const response = await fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/students?teacherId=${user.id}`, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
           'Content-Type': 'application/json',
@@ -92,7 +92,7 @@ export default function GenerateScreen() {
       };
 
       // Add student via backend API
-      const response = await fetch('http://192.168.0.153:5000/api/students', {
+      const response = await fetch('https://deployed-ils-wmsu-production.up.railway.app/api/students', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${user.token}`,
@@ -148,7 +148,7 @@ export default function GenerateScreen() {
             setLoading(true);
             try {
               // Delete student via backend API
-              const response = await fetch(`http://192.168.0.153:5000/api/students/${studentToDelete.id}`, {
+              const response = await fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/students/${studentToDelete.id}`, {
                 method: 'DELETE',
                 headers: {
                   'Authorization': `Bearer ${user.token}`,
@@ -272,7 +272,9 @@ export default function GenerateScreen() {
               <QRCode
                 value={qrData}
                 size={200}
-                backgroundColor="white"
+                fgColor="#000000"
+                bgColor="#ffffff"
+                logo={null}
               />
             </View>
             <View style={styles.studentInfo}>
