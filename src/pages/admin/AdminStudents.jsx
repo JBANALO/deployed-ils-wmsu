@@ -44,12 +44,12 @@ export default function AdminStudents() {
         const data = await response.json();
         setStudents(Array.isArray(data) ? data : data.data || []);
       } else {
-        console.warn('Could not fetch from new API, using empty list');
+        toast('Could not fetch from new API, using empty list', { icon: '⚠️' });
         setStudents([]);
       }
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching students:', error);
+      toast.error('Error fetching students: ' + error.message);
       // Try alternative endpoint if primary fails
       try {
         const altResponse = await fetch(`${API_BASE_URL}/students`);
@@ -60,7 +60,7 @@ export default function AdminStudents() {
           setStudents([]);
         }
       } catch (altError) {
-        console.error('Both APIs failed:', altError);
+        toast.error('Both APIs failed: ' + altError.message);
         setStudents([]);
       }
       setLoading(false);
@@ -124,7 +124,7 @@ export default function AdminStudents() {
         toast.error('Failed to update student: ' + response.statusText);
       }
     } catch (error) {
-      console.error('Error updating student:', error);
+      toast.error('Error updating student: ' + error.message);
       toast.error('Failed to update student');
     }
   };
@@ -145,7 +145,7 @@ export default function AdminStudents() {
         toast.error('Failed to delete student: ' + response.statusText);
       }
     } catch (error) {
-      console.error('Error deleting student:', error);
+      toast.error('Error deleting student: ' + error.message);
       toast.error('Failed to delete student');
     }
   };
@@ -219,7 +219,7 @@ export default function AdminStudents() {
       setSelectAll(false);
       fetchStudents();
     } catch (error) {
-      console.error('Error deleting students:', error);
+      toast.error('Error deleting students: ' + error.message);
       toast.error('Error deleting students');
     }
   };
@@ -520,7 +520,7 @@ export default function AdminStudents() {
                   alt="QR Code" 
                   className="w-64 h-64 border-4 border-gray-300 rounded-lg"
                   onError={(e) => {
-                    console.error('QR image load error:', e);
+                    toast.error('QR image load error');
                     e.target.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22256%22 height=%22256%22%3E%3Crect fill=%22%23fff%22 width=%22256%22 height=%22256%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22 font-family=%22Arial%22 font-size=%2216%22%3EQR Not Generated%3C/text%3E%3C/svg%3E';
                   }}
                 />

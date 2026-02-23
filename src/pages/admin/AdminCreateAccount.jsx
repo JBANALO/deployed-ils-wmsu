@@ -81,7 +81,7 @@ export default function AdminCreateAccount() {
       }, 3000);
       
     } catch (err) {
-      console.error("Admin account creation error:", err);
+      toast.error("Admin account creation error: " + (err.message || "Failed to create admin account. Please try again."));
       setError(err.message || "Failed to create admin account. Please try again.");
     } finally {
       setIsSubmitting(false);

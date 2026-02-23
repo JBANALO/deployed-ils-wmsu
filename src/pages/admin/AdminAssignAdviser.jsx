@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { UserGroupIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/solid";
 import { API_BASE_URL } from "../../api/config";
+import { toast } from 'react-toastify';
 
 export default function AdminAssignAdviser() {
   const [classes, setClasses] = useState([]);
@@ -33,10 +34,10 @@ export default function AdminAssignAdviser() {
           classesArray = classesData.classes;
         }
         
-        console.log('Classes loaded:', classesArray);
+        toast.success('Classes loaded successfully');
         setClasses(classesArray);
       } else {
-        console.error('Classes response not OK:', classesResponse.status);
+        toast.error(`Failed to load classes: ${classesResponse.status}`);
       }
 
       // Fetch teachers/advisers
@@ -51,11 +52,11 @@ export default function AdminAssignAdviser() {
           return role === 'teacher' || role === 'subject_teacher' || role === 'adviser';
         });
         
-        console.log(`Found ${teachersList.length} teachers/advisers:`, teachersList.map(t => `${t.firstName} ${t.lastName} (${t.role})`));
+        toast.success(`Found ${teachersList.length} teachers/advisers`);
         setTeachers(teachersList);
       }
     } catch (error) {
-      console.error('Error fetching data:', error);
+      toast.error('Error loading data: ' + error.message);
       setMessage("Error loading data: " + error.message);
       setMessageType("error");
     }
@@ -71,8 +72,7 @@ export default function AdminAssignAdviser() {
 
     try {
       const adviser = teachers.find(t => t.id === selectedAdviser);
-      console.log('Assigning adviser:', adviser);
-      console.log('To class:', selectedClass);
+      toast.info(`Assigning ${adviser.firstName} ${adviser.lastName} to ${selectedClass.grade} - ${selectedClass.section}`);
       
       const response = await fetch(
         `${API_BASE_URL}/classes/${selectedClass.id}/assign`,
@@ -87,7 +87,7 @@ export default function AdminAssignAdviser() {
       );
 
       const responseData = await response.json();
-      console.log('Response:', response.status, responseData);
+      toast.info('Assignment response received');
 
       if (response.ok) {
         setMessage(`Successfully assigned ${adviser.firstName} ${adviser.lastName} to ${selectedClass.grade} - ${selectedClass.section}`);
@@ -102,7 +102,7 @@ export default function AdminAssignAdviser() {
         setMessageType("error");
       }
     } catch (error) {
-      console.error('Error assigning adviser:', error);
+      toast.error('Error assigning adviser: ' + error.message);
       setMessage("Error assigning adviser: " + error.message);
       setMessageType("error");
     }
@@ -126,7 +126,7 @@ export default function AdminAssignAdviser() {
         setMessageType("error");
       }
     } catch (error) {
-      console.error('Error removing adviser:', error);
+      toast.error('Error removing adviser: ' + error.message);
       setMessage("Error removing adviser");
       setMessageType("error");
     }

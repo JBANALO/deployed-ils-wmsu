@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { BuildingLibraryIcon, ChevronDownIcon, UserGroupIcon } from "@heroicons/react/24/solid";
 import { useNavigate } from "react-router-dom";
 import { API_BASE_URL } from "../../api/config";
+import { toast } from 'react-toastify';
 
 export default function AdminClasses() {
   const navigate = useNavigate();
@@ -35,25 +36,25 @@ export default function AdminClasses() {
           if (teachersResponse.ok) {
             const data = await teachersResponse.json();
             const allUsers = data.data?.users || data.users || [];
-            console.log('All Users fetched:', allUsers.length);
+            toast.success(`All Users fetched: ${allUsers.length}`);
             const teachersList = Array.isArray(allUsers) 
               ? allUsers.filter(user => ['teacher', 'subject_teacher', 'adviser'].includes(user.role))
               : [];
-            console.log('Teachers filtered:', teachersList.length);
+            toast.success(`Teachers filtered: ${teachersList.length}`);
             teachersList.forEach(t => {
-              console.log(`Teacher: ${t.firstName} ${t.lastName} | Grade: ${t.gradeLevel} | Section: ${t.section} | Role: ${t.role}`);
+              toast.info(`Teacher: ${t.firstName} ${t.lastName} | Grade: ${t.gradeLevel} | Section: ${t.section} | Role: ${t.role}`);
             });
             setTeachers(teachersList);
           } else {
-            console.log('Teachers response not ok');
+            toast.warn('Teachers response not ok');
             setTeachers([]);
           }
         } catch (teacherError) {
-          console.error('Error fetching teachers:', teacherError);
+          toast.error('Error fetching teachers: ' + teacherError.message);
           setTeachers([]);
         }
       } catch (error) {
-        console.error('Error fetching data:', error);
+        toast.error('Error fetching data: ' + error.message);
         setClassesData([]);
         setAllStudents([]);
       }

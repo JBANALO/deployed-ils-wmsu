@@ -35,7 +35,7 @@ export default function AdminTeachers() {
       setTeachers(teachersList);
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching teachers:', error);
+      toast.error('Error fetching teachers: ' + error.message);
       setTeachers([]);
       setLoading(false);
     }
@@ -84,7 +84,7 @@ export default function AdminTeachers() {
         await fetchTeachers();
         toast.success(`${selectedTeachers.size} teacher records have been successfully removed`);
       } catch (error) {
-        console.error('Error deleting teachers:', error);
+        toast.error('Error deleting teachers: ' + error.message);
         toast.error('Some teacher records could not be removed. Please try again.');
       }
     }
@@ -97,7 +97,7 @@ export default function AdminTeachers() {
         await fetchTeachers();
         toast.success('Teacher record has been successfully removed');
       } catch (error) {
-        console.error('Error deleting teacher:', error);
+        toast.error('Error deleting teacher: ' + error.message);
         toast.error('Unable to remove teacher record. Please try again.');
       }
     }
@@ -139,7 +139,7 @@ export default function AdminTeachers() {
       setShowEditModal(false);
       toast.success('Teacher information has been successfully updated');
     } catch (error) {
-      console.error('Error updating teacher:', error);
+      toast.error('Error updating teacher: ' + error.message);
       toast.error(`Unable to update teacher information: ${error.message}`);
     }
   };
