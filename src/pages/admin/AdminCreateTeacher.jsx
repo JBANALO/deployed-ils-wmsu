@@ -139,7 +139,6 @@ export default function AdminCreateTeacher() {
               value={formData.email}
               onChange={handleChange}
               required
-              placeholder="teacher@wmsu.edu.ph"
               className="mt-1 w-full p-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-800"
             />
           </div>

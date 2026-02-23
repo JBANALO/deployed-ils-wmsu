@@ -7,13 +7,14 @@ const path = require('path');
 const pool = require('./config/db');
 
 const authRoutes = require('./routes/auth');
+const usersRoutes = require('./routes/users');
 const studentRoutes = require('./routes/students');
 const deleteRequestRoutes = require('./routes/deleteRequests');
 const gradeRoutes = require('./routes/grades');
 const classRoutes = require('./routes/classes');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
@@ -78,6 +79,7 @@ app.post('/api/admin/sync-data', async (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/users', usersRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/delete-requests', deleteRequestRoutes);

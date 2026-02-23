@@ -35,6 +35,7 @@ import AdminAssignAdviser from "./pages/admin/AdminAssignAdviser.jsx";
 import AdminAssignSubjectTeacher from "./pages/admin/AdminAssignSubjectTeacher.jsx";
 import AdminAttendance from "./pages/admin/AdminAttendance";
 import AdminCreateTeacher from "./pages/admin/AdminCreateTeacher.jsx";
+import AdminCreateAccount from "./pages/admin/AdminCreateAccount.jsx";
 import AdminSettings from "./pages/admin/AdminSettings.jsx";
 
 import { Toaster } from 'react-hot-toast';  
@@ -109,6 +110,7 @@ function App() {
             <Route path="/admin/admin/classlist/:id" element={<AdminClassList />} />
             <Route path="/admin/admin-attendance" element={<AdminAttendance />} />
             <Route path="/admin/create-teacher" element={<AdminCreateTeacher />} />
+            <Route path="/admin/create-account" element={<AdminCreateAccount />} />
             <Route path="/admin/settings" element={<AdminSettings />} />
           </Route>
 

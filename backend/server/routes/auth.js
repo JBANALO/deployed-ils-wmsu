@@ -3,22 +3,37 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const bcrypt = require('bcrypt');
+const { getUsers } = require('./users'); // Import to access users array
 
 // Sample user data for fallback when MySQL is not available
 const SAMPLE_USERS = [
   {
+    id: '63bc1bd0-359f-4372-8581-5a626e5e16f7',
+    email: 'adminjossie@wmsu.edu.ph',
+    username: 'adminjossie',
+    first_name: 'Josie',
+    last_name: 'Banalo',
+    full_name: 'Josie Banalo',
+    password: 'Admin123',
+    role: 'admin',
+    approval_status: 'approved'
+  },
+  {
     id: 'ba930204-ff2a-11f0-ac97-388d3d8f1ae5',
-    email: 'hz202305178@wmsu.edu.ph',
+    email: 'Hz202305178@wmsu.edu.ph',
     username: 'hz202305178',
     first_name: 'Josie',
     last_name: 'Banalo',
     full_name: 'Josie Banalo',
-    password: 'test123', // In production, use hashed password
+    password: 'test123',
     role: 'subject_teacher',
-    subjects_handled: 'Math,Science,English', // Comma-separated list of subjects
+    subjects_handled: 'Math,Science,English',
     approval_status: 'approved'
   }
 ];
+
+// In-memory users storage (for newly created accounts)
+let IN_MEMORY_USERS = [];
 
 // Login endpoint
 router.post('/login', async (req, res) => {
@@ -33,6 +48,8 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    // Combine both sample users and in-memory users
+    const allUsers = [...SAMPLE_USERS, ...IN_MEMORY_USERS];
     let users = [];
     let usesFallback = false;
 
@@ -54,8 +71,8 @@ router.post('/login', async (req, res) => {
       console.log('Database query failed, using fallback data:', dbError.message);
       usesFallback = true;
       
-      // Use fallback sample data
-      users = SAMPLE_USERS.filter(user => {
+      // Use combined users array directly
+      users = allUsers.filter(user => {
         if (email) return user.email === email;
         if (username) return user.username === username;
         return false;
@@ -75,8 +92,20 @@ router.post('/login', async (req, res) => {
     let isPasswordValid = false;
     
     if (usesFallback) {
-      // Direct comparison for fallback data
-      isPasswordValid = password === user.password;
+      // Check if user is from IN_MEMORY_USERS (has hashed password)
+      const isInMemoryUser = IN_MEMORY_USERS.find(u => u.id === user.id);
+      if (isInMemoryUser) {
+        // Use bcrypt comparison for in-memory users (hashed passwords)
+        try {
+          isPasswordValid = await bcrypt.compare(password, user.password);
+        } catch (err) {
+          console.log('Bcrypt comparison failed for in-memory user:', err.message);
+          isPasswordValid = false;
+        }
+      } else {
+        // Direct comparison for sample users (plain text passwords)
+        isPasswordValid = password === user.password;
+      }
     } else {
       // Use bcrypt for database passwords
       try {
@@ -94,14 +123,7 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Check if account is approved
-    if (user.approval_status && user.approval_status !== 'approved') {
-      return res.status(403).json({
-        status: 'error',
-        message: 'Your account is not yet approved'
-      });
-    }
-
+    
     // Return user data (don't return password)
     const userData = {
       id: user.id,

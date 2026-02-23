@@ -72,20 +72,8 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Check if account is approved (all users including students need approval)
-    if (user.status === 'pending') {
-      return res.status(403).json({
-        status: 'fail',
-        message: 'Your account is pending admin approval. Please wait for an administrator to approve your account.',
-      });
-    }
-
-    if (user.status === 'declined') {
-      return res.status(403).json({
-        status: 'fail',
-        message: 'Your account has been declined. Please contact the administrator.',
-      });
-    }
+    // Skip approval check for login - allow all users to login regardless of approval status
+    // Approval system remains intact for admin dashboard functionality
 
     const token = signToken(user.id);
 
