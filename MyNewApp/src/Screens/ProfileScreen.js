@@ -263,8 +263,8 @@ export default function ProfileScreen({ navigation }) {
             style={styles.avatarContainer}
             onPress={() => setPhotoModalVisible(true)}
           >
-            {userData?.photoURL ? (
-              <Image source={{ uri: userData.photoURL }} style={styles.avatar} />
+            {userData?.profilePic ? (
+              <Image source={{ uri: userData.profilePic }} style={styles.avatar} />
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <Icon name="account" size={60} color="#999" />
