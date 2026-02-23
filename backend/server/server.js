@@ -66,6 +66,17 @@ app.get('/api', (req, res) => {
   res.json({ message: 'Student Management API Running!', version: '1.0.0' });
 });
 
+// Admin endpoint to manually trigger data sync
+app.post('/api/admin/sync-data', async (req, res) => {
+  try {
+    console.log('🔄 Manual sync triggered');
+    await syncStudentData();
+    res.json({ status: 'success', message: 'Data sync completed' });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/students', studentRoutes);
