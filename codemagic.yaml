@@ -1,7 +1,7 @@
 workflows:
   expo-android-build:
     name: WMSU ElemScan Android APK
-    instance_type: mac_mini
+    instance_type: linux
     max_build_duration: 120
     environment:
       node: latest
