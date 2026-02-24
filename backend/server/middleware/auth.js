@@ -1,29 +1,28 @@
 // server/middleware/auth.js
+const jwt = require('jsonwebtoken');
+
 const verifyUser = (req, res, next) => {
-  // For now, extract user from query or body or headers
-  // In production, verify JWT token
-  
-  const userToken = req.headers['x-user-token'] || req.body.user || req.query.user;
-  
-  if (!userToken) {
-    // If no user provided, assume admin for testing
-    req.user = {
-      id: 'admin-test',
-      role: 'admin',
-      subjectsHandled: [],
-      sectionHandled: null
-    };
-  } else {
-    try {
-      // In production, verify JWT here
-      // For now, just parse the JSON
-      req.user = typeof userToken === 'string' ? JSON.parse(userToken) : userToken;
-    } catch (err) {
-      req.user = { role: 'admin' };
-    }
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+  if (!token) {
+    return res.status(401).json({
+      status: 'error',
+      message: 'Access token required'
+    });
   }
-  
-  next();
+
+  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-fallback', (err, user) => {
+    if (err) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'Invalid or expired token'
+      });
+    }
+
+    req.user = user;
+    next();
+  });
 };
 
 module.exports = { verifyUser };

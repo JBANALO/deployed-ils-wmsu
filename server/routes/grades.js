@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const gradeController = require('../controllers/gradeControllerMySQL');
 
+// Get all grades (for dashboard stats)
+router.get('/', gradeController.getAllGrades);
+
 // Create a new grade
 router.post('/', gradeController.createGrade);
 

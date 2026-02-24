@@ -13,12 +13,16 @@ export default function ProtectedRoute({ allowedRoles }) {
 
     const fetchUser = async () => {
       try {
+        console.log('ProtectedRoute: Fetching current user...');
         const response = await authService.getCurrentUser();
+        console.log('ProtectedRoute: Current user response:', response);
         if (!isMounted) return;
 
-        const currentUser = response?.data?.user;
+        const currentUser = response?.data || response;
+        console.log('ProtectedRoute: Current user:', currentUser);
         setUser(currentUser || null);
       } catch (err) {
+        console.log('ProtectedRoute: Error fetching user:', err);
         if (!isMounted) return;
         setUser(null);
         setError("Unauthorized");
