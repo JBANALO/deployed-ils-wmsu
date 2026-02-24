@@ -10,7 +10,7 @@ workflows:
     triggering:
       events:
         - push
-      branch:
+      include_patterns:
         - main
     scripts:
       - name: Install root dependencies
