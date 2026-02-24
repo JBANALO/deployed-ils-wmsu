@@ -111,6 +111,36 @@ const getAllStudents = async (req, res) => {
 
     const [students] = await pool.query(query, params);
 
+    // If students don't have proper names, try to enrich from students.json
+    if (students.length > 0 && !students[0].full_name) {
+      const studentsJson = readStudents();
+      
+      for (let i = 0; i < students.length; i++) {
+        const dbStudent = students[i];
+        const jsonStudent = studentsJson.find(s => s.lrn === dbStudent.lrn);
+        
+        if (jsonStudent) {
+          // Fill in missing name data from JSON
+          if (!dbStudent.first_name && jsonStudent.firstName) {
+            dbStudent.first_name = jsonStudent.firstName;
+          }
+          if (!dbStudent.middle_name && jsonStudent.middleName) {
+            dbStudent.middle_name = jsonStudent.middleName;
+          }
+          if (!dbStudent.last_name && jsonStudent.lastName) {
+            dbStudent.last_name = jsonStudent.lastName;
+          }
+          if (!dbStudent.full_name && jsonStudent.fullName) {
+            dbStudent.full_name = jsonStudent.fullName;
+          }
+          // Fill in QR code if missing
+          if (!dbStudent.qr_code && jsonStudent.qrCode) {
+            dbStudent.qr_code = jsonStudent.qrCode;
+          }
+        }
+      }
+    }
+
     // Format response with database fields mapped to camelCase
     const formattedStudents = students.map(s => ({
       id: s.id,
