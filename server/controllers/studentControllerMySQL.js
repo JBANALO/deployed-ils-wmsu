@@ -35,8 +35,23 @@ exports.createStudent = async (req, res) => {
 
 exports.getAllStudents = async (req, res) => {
   try {
+    const fs = require('fs');
+    const path = require('path');
+    
     // Get students from students table (primary source of student data)
     const students = await query('SELECT * FROM students ORDER BY full_name ASC');
+    
+    // Try to load students.json for QR code enrichment
+    let jsonStudents = [];
+    try {
+      const studentsPath = path.join(__dirname, '../../data/students.json');
+      if (fs.existsSync(studentsPath)) {
+        const data = fs.readFileSync(studentsPath, 'utf8');
+        jsonStudents = JSON.parse(data);
+      }
+    } catch (e) {
+      console.log('Note: Could not load students.json for QR code enrichment');
+    }
     
     // Map to student format for frontend compatibility
     const mappedStudents = students.map(student => {
@@ -50,6 +65,20 @@ exports.getAllStudents = async (req, res) => {
       } catch (e) {
         console.error('Error parsing grades for student:', student.id, e);
         parsedGrades = null;
+      }
+      
+      // Try to enrich with QR code from students.json if missing
+      let qrCode = student.qr_code;
+      if (!qrCode && jsonStudents.length > 0) {
+        // Match by full name
+        const fullName = student.full_name || (student.first_name + ' ' + student.last_name);
+        const jsonStudent = jsonStudents.find(js => 
+          js.fullName === fullName ||
+          (js.firstName + ' ' + js.lastName === fullName)
+        );
+        if (jsonStudent && jsonStudent.qrCode) {
+          qrCode = jsonStudent.qrCode;
+        }
       }
       
       return {
@@ -68,7 +97,7 @@ exports.getAllStudents = async (req, res) => {
         status: student.status || 'Active',
         password: student.password,
         profilePic: student.profile_pic,
-        qrCode: student.qr_code,
+        qrCode: qrCode,
         grades: parsedGrades,
         attendance: student.attendance,
         average: student.average || 0,
