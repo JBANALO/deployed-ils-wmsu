@@ -135,6 +135,99 @@ app.get('/api', (req, res) => {
   res.json({ message: 'WMSU Portal API is running', status: 'OK' });
 });
 
+// Manual QR sync endpoint
+app.post('/api/admin/sync-qrcodes', async (req, res) => {
+  try {
+    console.log('🔄 Manual QR sync requested');
+    await syncQRCodesOnStartup();
+    res.json({ success: true, message: 'QR codes synced to database' });
+  } catch (err) {
+    console.error('Sync error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Bulk import students from students.json
+app.post('/api/admin/import-students', async (req, res) => {
+  try {
+    console.log('📚 Bulk import students requested');
+    
+    const studentsPath = path.join(__dirname, '../data/students.json');
+    if (!fs.existsSync(studentsPath)) {
+      return res.status(400).json({ error: 'students.json not found' });
+    }
+
+    const data = fs.readFileSync(studentsPath, 'utf8');
+    const jsonStudents = JSON.parse(data);
+
+    let imported = 0;
+    let updated = 0;
+    let errors = 0;
+
+    for (const student of jsonStudents) {
+      try {
+        const studentId = require('uuid').v4();
+        const fullName = `${student.firstName || ''} ${student.middleName || ''} ${student.lastName || ''}`.trim();
+
+        // Try to find existing student by full name
+        const existing = await query(
+          'SELECT id FROM students WHERE full_name = ? LIMIT 1',
+          [fullName]
+        );
+
+        if (existing && existing.length > 0) {
+          // Update existing
+          await query(
+            `UPDATE students SET lrn = ?, qr_code = ?, profile_pic = ? WHERE id = ?`,
+            [student.lrn, student.qrCode, student.profilePic, existing[0].id]
+          );
+          updated++;
+        } else {
+          // Insert new
+          await query(
+            `INSERT INTO students (
+              id, lrn, first_name, middle_name, last_name, full_name,
+              grade_level, section, sex, age, wmsu_email, password, status,
+              qr_code, profile_pic, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [
+              studentId,
+              student.lrn,
+              student.firstName,
+              student.middleName || '',
+              student.lastName,
+              fullName,
+              student.gradeLevel || 'Grade 3',
+              student.section || 'Wisdom',
+              student.sex || 'Not Specified',
+              student.age || 10,
+              `${(student.firstName || '').toLowerCase()}.${(student.lastName || '').toLowerCase()}@student.wmsu.edu.ph`,
+              'TempPassword123!',
+              'Active',
+              student.qrCode,
+              student.profilePic
+            ]
+          );
+          imported++;
+        }
+      } catch (err) {
+        errors++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Imported ${imported}, Updated ${updated}, Errors ${errors}`,
+      imported,
+      updated,
+      errors
+    });
+  } catch (err) {
+    console.error('Import error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // API routes
 app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
