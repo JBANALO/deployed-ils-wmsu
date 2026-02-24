@@ -35,8 +35,8 @@ exports.createStudent = async (req, res) => {
 
 exports.getAllStudents = async (req, res) => {
   try {
-    // Get students from users table (where role='student')
-    const students = await query('SELECT * FROM users WHERE role = "student" ORDER BY createdAt DESC');
+    // Get students from students table (primary source of student data)
+    const students = await query('SELECT * FROM students ORDER BY full_name ASC');
     
     // Map to student format for frontend compatibility
     const mappedStudents = students.map(student => {
@@ -54,27 +54,27 @@ exports.getAllStudents = async (req, res) => {
       
       return {
         id: student.id,
-        lrn: student.id,
-        firstName: student.firstName,
-        lastName: student.lastName,
-        fullName: student.firstName + ' ' + student.lastName,
-        name: student.firstName + ' ' + student.lastName,
+        lrn: student.lrn,
+        firstName: student.first_name,
+        lastName: student.last_name,
+        fullName: student.full_name || (student.first_name + ' ' + student.last_name),
+        name: student.full_name || (student.first_name + ' ' + student.last_name),
         studentId: student.id,
-        age: 10,
-        sex: 'Not Specified',
-        email: student.email,
-        gradeLevel: student.gradeLevel || 'Grade 3',
+        age: student.age || 10,
+        sex: student.sex || 'Not Specified',
+        email: student.wmsu_email,
+        gradeLevel: student.grade_level || 'Grade 3',
         section: student.section || 'Wisdom',
-        status: 'Active',
+        status: student.status || 'Active',
         password: student.password,
-        profilePic: null,
+        profilePic: student.profile_pic,
         qrCode: student.qr_code,
         grades: parsedGrades,
-        attendance: null,
+        attendance: student.attendance,
         average: student.average || 0,
-        createdAt: student.createdAt,
+        createdAt: student.created_at,
         username: student.username,
-        role: student.role
+        role: student.role || 'student'
       };
     });
     
