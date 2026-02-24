@@ -147,7 +147,7 @@ app.post('/api/admin/sync-qrcodes', async (req, res) => {
   }
 });
 
-// Bulk import students from students.json
+// Bulk import students from students.json  
 app.post('/api/admin/import-students', async (req, res) => {
   try {
     console.log('📚 Bulk import students requested');
@@ -166,49 +166,65 @@ app.post('/api/admin/import-students', async (req, res) => {
 
     for (const student of jsonStudents) {
       try {
-        const studentId = require('uuid').v4();
+        const { v4: uuidv4 } = require('uuid');
+        const studentId = uuidv4();
         const fullName = `${student.firstName || ''} ${student.middleName || ''} ${student.lastName || ''}`.trim();
 
         // Try to find existing student by full name
-        const existing = await query(
-          'SELECT id FROM students WHERE full_name = ? LIMIT 1',
-          [fullName]
-        );
+        try {
+          const existing = await query(
+            'SELECT id FROM students WHERE full_name = ? LIMIT 1',
+            [fullName]
+          );
 
-        if (existing && existing.length > 0) {
-          // Update existing
-          await query(
-            `UPDATE students SET lrn = ?, qr_code = ?, profile_pic = ? WHERE id = ?`,
-            [student.lrn, student.qrCode, student.profilePic, existing[0].id]
-          );
-          updated++;
-        } else {
-          // Insert new
-          await query(
-            `INSERT INTO students (
-              id, lrn, first_name, middle_name, last_name, full_name,
-              grade_level, section, sex, age, wmsu_email, password, status,
-              qr_code, profile_pic, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-            [
-              studentId,
-              student.lrn,
-              student.firstName,
-              student.middleName || '',
-              student.lastName,
-              fullName,
-              student.gradeLevel || 'Grade 3',
-              student.section || 'Wisdom',
-              student.sex || 'Not Specified',
-              student.age || 10,
-              `${(student.firstName || '').toLowerCase()}.${(student.lastName || '').toLowerCase()}@student.wmsu.edu.ph`,
-              'TempPassword123!',
-              'Active',
-              student.qrCode,
-              student.profilePic
-            ]
-          );
-          imported++;
+          if (existing && existing.length > 0) {
+            // Update existing
+            try {
+              await query(
+                `UPDATE students SET lrn = ?, qr_code = ?, profile_pic = ? WHERE id = ?`,
+                [student.lrn, student.qrCode, student.profilePic, existing[0].id]
+              );
+              updated++;
+            } catch (e) {
+              console.error(`Update error: ${e.message}`);
+              errors++;
+            }
+          } else {
+            // Insert new
+            try {
+              await query(
+                `INSERT INTO students (
+                  id, lrn, first_name, middle_name, last_name, full_name,
+                  grade_level, section, sex, age, wmsu_email, password, status,
+                  qr_code, profile_pic, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+                [
+                  studentId,
+                  student.lrn,
+                  student.firstName || '',
+                  student.middleName || '',
+                  student.lastName || '',
+                  fullName,
+                  student.gradeLevel || 'Grade 3',
+                  student.section || 'Wisdom',
+                  student.sex || 'NotSpecified',
+                  student.age || 10,
+                  `${((student.firstName || '').toLowerCase())}${(student.lastName || '').toLowerCase()}@student.wmsu.edu.ph`,
+                  'TempPassword123!',
+                  'Active',
+                  student.qrCode,
+                  student.profilePic
+                ]
+              );
+              imported++;
+            } catch (e) {
+              console.error(`Insert error: ${e.message}`);
+              errors++;
+            }
+          }
+        } catch (e) {
+          console.error(`Query error: ${e.message}`);
+          errors++;
         }
       } catch (err) {
         errors++;
@@ -220,7 +236,8 @@ app.post('/api/admin/import-students', async (req, res) => {
       message: `Imported ${imported}, Updated ${updated}, Errors ${errors}`,
       imported,
       updated,
-      errors
+      errors,
+      total: jsonStudents.length
     });
   } catch (err) {
     console.error('Import error:', err);
