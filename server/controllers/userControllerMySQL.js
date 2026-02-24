@@ -128,6 +128,23 @@ exports.getPendingTeachers = async (req, res) => {
   }
 };
 
+// Get pending students
+exports.getPendingStudents = async (req, res) => {
+  try {
+    const students = await query(
+      'SELECT id, firstName, lastName, username, email, role, status, createdAt FROM users WHERE role = "student" AND status = "pending" ORDER BY createdAt DESC'
+    );
+    res.json({ 
+      status: 'success',
+      data: { students }, 
+      message: `Found ${students.length} pending student(s)`
+    });
+  } catch (error) {
+    console.error('Error fetching pending students:', error);
+    res.status(500).json({ message: 'Error fetching pending students', error: error.message });
+  }
+};
+
 // Get current user
 exports.getMe = async (req, res) => {
   try {

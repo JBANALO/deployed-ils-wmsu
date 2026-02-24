@@ -23,6 +23,7 @@ import TeacherProfile from "./pages/teacher/TeacherProfile";
 
 import AdminLayout from "./layouts/admin/AdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminProfile from "./pages/admin/AdminProfile";
 import AdminTeachers from "./pages/admin/AdminTeachers";
 import AdminApprovals from "./pages/admin/AdminApprovals";
 import AdminTeacherApproval from "./pages/admin/AdminTeacherApproval";
@@ -37,6 +38,7 @@ import AdminAttendance from "./pages/admin/AdminAttendance";
 import AdminCreateTeacher from "./pages/admin/AdminCreateTeacher.jsx";
 import AdminCreateAccount from "./pages/admin/AdminCreateAccount.jsx";
 import AdminSettings from "./pages/admin/AdminSettings.jsx";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
 
 import { Toaster } from 'react-hot-toast';  
 
@@ -85,33 +87,38 @@ function App() {
           <Route path="/student/attendance-calendar" element={<AttendanceCalendar />} />
           <Route path="/student/customer-service-page" element={<CustomerServicePage />} />
 
-          <Route element={<TeacherLayout />}>
-            <Route path="/teacher/teacher-dashboard" element={<TeacherDashboard />} />
-            <Route path="/teacher/teacher-profile" element={<TeacherProfile />} />
-            <Route path="/grade-level" element={<GradeLevel />} />
-            <Route path="/edit-grades" element={<EditGrades />} />
-            <Route path="/class-list" element={<ClassList />} />
-            <Route path="/qr-portal" element={<QRCodePortal />} />
-            <Route path="/reports" element={<ReportsPage />} />
-            <Route path="/customer-service" element={<CustomerService />} />
+          <Route element={<ProtectedRoute allowedRoles={['teacher', 'subject_teacher', 'adviser']} />}>
+            <Route element={<TeacherLayout />}>
+              <Route path="/teacher/teacher-dashboard" element={<TeacherDashboard />} />
+              <Route path="/teacher/teacher-profile" element={<TeacherProfile />} />
+              <Route path="/grade-level" element={<GradeLevel />} />
+              <Route path="/edit-grades" element={<EditGrades />} />
+              <Route path="/class-list" element={<ClassList />} />
+              <Route path="/qr-portal" element={<QRCodePortal />} />
+              <Route path="/reports" element={<ReportsPage />} />
+              <Route path="/customer-service" element={<CustomerService />} />
+            </Route>
           </Route>
 
-          <Route element={<AdminLayout />}>
-            <Route path="/admin/admin-dashboard" element={<AdminDashboard />} />
-            <Route path="/admin/admin-teachers" element={<AdminTeachers />} />
-            <Route path="/admin/approvals" element={<AdminApprovals />} />
-            <Route path="/admin/teacher-approvals" element={<AdminTeacherApproval />} />
-            <Route path="/admin/admin-students" element={<AdminStudents />} />
-            <Route path="/admin/admin/create-k3" element={<AdminCreateK3 />} />
-            <Route path="/admin/admin-grades" element={<AdminGrades />} />
-            <Route path="/admin/admin-classes" element={<AdminClasses />} />
-            <Route path="/admin/assign-adviser" element={<AdminAssignAdviser />} />
-            <Route path="/admin/assign-subject-teacher" element={<AdminAssignSubjectTeacher />} />
-            <Route path="/admin/admin/classlist/:id" element={<AdminClassList />} />
-            <Route path="/admin/admin-attendance" element={<AdminAttendance />} />
-            <Route path="/admin/create-teacher" element={<AdminCreateTeacher />} />
-            <Route path="/admin/create-account" element={<AdminCreateAccount />} />
-            <Route path="/admin/settings" element={<AdminSettings />} />
+          <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+            <Route element={<AdminLayout />}>
+              <Route path="/admin/admin-dashboard" element={<AdminDashboard />} />
+              <Route path="/admin/admin-profile" element={<AdminProfile />} />
+              <Route path="/admin/admin-teachers" element={<AdminTeachers />} />
+              <Route path="/admin/approvals" element={<AdminApprovals />} />
+              <Route path="/admin/teacher-approvals" element={<AdminTeacherApproval />} />
+              <Route path="/admin/admin-students" element={<AdminStudents />} />
+              <Route path="/admin/admin/create-k3" element={<AdminCreateK3 />} />
+              <Route path="/admin/admin-grades" element={<AdminGrades />} />
+              <Route path="/admin/admin-classes" element={<AdminClasses />} />
+              <Route path="/admin/assign-adviser" element={<AdminAssignAdviser />} />
+              <Route path="/admin/assign-subject-teacher" element={<AdminAssignSubjectTeacher />} />
+              <Route path="/admin/admin/classlist/:id" element={<AdminClassList />} />
+              <Route path="/admin/admin-attendance" element={<AdminAttendance />} />
+              <Route path="/admin/create-teacher" element={<AdminCreateTeacher />} />
+              <Route path="/admin/create-account" element={<AdminCreateAccount />} />
+              <Route path="/admin/settings" element={<AdminSettings />} />
+            </Route>
           </Route>
 
           <Route path="*" element={<div className="p-20 text-center text-3xl font-bold">404 - Page Not Found</div>} />

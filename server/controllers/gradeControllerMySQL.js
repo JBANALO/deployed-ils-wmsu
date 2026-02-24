@@ -2,6 +2,15 @@
 const { query } = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
 
+exports.getAllGrades = async (req, res) => {
+  try {
+    const grades = await query('SELECT COUNT(*) as totalGrades FROM grades');
+    res.json({ totalGrades: grades[0].totalGrades });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.createGrade = async (req, res) => {
   try {
     const { studentId, subject, q1, q2, q3, q4 } = req.body;

@@ -7,7 +7,7 @@ const path = require('path');
 const pool = require('./config/db');
 
 const authRoutes = require('./routes/auth');
-const usersRoutes = require('./routes/users');
+const { router: usersRoutes } = require('./routes/users');
 const studentRoutes = require('./routes/students');
 const deleteRequestRoutes = require('./routes/deleteRequests');
 const gradeRoutes = require('./routes/grades');
