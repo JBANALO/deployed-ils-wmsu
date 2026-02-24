@@ -7,8 +7,6 @@ workflows:
       node: latest
       groups:
         - expo_credentials
-      vars:
-        EXPO_CI_TOKEN: $EXPO_CI_TOKEN
     triggering:
       events:
         - push
@@ -26,7 +24,6 @@ workflows:
       - name: Build APK via EAS
         script: |
           cd MyNewApp
-          export EXPO_TOKEN=$EXPO_CI_TOKEN
           eas build --platform android --non-interactive --wait
     artifacts:
       - MyNewApp/dist/**/*.apk
