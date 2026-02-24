@@ -11,9 +11,7 @@ workflows:
       events:
         - push
       branch:
-        patterns:
-          - pattern: main
-            include: true
+        - main
     scripts:
       - name: Install root dependencies
         script: npm ci
