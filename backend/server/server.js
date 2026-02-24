@@ -24,84 +24,101 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }));
 // Auto-sync student data on startup (QR codes and profile pictures)
 const syncStudentData = async () => {
   try {
-    const studentsPath = path.join(__dirname, '../../data/students.json');
-    if (!fs.existsSync(studentsPath)) {
-      console.log('⚠️  students.json not found');
-      return;
-    }
-
-    const data = fs.readFileSync(studentsPath, 'utf8');
-    const students = JSON.parse(data);
-    
-    // First, ensure all students have QR codes and profile pics
     const QRCode = require('qrcode');
-    let needsUpdate = false;
-    let qrGenerated = 0;
-    let picAdded = 0;
+    
+    // Get all students from database
+    try {
+      const connection = await pool.getConnection();
+      
+      // Get students without QR codes
+      const [studentsWithoutQR] = await connection.query(
+        `SELECT id, lrn, first_name, last_name, full_name, grade_level, section 
+         FROM students 
+         WHERE qr_code IS NULL OR qr_code = ''`
+      );
 
-    for (const student of students) {
-      // Generate QR codes if missing
-      if (!student.qrCode && student.lrn) {
+      let qrGenerated = 0;
+
+      // Generate QR codes for students that don't have them
+      for (const student of studentsWithoutQR) {
         try {
           const qrData = JSON.stringify({
             lrn: student.lrn,
-            name: `${student.firstName} ${student.lastName}`,
-            gradeLevel: student.gradeLevel,
+            name: student.full_name || `${student.first_name} ${student.last_name}`,
+            gradeLevel: student.grade_level,
             section: student.section
           });
-          student.qrCode = await QRCode.toDataURL(qrData, { width: 300, margin: 2 });
-          qrGenerated++;
-          needsUpdate = true;
-        } catch (e) {
-          console.error(`Error generating QR for ${student.firstName}:`, e.message);
-        }
-      }
-
-      // Add profile pics if missing
-      if (!student.profilePic) {
-        student.profilePic = `https://ui-avatars.com/api/?name=${student.firstName}+${student.lastName}&background=random`;
-        picAdded++;
-        needsUpdate = true;
-      }
-    }
-
-    // Save updated students.json if needed
-    if (needsUpdate) {
-      fs.writeFileSync(studentsPath, JSON.stringify(students, null, 2));
-      console.log(`✅ Updated students.json: +${qrGenerated} QR codes, +${picAdded} profile pics`);
-    }
-
-    // Then sync to database
-    try {
-      let qrCount = 0, picCount = 0;
-      const connection = await pool.getConnection();
-      
-      for (const student of students) {
-        try {
-          if (student.qrCode) {
-            const result = await connection.query(
-              'UPDATE students SET qr_code = ? WHERE lrn = ?',
-              [student.qrCode, student.lrn]
-            );
-            if (result[0].affectedRows > 0) qrCount++;
-          }
+          const qrCode = await QRCode.toDataURL(qrData, { width: 300, margin: 2 });
           
-          if (student.profilePic) {
-            const result = await connection.query(
-              'UPDATE students SET profile_pic = ? WHERE lrn = ?',
-              [student.profilePic, student.lrn]
-            );
-            if (result[0].affectedRows > 0) picCount++;
+          const result = await connection.query(
+            'UPDATE students SET qr_code = ? WHERE id = ?',
+            [qrCode, student.id]
+          );
+          
+          if (result[0].affectedRows > 0) {
+            qrGenerated++;
           }
         } catch (e) {
-          // Skip if update fails
+          console.error(`Error generating QR for ${student.full_name}:`, e.message);
         }
       }
-      
+
       connection.release();
-      console.log(`✅ DB synced: ${qrCount} QR codes, ${picCount} profile pictures`);
+      
+      if (qrGenerated > 0) {
+        console.log(`✅ Generated ${qrGenerated} QR codes for students in database`);
+      } else {
+        console.log(`✅ All students already have QR codes`);
+      }
     } catch (dbErr) {
       console.log('⚠️  Database sync skipped (not available)');
+    }
+
+    // Also try to sync from JSON file if it exists
+    const studentsPath = path.join(__dirname, '../../data/students.json');
+    if (fs.existsSync(studentsPath)) {
+      try {
+        const data = fs.readFileSync(studentsPath, 'utf8');
+        const students = JSON.parse(data);
+        
+        let needsUpdate = false;
+        let qrGenerated = 0;
+        let picAdded = 0;
+
+        for (const student of students) {
+          // Generate QR codes if missing
+          if (!student.qrCode && student.lrn) {
+            try {
+              const qrData = JSON.stringify({
+                lrn: student.lrn,
+                name: `${student.firstName} ${student.lastName}`,
+                gradeLevel: student.gradeLevel,
+                section: student.section
+              });
+              student.qrCode = await QRCode.toDataURL(qrData, { width: 300, margin: 2 });
+              qrGenerated++;
+              needsUpdate = true;
+            } catch (e) {
+              console.error(`Error generating QR for ${student.firstName}:`, e.message);
+            }
+          }
+
+          // Add profile pics if missing
+          if (!student.profilePic) {
+            student.profilePic = `https://ui-avatars.com/api/?name=${student.firstName}+${student.lastName}&background=random`;
+            picAdded++;
+            needsUpdate = true;
+          }
+        }
+
+        // Save updated students.json if needed
+        if (needsUpdate) {
+          fs.writeFileSync(studentsPath, JSON.stringify(students, null, 2));
+          console.log(`✅ Updated students.json: +${qrGenerated} QR codes, +${picAdded} profile pics`);
+        }
+      } catch (jsonError) {
+        console.log('⚠️  students.json sync skipped:', jsonError.message);
+      }
     }
   } catch (err) {
     console.error('❌ Data sync error:', err.message);
