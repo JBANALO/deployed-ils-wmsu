@@ -95,7 +95,14 @@ const getAllStudents = async (req, res) => {
       students = students.filter(s => s.status === status);
     }
 
-    res.json(students);
+    // Ensure qrCode and profilePic are always included
+    const formattedStudents = students.map(s => ({
+      ...s,
+      qrCode: s.qrCode || null,
+      profilePic: s.profilePic || null
+    }));
+
+    res.json(formattedStudents);
   } catch (err) {
     console.error('getAllStudents error:', err);
     res.status(500).json({ error: 'Failed to fetch students', details: err.message });
