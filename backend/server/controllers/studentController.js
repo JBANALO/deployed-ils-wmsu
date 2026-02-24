@@ -82,24 +82,57 @@ const createStudent = async (req, res) => {
 const getAllStudents = async (req, res) => {
   try {
     const { gradeLevel, section, status } = req.query;
-    let students = readStudents();
 
-    // Filter by query parameters
+    // Build query to fetch from database
+    let query = `
+      SELECT id, lrn, first_name, middle_name, last_name, full_name, age, sex,
+             grade_level, section, contact, wmsu_email, status, attendance, average,
+             profile_pic, qr_code, adviser_id, adviser_name, created_at
+      FROM students
+      WHERE 1=1
+    `;
+    const params = [];
+
+    // Add filters
     if (gradeLevel) {
-      students = students.filter(s => s.gradeLevel === gradeLevel);
+      query += ` AND grade_level = ?`;
+      params.push(gradeLevel);
     }
     if (section) {
-      students = students.filter(s => s.section === section);
+      query += ` AND section = ?`;
+      params.push(section);
     }
     if (status) {
-      students = students.filter(s => s.status === status);
+      query += ` AND status = ?`;
+      params.push(status);
     }
 
-    // Ensure qrCode and profilePic are always included
+    query += ` ORDER BY full_name ASC`;
+
+    const [students] = await pool.query(query, params);
+
+    // Format response with database fields mapped to camelCase
     const formattedStudents = students.map(s => ({
-      ...s,
-      qrCode: s.qrCode || null,
-      profilePic: s.profilePic || null
+      id: s.id,
+      lrn: s.lrn,
+      firstName: s.first_name,
+      middleName: s.middle_name,
+      lastName: s.last_name,
+      fullName: s.full_name,
+      age: s.age,
+      sex: s.sex,
+      gradeLevel: s.grade_level,
+      section: s.section,
+      contact: s.contact,
+      wmsuEmail: s.wmsu_email,
+      status: s.status,
+      attendance: s.attendance,
+      average: s.average,
+      profilePic: s.profile_pic,
+      qrCode: s.qr_code,
+      adviserId: s.adviser_id,
+      adviserName: s.adviser_name,
+      createdAt: s.created_at
     }));
 
     res.json(formattedStudents);
@@ -116,12 +149,41 @@ const getStudentById = async (req, res) => {
       return res.status(400).json({ error: 'Invalid student ID' });
     }
 
-    const students = readStudents();
-    const student = students.find(s => s.id === id);
-    
-    if (!student) {
+    const [students] = await pool.query(
+      `SELECT id, lrn, first_name, middle_name, last_name, full_name, age, sex,
+              grade_level, section, contact, wmsu_email, status, attendance, average,
+              profile_pic, qr_code, adviser_id, adviser_name, created_at
+       FROM students WHERE id = ?`,
+      [id]
+    );
+
+    if (students.length === 0) {
       return res.status(404).json({ error: 'Student not found' });
     }
+
+    const s = students[0];
+    const student = {
+      id: s.id,
+      lrn: s.lrn,
+      firstName: s.first_name,
+      middleName: s.middle_name,
+      lastName: s.last_name,
+      fullName: s.full_name,
+      age: s.age,
+      sex: s.sex,
+      gradeLevel: s.grade_level,
+      section: s.section,
+      contact: s.contact,
+      wmsuEmail: s.wmsu_email,
+      status: s.status,
+      attendance: s.attendance,
+      average: s.average,
+      profilePic: s.profile_pic,
+      qrCode: s.qr_code,
+      adviserId: s.adviser_id,
+      adviserName: s.adviser_name,
+      createdAt: s.created_at
+    };
 
     res.json(student);
   } catch (err) {
