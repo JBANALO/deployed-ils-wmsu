@@ -1,4 +1,4 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { UserCircleIcon, CameraIcon, Cog6ToothIcon } from "@heroicons/react/24/solid";
 import { toast } from 'react-toastify';
@@ -8,9 +8,10 @@ import { UserContext } from "../../context/UserContext";
 const API_BASE = import.meta.env.VITE_API_URL;
 
 export default function AdminProfile() {
-  const { adminUser, updateUser } = useContext(UserContext);
+  const { adminUser, updateUser, setProfileImageFile } = useContext(UserContext);
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [preview, setPreview] = useState(null);
   const [formData, setFormData] = useState({
     firstName: adminUser?.firstName || '',
     lastName: adminUser?.lastName || '',
@@ -19,25 +20,36 @@ export default function AdminProfile() {
     phone: adminUser?.phone || '',
     profileImage: adminUser?.profileImage || ''
   });
-
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (formData.profileImage && typeof formData.profileImage === 'object') {
+      const url = URL.createObjectURL(formData.profileImage);
+      setPreview(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setPreview(null);
+    }
+  }, [formData.profileImage]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('Image size should be less than 5MB');
-        return;
-      }
-      setFormData(prev => ({ ...prev, profileImage: file }));
-      toast.success('Image selected! Click "Save Changes" to upload.');
+const handleImageChange = (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Image size should be less than 10MB');
+      return;
     }
-  };
+
+    setFormData(prev => ({ ...prev, profileImage: file }));
+    setProfileImageFile(file); // <-- update context immediately
+    toast.success('Image selected! Click "Save Changes" to upload.');
+  }
+};
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -48,14 +60,13 @@ export default function AdminProfile() {
 
     try {
       const formDataSubmit = new FormData();
-      Object.keys(submitData).forEach(key => {
-        const value = submitData[key];
-        if (key === 'profileImage' && value && typeof value === 'object') {
-          formDataSubmit.append(key, value);
-        } else if (key !== 'profileImage') {
-          formDataSubmit.append(key, value);
-        }
-      });
+        Object.entries(submitData).forEach(([key, value]) => {
+          if (key === 'profileImage' && value instanceof File) {
+            formDataSubmit.append(key, value);
+          } else {
+            formDataSubmit.append(key, value);
+          }
+        });
 
       const response = await axios.put('/auth/update-profile', formDataSubmit, {
         headers: { 'Content-Type': 'multipart/form-data' }
@@ -92,6 +103,7 @@ export default function AdminProfile() {
       phone: adminUser?.phone || '',
       profileImage: adminUser?.profileImage || ''
     });
+    setProfileImageFile(null); // reset context file
     setEditMode(false);
   };
 
@@ -132,9 +144,13 @@ export default function AdminProfile() {
               // String image: either absolute URL or relative path from backend
               <img
                 src={
-                  formData.profileImage.startsWith('http')
-                    ? formData.profileImage
-                    : `${API_BASE.replace(/\/api$/, '')}${formData.profileImage}`
+                  preview || 
+                  (typeof formData.profileImage === 'string' 
+                    ? (formData.profileImage.startsWith('http')
+                        ? formData.profileImage
+                        : `${API_BASE.replace(/\/api$/, '')}${formData.profileImage}`
+                      )
+                    : '/default-avatar.jpeg')
                 }
                 alt="Profile"
                 className="w-32 h-32 rounded-full object-cover border-4 border-red-200"

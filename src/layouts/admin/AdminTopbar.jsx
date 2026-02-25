@@ -15,7 +15,7 @@ export default function AdminTopbar() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const { adminUser } = useContext(UserContext);
+  const { adminUser, profileImageFile } = useContext(UserContext);
   const navigate = useNavigate();
 
   // Navigation handlers
@@ -251,16 +251,33 @@ export default function AdminTopbar() {
               onClick={() => { setShowDropdown(!showDropdown); setShowNotifications(false); }}
               aria-label="User menu"
             >
-              {adminUser?.profileImage ? (
-               <img
-                  src={adminUser.profileImage.startsWith('http') ? adminUser.profileImage : `${API_BASE}${adminUser.profileImage}`}
-                  alt="Profile"
-                  className="w-8 h-8 rounded-full object-cover shrink-0"
-                />
-              ) : (
-                <UserCircleIcon className="w-8 h-8 text-red-800 shrink-0" />
-              )}
-              <ChevronDownIcon className={`w-4 h-4 text-red-800 hidden sm:block transition-transform duration-200 ${showDropdown ? 'rotate-180' : ''}`} />
+            {profileImageFile ? (
+              // Newly selected file (before saving)
+              <img
+                src={URL.createObjectURL(profileImageFile)}
+                alt="Profile"
+                className="w-8 h-8 rounded-full object-cover shrink-0"
+              />
+            ) : adminUser?.profileImage ? (
+              // Backend image URL
+              <img
+                src={
+                  adminUser.profileImage.startsWith('http')
+                    ? adminUser.profileImage
+                    : `${API_BASE.replace(/\/api$/, '')}${adminUser.profileImage}`
+                }
+                alt="Profile"
+                className="w-8 h-8 rounded-full object-cover shrink-0"
+                onError={(e) => { e.target.onerror = null; e.target.src = "/default-avatar.jpeg"; }}
+              />
+            ) : (
+              <UserCircleIcon className="w-8 h-8 text-red-800 shrink-0" />
+            )}
+              <ChevronDownIcon
+                className={`w-4 h-4 text-red-800 hidden sm:block transition-transform duration-200 ${
+                  showDropdown ? 'rotate-180' : ''
+                }`}
+              />
             </button>
 
             {showDropdown && (
