@@ -116,35 +116,43 @@ export default function AdminProfile() {
           <h2 className="text-xl font-semibold text-white">Personal Information</h2>
         </div>
 
-        <div className="p-8">
-          {/* Profile Image */}
-          <div className="flex items-center gap-8 mb-10">
-            <div className="relative">
-              {formData.profileImage && typeof formData.profileImage === 'object' ? (
-                <img
-                  src={URL.createObjectURL(formData.profileImage)}
-                  alt="Profile"
-                  className="w-32 h-32 rounded-full object-cover border-4 border-red-200"
-                />
-              ) : formData.profileImage && typeof formData.profileImage === 'string' ? (
-                <img
-                  src={formData.profileImage.startsWith('http') ? formData.profileImage : `${API_BASE}${formData.profileImage}`}
-                  alt="Profile"
-                  className="w-32 h-32 rounded-full object-cover border-4 border-red-200"
-                  onError={(e) => { e.target.onerror = null; e.target.src = "/default-avatar.png"; }}
-                />
-              ) : (
-                <UserCircleIcon className="w-32 h-32 text-gray-400 border-4 border-red-200 rounded-full" />
-              )}
+      <div className="p-8">
+      {/* Profile Image */}
+      <div className="flex items-center gap-8 mb-10">
+        <div className="relative">
+          {formData.profileImage ? (
+            typeof formData.profileImage === 'object' ? (
+              // Newly selected image (file object)
+              <img
+                src={URL.createObjectURL(formData.profileImage)}
+                alt="Profile"
+                className="w-32 h-32 rounded-full object-cover border-4 border-red-200"
+              />
+            ) : (
+              // String image: either absolute URL or relative path from backend
+              <img
+                src={
+                  formData.profileImage.startsWith('http')
+                    ? formData.profileImage
+                    : `${API_BASE.replace(/\/api$/, '')}${formData.profileImage}`
+                }
+                alt="Profile"
+                className="w-32 h-32 rounded-full object-cover border-4 border-red-200"
+                onError={(e) => { e.target.onerror = null; e.target.src = "/default-avatar.jpeg"; }}
+              />
+            )
+          ) : (
+            // Default avatar
+            <UserCircleIcon className="w-32 h-32 text-gray-400 border-4 border-red-200 rounded-full" />
+          )}
 
-              {editMode && (
-                <label className="absolute bottom-0 right-0 bg-red-600 text-white p-3 rounded-full cursor-pointer hover:bg-red-700 transition-colors">
-                  <CameraIcon className="w-5 h-5" />
-                  <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
-                </label>
-              )}
-            </div>
-
+          {editMode && (
+            <label className="absolute bottom-0 right-0 bg-red-600 text-white p-3 rounded-full cursor-pointer hover:bg-red-700 transition-colors">
+              <CameraIcon className="w-5 h-5" />
+              <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+            </label>
+          )}
+        </div>
             <div>
               <h3 className="text-lg font-semibold text-gray-900">
                 {formData.firstName} {formData.lastName}
