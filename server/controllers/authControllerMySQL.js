@@ -196,7 +196,7 @@ exports.updateProfile = async (req, res) => {
           const imageFileName = `profile_${userId}_${Date.now()}.png`;
           const imagePath = path.join(__dirname, '..', 'uploads', imageFileName);
           fs.writeFileSync(imagePath, req.file.buffer);
-          profileImageUrl = `http://localhost:5000/api/uploads/${imageFileName}`;
+          profileImageUrl = `/uploads/${imageFileName}`;
           console.log('Image saved to:', imagePath);
           console.log('Image URL generated:', profileImageUrl);
           console.log('Image filename being returned:', imageFileName);

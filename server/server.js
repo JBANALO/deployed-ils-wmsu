@@ -120,7 +120,7 @@ app.use('/uploads', (req, res, next) => {
   res.header('Access-Control-Allow-Methods', 'GET');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   next();
-}, express.static(path.join(__dirname, '..', 'uploads')));
+}, express.static(path.join(__dirname, 'uploads')));
 
 // Session configuration for Passport
 app.use(

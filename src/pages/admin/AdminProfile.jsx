@@ -1,168 +1,71 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
-import { UserCircleIcon, ArrowLeftIcon, CameraIcon, Cog6ToothIcon } from "@heroicons/react/24/solid";
+import { UserCircleIcon, CameraIcon, Cog6ToothIcon } from "@heroicons/react/24/solid";
 import { toast } from 'react-toastify';
 import axios from "../../api/axiosConfig";
+import { UserContext } from "../../context/UserContext";
 
 export default function AdminProfile() {
-  const [adminUser, setAdminUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { adminUser, updateUser } = useContext(UserContext);
+  const [loading, setLoading] = useState(false); // no need to fetch admin again
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
-    username: '',
-    email: '',
-    phone: '',
-    profileImage: ''
+    firstName: adminUser?.firstName || '',
+    lastName: adminUser?.lastName || '',
+    username: adminUser?.username || '',
+    email: adminUser?.email || '',
+    phone: adminUser?.phone || '',
+    profileImage: adminUser?.profileImage || ''
   });
   const navigate = useNavigate();
 
-  // Fetch admin user data
-  useEffect(() => {
-    const fetchAdminUser = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        if (token) {
-          // Try to get user info from stored data first
-          const storedUser = localStorage.getItem('user');
-          if (storedUser) {
-            const user = JSON.parse(storedUser);
-            if (user.role === 'admin') {
-              setAdminUser(user);
-              setFormData({
-                firstName: user.firstName || '',
-                lastName: user.lastName || '',
-                username: user.username || '',
-                email: user.email || '',
-                phone: user.phone || '',
-                profileImage: user.profileImage || ''
-              });
-              setLoading(false);
-              return;
-            }
-          }
-          
-          // If no stored user or not admin, fetch from API
-          const response = await axios.get('/auth/me');
-          if (response.data?.user?.role === 'admin') {
-            const user = response.data.user;
-            setAdminUser(user);
-            setFormData({
-              firstName: user.firstName || '',
-              lastName: user.lastName || '',
-              username: user.username || '',
-              email: user.email || '',
-              phone: user.phone || '',
-              profileImage: user.profileImage || ''
-            });
-            localStorage.setItem('user', JSON.stringify(user));
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching admin user:', error);
-        toast.error('Error loading profile data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAdminUser();
-  }, []);
-
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+      if (file.size > 5 * 1024 * 1024) {
         toast.error('Image size should be less than 5MB');
         return;
       }
-      
-      // Store file for form submission
-      setFormData(prev => ({
-        ...prev,
-        profileImage: file // Store the actual file object, not base64
-      }));
-      
+      setFormData(prev => ({ ...prev, profileImage: file }));
       toast.success('Image selected! Click "Save Changes" to upload.');
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Form submitted - editMode:', editMode, 'saving:', saving);
-    
-    if (saving) {
-      console.log('Already saving, ignoring submission');
-      return;
-    }
-    
-    // Ensure username is not empty - use email as fallback
-    const submitData = {
-      ...formData,
-      username: formData.username || formData.email.split('@')[0]
-    };
-    
-    console.log('Cleaned form data:', submitData);
-    
+    if (saving) return;
+
+    const submitData = { ...formData, username: formData.username || formData.email.split('@')[0] };
     setSaving(true);
 
     try {
-      console.log('Submitting form data:', submitData);
-      
-      // Create FormData for file upload
       const formDataSubmit = new FormData();
-      
-      // Add all form fields including image
       Object.keys(submitData).forEach(key => {
         const value = submitData[key];
         if (key === 'profileImage' && value && typeof value === 'object') {
-          // It's a File object, append it directly
           formDataSubmit.append(key, value);
         } else if (key !== 'profileImage') {
-          // Add text fields
           formDataSubmit.append(key, value);
         }
       });
-      
-      console.log('FormData contents:');
-      for (let [key, value] of formDataSubmit.entries()) {
-        console.log(`${key}:`, value);
-      }
-      
+
       const response = await axios.put('/auth/update-profile', formDataSubmit, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        }
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
-      
-      console.log('API Response:', response);
-      console.log('Response data:', JSON.stringify(response.data, null, 2));
-      
-      // Update local storage with new data from server response
+
       const updatedUser = response.data?.data?.user || { ...adminUser, ...formData };
-      console.log('Updated user from server:', updatedUser);
-      console.log('Profile image URL:', updatedUser.profileImage);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
-      setAdminUser(updatedUser);
+
+      // Update UserContext instead of local state
+      updateUser(updatedUser);
+
+      // Reset form data to latest user
       setFormData({
-        firstName: updatedUser.firstName || '',
-        lastName: updatedUser.lastName || '',
-        username: updatedUser.username || '',
-        email: updatedUser.email || '',
-        phone: updatedUser.phone || formData.phone || '', // Use server phone or fallback to form
-        profileImage: updatedUser.profileImage || ''
-      });
-      console.log('Form data after update:', {
         firstName: updatedUser.firstName || '',
         lastName: updatedUser.lastName || '',
         username: updatedUser.username || '',
@@ -170,15 +73,9 @@ export default function AdminProfile() {
         phone: updatedUser.phone || formData.phone || '',
         profileImage: updatedUser.profileImage || ''
       });
-      
-      // Manually trigger storage event for cross-tab updates
-      window.dispatchEvent(new StorageEvent('storage', {
-        key: 'user',
-        newValue: JSON.stringify(updatedUser)
-      }));
-      
+
       toast.success('Profile updated successfully!');
-      setEditMode(false); // Exit edit mode after successful save
+      setEditMode(false);
     } catch (error) {
       console.error('Error updating profile:', error);
       toast.error(error.response?.data?.message || 'Error updating profile');
@@ -188,17 +85,14 @@ export default function AdminProfile() {
   };
 
   const handleCancel = () => {
-    // Reset form to original data
-    if (adminUser) {
-      setFormData({
-        firstName: adminUser.firstName || '',
-        lastName: adminUser.lastName || '',
-        username: adminUser.username || '',
-        email: adminUser.email || '',
-        phone: adminUser.phone || '',
-        profileImage: adminUser.profileImage || ''
-      });
-    }
+    setFormData({
+      firstName: adminUser?.firstName || '',
+      lastName: adminUser?.lastName || '',
+      username: adminUser?.username || '',
+      email: adminUser?.email || '',
+      phone: adminUser?.phone || '',
+      profileImage: adminUser?.profileImage || ''
+    });
     setEditMode(false);
   };
 
@@ -250,22 +144,20 @@ export default function AdminProfile() {
                       className="w-32 h-32 rounded-full object-cover border-4 border-red-200"
                     />
                   ) : formData.profileImage && typeof formData.profileImage === 'string' ? (
-                    <img
-                      src={`${formData.profileImage}?t=${Date.now()}`}
-                      alt="Profile"
-                      className="w-32 h-32 rounded-full object-cover border-4 border-red-200"
-                      onError={(e) => {
-                        console.error('Image failed to load:', formData.profileImage);
-                        console.error('Error event:', e);
-                        // Try to load with different URL format
-                        const fallbackUrl = formData.profileImage.replace('http://localhost:5000/uploads', 'http://localhost:5000/api/uploads');
-                        console.log('Trying fallback URL:', fallbackUrl);
-                        e.target.src = `${fallbackUrl}?t=${Date.now()}`;
-                      }}
-                      onLoad={() => {
-                        console.log('Image loaded successfully:', formData.profileImage);
-                      }}
-                    />
+                  <img
+                    src={
+                      formData.profileImage
+                        ? `http://localhost:5000${formData.profileImage}`
+                        : "/default-avatar.png"
+                    }
+                    alt="Profile"
+                    className="w-32 h-32 rounded-full object-cover border-4 border-red-200"
+                    onError={(e) => {
+                      console.log("Image failed, switching to local fallback");
+                      e.target.onerror = null; // stop loop
+                      e.target.src = "/default-avatar.png"; // MUST be local file
+                    }}
+                  />
                   ) : (
                     <UserCircleIcon className="w-32 h-32 text-gray-400 border-4 border-red-200 rounded-full" />
                   );
