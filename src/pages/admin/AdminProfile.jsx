@@ -5,9 +5,10 @@ import { toast } from 'react-toastify';
 import axios from "../../api/axiosConfig";
 import { UserContext } from "../../context/UserContext";
 
+const API_BASE = import.meta.env.VITE_API_URL;
+
 export default function AdminProfile() {
   const { adminUser, updateUser } = useContext(UserContext);
-  const [loading, setLoading] = useState(false); // no need to fetch admin again
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [formData, setFormData] = useState({
@@ -18,6 +19,7 @@ export default function AdminProfile() {
     phone: adminUser?.phone || '',
     profileImage: adminUser?.profileImage || ''
   });
+
   const navigate = useNavigate();
 
   const handleInputChange = (e) => {
@@ -60,17 +62,14 @@ export default function AdminProfile() {
       });
 
       const updatedUser = response.data?.data?.user || { ...adminUser, ...formData };
-
-      // Update UserContext instead of local state
       updateUser(updatedUser);
 
-      // Reset form data to latest user
       setFormData({
         firstName: updatedUser.firstName || '',
         lastName: updatedUser.lastName || '',
         username: updatedUser.username || '',
         email: updatedUser.email || '',
-        phone: updatedUser.phone || formData.phone || '',
+        phone: updatedUser.phone || '',
         profileImage: updatedUser.profileImage || ''
       });
 
@@ -96,94 +95,64 @@ export default function AdminProfile() {
     setEditMode(false);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-800 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading profile...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4 md:space-y-8">
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow p-3 md:p-5 border border-gray-300 border-b-red-800 border-b-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 md:gap-4 mb-4">
-            <Cog6ToothIcon className="w-12 md:w-20 h-12 md:h-20 text-red-800 transition-transform duration-300 hover:scale-105 shrink-0" />
-            <div className="flex-1">
-              <h2 className="text-3xl md:text-6xl font-bold text-gray-900">Admin Profile</h2>
-              <div className="flex items-center gap-4">
-                <p className="text-xs md:text-sm text-gray-400 mt-2">
-                  Manage your personal information and account settings
-                </p>
-              </div>
-            </div>
+      {/* Header */}
+      <div className="bg-white rounded-lg shadow p-3 md:p-5 border border-gray-300 border-b-red-800 border-b-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 md:gap-4 mb-4">
+          <Cog6ToothIcon className="w-12 md:w-20 h-12 md:h-20 text-red-800 transition-transform duration-300 hover:scale-105 shrink-0" />
+          <div className="flex-1">
+            <h2 className="text-3xl md:text-6xl font-bold text-gray-900">Admin Profile</h2>
+            <p className="text-xs md:text-sm text-gray-400 mt-2">
+              Manage your personal information and account settings
+            </p>
           </div>
         </div>
+      </div>
 
-        {/* Profile Card */}
-        <div className="bg-white shadow rounded-lg overflow-hidden">
-          <div className="bg-red-800 px-6 py-4">
-            <h2 className="text-xl font-semibold text-white">Personal Information</h2>
-          </div>
-          
-          <div className="p-8">
-            {/* Profile Image Section */}
-            <div className="flex items-center gap-8 mb-10">
-              <div className="relative">
-                {(() => {
-                  console.log('Rendering image - formData.profileImage:', formData.profileImage);
-                  console.log('Type of profileImage:', typeof formData.profileImage);
-                  return formData.profileImage && typeof formData.profileImage === 'object' ? (
-                    <img
-                      src={URL.createObjectURL(formData.profileImage)}
-                      alt="Profile"
-                      className="w-32 h-32 rounded-full object-cover border-4 border-red-200"
-                    />
-                  ) : formData.profileImage && typeof formData.profileImage === 'string' ? (
-                  <img
-                    src={
-                      formData.profileImage
-                        ? `http://localhost:5000${formData.profileImage}`
-                        : "/default-avatar.png"
-                    }
-                    alt="Profile"
-                    className="w-32 h-32 rounded-full object-cover border-4 border-red-200"
-                    onError={(e) => {
-                      console.log("Image failed, switching to local fallback");
-                      e.target.onerror = null; // stop loop
-                      e.target.src = "/default-avatar.png"; // MUST be local file
-                    }}
-                  />
-                  ) : (
-                    <UserCircleIcon className="w-32 h-32 text-gray-400 border-4 border-red-200 rounded-full" />
-                  );
-                })()}
-                
-                {editMode && (
-                  <label className="absolute bottom-0 right-0 bg-red-600 text-white p-3 rounded-full cursor-pointer hover:bg-red-700 transition-colors">
-                    <CameraIcon className="w-5 h-5" />
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageChange}
-                      className="hidden"
-                    />
-                  </label>
-                )}
-              </div>
-              
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {formData.firstName} {formData.lastName}
-                </h3>
-                <p className="text-gray-600">@{formData.username}</p>
-                <p className="text-gray-500 text-sm">{formData.email}</p>
-              </div>
+      {/* Profile Card */}
+      <div className="bg-white shadow rounded-lg overflow-hidden">
+        <div className="bg-red-800 px-6 py-4">
+          <h2 className="text-xl font-semibold text-white">Personal Information</h2>
+        </div>
+
+        <div className="p-8">
+          {/* Profile Image */}
+          <div className="flex items-center gap-8 mb-10">
+            <div className="relative">
+              {formData.profileImage && typeof formData.profileImage === 'object' ? (
+                <img
+                  src={URL.createObjectURL(formData.profileImage)}
+                  alt="Profile"
+                  className="w-32 h-32 rounded-full object-cover border-4 border-red-200"
+                />
+              ) : formData.profileImage && typeof formData.profileImage === 'string' ? (
+                <img
+                  src={formData.profileImage.startsWith('http') ? formData.profileImage : `${API_BASE}${formData.profileImage}`}
+                  alt="Profile"
+                  className="w-32 h-32 rounded-full object-cover border-4 border-red-200"
+                  onError={(e) => { e.target.onerror = null; e.target.src = "/default-avatar.png"; }}
+                />
+              ) : (
+                <UserCircleIcon className="w-32 h-32 text-gray-400 border-4 border-red-200 rounded-full" />
+              )}
+
+              {editMode && (
+                <label className="absolute bottom-0 right-0 bg-red-600 text-white p-3 rounded-full cursor-pointer hover:bg-red-700 transition-colors">
+                  <CameraIcon className="w-5 h-5" />
+                  <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+                </label>
+              )}
             </div>
+
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">
+                {formData.firstName} {formData.lastName}
+              </h3>
+              <p className="text-gray-600">@{formData.username}</p>
+              <p className="text-gray-500 text-sm">{formData.email}</p>
+            </div>
+          </div>
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-8">

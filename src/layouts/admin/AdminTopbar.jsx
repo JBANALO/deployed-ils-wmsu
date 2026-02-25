@@ -8,6 +8,8 @@ import axios from "../../api/axiosConfig";
 import { toast } from 'react-toastify';
 import { UserContext } from "../../context/UserContext";
 
+const API_BASE = import.meta.env.VITE_API_URL;
+
 export default function AdminTopbar() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -250,8 +252,8 @@ export default function AdminTopbar() {
               aria-label="User menu"
             >
               {adminUser?.profileImage ? (
-                <img
-                  src={`http://localhost:5000${adminUser.profileImage}`}
+               <img
+                  src={adminUser.profileImage.startsWith('http') ? adminUser.profileImage : `${API_BASE}${adminUser.profileImage}`}
                   alt="Profile"
                   className="w-8 h-8 rounded-full object-cover shrink-0"
                 />
