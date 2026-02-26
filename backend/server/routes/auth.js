@@ -3,7 +3,8 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const bcrypt = require('bcrypt');
-const { getUsers } = require('./users'); // Import to access users array
+const jwt = require('jsonwebtoken');
+const { getUsers, inMemoryUsers } = require('./users'); // Import to access users array
 
 // Sample user data for fallback when MySQL is not available
 const SAMPLE_USERS = [
@@ -31,9 +32,6 @@ const SAMPLE_USERS = [
     approval_status: 'approved'
   }
 ];
-
-// In-memory users storage (for newly created accounts)
-let IN_MEMORY_USERS = [];
 
 // Login endpoint
 router.post('/login', async (req, res) => {
@@ -137,10 +135,21 @@ router.post('/login', async (req, res) => {
       subjectsHandled: user.subjectsHandled || user.subjects_handled ? (user.subjectsHandled || user.subjects_handled).split(',').map(s => s.trim()) : []
     };
 
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        userId: userData.id, 
+        email: userData.email, 
+        role: userData.role 
+      },
+      process.env.JWT_SECRET || 'your-secret-key-fallback',
+      { expiresIn: '24h' }
+    );
+
     return res.json({
       status: 'success',
       message: 'Login successful',
-      token: 'temp-token',
+      token: token,
       data: {
         user: userData
       }

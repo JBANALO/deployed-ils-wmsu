@@ -9,15 +9,16 @@ router.post('/signup', userController.signup);
 router.post('/signup-batch', userController.signupBatch);
 router.get('/', userController.getAllUsers);
 router.get('/pending-teachers', userController.getPendingTeachers);
-
-// Get user by ID (public for profile viewing)
-router.get('/:id', userController.getUserById);
+router.get('/pending-students', userController.getPendingStudents);
 
 // Protected routes (require authentication)
 router.use(authController.protect);
 
-// Get current user
+// Get current user (must come before /:id)
 router.get('/me', userController.getMe);
+
+// Get user by ID (public for profile viewing)
+router.get('/:id', userController.getUserById);
 
 // Delete user by ID
 router.delete('/:id', userController.deleteUser);

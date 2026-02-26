@@ -13,7 +13,14 @@ export default function LoginPage() {
 
   const navigate = useNavigate();
 
-  // Removed auto-fill to prevent pre-filled credentials
+  // Pre-fill email from localStorage if available (from account creation)
+  useEffect(() => {
+    const pendingEmail = localStorage.getItem('pendingEmail');
+    if (pendingEmail) {
+      setEmail(pendingEmail);
+      localStorage.removeItem('pendingEmail'); // Clear after using
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -36,6 +43,7 @@ export default function LoginPage() {
 
       const response = await authService.login(loginData);
 
+      console.log('Login response:', response);
       const user = response?.data?.user;
       const role = user?.role;
 
@@ -47,6 +55,7 @@ export default function LoginPage() {
       // Store user data in localStorage
       if (user) {
         localStorage.setItem('user', JSON.stringify(user));
+        console.log('User stored in localStorage:', user);
       }
 
       // Normalize role for comparison
@@ -115,7 +124,6 @@ export default function LoginPage() {
             <label className="text-sm font-medium text-gray-700">Email or Username</label>
             <input
               type="text"
-              placeholder="email@wmsu.edu.ph"
               className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 transition"
               value={email}
               onChange={(e) => setEmail(e.target.value)}

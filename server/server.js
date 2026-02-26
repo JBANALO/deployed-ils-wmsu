@@ -80,7 +80,6 @@ const syncQRCodesOnStartup = async () => {
 // Log environment variables for debugging
 console.log('=== ENVIRONMENT CHECK ===');
 console.log('DB_HOST:', process.env.DB_HOST || 'NOT SET');
-console.log('DB_USER:', process.env.DB_USER || 'NOT SET');
 console.log('DB_NAME:', process.env.DB_NAME || 'NOT SET');
 console.log('DB_PORT:', process.env.DB_PORT || 'NOT SET');
 console.log('NODE_ENV:', process.env.NODE_ENV || 'NOT SET');
@@ -90,12 +89,14 @@ const authRoutes = require('./routes/authRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const classRoutes = require('./routes/classRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
+const gradeRoutes = require('./routes/grades');
 
 const app = express();
 
 // CORS - allow Vercel frontend
 const allowedOrigins = [
   'http://localhost:5173',
+  'http://localhost:5174',
   'http://localhost:5000',
   process.env.FRONTEND_URL,
 ].filter(Boolean);
@@ -110,7 +111,16 @@ app.use(cors({
   },
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Serve static files (uploads directory) with CORS
+app.use('/uploads', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+}, express.static(path.join(__dirname, 'uploads')));
 
 // Session configuration for Passport
 app.use(
@@ -245,17 +255,107 @@ app.post('/api/admin/import-students', async (req, res) => {
   }
 });
 
+// Serve profile images via API endpoint with proper CORS
+app.get('/api/uploads/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const imagePath = path.join(__dirname, '..', 'uploads', filename);
+  
+  console.log(`Image request received for: ${filename}`);
+  console.log(`Full image path: ${imagePath}`);
+  console.log(`File exists: ${fs.existsSync(imagePath)}`);
+  
+  // Security check - only allow image files
+  if (!filename.match(/\.(png|jpg|jpeg|gif)$/i)) {
+    console.log('File type not allowed:', filename);
+    return res.status(403).json({ error: 'File type not allowed' });
+  }
+  
+  // Check if file exists
+  if (!fs.existsSync(imagePath)) {
+    console.log('File not found:', imagePath);
+    return res.status(404).json({ error: 'File not found' });
+  }
+  
+  console.log('Sending image file:', imagePath);
+  
+  // Set CORS headers
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Content-Type', 'image/png');
+  
+  // Send file
+  res.sendFile(imagePath);
+});
+
+// Get recent login attempts
+app.get('/api/admin/recent-login-attempts', async (req, res) => {
+  try {
+    // For now, return mock data since we don't have a login_attempts table
+    const mockAttempts = [
+      {
+        id: '1',
+        email: 'admin@wmsu.edu.ph',
+        timestamp: new Date(Date.now() - 5 * 60000).toISOString(),
+        ip: '192.168.1.100',
+        success: true
+      },
+      {
+        id: '2', 
+        email: 'teacher@wmsu.edu.ph',
+        timestamp: new Date(Date.now() - 15 * 60000).toISOString(),
+        ip: '192.168.1.101',
+        success: true
+      }
+    ];
+    
+    res.json({
+      status: 'success',
+      data: { attempts: mockAttempts },
+      message: `Found ${mockAttempts.length} recent login attempts`
+    });
+  } catch (error) {
+    console.error('Error fetching login attempts:', error);
+    res.status(500).json({ message: 'Error fetching login attempts', error: error.message });
+  }
+});
+
 // API routes
 app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/grades', gradeRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: 'Something went wrong!', error: err.message });
+  console.error('Server error:', err);
+  
+  // Don't send error details in production
+  if (process.env.NODE_ENV === 'production') {
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'Internal server error' 
+    });
+  } else {
+    res.status(500).json({ 
+      message: 'Something went wrong!', 
+      error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+    });
+  }
+  next();
+});
+
+// Graceful shutdown handling
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully');
+  process.exit(0);
 });
 
 const PORT = process.env.PORT || 5000;
@@ -263,6 +363,37 @@ const PORT = process.env.PORT || 5000;
 (async () => {
   // Sync QR codes on startup
   await syncQRCodesOnStartup();
+  
+  // Ensure database has required columns
+  try {
+    console.log('Checking database columns...');
+    
+    // Add phone column if it doesn't exist
+    try {
+      await query('ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT ""');
+      console.log('✅ Phone column added');
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') {
+        console.log('❌ Error adding phone column:', error.message);
+      } else {
+        console.log('✅ Phone column already exists');
+      }
+    }
+    
+    // Add profile_pic column if it doesn't exist
+    try {
+      await query('ALTER TABLE users ADD COLUMN profile_pic LONGTEXT');
+      console.log('✅ Profile pic column added');
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') {
+        console.log('❌ Error adding profile_pic column:', error.message);
+      } else {
+        console.log('✅ Profile pic column already exists');
+      }
+    }
+  } catch (error) {
+    console.error('❌ Database setup error:', error.message);
+  }
   
   app.listen(PORT, '0.0.0.0', (err) => {
     if (err) {
