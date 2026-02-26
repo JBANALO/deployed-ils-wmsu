@@ -12,6 +12,8 @@ import { toast } from 'react-toastify';
 import axios from "../../api/axiosConfig";
 import SF2AttendanceForm from "../../components/SF2AttendanceForm";
 import { useNavigate } from "react-router-dom";
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
 
 export default function AdminDashboard() {
   const [students, setStudents] = useState([]);
@@ -39,27 +41,88 @@ export default function AdminDashboard() {
     pendingStudents: 0
   });
   const [recentActivity, setRecentActivity] = useState([]);
+  const [activityLog, setActivityLog] = useState([]);
+  const [adminUser, setAdminUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showSF2Modal, setShowSF2Modal] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     loadDashboardStats();
+    
+    // Fetch admin user data
+    const fetchAdminUser = async () => {
+      try {
+        // Get current user from localStorage or make an API call
+        const token = localStorage.getItem('token');
+        if (token) {
+          // Try to get user info from stored data first
+          const storedUser = localStorage.getItem('user');
+          if (storedUser) {
+            const user = JSON.parse(storedUser);
+            if (user.role === 'admin') {
+              setAdminUser(user);
+              return;
+            }
+          }
+          
+          // If no stored user or not admin, fetch from API
+          const response = await axios.get('/auth/me');
+          if (response.data?.user?.role === 'admin') {
+            setAdminUser(response.data.user);
+            localStorage.setItem('user', JSON.stringify(response.data.user));
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching admin user:', error);
+        // Fallback to default admin info
+        setAdminUser({ firstName: 'Admin', lastName: 'User' });
+      }
+    };
+
+    fetchAdminUser();
+    
+    // Set up real-time updates every 30 seconds
+    const interval = setInterval(() => {
+      loadDashboardStats();
+    }, 30000);
+    
+    return () => clearInterval(interval);
   }, []);
+
+  // Function to add real-time activity
+  const logActivity = (type, title, subtitle, color = 'blue') => {
+    const newActivity = {
+      type,
+      title,
+      subtitle,
+      color,
+      timestamp: new Date().toISOString()
+    };
+    
+    setActivityLog(prev => [newActivity, ...prev].slice(0, 50)); // Keep last 50 activities
+    setRecentActivity(prev => [newActivity, ...prev].slice(0, 3)); // Show latest 3 in dashboard
+  };
 
 const loadDashboardStats = async () => {
   try {
+    console.log('Loading dashboard stats...');
+    
     // =========================
     // FETCH STUDENTS
     // =========================
+    console.log('Fetching students...');
     const studentsRes = await axios.get('/students');
+    console.log('Students response:', studentsRes.data);
     const studentsList = studentsRes.data?.data || [];
     setStudents(studentsList);
 
     // =========================
     // FETCH TEACHERS
     // =========================
+    console.log('Fetching users...');
     const usersRes = await axios.get('/users');
+    console.log('Users response:', usersRes.data);
     const allUsers = usersRes.data?.users || [];
     const teachers = allUsers.filter(u =>
       ['teacher', 'subject_teacher', 'adviser'].includes(u.role)
@@ -192,29 +255,36 @@ const loadDashboardStats = async () => {
       pendingStudents: pendingStudents.length
     });
 
-    setRecentActivity([
-      {
-        type: 'teacher_registration',
-        title: 'New teacher registration',
-        subtitle:
-          pendingTeachers.length > 0
-            ? `${pendingTeachers[0]?.firstName} ${pendingTeachers[0]?.lastName} - Just now`
-            : 'No new registrations',
-        color: 'green'
-      },
-      {
-        type: 'grade_submission',
-        title: 'Grade submission',
-        subtitle: 'Grade 3-A Math - 4 hours ago',
-        color: 'blue'
-      },
-      {
-        type: 'attendance',
-        title: 'Attendance recorded',
-        subtitle: 'Grade 2-B - 6 hours ago',
-        color: 'purple'
+    // Log real-time activities based on actual data
+    if (pendingTeachers.length > 0) {
+      logActivity(
+        'teacher_registration',
+        'New teacher registration',
+        `${pendingTeachers[0]?.firstName} ${pendingTeachers[0]?.lastName} - ${getTimeAgo(pendingTeachers[0]?.createdAt)}`,
+        'green'
+      );
+    }
+
+    if (pendingGrades.length > 0) {
+      logActivity(
+        'grade_submission',
+        'Grade submission',
+        `${pendingGrades.length} grade${pendingGrades.length > 1 ? 's' : ''} pending review`,
+        'blue'
+      );
+    }
+
+    if (attendanceList.length > 0) {
+      const todayAttendance = attendanceList.filter(a => a.date === new Date().toISOString().split('T')[0]);
+      if (todayAttendance.length > 0) {
+        logActivity(
+          'attendance',
+          'Attendance recorded',
+          `${todayAttendance.length} attendance record${todayAttendance.length > 1 ? 's' : ''} for today`,
+          'purple'
+        );
       }
-    ]);
+    }
 
     setLoading(false);
 
@@ -236,35 +306,176 @@ const loadDashboardStats = async () => {
     return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
   };
 
-  const exportCSV = () => {
-    // Create CSV content for dashboard data
-    const csvContent = [
-      ['Metric', 'Value'],
-      ['Total Students', stats.totalStudents],
-      ['Total Teachers', stats.totalTeachers],
-      ['Total Classes', stats.totalClasses],
-      ['Attendance Records', stats.totalAttendanceRecords],
-      ['Today Attendance Rate', `${performanceMetrics.todayAttendance}%`],
-      ['Weekly Grades', performanceMetrics.weeklyGrades],
-      ['Pending Grades', performanceMetrics.pendingGrades],
-      ['Active Users', performanceMetrics.activeUsers],
-      ['Active Teachers', performanceMetrics.activeTeachers],
-      ['Active Students', performanceMetrics.activeStudents],
-      ['Response Time', `${performanceMetrics.responseTime}s`],
-      ['Pending Teachers', pendingApprovals.pendingTeachers],
-      ['Pending Students', pendingApprovals.pendingStudents]
-    ].map(row => row.join(',')).join('\n');
+  const downloadDashboardPDF = async () => {
+    try {
+      logActivity('export', 'PDF Export', 'Admin dashboard exported as PDF', 'red');
+      toast.info('Starting dashboard PDF generation...');
+      
+      // Create PDF with dashboard data (same as CSV)
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
 
-    // Create download link
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `dashboard-report-${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 15;
+      let yPosition = margin;
+
+      // Title
+      pdf.setFontSize(20);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Dashboard Report', pageWidth / 2, yPosition, { align: 'center' });
+      yPosition += 15;
+
+      // Date
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Generated: ${new Date().toLocaleDateString()}`, pageWidth / 2, yPosition, { align: 'center' });
+      yPosition += 20;
+
+      // Overview Section
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Overview', margin, yPosition);
+      yPosition += 12;
+
+      // Stats Grid
+      const statsData = [
+        { label: 'Total Students', value: stats.totalStudents.toLocaleString() },
+        { label: 'Total Teachers', value: stats.totalTeachers },
+        { label: 'Total Classes', value: stats.totalClasses },
+        { label: 'Attendance Records', value: stats.totalAttendanceRecords.toLocaleString() }
+      ];
+
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'normal');
+      statsData.forEach((stat, index) => {
+        const xPosition = margin + (index % 2) * 90;
+        const yPos = yPosition + Math.floor(index / 2) * 25;
+        
+        // Label
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(stat.label, xPosition, yPos);
+        
+        // Value
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(stat.value.toString(), xPosition, yPos + 8);
+      });
+
+      yPosition += Math.ceil(statsData.length / 2) * 25 + 20;
+
+      // Performance Metrics Section
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Performance Metrics', margin, yPosition);
+      yPosition += 12;
+
+      const performanceData = [
+        { label: 'Today\'s Attendance', value: `${performanceMetrics.todayAttendance}%` },
+        { label: 'Weekly Grades', value: performanceMetrics.weeklyGrades.toString() },
+        { label: 'Pending Grades', value: performanceMetrics.pendingGrades.toString() },
+        { label: 'Active Users', value: performanceMetrics.activeUsers.toString() },
+        { label: 'Active Teachers', value: performanceMetrics.activeTeachers.toString() },
+        { label: 'Active Students', value: performanceMetrics.activeStudents.toString() },
+        { label: 'Response Time', value: `${performanceMetrics.responseTime}s` }
+      ];
+
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'normal');
+      performanceData.forEach((metric, index) => {
+        const xPosition = margin + (index % 2) * 90;
+        const yPos = yPosition + Math.floor(index / 2) * 20;
+        
+        // Label
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(metric.label, xPosition, yPos);
+        
+        // Value
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(metric.value, xPosition, yPos + 8);
+      });
+
+      yPosition += Math.ceil(performanceData.length / 2) * 20 + 20;
+
+      // Pending Approvals Section
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Pending Approvals', margin, yPosition);
+      yPosition += 12;
+
+      const approvalData = [
+        { label: 'Pending Teachers', value: pendingApprovals.pendingTeachers.toString() },
+        { label: 'Pending Students', value: pendingApprovals.pendingStudents.toString() }
+      ];
+
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'normal');
+      approvalData.forEach((approval, index) => {
+        const xPosition = margin + (index % 2) * 90;
+        const yPos = yPosition + Math.floor(index / 2) * 20;
+        
+        // Label
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(approval.label, xPosition, yPos);
+      });
+
+      // Save PDF
+      const fileName = `dashboard-report-${new Date().toISOString().split('T')[0]}.pdf`;
+      pdf.save(fileName);
+      
+      toast.success('Dashboard PDF downloaded successfully!');
+      return; // Ensure function exits here
+
+    } catch (error) {
+      toast.error('Dashboard PDF generation failed: ' + error.message);
+    }
+  };
+
+  const exportCSV = () => {
+    logActivity('export', 'CSV Export', 'Dashboard data exported as CSV', 'gray');
+    toast.info('Exporting dashboard data...');
+    toast.info('Current stats: ' + JSON.stringify(stats));
+    toast.info('Current performance metrics: ' + JSON.stringify(performanceMetrics));
+    toast.info('Current pending approvals: ' + JSON.stringify(pendingApprovals));
+    
+    try {
+      // Create CSV content for dashboard data
+      const csvContent = [
+        ['Metric', 'Value'],
+        ['Total Students', stats.totalStudents],
+        ['Total Teachers', stats.totalTeachers],
+        ['Total Classes', stats.totalClasses],
+        ['Attendance Records', stats.totalAttendanceRecords],
+        ['Today Attendance Rate', `${performanceMetrics.todayAttendance}%`],
+        ['Weekly Grades', performanceMetrics.weeklyGrades],
+        ['Pending Grades', performanceMetrics.pendingGrades],
+        ['Active Users', performanceMetrics.activeUsers],
+        ['Active Teachers', performanceMetrics.activeTeachers],
+        ['Active Students', performanceMetrics.activeStudents],
+        ['Response Time', `${performanceMetrics.responseTime}s`],
+        ['Pending Teachers', pendingApprovals.pendingTeachers],
+        ['Pending Students', pendingApprovals.pendingStudents]
+      ].map(row => row.join(',')).join('\n');
+
+      // Create download link
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `dashboard-report-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      console.log('CSV export completed successfully');
+      toast.success('Dashboard report exported successfully!');
+    } catch (error) {
+      console.error('CSV export error:', error);
+      toast.error('Failed to export dashboard report');
+    }
   };
 
   return (
@@ -274,14 +485,16 @@ const loadDashboardStats = async () => {
           <Cog6ToothIcon className="w-12 md:w-20 h-12 md:h-20 text-red-800 transition-transform duration-300 hover:scale-105 flex-shrink-0" />
           <div className="flex-1">
             <h2 className="text-3xl md:text-6xl font-bold text-gray-900">Admin Dashboard</h2>
-            <p className="text-xs md:text-sm text-gray-400 mt-2">Welcome, Admin!</p>
+            <p className="text-xs md:text-sm text-gray-400 mt-2">
+              Welcome, {adminUser ? adminUser.username || adminUser.email : 'Admin'}!
+            </p>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-6">
 
-        <main className="md:col-span-12 bg-white rounded-lg shadow p-4 md:p-6 order-1 md:order-2">
+        <main className="md:col-span-12 bg-white rounded-lg shadow p-4 md:p-6 order-1 md:order-2 dashboard-content">
           {activeSection === "overview" && (
             <div>
               <h2 className="text-lg md:text-xl font-semibold mb-4">Overview</h2>
@@ -332,7 +545,10 @@ const loadDashboardStats = async () => {
                     <h4 className="font-medium text-orange-800">Pending Teachers</h4>
                     <p className="text-2xl font-bold text-orange-600">{loading ? '...' : pendingApprovals.pendingTeachers}</p>
                     <button 
-                      onClick={() => setActiveSection("teachers")}
+                      onClick={() => {
+                        logActivity('navigation', 'Section Change', 'Navigated to teachers review', 'orange');
+                        setActiveSection("teachers");
+                      }}
                       className="mt-2 text-sm text-orange-700 hover:text-orange-900"
                     >
                       Review Now 
@@ -342,7 +558,10 @@ const loadDashboardStats = async () => {
                     <h4 className="font-medium text-blue-800">Pending Students</h4>
                     <p className="text-2xl font-bold text-blue-600">{loading ? '...' : pendingApprovals.pendingStudents}</p>
                     <button 
-                      onClick={() => setActiveSection("students")}
+                      onClick={() => {
+                        logActivity('navigation', 'Section Change', 'Navigated to students review', 'blue');
+                        setActiveSection("students");
+                      }}
                       className="mt-2 text-sm text-blue-700 hover:text-blue-900"
                     >
                       Review Now 
@@ -414,18 +633,21 @@ const loadDashboardStats = async () => {
                 <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
                 <div className="flex gap-4">
                   <button 
-                    onClick={() => setShowSF2Modal(true)}
+                    onClick={() => {
+                      logActivity('form', 'SF2 Form', 'SF2 attendance form opened', 'red');
+                      setShowSF2Modal(true);
+                    }}
                     className="flex items-center gap-2 bg-red-600 text-white px-5 py-3 rounded-lg shadow hover:bg-red-700 transition"
                   >
                     <ArrowDownTrayIcon className="w-6 h-6" />
                     SF2 Form
                   </button>
                   <button 
-                    onClick={() => window.print()}
+                    onClick={downloadDashboardPDF}
                     className="flex items-center gap-2 bg-red-800 text-white px-5 py-3 rounded-lg shadow hover:bg-red-900 transition"
                   >
                     <ArrowDownTrayIcon className="w-6 h-6" />
-                    Download PDF Report
+                    Download PDF Version
                   </button>
                   <button 
                     onClick={exportCSV}

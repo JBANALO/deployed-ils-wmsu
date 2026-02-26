@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
+const { verifyUser } = require('../middleware/auth');
 
 // Sample users storage (fallback when MySQL is not available)
 let sampleUsers = [
@@ -81,6 +82,53 @@ router.post('/signup', async (req, res) => {
     // Add to in-memory users array
     inMemoryUsers.push(newUser);
 
+    // Also save to database
+    try {
+      console.log('=== ATTEMPTING DATABASE SAVE ===');
+      const connection = await pool.getConnection();
+      console.log('Database connection acquired');
+      
+      const insertQuery = `
+        INSERT INTO users (id, first_name, last_name, full_name, username, email, password, role, approval_status) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      
+      const insertParams = [
+        newUser.id,
+        newUser.firstName,
+        newUser.lastName,
+        newUser.fullName,
+        newUser.username,
+        newUser.email,
+        newUser.password,
+        newUser.role,
+        newUser.approval_status
+      ];
+      
+      console.log('Insert query:', insertQuery);
+      console.log('Insert params:', insertParams.map((p, i) => `${i}: ${p}`));
+      
+      const [result] = await connection.query(insertQuery, insertParams);
+      console.log('Insert result:', result);
+      console.log('Affected rows:', result[0]?.affectedRows);
+      
+      connection.release();
+      
+      if (result[0]?.affectedRows > 0) {
+        console.log('✅ User saved to database:', { id: newUser.id, email: newUser.email });
+      } else {
+        console.log('❌ Database save failed - no rows affected');
+      }
+    } catch (dbError) {
+      console.error('❌ Database save error:', dbError);
+      console.error('Error details:', {
+        message: dbError.message,
+        code: dbError.code,
+        errno: dbError.errno
+      });
+      // Still keep in in-memory for fallback
+    }
+
     console.log('New user registered:', {
       id: newUser.id,
       email: newUser.email,
@@ -124,20 +172,38 @@ const getUsers = () => {
   return users;
 };
 
-module.exports = { router, getUsers };
-
 // GET /users/me - Get current user profile
-router.get('/me', async (req, res) => {
+router.get('/me', verifyUser, async (req, res) => {
   try {
-    // This would typically use JWT token to identify user
-    // For now, return a mock response
+    // User data is available from req.user (set by JWT middleware)
+    const userFromToken = req.user;
+    
+    // Get full user details from our user storage
+    const allUsers = [...sampleUsers, ...inMemoryUsers];
+    const fullUser = allUsers.find(u => u.id === userFromToken.userId || u.email === userFromToken.email);
+    
+    if (!fullUser) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'User not found'
+      });
+    }
+
+    // Return user data without password
+    const { password, ...userWithoutPassword } = fullUser;
+    
     res.json({
       status: 'success',
       data: {
         user: {
-          id: 'current-user-id',
-          email: 'user@example.com',
-          role: 'user'
+          id: userWithoutPassword.id,
+          email: userWithoutPassword.email,
+          username: userWithoutPassword.username,
+          firstName: userWithoutPassword.firstName || userWithoutPassword.first_name,
+          lastName: userWithoutPassword.lastName || userWithoutPassword.last_name,
+          fullName: userWithoutPassword.fullName || userWithoutPassword.full_name,
+          role: userWithoutPassword.role,
+          profilePic: userWithoutPassword.profilePic || userWithoutPassword.profile_pic
         }
       }
     });
@@ -169,4 +235,4 @@ router.get('/', async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = { router, getUsers, inMemoryUsers };
