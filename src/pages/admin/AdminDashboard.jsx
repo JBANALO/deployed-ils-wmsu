@@ -135,16 +135,22 @@ const loadDashboardStats = async () => {
     let pendingStudents = [];
 
     try {
+      console.log('Fetching pending teachers...');
       const pendingTeachersRes = await axios.get('/users/pending-teachers');
       pendingTeachers = pendingTeachersRes.data?.data?.teachers || [];
-    } catch {
+      console.log('Pending teachers fetched:', pendingTeachers);
+    } catch (err) {
+      console.error('Error fetching pending teachers:', err);
       pendingTeachers = [];
     }
 
     try {
+      console.log('Fetching pending students...');
       const pendingStudentsRes = await axios.get('/users/pending-students');
       pendingStudents = pendingStudentsRes.data?.data?.students || [];
-    } catch {
+      console.log('Pending students fetched:', pendingStudents);
+    } catch (err) {
+      console.error('Error fetching pending students:', err);
       pendingStudents = [];
     }
 
@@ -546,8 +552,8 @@ const loadDashboardStats = async () => {
                     <p className="text-2xl font-bold text-orange-600">{loading ? '...' : pendingApprovals.pendingTeachers}</p>
                     <button 
                       onClick={() => {
-                        logActivity('navigation', 'Section Change', 'Navigated to teachers review', 'orange');
-                        setActiveSection("teachers");
+                        logActivity('navigation', 'Section Change', 'Navigated to admin approvals', 'orange');
+                        navigate("/admin/approvals");
                       }}
                       className="mt-2 text-sm text-orange-700 hover:text-orange-900"
                     >
@@ -559,8 +565,8 @@ const loadDashboardStats = async () => {
                     <p className="text-2xl font-bold text-blue-600">{loading ? '...' : pendingApprovals.pendingStudents}</p>
                     <button 
                       onClick={() => {
-                        logActivity('navigation', 'Section Change', 'Navigated to students review', 'blue');
-                        setActiveSection("students");
+                        logActivity('navigation', 'Section Change', 'Navigated to admin approvals', 'blue');
+                        navigate("/admin/approvals");
                       }}
                       className="mt-2 text-sm text-blue-700 hover:text-blue-900"
                     >

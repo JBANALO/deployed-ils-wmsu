@@ -2780,5 +2780,24 @@
     "status": "Active",
     "createdAt": "2025-12-22T20:12:29.942Z",
     "profilePic": "https://ui-avatars.com/api/?name=Alexis+Katarina+Maureen+Saavedra&background=random&color=fff"
+  },
+  {
+    "id": "ccaf2750-8dd5-475b-bf47-e03883cbd0d9",
+    "lrn": "000222111333",
+    "firstName": "Maxie",
+    "middleName": "Andreison",
+    "lastName": "Galang",
+    "age": 12,
+    "sex": "Male",
+    "gradeLevel": "Grade 6",
+    "section": "Leadership",
+    "parentFirstName": "Totoy",
+    "parentLastName": "Bibo",
+    "parentEmail": "totoy_bibo@gmail.com",
+    "parentContact": "09123456789",
+    "wmsuEmail": "000222111333@wmsu.edu.ph",
+    "password": "WMSU1333406",
+    "profilePic": null,
+    "createdAt": "2026-02-26T09:06:20.234Z"
   }
 ]

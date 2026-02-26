@@ -1,7 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { GoogleOAuthProvider } from '@react-oauth/google';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import CreateAccount from "./pages/auth/CreateAccount";
 import LoginPage from "./pages/auth/LoginPage";
 import GoogleCallbackPage from "./pages/auth/GoogleCallbackPage";
 import ForgotPassword from "./pages/auth/ForgotPassword";
@@ -37,8 +36,8 @@ import AdminAssignAdviser from "./pages/admin/AdminAssignAdviser.jsx";
 import AdminAssignSubjectTeacher from "./pages/admin/AdminAssignSubjectTeacher.jsx";
 import AdminAttendance from "./pages/admin/AdminAttendance";
 import AdminCreateTeacher from "./pages/admin/AdminCreateTeacher.jsx";
+import AdminCreateAccount from "./pages/admin/AdminCreateAccount.jsx";
 import AdminSettings from "./pages/admin/AdminSettings.jsx";
-import CreateAccount from "./pages/admin/CreateAccount";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
 import { Toaster } from 'react-hot-toast';  
@@ -77,16 +76,12 @@ function App() {
           />
 
           <Routes>
-            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="/" element={<Navigate to="/create-account" replace />} />
 
             <Route path="/login" element={<LoginPage />} />
             <Route path="/auth/google-callback" element={<GoogleCallbackPage />} />
+            <Route path="/create-account" element={<CreateAccount />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
-
-            {/* Admin-only standalone pages */}
-            <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
-              <Route path="/admin/create-account" element={<CreateAccount />} />
-            </Route>
 
             <Route path="/layouts/student/student-topbar" element={<StudentTopbar />} />
             <Route path="/student/student-dashboard" element={<StudentDashboard />} />
@@ -123,6 +118,7 @@ function App() {
                 <Route path="/admin/admin/classlist/:id" element={<AdminClassList />} />
                 <Route path="/admin/admin-attendance" element={<AdminAttendance />} />
                 <Route path="/admin/create-teacher" element={<AdminCreateTeacher />} />
+                <Route path="/admin/create-account" element={<AdminCreateAccount />} />
                 <Route path="/admin/settings" element={<AdminSettings />} />
               </Route>
             </Route>
@@ -130,17 +126,6 @@ function App() {
             <Route path="*" element={<div className="p-20 text-center text-3xl font-bold">404 - Page Not Found</div>} />
           </Routes>
         </Router>
-        <ToastContainer
-          position="top-right"
-          autoClose={5000}
-          hideProgressBar={false}
-          newestOnTop={false}
-          closeOnClick
-          rtl={false}
-          pauseOnFocusLoss
-          draggable
-          pauseOnHover
-        />
       </UserProvider>
     </GoogleOAuthProvider>
   );

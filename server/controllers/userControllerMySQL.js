@@ -3,14 +3,19 @@ const { pool, query } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
-// Signup new user
+// Signup new user (Admin only)
 exports.signup = async (req, res) => {
   try {
-    const { firstName, lastName, username, email, password, role = 'student', gradeLevel, section } = req.body;
+    const { firstName, lastName, username, email, password, role = 'admin' } = req.body;
 
     // Validate input
     if (!firstName || !lastName || !username || !email || !password) {
       return res.status(400).json({ message: 'Please provide all required fields' });
+    }
+
+    // Only allow admin role
+    if (role !== 'admin') {
+      return res.status(400).json({ message: 'Invalid role. Only admin accounts can be created here.' });
     }
 
     // Check if user already exists
@@ -22,21 +27,21 @@ exports.signup = async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create user with pending approval status
+    // Create admin user
     const userId = uuidv4();
     await query(
-      'INSERT INTO users (id, firstName, lastName, username, email, password, role, gradeLevel, section, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-      [userId, firstName, lastName, username, email, hashedPassword, role, gradeLevel || null, section || null, 'pending']
+      'INSERT INTO users (id, first_name, last_name, username, email, password, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
+      [userId, firstName, lastName, username, email, hashedPassword, role]
     );
 
     res.status(201).json({ 
-      message: 'User created successfully. Your account is pending admin approval.',
+      message: 'Admin account created successfully!',
       userId,
-      status: 'pending'
+      role
     });
   } catch (error) {
     console.error('Error in signup:', error);
-    res.status(500).json({ message: 'Error creating user', error: error.message });
+    res.status(500).json({ message: 'Error creating admin account', error: error.message });
   }
 };
 
@@ -94,16 +99,28 @@ exports.signupBatch = async (req, res) => {
   }
 };
 
-// Get all users
+// Get all users (admin only)
 exports.getAllUsers = async (req, res) => {
   try {
-    const users = await query('SELECT id, firstName, lastName, username, email, role, gradeLevel, section, createdAt FROM users ORDER BY createdAt DESC');
+    const users = await query('SELECT id, first_name, last_name, username, email, role, created_at FROM users ORDER BY created_at DESC');
+    
+    // Format users to match expected structure
+    const formattedUsers = users.map(user => ({
+      id: user.id,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      createdAt: user.created_at
+    }));
+    
     res.json({
       status: 'success',
       data: {
-        users: users
+        users: formattedUsers
       },
-      users: users  // Also return at top level for backward compatibility
+      users: formattedUsers  // Also return at top level for backward compatibility
     });
   } catch (error) {
     console.error('Error fetching users:', error);
@@ -111,16 +128,14 @@ exports.getAllUsers = async (req, res) => {
   }
 };
 
-// Get pending teachers
+// Get pending teachers (empty since users table is admin-only)
 exports.getPendingTeachers = async (req, res) => {
   try {
-    const teachers = await query(
-      'SELECT id, firstName, lastName, username, email, role, status, createdAt FROM users WHERE role = "teacher" AND status = "pending" ORDER BY createdAt DESC'
-    );
+    // Users table is admin-only, so no pending teachers
     res.json({ 
       status: 'success',
-      data: { teachers }, 
-      message: `Found ${teachers.length} pending teacher(s)`
+      data: { teachers: [] }, 
+      message: 'No pending teachers found'
     });
   } catch (error) {
     console.error('Error fetching pending teachers:', error);
@@ -128,16 +143,14 @@ exports.getPendingTeachers = async (req, res) => {
   }
 };
 
-// Get pending students
+// Get pending students (empty since users table is admin-only)
 exports.getPendingStudents = async (req, res) => {
   try {
-    const students = await query(
-      'SELECT id, firstName, lastName, username, email, role, status, createdAt FROM users WHERE role = "student" AND status = "pending" ORDER BY createdAt DESC'
-    );
+    // Users table is admin-only, so no pending students
     res.json({ 
       status: 'success',
-      data: { students }, 
-      message: `Found ${students.length} pending student(s)`
+      data: { students: [] }, 
+      message: 'No pending students found'
     });
   } catch (error) {
     console.error('Error fetching pending students:', error);
@@ -153,7 +166,7 @@ exports.getMe = async (req, res) => {
     }
 
     const user = await query(
-      'SELECT id, firstName, lastName, username, email, role, createdAt FROM users WHERE id = ?',
+      'SELECT id, first_name, last_name, username, email, role, created_at FROM users WHERE id = ?',
       [req.user.id]
     );
 
@@ -161,7 +174,22 @@ exports.getMe = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.json(user[0]);
+    const userData = user[0];
+    
+    res.status(200).json({
+      status: 'success',
+      data: {
+        user: {
+          id: userData.id,
+          firstName: userData.first_name,
+          lastName: userData.last_name,
+          username: userData.username,
+          email: userData.email,
+          role: userData.role,
+          createdAt: userData.created_at
+        }
+      }
+    });
   } catch (error) {
     console.error('Error fetching current user:', error);
     res.status(500).json({ message: 'Error fetching user', error: error.message });
@@ -295,7 +323,12 @@ exports.updateUser = async (req, res) => {
 exports.approveTeacher = async (req, res) => {
   try {
     const { id } = req.params;
-    const { role } = req.body;
+    const { role, gradeLevel } = req.body;
+
+    // For students, ensure grade level is provided
+    if (role === 'student' && !gradeLevel) {
+      return res.status(400).json({ message: 'Grade level is required when approving students' });
+    }
 
     let queryStr = 'UPDATE users SET status = "approved", updatedAt = NOW()';
     const params = [];
@@ -303,6 +336,12 @@ exports.approveTeacher = async (req, res) => {
     if (role) {
       queryStr += ', role = ?';
       params.push(role);
+    }
+
+    // Add grade level if provided (for students)
+    if (gradeLevel) {
+      queryStr += ', gradeLevel = ?';
+      params.push(gradeLevel);
     }
 
     queryStr += ' WHERE id = ?';
@@ -330,17 +369,32 @@ exports.declineTeacher = async (req, res) => {
     const { id } = req.params;
 
     const result = await query(
-      'UPDATE users SET status = "declined", updatedAt = NOW() WHERE id = ? AND role = "teacher"',
+      'UPDATE users SET status = "declined", updatedAt = NOW() WHERE id = ?',
       [id]
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Teacher not found' });
+      return res.status(404).json({ message: 'User not found' });
     }
 
-    res.json({ message: 'Teacher declined successfully' });
+    res.json({ message: 'User declined successfully' });
   } catch (error) {
-    console.error('Error declining teacher:', error);
-    res.status(500).json({ message: 'Error declining teacher', error: error.message });
+    console.error('Error declining user:', error);
+    res.status(500).json({ message: 'Error declining user', error: error.message });
+  }
+};
+
+// Get declined students
+exports.getDeclinedStudents = async (req, res) => {
+  try {
+    // Since users table is admin-only, return empty array for now
+    // This would need to be implemented when student management is added
+    res.json({ 
+      status: 'success',
+      data: { students: [] }
+    });
+  } catch (error) {
+    console.error('Error fetching declined students:', error);
+    res.status(500).json({ message: 'Error fetching declined students', error: error.message });
   }
 };

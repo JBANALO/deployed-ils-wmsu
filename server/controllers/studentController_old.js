@@ -51,131 +51,27 @@ exports.createStudent = async (req, res) => {
     const {
       lrn, firstName, middleName, lastName, age, sex,
       parentFirstName, parentLastName, parentEmail, parentContact,
-      wmsuEmail, student_email, password, profilePic
+      wmsuEmail, password, profilePic
     } = req.body;
     
-    // Debug logging to see what we're receiving
-    console.log('Received body:', req.body);
-    console.log('Individual fields:', {
-      lrn, firstName, middleName, lastName, age, sex,
-      parentFirstName, parentLastName, parentEmail, parentContact,
-      wmsuEmail, password, profilePic
-    });
+    // Generate QR Code for the student
+    const qrCodeDataUrl = await generateQRCode(req.body);
     
-    // Handle undefined values by converting to null
-    const safeMiddleName = middleName || null;
-    const safeParentFirstName = parentFirstName || null;
-    const safeParentLastName = parentLastName || null;
-    const safeParentEmail = parentEmail || null;
-    const safeParentContact = parentContact || null;
-    
-    // Also handle potentially undefined required fields
-    const safeLrn = lrn || null;
-    const safeFirstName = firstName || null;
-    const safeLastName = lastName || null;
-    const safeAge = age || null;
-    const safeSex = sex || null;
-    const safeWmsuEmail = wmsuEmail || student_email || null;
-    const safePassword = password || null;
-    
-    // Handle profile picture upload
-    let profilePicPath = null;
-    if (req.files && req.files.profilePic) {
-      const profilePic = req.files.profilePic;
-      const profilePicFileName = `profile_${lrn}_${Date.now()}.${profilePic.name.split('.').pop()}`;
-      profilePicPath = path.join(__dirname, '../public/profiles', profilePicFileName);
-      
-      // Ensure profiles directory exists
-      const profilesDir = path.dirname(profilePicPath);
-      if (!fs.existsSync(profilesDir)) {
-        fs.mkdirSync(profilesDir, { recursive: true });
-      }
-      
-      // Move uploaded file
-      fs.renameSync(profilePic.path, profilePicPath);
-      console.log('Profile picture saved to file:', profilePicPath);
-    }
-    
-    // Generate QR Code for the student and save as file
-    const fs = require('fs');
-    const path = require('path');
-    const QRCode = require('qrcode');
-    
-    // Create QR code and save as file
-    const qrCodeFileName = `qr_${lrn}_${Date.now()}.png`;
-    const qrCodePath = path.join(__dirname, '../public/qrcodes', qrCodeFileName);
-    
-    // Ensure qrcodes directory exists
-    const qrcodesDir = path.dirname(qrCodePath);
-    if (!fs.existsSync(qrcodesDir)) {
-      fs.mkdirSync(qrcodesDir, { recursive: true });
-    }
-    
-    const qrData = {
-      lrn: lrn,
-      firstName: firstName,
-      middleName: middleName || '',
-      lastName: lastName,
-      fullName: `${firstName} ${middleName || ''} ${lastName}`.trim(),
-      gradeLevel: gradeLevel,
-      section: req.body.section,
-      studentEmail: wmsuEmail
-    };
-    
-    // Generate QR code and save to file
-    await QRCode.toFile(qrCodePath, JSON.stringify(qrData), {
-      width: 200,
-      margin: 1,
-      color: { dark: '#000000', light: '#FFFFFF' }
-    });
-    
-    console.log('QR Code saved to file:', qrCodePath);
-    
-    // Use profile picture path or null
-    const safeProfilePic = profilePicPath ? `/profiles/${path.basename(profilePicPath)}` : null;
-    
-    // Use QR code path with correct prefix
-    const safeQRCode = qrCodeFileName ? `/qrcodes/${qrCodeFileName}` : null;
+    console.log('QR Code generated successfully');
     
     // Insert into students table with 'pending' status for approval workflow
     try {
       console.log('Attempting to insert student into students table...');
-      
-      // Check for duplicate LRN first
-      const existingStudent = await query('SELECT id FROM students WHERE lrn = ?', [lrn]);
-      if (existingStudent.length > 0) {
-        return res.status(400).json({ 
-          status: 'fail', 
-          message: 'LRN already exists. Please use a different LRN.' 
-        });
-      }
-      
       const result = await query(
-        `INSERT INTO students SET 
-          lrn = ?, 
-          first_name = ?, 
-          middle_name = ?, 
-          last_name = ?, 
-          age = ?, 
-          sex = ?, 
-          grade_level = ?, 
-          section = ?, 
-          parent_first_name = ?, 
-          parent_last_name = ?, 
-          parent_email = ?, 
-          parent_contact = ?, 
-          student_email = ?, 
-          password = ?, 
-          profile_pic = ?, 
-          qr_code = ?, 
-          status = ?, 
-          created_by = ?, 
-          created_at = NOW(), 
-          updated_at = NOW()`,
+        `INSERT INTO students (
+          lrn, first_name, middle_name, last_name, age, sex, grade_level, section,
+          parentFirstName, parentLastName, parentEmail, parentContact,
+          wmsu_email, password, profile_pic, qr_code, status, created_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW(), NOW())`,
         [
-          safeLrn, safeFirstName, safeMiddleName, safeLastName, safeAge, safeSex, gradeLevel, req.body.section,
-          safeParentFirstName, safeParentLastName, safeParentEmail, safeParentContact,
-          safeWmsuEmail, safePassword, safeProfilePic, safeQRCode, 'pending', 'admin'
+          lrn, firstName, middleName, lastName, age, sex, gradeLevel, req.body.section,
+          parentFirstName, parentLastName, parentEmail, parentContact,
+          wmsuEmail, password, profilePic || null, qrCodeDataUrl
         ]
       );
       
@@ -185,11 +81,8 @@ exports.createStudent = async (req, res) => {
         id: result.insertId,
         lrn, firstName, middleName, lastName, age, sex, gradeLevel,
         section: req.body.section, parentFirstName, parentLastName,
-        parentEmail, parentContact, wmsuEmail, profilePic: safeProfilePic,
-        qrCode: safeQRCode,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        parentEmail, parentContact, wmsuEmail, profilePic: qrCodeDataUrl,
+        status: 'pending'
       };
       
       res.status(201).json({ status: 'success', data: { student: createdStudent } });
@@ -223,12 +116,14 @@ exports.getStudents = async (req, res) => {
     // Database is available, fetch from students table
     console.log('Fetching students from database...');
     
-    // Get all students from database (both pending and approved)
-    const allDbStudents = await query(
-      'SELECT id, lrn, first_name, middle_name, last_name, age, sex, grade_level, section, ' +
-      'student_email, profile_pic, qr_code, status, attendance, average, ' +
-      'created_by, created_at, updated_at FROM students ORDER BY created_at DESC'
-    );
+    try {
+      // Get all students from database (both pending and approved)
+      const allDbStudents = await query(
+        'SELECT id, lrn, first_name, middle_name, last_name, age, sex, grade_level, section, ' +
+        'parentFirstName, parentLastName, parentEmail, parentContact, ' +
+        'wmsu_email, profile_pic, qr_code, status, attendance, average, ' +
+        'created_by, created_at, updated_at FROM students ORDER BY created_at DESC'
+      );
       
       // Format students to match expected structure
       const formattedStudents = allDbStudents.map(student => ({
@@ -242,11 +137,11 @@ exports.getStudents = async (req, res) => {
         sex: student.sex,
         gradeLevel: student.grade_level,
         section: student.section,
-        parentFirstName: '', // These columns don't exist in your current database
-        parentLastName: '',
-        parentEmail: '',
-        parentContact: '',
-        wmsuEmail: student.student_email,
+        parentFirstName: student.parentFirstName || '',
+        parentLastName: student.parentLastName || '',
+        parentEmail: student.parentEmail || '',
+        parentContact: student.parentContact || '',
+        wmsuEmail: student.wmsu_email,
         profilePic: student.profile_pic,
         qrCode: student.qr_code,
         status: student.status || 'Active',
@@ -262,7 +157,10 @@ exports.getStudents = async (req, res) => {
       console.error('Error fetching students from database:', error.message);
       res.status(400).json({ status: 'fail', message: error.message });
     }
-  };
+  } catch (error) {
+    res.status(400).json({ status: 'fail', message: error.message });
+  }
+};
 
 exports.getStudent = async (req, res) => {
   try {
@@ -283,7 +181,8 @@ exports.getStudent = async (req, res) => {
     try {
       const students = await query(
         'SELECT id, lrn, first_name, middle_name, last_name, age, sex, grade_level, section, ' +
-        'student_email, profile_pic, qr_code, status, created_at, updated_at FROM students WHERE id = ?',
+        'parentFirstName, parentLastName, parentEmail, parentContact, ' +
+        'wmsu_email, profile_pic, qr_code, status, created_at, updated_at FROM students WHERE id = ?',
         [id]
       );
       
@@ -303,11 +202,11 @@ exports.getStudent = async (req, res) => {
         sex: student.sex,
         gradeLevel: student.grade_level,
         section: student.section,
-        parentFirstName: '', // These columns don't exist in your current database
-        parentLastName: '',
-        parentEmail: '',
-        parentContact: '',
-        wmsuEmail: student.student_email,
+        parentFirstName: student.parentFirstName || '',
+        parentLastName: student.parentLastName || '',
+        parentEmail: student.parentEmail || '',
+        parentContact: student.parentContact || '',
+        wmsuEmail: student.wmsu_email,
         profilePic: student.profile_pic,
         qrCode: student.qr_code,
         status: student.status || 'Active',
@@ -344,7 +243,8 @@ exports.getPendingStudents = async (req, res) => {
       // Get pending students from students table
       const pendingStudents = await query(
         'SELECT id, lrn, first_name, middle_name, last_name, age, sex, grade_level, section, ' +
-        'student_email, profile_pic, qr_code, status, created_at FROM students WHERE status = "pending" ORDER BY created_at DESC'
+        'parentFirstName, parentLastName, parentEmail, parentContact, ' +
+        'wmsu_email, profile_pic, qr_code, status, created_at FROM students WHERE status = "pending" ORDER BY created_at DESC'
       );
       
       console.log('Found pending students:', pendingStudents.length);
@@ -361,16 +261,15 @@ exports.getPendingStudents = async (req, res) => {
         sex: student.sex,
         gradeLevel: student.grade_level,
         section: student.section,
-        parentFirstName: '', // These columns don't exist in your current database
-        parentLastName: '',
-        parentEmail: '',
-        parentContact: '',
-        wmsuEmail: student.student_email,
+        parentFirstName: student.parentFirstName || '',
+        parentLastName: student.parentLastName || '',
+        parentEmail: student.parentEmail || '',
+        parentContact: student.parentContact || '',
+        wmsuEmail: student.wmsu_email,
         profilePic: student.profile_pic,
         qrCode: student.qr_code,
         status: student.status || 'pending',
-        createdAt: student.created_at,
-        role: 'student' // Add role field for AdminApprovals filtering
+        createdAt: student.created_at
       }));
       
       res.json({ 
@@ -422,13 +321,12 @@ exports.approveStudent = async (req, res) => {
   }
 };
 
-// Decline student (mark as declined instead of deleting)
+// Decline student (remove from database)
 exports.declineStudent = async (req, res) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body;
     
-    console.log('Declining student with ID:', id, 'Reason:', reason);
+    console.log('Declining student with ID:', id);
     
     // Check if database is available
     if (!isDatabaseAvailable()) {
@@ -436,13 +334,13 @@ exports.declineStudent = async (req, res) => {
     }
     
     try {
-      const result = await query('UPDATE students SET status = "declined", decline_reason = ?, updated_at = NOW() WHERE id = ?', [reason || null, id]);
+      const result = await query('DELETE FROM students WHERE id = ?', [id]);
       
       if (result.affectedRows === 0) {
         return res.status(404).json({ message: 'Student not found' });
       }
       
-      console.log('Student declined successfully with reason:', reason);
+      console.log('Student declined and removed successfully');
       res.json({ message: 'Student declined successfully' });
     } catch (error) {
       console.error('Error declining student:', error);
@@ -454,95 +352,7 @@ exports.declineStudent = async (req, res) => {
   }
 };
 
-// Get declined students
-exports.getDeclinedStudents = async (req, res) => {
-  try {
-    // Check if database is available
-    if (!isDatabaseAvailable()) {
-      return res.status(400).json({ message: 'Database not available' });
-    }
-    
-    try {
-      // Get declined students from database
-      const declinedStudents = await query(
-        'SELECT id, lrn, first_name, middle_name, last_name, age, sex, grade_level, section, ' +
-        'student_email, profile_pic, qr_code, status, decline_reason, created_at, updated_at FROM students WHERE status = "declined" ORDER BY updated_at DESC'
-      );
-      
-      console.log('Found declined students:', declinedStudents.length);
-      
-      // Format students to match expected structure
-      const formattedStudents = declinedStudents.map(student => ({
-        id: student.id,
-        lrn: student.lrn,
-        firstName: student.first_name,
-        middleName: student.middle_name,
-        lastName: student.last_name,
-        fullName: `${student.first_name} ${student.middle_name} ${student.last_name}`.trim(),
-        age: student.age,
-        sex: student.sex,
-        gradeLevel: student.grade_level,
-        section: student.section,
-        parentFirstName: '', // These columns don't exist in your current database
-        parentLastName: '',
-        parentEmail: '',
-        parentContact: '',
-        wmsuEmail: student.student_email,
-        profilePic: student.profile_pic,
-        qrCode: student.qr_code,
-        status: student.status || 'declined',
-        declineReason: student.decline_reason || 'No reason provided',
-        createdAt: student.created_at,
-        updatedAt: student.updated_at,
-        role: 'student' // Add role field for AdminApprovals filtering
-      }));
-      
-      res.json({ 
-        status: 'success',
-        data: { students: formattedStudents }, 
-        message: `Found ${formattedStudents.length} declined student(s)`
-      });
-    } catch (error) {
-      console.error('Error fetching declined students:', error);
-      res.status(500).json({ message: 'Error fetching declined students', error: error.message });
-    }
-  } catch (error) {
-    res.status(400).json({ message: 'Error fetching declined students', error: error.message });
-  }
-};
-
 // -----------------------------
-// Restore student (mark as pending again)
-exports.restoreStudent = async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    console.log('Restoring student with ID:', id);
-    
-    // Check if database is available
-    if (!isDatabaseAvailable()) {
-      return res.status(400).json({ message: 'Database not available' });
-    }
-    
-    try {
-      const result = await query('UPDATE students SET status = "pending", decline_reason = NULL, updated_at = NOW() WHERE id = ?', [id]);
-      
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ message: 'Student not found' });
-      }
-      
-      console.log('Student restored successfully');
-      res.json({ message: 'Student restored successfully' });
-    } catch (error) {
-      console.error('Error restoring student:', error);
-      res.status(500).json({ message: 'Error restoring student', error: error.message });
-    }
-  } catch (error) {
-    console.error('Error in restoreStudent:', error);
-    res.status(500).json({ message: 'Error restoring student', error: error.message });
-  }
-};
-
 // ALIASES TO MATCH ROUTES
 // -----------------------------
 exports.getAllStudents = exports.getStudents;

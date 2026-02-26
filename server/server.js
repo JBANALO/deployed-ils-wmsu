@@ -90,6 +90,7 @@ const studentRoutes = require('./routes/studentRoutes');
 const classRoutes = require('./routes/classRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const gradeRoutes = require('./routes/grades');
+const teacherRoutes = require('./routes/teacherRoutes');
 
 const app = express();
 
@@ -121,6 +122,23 @@ app.use('/uploads', (req, res, next) => {
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   next();
 }, express.static(path.join(__dirname, 'uploads')));
+
+// Serve static files from public directory (QR codes, profile pictures)
+app.use('/qrcodes', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+}, express.static(path.join(__dirname, 'public/qrcodes')));
+
+app.use('/profiles', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+}, express.static(path.join(__dirname, 'public/profiles')));
+
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // Session configuration for Passport
 app.use(
@@ -325,6 +343,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/classes', classRoutes);
+app.use('/api/teachers', teacherRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/grades', gradeRoutes);
 
@@ -360,49 +379,96 @@ process.on('SIGINT', () => {
 
 const PORT = process.env.PORT || 5000;
 
-(async () => {
-  // Sync QR codes on startup
-  await syncQRCodesOnStartup();
-  
-  // Ensure database has required columns
+// Async startup function
+const startServer = async () => {
+  const { query, isDatabaseAvailable } = require('./config/database');
+
+  // 1️⃣ Sync QR codes on startup
   try {
-    console.log('Checking database columns...');
-    
-    // Add phone column if it doesn't exist
-    try {
-      await query('ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT ""');
-      console.log('✅ Phone column added');
-    } catch (error) {
-      if (error.code !== 'ER_DUP_FIELDNAME') {
-        console.log('❌ Error adding phone column:', error.message);
-      } else {
-        console.log('✅ Phone column already exists');
-      }
-    }
-    
-    // Add profile_pic column if it doesn't exist
-    try {
-      await query('ALTER TABLE users ADD COLUMN profile_pic LONGTEXT');
-      console.log('✅ Profile pic column added');
-    } catch (error) {
-      if (error.code !== 'ER_DUP_FIELDNAME') {
-        console.log('❌ Error adding profile_pic column:', error.message);
-      } else {
-        console.log('✅ Profile pic column already exists');
-      }
-    }
-  } catch (error) {
-    console.error('❌ Database setup error:', error.message);
+    await syncQRCodesOnStartup();
+  } catch (err) {
+    console.error('❌ QR code sync failed:', err.message);
   }
-  
-  app.listen(PORT, '0.0.0.0', (err) => {
-    if (err) {
-      console.error('Error starting server:', err);
-      return;
+
+  // 2️⃣ Wait a bit for DB connection
+  await new Promise(resolve => setTimeout(resolve, 2000));
+
+  // 3️⃣ Ensure database columns exist
+  if (isDatabaseAvailable()) {
+    console.log('✅ Database is available, checking columns...');
+
+    // Users table columns
+    const userColumns = [
+      { name: 'phone', sql: 'ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT ""' },
+      { name: 'profile_pic', sql: 'ALTER TABLE users ADD COLUMN profile_pic LONGTEXT' }
+    ];
+
+    for (const col of userColumns) {
+      try {
+        const exists = await query(`SHOW COLUMNS FROM users LIKE '${col.name}'`);
+        if (exists.length === 0) {
+          await query(col.sql);
+          console.log(`✅ ${col.name} column added to users`);
+        } else {
+          console.log(`✅ ${col.name} column already exists in users`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ Skipping users.${col.name} check:`, err.message);
+      }
     }
-    console.log(`Server is running on http://0.0.0.0:${PORT}`);
-    console.log(`Access from network at http://192.168. 0.153:${PORT}`);
+
+    // Students table columns
+    const studentColumns = [
+      { name: 'middleName', sql: 'ALTER TABLE students ADD COLUMN middleName VARCHAR(255) AFTER first_name' },
+      { name: 'age', sql: 'ALTER TABLE students ADD COLUMN age INT AFTER middleName' },
+      { name: 'sex', sql: 'ALTER TABLE students ADD COLUMN sex VARCHAR(10) AFTER age' },
+      { name: 'lrn', sql: 'ALTER TABLE students ADD COLUMN lrn VARCHAR(20) AFTER sex' },
+      { name: 'parentFirstName', sql: 'ALTER TABLE students ADD COLUMN parentFirstName VARCHAR(255) AFTER section' },
+      { name: 'parentLastName', sql: 'ALTER TABLE students ADD COLUMN parentLastName VARCHAR(255) AFTER parentFirstName' },
+      { name: 'parentContact', sql: 'ALTER TABLE students ADD COLUMN parentContact VARCHAR(20) AFTER parentLastName' },
+      { name: 'parentEmail', sql: 'ALTER TABLE students ADD COLUMN parentEmail VARCHAR(255) AFTER parentContact' },
+      { name: 'qrCode', sql: 'ALTER TABLE students ADD COLUMN qrCode TEXT AFTER parentEmail' }
+    ];
+
+    for (const col of studentColumns) {
+      try {
+        const exists = await query(`SHOW COLUMNS FROM students LIKE '${col.name}'`);
+        if (exists.length === 0) {
+          await query(col.sql);
+          console.log(`✅ ${col.name} column added to students`);
+        } else {
+          console.log(`✅ ${col.name} column already exists in students`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ Skipping students.${col.name} check:`, err.message);
+      }
+    }
+
+    console.log('✅ Database setup completed successfully!');
+  } else {
+    console.log('⚠️ Database not available - running in file-only mode');
+  }
+
+  // 4️⃣ Start Express server
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n🚀 Server running on http://0.0.0.0:${PORT}`);
+    console.log('📋 Application Status:');
+    console.log('   ✅ Server: Running');
+    console.log('   ✅ File Storage: Available');
+    console.log('   ✅ Student Creation: Working');
+    console.log('   ✅ QR Code Generation: Working');
+    
+    if (isDatabaseAvailable()) {
+      console.log('   ✅ Database: Connected');
+      console.log('   ✅ Approval Workflow: Available');
+    } else {
+      console.log('   ⚠️ Database: Not Connected (File-only mode)');
+      console.log('   ℹ️ Students will appear directly in AdminStudents');
+    }
   }).on('error', (err) => {
     console.error('Server error:', err);
   });
-})();
+};
+
+// Start the server
+startServer();

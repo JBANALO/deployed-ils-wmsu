@@ -49,18 +49,15 @@ export default function ForgotPasswordPage() {
 
               <button
                 type="submit"
-                className="w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-2.5 rounded-md transition"
+                className="w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-4 px-6 rounded-md transition"
               >
                 Send Reset Link
               </button>
             </form>
 
-            <div className="flex justify-between text-sm mt-5 text-gray-600">
-              <Link to="/login" className="hover:text-red-800 underline">
+            <div className="flex justify-center text-sm mt-5 text-gray-600">
+              <Link to="/login" className="w-[150px] bg-gray-600 hover:bg-gray-400 text-white font-semibold py-4 px-6 rounded-md transition duration-200 transform hover:scale-105">
                 Login
-              </Link>
-              <Link to="/create-account" className="hover:text-red-800 underline">
-                Create an Account
               </Link>
             </div>
           </>
@@ -74,7 +71,7 @@ export default function ForgotPasswordPage() {
 
             <Link
               to="/login"
-              className="w-full inline-block bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2.5 rounded-md transition text-center"
+              className="w-full inline-block bg-gray-400 hover:bg-gray-500 text-white font-semibold py-4 px-6 rounded-md transition text-center"
             >
               Login
             </Link>
