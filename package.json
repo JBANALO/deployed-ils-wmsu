@@ -7,7 +7,7 @@
     "dev": "vite",
     "prebuild": "node print-env.js",
     "build": "vite build",
-    "postinstall": "cd server && npm ci --omit=dev",
+    "postinstall": "if [ \"$CI\" != \"true\" ]; then cd server && npm ci --omit=dev || true; fi",
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "node server/server.js",

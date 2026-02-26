@@ -7,14 +7,16 @@ workflows:
       node: latest
       groups:
         - expo_credentials
+      vars:
+        CI: "true"
     triggering:
       events:
         - push
     scripts:
       - name: Install root dependencies
-        script: npm ci
+        script: npm ci || npm install
       - name: Navigate and install mobile dependencies
-        script: cd MyNewApp && npm ci
+        script: cd MyNewApp && npm ci || npm install
       - name: Install EAS CLI
         script: npm install -g eas-cli
       - name: Build APK via EAS
