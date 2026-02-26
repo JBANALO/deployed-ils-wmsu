@@ -244,7 +244,7 @@ export default function GradeLevel() {
   const submitDeleteRequest = async () => {
     if (!deleteReason.trim()) return alert("Reason required");
     try {
-      await fetch("http://localhost:5000/api/delete-requests", {
+      await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/delete-requests`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

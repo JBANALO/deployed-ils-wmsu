@@ -42,7 +42,17 @@ export default function AdminStudents() {
       const response = await fetch(`${API_BASE_URL}/students`);
       if (response.ok) {
         const data = await response.json();
-        setStudents(Array.isArray(data) ? data : data.data || []);
+        const studentsArray = Array.isArray(data) ? data : data.data || [];
+        console.log('Raw students data:', studentsArray);
+        console.log('Number of students:', studentsArray.length);
+        
+        // Only show approved students (not pending or rejected)
+        const approvedStudents = studentsArray.filter(student => 
+          student.status === 'approved' || student.verification_status === 'approved'
+        );
+        console.log('Approved students:', approvedStudents.length);
+        console.log('Approved students details:', approvedStudents);
+        setStudents(approvedStudents);
       } else {
         toast('Could not fetch from new API, using empty list', { icon: '⚠️' });
         setStudents([]);
@@ -55,7 +65,11 @@ export default function AdminStudents() {
         const altResponse = await fetch(`${API_BASE_URL}/students`);
         if (altResponse.ok) {
           const data = await altResponse.json();
-          setStudents(data);
+          // Only show approved students
+          const approvedStudents = Array.isArray(data) ? data.filter(student => 
+            student.status === 'approved' || student.verification_status === 'approved'
+          ) : [];
+          setStudents(approvedStudents);
         } else {
           setStudents([]);
         }
@@ -68,14 +82,50 @@ export default function AdminStudents() {
   };
 
   // Filter K-3 students (created by admin)
-  const k3Students = students.filter(s => 
-    ['Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3'].includes(s.gradeLevel)
-  );
+  const k3Students = students.filter(s => {
+    const grade = s.gradeLevel;
+    console.log('Student:', s.firstName, s.lastName, 'Grade:', grade, 'Type:', typeof grade, 'Status:', s.status);
+    
+    // More flexible matching for K-3 grade levels
+    const isK3 = grade && (
+      grade === 'Kindergarten' || 
+      grade === 'Grade 1' || 
+      grade === 'Grade 2' || 
+      grade === 'Grade 3' ||
+      grade.includes('Kindergarten') ||
+      grade.includes('Grade 1') ||
+      grade.includes('Grade 2') ||
+      grade.includes('Grade 3') ||
+      grade.includes('Kinder') ||
+      grade.includes('1') ||
+      grade.includes('2') ||
+      grade.includes('3')
+    );
+    
+    console.log('Is K-3:', isK3, 'for', s.firstName, s.lastName);
+    return isK3;
+  });
 
-  // Filter Grade 4-6 students (pending verification)
-  const pendingStudents = students.filter(s => 
-    ['Grade 4', 'Grade 5', 'Grade 6'].includes(s.gradeLevel) && s.status === 'Pending'
-  );
+  // Filter Grade 4-6 students (both pending and approved)
+  const g4to6Students = students.filter(s => {
+    // More flexible matching for grade levels
+    const grade = s.gradeLevel;
+    const isG4to6 = grade && (
+      grade.includes('Grade 4') || 
+      grade.includes('Grade 5') || 
+      grade.includes('Grade 6') ||
+      grade.includes('4') || 
+      grade.includes('5') || 
+      grade.includes('6')
+    );
+    
+    // Log each student to debug
+    if (s.firstName && (s.firstName.includes('ash') || s.firstName.includes('last'))) {
+      console.log('Found target student:', s.firstName, s.lastName, 'Grade:', grade, 'Matches G4-6:', isG4to6);
+    }
+    
+    return isG4to6;
+  });
 
   // Get all unique sections
   const allSections = [...new Set(k3Students.map(s => s.section).filter(Boolean))];
@@ -159,7 +209,14 @@ export default function AdminStudents() {
   // DOWNLOAD QR CODE
   const handleDownloadQR = (student) => {
     const link = document.createElement('a');
-    link.href = student.qrCode;
+    // Handle both base64 and file paths
+    if (student.qrCode.startsWith('data:')) {
+      link.href = student.qrCode;
+    } else if (student.qrCode.startsWith('http')) {
+      link.href = student.qrCode;
+    } else {
+      link.href = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}${student.qrCode}`;
+    }
     link.download = `QR_${student.lrn}_${student.fullName}.png`;
     link.click();
   };
@@ -237,21 +294,25 @@ export default function AdminStudents() {
         Manage student records, verify accounts, and generate QR codes.
       </p>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-3 gap-6">
         <div className="bg-red-50 p-4 rounded-lg shadow-sm border border-red-100">
           <h3 className="text-lg font-semibold text-red-800">Total Students</h3>
           <p className="text-2xl font-bold">{students.length}</p>
         </div>
-        <div className="bg-red-50 p-4 rounded-lg shadow-sm border border-red-100">
-          <h3 className="text-lg font-semibold text-red-800">Pending Verification</h3>
-          <p className="text-2xl font-bold">{pendingStudents.length}</p>
+        <div className="bg-blue-50 p-4 rounded-lg shadow-sm border border-blue-100">
+          <h3 className="text-lg font-semibold text-blue-800">Kinder - Grade 3 Students</h3>
+          <p className="text-2xl font-bold">{k3Students.length}</p>
+        </div>
+        <div className="bg-green-50 p-4 rounded-lg shadow-sm border border-green-100">
+          <h3 className="text-lg font-semibold text-green-800">Grade 4 - 6 Students</h3>
+          <p className="text-2xl font-bold">{g4to6Students.length}</p>
         </div>
       </div>
 
       <div className="mt-6">
         <h3 className="text-xl font-semibold text-red-800 mb-2">Student Actions</h3>
         <ul className="list-disc ml-5 text-gray-700 space-y-1">
-          <li>Create accounts for Kinder–Grade 3</li>
+          <li>Create accounts for Kinder–Grade 6</li>
           <li>Verify Grade 4–6 student self-registration</li>
           <li>Edit student details</li>
           <li>Delete student accounts</li>
@@ -268,7 +329,7 @@ export default function AdminStudents() {
           Bulk Import (CSV)
         </button>
         <button
-          onClick={() => navigate("/admin/admin/create-k3")}
+          onClick={() => navigate("/admin/admin/create-k6")}
           className="bg-red-800 text-white px-5 py-2 rounded-lg hover:bg-red-700 transition"
         >
           + Create Individual Account
@@ -345,183 +406,269 @@ export default function AdminStudents() {
             </div>
           )}
         </div>
+      </div>
 
-        {/* Students Table */}
-        <div className="overflow-x-auto bg-white rounded-lg shadow">
-          <table className="w-full text-left border-collapse">
-            <thead className="bg-red-100 text-red-800">
-              <tr>
-                <th className="p-3 border w-10">
-                  <input
-                    type="checkbox"
-                    checked={selectAll && filteredK3Students.length > 0}
-                    onChange={toggleSelectAll}
-                    className="w-4 h-4 cursor-pointer"
-                    title="Select all students"
-                  />
-                </th>
-                <th className="p-3 border">LRN</th>
-                <th className="p-3 border">Name</th>
-                <th className="p-3 border">Sex</th>
-                <th className="p-3 border">Grade</th>
-                <th className="p-3 border">Section</th>
-                <th className="p-3 border">Status</th>
-                <th className="p-3 border">QR</th>
-                <th className="p-3 border">Actions</th>
-              </tr>
-            </thead>
+      {/* K-3 STUDENTS TABLE */}
+      <div className="mb-8">
+        <div className="bg-white rounded-lg shadow">
+          <div className="p-4 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-blue-800 mb-4">
+              Kinder - Grade 3 Students ({filteredK3Students.length})
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-blue-100 text-blue-800">
+                <tr>
+                  <th className="p-3 border text-center">
+                    <input
+                      type="checkbox"
+                      checked={selectAll && filteredK3Students.length > 0}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 cursor-pointer"
+                      title="Select all students"
+                    />
+                  </th>
+                  <th className="p-3 border">LRN</th>
+                  <th className="p-3 border">Name</th>
+                  <th className="p-3 border">Sex</th>
+                  <th className="p-3 border">Grade</th>
+                  <th className="p-3 border">Section</th>
+                  <th className="p-3 border">Status</th>
+                  <th className="p-3 border">QR</th>
+                  <th className="p-3 border">Actions</th>
+                </tr>
+              </thead>
 
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan="9" className="p-6 text-center text-gray-500">
-                    Loading students...
-                  </td>
-                </tr>
-              ) : filteredK3Students.length === 0 ? (
-                <tr>
-                  <td colSpan="9" className="p-6 text-center text-gray-500">
-                    {searchQuery || selectedSection !== 'All' 
-                      ? 'No students match your search criteria.'
-                      : 'No students found. Create your first student account!'}
-                  </td>
-                </tr>
-              ) : (
-                filteredK3Students.map((student) => (
-                  <tr key={student.id} className="hover:bg-gray-50">
-                    <td className="p-3 border text-center">
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan="9" className="p-6 text-center text-gray-500">
+                      Loading students...
+                    </td>
+                  </tr>
+                ) : filteredK3Students.length === 0 ? (
+                  <tr>
+                    <td colSpan="9" className="p-6 text-center text-gray-500">
+                      {searchQuery || selectedSection !== 'All' 
+                        ? 'No K-3 students match your search criteria.'
+                        : 'No K-3 students found. Create your first student account!'}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredK3Students.map((student) => (
+                    <tr key={student.id} className="hover:bg-gray-50">
+                      <td className="p-3 border text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedStudents.has(student.id)}
+                          onChange={() => toggleStudentSelection(student.id)}
+                          className="w-4 h-4 cursor-pointer"
+                        />
+                      </td>
+                      <td className="p-3 border">{student.lrn}</td>
+                      <td className="p-3 border font-semibold">
+                        {student.fullName || `${student.firstName} ${student.lastName}` || 'N/A'}
+                      </td>
+                      <td className="p-3 border">{student.sex || 'N/A'}</td>
+                      <td className="p-3 border">{student.gradeLevel}</td>
+                      <td className="p-3 border">{student.section}</td>
+                      <td className="p-3 border">
+                        <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                          {student.status}
+                        </span>
+                      </td>
+                      <td className="p-3 border">
+                        <button 
+                          onClick={() => handleViewQR(student)}
+                          className="p-2 bg-gray-700 text-white rounded-lg hover:bg-black flex items-center gap-1"
+                        >
+                          <QrCodeIcon className="w-5 h-5" /> View
+                        </button>
+                      </td>
+                      <td className="p-3 border flex gap-3">
+                        <button 
+                          onClick={() => handleView(student)}
+                          className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                          title="View Details"
+                        >
+                          <EyeIcon className="w-5 h-5" />
+                        </button>
+                        <button 
+                          onClick={() => handleViewCredentials(student)}
+                          className="p-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
+                          title="View Credentials"
+                        >
+                          <KeyIcon className="w-5 h-5" />
+                        </button>
+                        <button 
+                          onClick={() => handleEdit(student)}
+                          className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                          title="Edit Student"
+                        >
+                          <PencilSquareIcon className="w-5 h-5" />
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(student.id)}
+                          className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                          title="Delete Student"
+                        >
+                          <TrashIcon className="w-5 h-5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* GRADE 4-6 STUDENTS TABLE */}
+      <div className="mt-10">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-bold text-green-800">
+            Grade 4-6 Students ({g4to6Students.length})
+          </h3>
+        </div>
+
+        <div className="mb-8">
+          <div className="bg-white rounded-lg shadow">
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-green-800 mb-4">
+                Grade 4-6 Students ({g4to6Students.length})
+              </h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-green-100 text-green-800">
+                  <tr>
+                    <th className="p-3 border text-center">
                       <input
                         type="checkbox"
-                        checked={selectedStudents.has(student.id)}
-                        onChange={() => toggleStudentSelection(student.id)}
                         className="w-4 h-4 cursor-pointer"
+                        title="Select all students"
                       />
-                    </td>
-                    <td className="p-3 border">{student.lrn}</td>
-                    <td className="p-3 border font-semibold">
-                      {student.fullName || `${student.firstName} ${student.lastName}` || 'N/A'}
-                    </td>
-                    <td className="p-3 border">{student.sex || 'N/A'}</td>
-                    <td className="p-3 border">{student.gradeLevel}</td>
-                    <td className="p-3 border">{student.section}</td>
-                    <td className="p-3 border">
-                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
-                        {student.status}
-                      </span>
-                    </td>
-                    <td className="p-3 border">
-                      <button 
-                        onClick={() => handleViewQR(student)}
-                        className="p-2 bg-gray-700 text-white rounded-lg hover:bg-black flex items-center gap-1"
-                      >
-                        <QrCodeIcon className="w-5 h-5" /> View
-                      </button>
-                    </td>
-                    <td className="p-3 border flex gap-3">
-                      <button 
-                        onClick={() => handleView(student)}
-                        className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                        title="View Details"
-                      >
-                        <EyeIcon className="w-5 h-5" />
-                      </button>
-                      <button 
-                        onClick={() => handleViewCredentials(student)}
-                        className="p-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
-                        title="View Credentials"
-                      >
-                        <KeyIcon className="w-5 h-5" />
-                      </button>
-                      <button 
-                        onClick={() => handleEdit(student)}
-                        className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                        title="Edit Student"
-                      >
-                        <PencilSquareIcon className="w-5 h-5" />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(student.id)}
-                        className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                        title="Delete Student"
-                      >
-                        <TrashIcon className="w-5 h-5" />
-                      </button>
-                    </td>
+                    </th>
+                    <th className="p-3 border">LRN</th>
+                    <th className="p-3 border">Name</th>
+                    <th className="p-3 border">Sex</th>
+                    <th className="p-3 border">Grade</th>
+                    <th className="p-3 border">Section</th>
+                    <th className="p-3 border">Status</th>
+                    <th className="p-3 border">QR</th>
+                    <th className="p-3 border">Actions</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                </thead>
+
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan="9" className="p-6 text-center text-gray-500">
+                        Loading students...
+                      </td>
+                    </tr>
+                  ) : g4to6Students.length === 0 ? (
+                    <tr>
+                      <td colSpan="9" className="p-6 text-center text-gray-500">
+                        No Grade 4-6 students found.
+                      </td>
+                    </tr>
+                  ) : (
+                    g4to6Students.map((student) => (
+                      <tr key={student.id} className="hover:bg-gray-50">
+                        <td className="p-3 border text-center">
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 cursor-pointer"
+                          />
+                        </td>
+                        <td className="p-3 border">{student.lrn}</td>
+                        <td className="p-3 border font-semibold">
+                          {student.fullName || `${student.firstName} ${student.lastName}` || 'N/A'}
+                        </td>
+                        <td className="p-3 border">{student.sex || 'N/A'}</td>
+                        <td className="p-3 border">{student.gradeLevel}</td>
+                        <td className="p-3 border">{student.section}</td>
+                        <td className="p-3 border">
+                          <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                            {student.status}
+                          </span>
+                        </td>
+                        <td className="p-3 border">
+                          <button 
+                            onClick={() => handleViewQR(student)}
+                            className="p-2 bg-gray-700 text-white rounded-lg hover:bg-black flex items-center gap-1"
+                          >
+                            <QrCodeIcon className="w-5 h-5" /> View
+                          </button>
+                        </td>
+                        <td className="p-3 border flex gap-3">
+                          <button 
+                            onClick={() => handleView(student)}
+                            className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                            title="View Details"
+                          >
+                            <EyeIcon className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={() => handleViewCredentials(student)}
+                            className="p-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
+                            title="View Credentials"
+                          >
+                            <KeyIcon className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={() => handleEdit(student)}
+                            className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            title="Edit Student"
+                          >
+                            <PencilSquareIcon className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={() => handleDelete(student.id)}
+                            className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                            title="Delete Student"
+                          >
+                            <TrashIcon className="w-5 h-5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
-
-      {/* GRADE 4-6 PENDING VERIFICATION TABLE */}
-      <div className="mt-10">
-        <h3 className="text-xl font-bold text-red-800 mb-4">Grade 4–6 Students (Pending Verification)</h3>
-
-        <div className="overflow-x-auto bg-white rounded-lg shadow">
-          <table className="w-full border-collapse text-left">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="p-3 border">LRN</th>
-                <th className="p-3 border">Name</th>
-                <th className="p-3 border">Email</th>
-                <th className="p-3 border">Grade</th>
-                <th className="p-3 border">Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {pendingStudents.length === 0 ? (
-                <tr>
-                  <td colSpan="5" className="p-6 text-center text-gray-500">
-                    No pending verification requests
-                  </td>
-                </tr>
-              ) : (
-                pendingStudents.map((student) => (
-                  <tr key={student.id} className="hover:bg-gray-50">
-                    <td className="p-3 border">{student.lrn}</td>
-                    <td className="p-3 border">{student.fullName}</td>
-                    <td className="p-3 border">{student.email}</td>
-                    <td className="p-3 border">{student.gradeLevel}</td>
-                    <td className="p-3 border flex gap-3">
-                      <button className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700" title="Approve">
-                        <CheckIcon className="w-5 h-5" />
-                      </button>
-                      <button className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700" title="Reject">
-                        <XMarkIcon className="w-5 h-5" />
-                      </button>
-                      <button 
-                        onClick={() => handleView(student)}
-                        className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                        title="View Details"
-                      >
-                        <EyeIcon className="w-5 h-5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
+                
       {/* QR CODE MODAL */}
       {showQRModal && selectedStudent && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
             <h3 className="text-xl font-bold mb-4">QR Code - {selectedStudent.fullName}</h3>
             <div className="flex justify-center mb-4">
-              {selectedStudent.qrCode && selectedStudent.qrCode.startsWith('data:') ? (
+              {selectedStudent.qrCode ? (
                 <img 
-                  src={selectedStudent.qrCode} 
+                  src={
+                    selectedStudent.qrCode.startsWith('data:') 
+                      ? selectedStudent.qrCode 
+                      : selectedStudent.qrCode.startsWith('http') 
+                        ? selectedStudent.qrCode
+                        : `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}${selectedStudent.qrCode}`
+                  }
                   alt="QR Code" 
                   className="w-64 h-64 border-4 border-gray-300 rounded-lg"
                   onError={(e) => {
+                    console.error('QR Code load error. File path:', selectedStudent.qrCode);
+                    console.error('Attempted URL:', e.target.src);
                     toast.error('QR image load error');
                     e.target.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22256%22 height=%22256%22%3E%3Crect fill=%22%23fff%22 width=%22256%22 height=%22256%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22 font-family=%22Arial%22 font-size=%2216%22%3EQR Not Generated%3C/text%3E%3C/svg%3E';
+                  }}
+                  onLoad={() => {
+                    console.log('QR Code loaded successfully');
                   }}
                 />
               ) : (
@@ -532,7 +679,7 @@ export default function AdminStudents() {
             </div>
             <p className="text-center text-gray-600 mb-4">LRN: {selectedStudent.lrn}</p>
             <div className="flex gap-3">
-              {selectedStudent.qrCode && selectedStudent.qrCode.startsWith('data:') && (
+              {selectedStudent.qrCode && (
                 <button
                   onClick={() => handleDownloadQR(selectedStudent)}
                   className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700"
@@ -542,7 +689,7 @@ export default function AdminStudents() {
               )}
               <button
                 onClick={() => setShowQRModal(false)}
-                className={selectedStudent.qrCode && selectedStudent.qrCode.startsWith('data:') ? 'flex-1 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600' : 'w-full bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600'}
+                className={selectedStudent.qrCode ? 'flex-1 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600' : 'w-full bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600'}
               >
                 Close
               </button>

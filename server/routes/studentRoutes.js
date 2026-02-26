@@ -1,28 +1,35 @@
 // server/routes/studentRoutes.js
 const express = require('express');
-const studentController = require('../controllers/studentControllerMySQL');
+const multer = require('multer');
+const studentController = require('../controllers/studentController');
 
 const router = express.Router();
 
-// Create a new student
-router.post('/', studentController.createStudent);
+// Configure multer for file uploads
+const upload = multer({
+  dest: 'uploads/', // Temporary storage
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
+    }
+  }
+});
 
-// Get all students
-router.get('/', studentController.getAllStudents);
+// Public routes
+router.post('/', upload.single('profilePic'), studentController.createStudent);
+router.get('/', studentController.getStudents);
+router.get('/pending', studentController.getPendingStudents);
+router.get('/declined', studentController.getDeclinedStudents);
+router.get('/:id', studentController.getStudent);
 
-// Get students by grade and section
-router.get('/grade/:grade/section/:section', studentController.getStudentsByGradeAndSection);
-
-// Get a specific student
-router.get('/:id', studentController.getStudentById);
-
-// Update a student
-router.put('/:id', studentController.updateStudent);
-
-// Update student grades
-router.put('/:id/grades', studentController.updateStudentGrades);
-
-// Delete a specific student
-router.delete('/:id', studentController.deleteStudent);
+// Protected routes (require authentication)
+router.post('/:id/approve', studentController.approveStudent);
+router.post('/:id/decline', studentController.declineStudent);
+router.post('/:id/restore', studentController.restoreStudent);
 
 module.exports = router;

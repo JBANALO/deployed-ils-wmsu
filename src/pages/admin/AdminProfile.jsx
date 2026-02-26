@@ -138,7 +138,7 @@ const handleImageChange = (e) => {
               <img
                 src={URL.createObjectURL(formData.profileImage)}
                 alt="Profile"
-                className="w-32 h-32 rounded-full object-cover border-4 border-red-200"
+                className="w-32 h-32 rounded-full object-cover border-4 border-red-700"
               />
             ) : (
               // String image: either absolute URL or relative path from backend
@@ -153,13 +153,13 @@ const handleImageChange = (e) => {
                     : '/default-avatar.jpeg')
                 }
                 alt="Profile"
-                className="w-32 h-32 rounded-full object-cover border-4 border-red-200"
+                className="w-32 h-32 rounded-full object-cover border-4 border-red-700"
                 onError={(e) => { e.target.onerror = null; e.target.src = "/default-avatar.jpeg"; }}
               />
             )
           ) : (
             // Default avatar
-            <UserCircleIcon className="w-32 h-32 text-gray-400 border-4 border-red-200 rounded-full" />
+            <UserCircleIcon className="w-32 h-32 text-gray-400 border-4 border-red-700 rounded-full" />
           )}
 
           {editMode && (

@@ -13,6 +13,7 @@ export default function AdminTeachers() {
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshLoading, setRefreshLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTeachers, setSelectedTeachers] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
@@ -23,21 +24,32 @@ export default function AdminTeachers() {
     fetchTeachers();
   }, []);
 
-  const fetchTeachers = async () => {
+  const fetchTeachers = async (isRefresh = false) => {
     try {
-      // Fetch all users and filter for teacher-related roles
-      const response = await api.get('/users');
-      const allUsers = response.data?.data?.users || response.data?.users || [];
-      // Filter for all teacher-related roles
-      const teachersList = Array.isArray(allUsers) 
-        ? allUsers.filter(user => ['teacher', 'subject_teacher', 'adviser'].includes(user.role))
+      console.log('Fetching teachers...');
+      if (isRefresh) {
+        setRefreshLoading(true);
+      } else {
+        setLoading(true);
+      }
+      
+      // Fetch all teachers and filter for teacher-related roles
+      const response = await api.get('/teachers');
+      const allTeachers = response.data?.data?.teachers || response.data?.teachers || [];
+      console.log('All teachers:', allTeachers);
+      
+      // Only show approved teachers (not pending or rejected)
+      const approvedTeachers = Array.isArray(allTeachers) 
+        ? allTeachers.filter(teacher => (teacher.verification_status === 'approved' || teacher.verificationStatus === 'approved'))
         : [];
-      setTeachers(teachersList);
-      setLoading(false);
+      console.log('Approved teachers:', approvedTeachers);
+      setTeachers(approvedTeachers);
     } catch (error) {
       toast.error('Error fetching teachers: ' + error.message);
       setTeachers([]);
+    } finally {
       setLoading(false);
+      setRefreshLoading(false);
     }
   };
 
@@ -77,7 +89,7 @@ export default function AdminTeachers() {
     if (window.confirm(`Are you sure you want to delete ${selectedTeachers.size} teachers? This action cannot be undone.`)) {
       try {
         for (const teacherId of selectedTeachers) {
-          await api.delete(`/users/${teacherId}`);
+          await api.delete(`/teachers/${teacherId}`);
         }
         setSelectedTeachers(new Set());
         setSelectAll(false);
@@ -93,7 +105,7 @@ export default function AdminTeachers() {
   const handleDeleteTeacher = async (teacherId) => {
     if (window.confirm('Are you sure you want to delete this teacher?')) {
       try {
-        await api.delete(`/users/${teacherId}`);
+        await api.delete(`/teachers/${teacherId}`);
         await fetchTeachers();
         toast.success('Teacher record has been successfully removed');
       } catch (error) {
@@ -131,7 +143,7 @@ export default function AdminTeachers() {
   const handleSaveEdit = async () => {
     try {
       console.log('Saving teacher with data:', editFormData);
-      const response = await api.put(`/users/${selectedTeacher.id}`, editFormData);
+      const response = await api.put(`/teachers/${selectedTeacher.id}`, editFormData);
       
       console.log('Save response:', response.data);
       
@@ -167,8 +179,8 @@ export default function AdminTeachers() {
           <p className="text-xl md:text-2xl font-bold">{teachers.filter(t => t.role === 'subject_teacher').length}</p>
         </div>
         <div className="p-3 md:p-4 bg-red-50 rounded-lg text-center shadow-sm border border-red-100">
-          <h3 className="text-sm md:text-lg font-semibold text-red-800">Regular Teachers</h3>
-          <p className="text-xl md:text-2xl font-bold">{teachers.filter(t => t.role === 'teacher' || !t.role).length}</p>
+          <h3 className="text-sm md:text-lg font-semibold text-red-800">Advisers</h3>
+          <p className="text-xl md:text-2xl font-bold">{teachers.filter(t => t.role === 'adviser').length}</p>
         </div>
       </div>
 
@@ -208,6 +220,16 @@ export default function AdminTeachers() {
             All Teachers - {filteredTeachers.length} teachers
           </h3>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => fetchTeachers(true)}
+              disabled={refreshLoading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {refreshLoading ? 'Refreshing...' : 'Refresh'}
+            </button>
             <div className="text-sm text-gray-600">
               Total: {teachers.length}
             </div>
@@ -248,109 +270,216 @@ export default function AdminTeachers() {
           )}
         </div>
 
-        {/* Teachers Table */}
-        <div className="overflow-x-auto bg-white rounded-lg shadow">
-          <table className="w-full text-left border-collapse">
-            <thead className="bg-red-100 text-red-800">
-              <tr>
-                <th className="p-3 border text-center">
-                  <input
-                    type="checkbox"
-                    checked={selectAll}
-                    onChange={toggleSelectAll}
-                    className="w-4 h-4 cursor-pointer"
-                  />
-                </th>
-                <th className="p-3 border">Name</th>
-                <th className="p-3 border">Email</th>
-                <th className="p-3 border">Position</th>
-                <th className="p-3 border">Role</th>
-                <th className="p-3 border">Class/Section</th>
-                <th className="p-3 border">Subjects</th>
-                <th className="p-3 border">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTeachers.length > 0 ? (
-                filteredTeachers.map((teacher) => (
-                  <tr key={teacher.id} className="hover:bg-gray-50 border-t">
-                    <td className="p-3 border text-center">
+        {/* Advisers Table */}
+        <div className="mb-8">
+          <div className="bg-white rounded-lg shadow">
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-yellow-800 mb-4">
+                Advisers ({filteredTeachers.filter(t => t.role === 'adviser').length})
+              </h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-yellow-100 text-yellow-800">
+                  <tr>
+                    <th className="p-3 border text-center">
                       <input
                         type="checkbox"
-                        checked={selectedTeachers.has(teacher.id)}
-                        onChange={() => handleSelectTeacher(teacher.id)}
+                        checked={selectAll}
+                        onChange={toggleSelectAll}
                         className="w-4 h-4 cursor-pointer"
                       />
-                    </td>
-                    <td className="p-3 border">
-                      <span className="font-medium">{teacher.firstName} {teacher.lastName}</span>
-                    </td>
-                    <td className="p-3 border text-sm text-gray-600">{teacher.email}</td>
-                    <td className="p-3 border text-sm">{teacher.position || '-'}</td>
-                    <td className="p-3 border">
-                      <span className={`text-xs font-semibold px-2 py-1 rounded ${
-                        teacher.role === 'subject_teacher' 
-                          ? 'bg-purple-100 text-purple-800' 
-                          : teacher.role === 'adviser'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-blue-100 text-blue-800'
-                      }`}>
-                        {teacher.role === 'subject_teacher' ? 'Subject Teacher' : teacher.role === 'adviser' ? 'Adviser' : 'Teacher'}
-                      </span>
-                    </td>
-                    <td className="p-3 border text-sm">
-                      {teacher.gradeLevel && teacher.section 
-                        ? `${teacher.gradeLevel} - ${teacher.section}`
-                        : '-'
-                      }
-                    </td>
-                    <td className="p-3 border text-sm">
-                      {teacher.subjectsHandled?.length > 0 
-                        ? teacher.subjectsHandled.join(', ')
-                        : '-'
-                      }
-                    </td>
-                    <td className="p-3 border flex gap-2">
-                      <button 
-                        onClick={() => handleEditTeacher(teacher)}
-                        className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                        title="Edit"
-                      >
-                        <PencilSquareIcon className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTeacher(teacher.id)}
-                        className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                        title="Delete"
-                      >
-                        <TrashIcon className="w-5 h-5" />
-                      </button>
-                      <button 
-                        onClick={() => handleViewTeacher(teacher)}
-                        className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                        title="View Details"
-                      >
-                        <EyeIcon className="w-5 h-5" />
-                      </button>
-                      <button 
-                        onClick={() => handleViewCredentials(teacher)}
-                        className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                        title="View Credentials"
-                      >
-                        <KeyIcon className="w-5 h-5" />
-                      </button>
-                    </td>
+                    </th>
+                    <th className="p-3 border">Name</th>
+                    <th className="p-3 border">Email</th>
+                    <th className="p-3 border">Role</th>
+                    <th className="p-3 border">Class/Section</th>
+                    <th className="p-3 border">Subjects</th>
+                    <th className="p-3 border">Actions</th>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="8" className="p-8 text-center text-gray-500">
-                    {searchQuery ? 'No teachers found matching your search' : 'No teachers available'}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {filteredTeachers.filter(t => t.role === 'adviser').length > 0 ? (
+                    filteredTeachers.filter(t => t.role === 'adviser').map((teacher) => (
+                      <tr key={teacher.id} className="hover:bg-gray-50 border-t">
+                        <td className="p-3 border text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedTeachers.has(teacher.id)}
+                            onChange={() => handleSelectTeacher(teacher.id)}
+                            className="w-4 h-4 cursor-pointer"
+                          />
+                        </td>
+                        <td className="p-3 border">
+                          <span className="font-medium">{teacher.first_name || teacher.firstName} {teacher.last_name || teacher.lastName}</span>
+                        </td>
+                        <td className="p-3 border text-sm text-gray-600">{teacher.email}</td>
+                        <td className="p-3 border">
+                          <span className="text-xs font-semibold px-2 py-1 rounded bg-yellow-100 text-yellow-800">
+                            Adviser
+                          </span>
+                        </td>
+                        <td className="p-3 border text-sm">
+                          {(teacher.grade_level || teacher.gradeLevel) && (teacher.section || teacher.section) 
+                            ? `${teacher.grade_level || teacher.gradeLevel} - ${teacher.section || teacher.section}`
+                            : '-'
+                          }
+                        </td>
+                        <td className="p-3 border text-sm">
+                          {teacher.subjects || teacher.subjectsHandled ? 
+                            (teacher.subjects ? teacher.subjects.split(', ').filter(s => s.trim()) : teacher.subjectsHandled).join(', ')
+                            : '-'
+                          }
+                        </td>
+                        <td className="p-3 border flex gap-2">
+                          <button 
+                            onClick={() => handleEditTeacher(teacher)}
+                            className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            title="Edit"
+                          >
+                            <PencilSquareIcon className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTeacher(teacher.id)}
+                            className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                            title="Delete"
+                          >
+                            <TrashIcon className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={() => handleViewTeacher(teacher)}
+                            className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                            title="View Details"
+                          >
+                            <EyeIcon className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={() => handleViewCredentials(teacher)}
+                            className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                            title="View Credentials"
+                          >
+                            <KeyIcon className="w-5 h-5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="7" className="p-8 text-center text-gray-500">
+                        {searchQuery ? 'No advisers found matching your search' : 'No advisers available'}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Subject Teachers Table */}
+        <div className="mb-8">
+          <div className="bg-white rounded-lg shadow">
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-purple-800 mb-4">
+                Subject Teachers ({filteredTeachers.filter(t => t.role === 'subject_teacher').length})
+              </h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-purple-100 text-purple-800">
+                  <tr>
+                    <th className="p-3 border text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectAll}
+                        onChange={toggleSelectAll}
+                        className="w-4 h-4 cursor-pointer"
+                      />
+                    </th>
+                    <th className="p-3 border">Name</th>
+                    <th className="p-3 border">Email</th>
+                    <th className="p-3 border">Role</th>
+                    <th className="p-3 border">Class/Section</th>
+                    <th className="p-3 border">Subjects</th>
+                    <th className="p-3 border">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTeachers.filter(t => t.role === 'subject_teacher').length > 0 ? (
+                    filteredTeachers.filter(t => t.role === 'subject_teacher').map((teacher) => (
+                      <tr key={teacher.id} className="hover:bg-gray-50 border-t">
+                        <td className="p-3 border text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedTeachers.has(teacher.id)}
+                            onChange={() => handleSelectTeacher(teacher.id)}
+                            className="w-4 h-4 cursor-pointer"
+                          />
+                        </td>
+                        <td className="p-3 border">
+                          <span className="font-medium">{teacher.first_name || teacher.firstName} {teacher.last_name || teacher.lastName}</span>
+                        </td>
+                        <td className="p-3 border text-sm text-gray-600">{teacher.email}</td>
+                        <td className="p-3 border">
+                          <span className="text-xs font-semibold px-2 py-1 rounded bg-purple-100 text-purple-800">
+                            Subject Teacher
+                          </span>
+                        </td>
+                        <td className="p-3 border text-sm">
+                          {(teacher.grade_level || teacher.gradeLevel) && (teacher.section || teacher.section) 
+                            ? `${teacher.grade_level || teacher.gradeLevel} - ${teacher.section || teacher.section}`
+                            : '-'
+                          }
+                        </td>
+                        <td className="p-3 border text-sm">
+                          {teacher.subjects || teacher.subjectsHandled ? 
+                            (teacher.subjects ? teacher.subjects.split(', ').filter(s => s.trim()) : teacher.subjectsHandled).join(', ')
+                            : '-'
+                          }
+                        </td>
+                        <td className="p-3 border flex gap-2">
+                          <button 
+                            onClick={() => handleEditTeacher(teacher)}
+                            className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            title="Edit"
+                          >
+                            <PencilSquareIcon className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTeacher(teacher.id)}
+                            className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                            title="Delete"
+                          >
+                            <TrashIcon className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={() => handleViewTeacher(teacher)}
+                            className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                            title="View Details"
+                          >
+                            <EyeIcon className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={() => handleViewCredentials(teacher)}
+                            className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                            title="View Credentials"
+                          >
+                            <KeyIcon className="w-5 h-5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="7" className="p-8 text-center text-gray-500">
+                        {searchQuery ? 'No subject teachers found matching your search' : 'No subject teachers available'}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -398,7 +527,9 @@ export default function AdminTeachers() {
               </div>
               <div>
                 <p className="text-sm text-gray-600">Subjects</p>
-                <p className="font-semibold">{selectedTeacher.subjectsHandled?.length > 0 ? selectedTeacher.subjectsHandled.join(', ') : '-'}</p>
+                <p className="font-semibold">{selectedTeacher.subjects || selectedTeacher.subjectsHandled ? 
+                (selectedTeacher.subjects ? selectedTeacher.subjects.split(', ').filter(s => s.trim()).join(', ') : selectedTeacher.subjectsHandled.join(', '))
+                : '-'}</p>
               </div>
             </div>
             <button 

@@ -9,6 +9,7 @@ import {
   DocumentChartBarIcon,
   BuildingLibraryIcon,
   ClockIcon,
+  UserPlusIcon,
 } from "@heroicons/react/24/solid";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -19,6 +20,7 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
 
   const menuItems = [
     { name: "Dashboard", icon: <ChartBarIcon className="w-6 h-6" />, path: "/admin/admin-dashboard" },
+    { name: "Create Admin Account", icon: <UserPlusIcon className="w-6 h-6" />, path: "/admin/create-account" },
     { name: "Teachers", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/admin-teachers" },
     { name: "Approvals", icon: <ClockIcon className="w-6 h-6" />, path: "/admin/approvals" },
     { name: "Students", icon: <AcademicCapIcon className="w-6 h-6" />, path: "/admin/admin-students" },

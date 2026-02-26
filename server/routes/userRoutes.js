@@ -10,6 +10,7 @@ router.post('/signup-batch', userController.signupBatch);
 router.get('/', userController.getAllUsers);
 router.get('/pending-teachers', userController.getPendingTeachers);
 router.get('/pending-students', userController.getPendingStudents);
+router.get('/declined-students', userController.getDeclinedStudents);
 
 // Protected routes (require authentication)
 router.use(authController.protect);

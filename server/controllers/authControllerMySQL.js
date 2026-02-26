@@ -31,7 +31,19 @@ exports.protect = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    const users = await query('SELECT * FROM users WHERE id = ?', [decoded.id]);
+    
+    // First check users table (for admin accounts)
+    let users = await query('SELECT id, first_name, last_name, username, email, role, created_at FROM users WHERE id = ?', [decoded.id]);
+
+    if (users.length === 0) {
+      // If not found in users, check teachers table
+      users = await query(
+        `SELECT id, first_name, middle_name, last_name, username, email, role, 
+         grade_level, section, subjects, bio, profile_pic, verification_status, created_at 
+         FROM teachers WHERE id = ?`, 
+        [decoded.id]
+      );
+    }
 
     if (users.length === 0) {
       return res.status(401).json({
@@ -40,7 +52,40 @@ exports.protect = async (req, res, next) => {
       });
     }
 
-    req.user = users[0];
+    const user = users[0];
+    
+    // Format user object to match expected structure
+    if (user.first_name && user.last_name && !user.middle_name) {
+      // From users table (admin)
+      req.user = {
+        id: user.id,
+        firstName: user.first_name || '',
+        lastName: user.last_name || '',
+        username: user.username || '',
+        email: user.email,
+        role: user.role || '',
+        createdAt: user.created_at
+      };
+    } else {
+      // From teachers table
+      req.user = {
+        id: user.id,
+        firstName: user.first_name || '',
+        middleName: user.middle_name || '',
+        lastName: user.last_name || '',
+        username: user.username || '',
+        email: user.email,
+        role: user.role || '',
+        gradeLevel: user.grade_level,
+        section: user.section,
+        subjects: user.subjects,
+        bio: user.bio,
+        profilePic: user.profile_pic,
+        verificationStatus: user.verification_status,
+        createdAt: user.created_at
+      };
+    }
+    
     next();
   } catch (error) {
     return res.status(401).json({
@@ -73,16 +118,24 @@ exports.login = async (req, res) => {
     if (!loginField || !password) {
       return res.status(400).json({
         status: 'fail',
-        message: 'Please provide email/username and password!',
+        message: 'Please provide email/username and password!'
       });
     }
 
-    // Check both email and username fields for flexibility (case-insensitive)
+    // First check users table (for admin accounts)
     let users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [loginField]);
     
-    // If not found by email, try by username (case-insensitive)
     if (users.length === 0) {
       users = await query('SELECT * FROM users WHERE LOWER(username) = LOWER(?)', [loginField]);
+    }
+
+    // If not found in users, check teachers table
+    if (users.length === 0) {
+      users = await query('SELECT * FROM teachers WHERE LOWER(email) = LOWER(?)', [loginField]);
+      
+      if (users.length === 0) {
+        users = await query('SELECT * FROM teachers WHERE LOWER(username) = LOWER(?)', [loginField]);
+      }
     }
 
     if (users.length === 0) {
@@ -105,30 +158,46 @@ exports.login = async (req, res) => {
     // Skip approval check for login - allow all users to login regardless of approval status
     // Approval system remains intact for admin dashboard functionality
 
-    
     const token = signToken(user.id);
+
+    // Handle different table structures
+    let userData;
+    if (user.first_name && user.last_name) {
+      // From users table (admin)
+      userData = {
+        id: user.id,
+        firstName: user.first_name || '',
+        lastName: user.last_name || '',
+        name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+        username: user.username || '',
+        email: user.email,
+        role: user.role || 'admin',
+      };
+    } else {
+      // From teachers table
+      userData = {
+        id: user.id,
+        firstName: user.first_name || '',
+        middleName: user.middle_name || '',
+        lastName: user.last_name || '',
+        name: `${user.first_name || ''} ${user.middle_name || ''} ${user.last_name || ''}`.trim(),
+        username: user.username || '',
+        email: user.email,
+        role: user.role || 'adviser',
+        verificationStatus: user.verification_status || 'pending'
+      };
+    }
 
     res.status(200).json({
       status: 'success',
       token,
       data: {
-        user: {
-          id: user.id,
-          firstName: user.firstName || '',
-          lastName: user.lastName || '',
-          name: user.name || `${user.firstName} ${user.lastName}`,
-          username: user.username || '',
-          email: user.email,
-          phone: user.phone || '',
-          role: user.role,
-        },
+        user: userData
       },
     });
   } catch (error) {
-    res.status(400).json({
-      status: 'error',
-      message: error.message,
-    });
+    console.error('Error in login:', error);
+    res.status(400).json({ message: 'Error logging in', error: error.message });
   }
 };
 

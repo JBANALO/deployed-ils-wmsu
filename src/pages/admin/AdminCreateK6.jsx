@@ -1,10 +1,15 @@
-import React, { useState } from "react";
+ import React, { useState } from "react";
 import { UserCircleIcon } from "@heroicons/react/24/outline";
 import QRCode from 'qrcode';
 import { API_BASE_URL } from "../../api/config";
 import { toast } from 'react-toastify';
+import { useNavigate } from 'react-router-dom';
 
-export default function AdminCreateK3() {
+export default function AdminCreateK6() {
+  const navigate = useNavigate();
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [createdStudentEmail, setCreatedStudentEmail] = useState('');
+  const [createdStudentPassword, setCreatedStudentPassword] = useState('');
   const [formData, setFormData] = useState({
     profilePic: "",
     lrn: "",
@@ -15,7 +20,10 @@ export default function AdminCreateK3() {
     sex: "",
     gradeLevel: "",
     section: "",
-    contact: "",
+    parentFirstName: "",
+    parentLastName: "",
+    parentEmail: "",
+    parentContact: "",
     wmsuEmail: "",
     password: "",
   });
@@ -48,7 +56,7 @@ export default function AdminCreateK3() {
     
     try {
       if (!formData.password) {
-        alert('Please generate a password first!');
+        toast.error('Please generate a password first!');
         return;
       }
 
@@ -75,8 +83,11 @@ export default function AdminCreateK3() {
         sex: formData.sex,
         gradeLevel: formData.gradeLevel,
         section: formData.section,
-        contact: formData.contact,
-        wmsuEmail: formData.wmsuEmail,
+        parent_first_name: formData.parentFirstName,
+        parent_last_name: formData.parentLastName,
+        parent_email: formData.parentEmail,
+        parent_contact: formData.parentContact,
+        student_email: formData.wmsuEmail,
         password: formData.password,
         profilePic: formData.profilePic || null
       };
@@ -90,20 +101,28 @@ export default function AdminCreateK3() {
       const result = await response.json();
 
       if (response.ok) {
-        alert(`Student account created successfully!\n\nEmail: ${formData.wmsuEmail}\nPassword: ${formData.password}\n\nPlease save this password!`);
+        // Show custom success modal instead of toast
+        setCreatedStudentEmail(formData.wmsuEmail);
+        setCreatedStudentPassword(formData.password);
+        setShowSuccessModal(true);
+        
+        // Redirect to AdminApprovals page after 5 seconds
+        setTimeout(() => {
+          navigate('/admin/approvals');
+        }, 5000);
         
         setFormData({
           profilePic: "", lrn: "", firstName: "", middleName: "", lastName: "",
-          age: "", sex: "", gradeLevel: "", section: "", contact: "",
+          age: "", sex: "", gradeLevel: "", section: "", parentFirstName: "",
+          parentLastName: "", parentEmail: "", parentContact: "",
           wmsuEmail: "", password: ""
         });
         setGeneratedPassword("");
         setShowPassword(false);
       } else {
-        alert(`Failed: ${result.error}`);
+        toast.error(`Failed: ${result.error}`);
       }
     } catch (error) {
-      toast.error('Error: ' + error.message);
       toast.error('Error: ' + error.message);
     }
   };
@@ -111,7 +130,7 @@ export default function AdminCreateK3() {
   return (
     <div className="space-y-8">
       <div className="bg-white shadow rounded-lg p-6 border-b-4 border-b-red-800">
-        <h2 className="text-4xl font-bold text-gray-900">Create K–3 Student Account</h2>
+        <h2 className="text-4xl font-bold text-gray-900">Create K–6 Student Account</h2>
         <p className="text-gray-600 mt-2">Admin-only form for generating student accounts and QR codes.</p>
       </div>
 
@@ -156,8 +175,20 @@ export default function AdminCreateK3() {
         {/* Rest of your form — 100% unchanged */}
         <div>
           <label className="block font-semibold mb-1">LRN (Learner Reference Number)</label>
-          <input type="text" name="lrn" value={formData.lrn} onChange={handleLRNChange} className="w-full border p-3 rounded-lg" placeholder="e.g., 123456789012" maxLength="12" required />
-          <p className="text-xs text-gray-500 mt-1">12-digit unique identifier</p>
+          <input 
+            type="text" 
+            name="lrn" 
+            value={formData.lrn} 
+            onChange={handleLRNChange} 
+            className="w-full border p-3 rounded-lg" 
+            placeholder="e.g., 123456789012" 
+            maxLength="12" 
+            pattern="[0-9]{12}" 
+            inputMode="numeric"
+            onInput={(e) => e.target.value = e.target.value.replace(/[^0-9]/g, '')}
+            required 
+          />
+          <p className="text-xs text-gray-500 mt-1">12-digit unique identifier (numbers only)</p>
         </div>
 
         <div className="grid grid-cols-3 gap-4">
@@ -185,6 +216,9 @@ export default function AdminCreateK3() {
               <option value="Grade 1">Grade 1</option>
               <option value="Grade 2">Grade 2</option>
               <option value="Grade 3">Grade 3</option>
+              <option value="Grade 4">Grade 4</option>
+              <option value="Grade 5">Grade 5</option>
+              <option value="Grade 6">Grade 6</option>
             </select>
           </div>
           <div><label className="block font-semibold mb-1">Section</label>
@@ -194,14 +228,49 @@ export default function AdminCreateK3() {
               {formData.gradeLevel === "Grade 1" && <option value="Humility">Humility</option>}
               {formData.gradeLevel === "Grade 2" && <option value="Kindness">Kindness</option>}
               {formData.gradeLevel === "Grade 3" && <> <option value="Diligence">Diligence</option> <option value="Wisdom">Wisdom</option> </>}
+              {formData.gradeLevel === "Grade 4" && <> <option value="Courage">Courage</option> <option value="Honesty">Honesty</option> </>}
+              {formData.gradeLevel === "Grade 5" && <> <option value="Respect">Respect</option> <option value="Responsibility">Responsibility</option> </>}
+              {formData.gradeLevel === "Grade 6" && <> <option value="Leadership">Leadership</option> <option value="Excellence">Excellence</option> </>}
             </select>
           </div>
         </div>
 
-        <div>
-          <label className="block font-semibold mb-1">Contact Number (Parent/Guardian)</label>
-          <input type="tel" name="contact" value={formData.contact} onChange={handleChange} className="w-full border p-3 rounded-lg" placeholder="e.g., 09123456789" pattern="[0-9]{11}" required />
-          <p className="text-xs text-gray-500 mt-1">11-digit mobile number</p>
+        {/* Parent/Guardian Information Section */}
+        <div className="border-t pt-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Parent/Guardian Information</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block font-semibold mb-1">Parent First Name</label>
+              <input type="text" name="parentFirstName" value={formData.parentFirstName} onChange={handleChange} className="w-full border p-3 rounded-lg" placeholder="Enter parent first name" required />
+            </div>
+            <div>
+              <label className="block font-semibold mb-1">Parent Last Name</label>
+              <input type="text" name="parentLastName" value={formData.parentLastName} onChange={handleChange} className="w-full border p-3 rounded-lg" placeholder="Enter parent last name" required />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            <div>
+              <label className="block font-semibold mb-1">Parent Email</label>
+              <input type="email" name="parentEmail" value={formData.parentEmail} onChange={handleChange} className="w-full border p-3 rounded-lg" placeholder="parent@example.com" required />
+            </div>
+            <div>
+              <label className="block font-semibold mb-1">Parent Contact Number</label>
+              <input 
+                type="tel" 
+                name="parentContact" 
+                value={formData.parentContact} 
+                onChange={handleChange} 
+                className="w-full border p-3 rounded-lg" 
+                placeholder="e.g., 09123456789" 
+                maxLength="11" 
+                pattern="[0-9]{11}" 
+                inputMode="numeric"
+                onInput={(e) => e.target.value = e.target.value.replace(/[^0-9]/g, '')}
+                required 
+              />
+              <p className="text-xs text-gray-500 mt-1">11-digit mobile number (numbers only)</p>
+            </div>
+          </div>
         </div>
 
         <div>
@@ -248,6 +317,44 @@ export default function AdminCreateK3() {
           Create Account + Generate QR Code
         </button>
       </form>
+            {/* SUCCESS MODAL */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6">
+            <div className="text-center">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
+                <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Student Account Created Successfully!</h3>
+              <div className="bg-gray-50 rounded-lg p-4 mb-4 text-left">
+                <p className="text-sm text-gray-600 mb-2">
+                  <span className="font-semibold">Email:</span> {createdStudentEmail}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-semibold">Password:</span> {createdStudentPassword}
+                </p>
+              </div>
+              <p className="text-sm text-red-600 font-semibold mb-4">
+                ⚠️ Please save this password! It will not be shown again.
+              </p>
+              <p className="text-xs text-gray-500 mb-4">
+                Redirecting to Admin Approvals in 5 seconds...
+              </p>
+              <button
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  navigate('/admin/approvals');
+                }}
+                className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 font-semibold"
+              >
+                Go to Admin Approvals Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -100,7 +100,7 @@ export default function LoginPage() {
       className="flex items-center justify-center min-h-screen bg-cover bg-center font-montserrat"
       style={{ backgroundImage: "url('/wmsu-bg-se.png')" }}
     >
-      <div className="relative bg-white/95 p-10 rounded-2xl shadow-xl w-[420px] h-auto text-center border border-gray-200">
+      <div className="relative bg-white/95 p-8 rounded-2xl shadow-xl w-[420px] text-center border border-gray-200">
         <img
           src="/wmsu-logo.jpg"
           alt="WMSU Logo"
@@ -149,10 +149,16 @@ export default function LoginPage() {
             </button>
           </div>
 
+          <div className="flex justify-end text-sm mt-5 text-gray-600">
+          <Link to="/forgot-password" className="text-red-800 hover:underline font-medium">
+            Forgot Password?
+          </Link>
+        </div>
+
           <button
             type="submit"
             disabled={isSubmitting}
-            className={`w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-3 rounded-md transition duration-200 transform hover:scale-105 ${isSubmitting ? "opacity-70 cursor-not-allowed" : ""}`}
+            className={`w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-4 px-6 rounded-md transition duration-200 transform hover:scale-105 ${isSubmitting ? "opacity-70 cursor-not-allowed" : ""}`}
           >
             {isSubmitting ? "Logging in..." : "Login"}
           </button>
@@ -175,16 +181,6 @@ export default function LoginPage() {
             size="large"
           />
         </div>
-
-        <div className="flex justify-between text-sm mt-5 text-gray-600">
-          <Link to="/create-account" className="hover:text-red-800 underline">
-            Create an Account
-          </Link>
-          <Link to="/forgot-password" className="text-red-800 hover:underline font-medium">
-            Forgot Password?
-          </Link>
-        </div>
-
       </div>
     </div>
   );
