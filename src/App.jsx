@@ -44,7 +44,7 @@ import ProtectedRoute from "./components/auth/ProtectedRoute";
 import { Toaster } from 'react-hot-toast';  
 import { UserProvider } from "./context/UserContext";
 
-const GOOGLE_CLIENT_ID = "545992268289-4fp8qedhktkyccfhfdedkjpn2pc6.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "878904993699-d6g63nckj41um96h4kul8vv34pd4b6b1.apps.googleusercontent.com";
 
 function App() {
   return (
