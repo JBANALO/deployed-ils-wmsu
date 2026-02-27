@@ -403,6 +403,7 @@ const startServer = async () => {
 
     // Students table columns
     const studentColumns = [
+      { name: 'student_email', sql: 'ALTER TABLE students ADD COLUMN student_email VARCHAR(100) UNIQUE' },
       { name: 'middleName', sql: 'ALTER TABLE students ADD COLUMN middleName VARCHAR(255) AFTER first_name' },
       { name: 'age', sql: 'ALTER TABLE students ADD COLUMN age INT AFTER middleName' },
       { name: 'sex', sql: 'ALTER TABLE students ADD COLUMN sex VARCHAR(10) AFTER age' },
