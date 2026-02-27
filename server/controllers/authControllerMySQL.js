@@ -124,9 +124,11 @@ exports.login = async (req, res) => {
 
     // Check users table (for admin accounts)
     let users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [loginField]);
+    console.log(`🔍 Checking users table for email: ${loginField}, found: ${users.length} users`);
     
     if (users.length === 0) {
       users = await query('SELECT * FROM users WHERE LOWER(username) = LOWER(?)', [loginField]);
+      console.log(`🔍 Checking users table for username: ${loginField}, found: ${users.length} users`);
     }
 
     // If not found in users, check teachers table
@@ -153,7 +155,15 @@ exports.login = async (req, res) => {
     }
 
     const user = users[0];
+    console.log(`🔍 User found:`, {
+      id: user.id,
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      role: user.role
+    });
     const passwordMatch = await bcrypt.compare(password, user.password);
+    console.log(`🔍 Password comparison: provided="${password}", stored_hash="${user.password}", match=${passwordMatch}`);
 
     if (!passwordMatch) {
       return res.status(401).json({
