@@ -398,24 +398,8 @@ const startServer = async () => {
     console.log('✅ Database is available, checking columns...');
 
     // Users table columns (Admin accounts only) - based on actual database structure
-    const userColumns = [
-      // These columns already exist in your database, no need to add them
-      // Only add columns that don't exist
-    ];
-
-    for (const col of userColumns) {
-      try {
-        const exists = await query(`SHOW COLUMNS FROM users LIKE '${col.name}'`);
-        if (exists.length === 0) {
-          await query(col.sql);
-          console.log(`✅ ${col.name} column added to users`);
-        } else {
-          console.log(`✅ ${col.name} column already exists in users`);
-        }
-      } catch (err) {
-        console.warn(`⚠️ Skipping users.${col.name} check:`, err.message);
-      }
-    }
+    // All required columns already exist in your database
+    // No additional columns needed for users table
 
     // Students table columns
     const studentColumns = [
