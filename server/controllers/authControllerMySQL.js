@@ -111,9 +111,11 @@ exports.restrictTo = (...roles) => {
 
 // Login user
 exports.login = async (req, res) => {
+  console.log('🚨 LOGIN ATTEMPT - authControllerMySQL.js login function called!');
   try {
     const { email, username, password } = req.body;
     const loginField = email || username;
+    console.log(`🔍 Login attempt: field="${loginField}", password_length=${password ? password.length : 'none'}`);
 
     if (!loginField || !password) {
       return res.status(400).json({
