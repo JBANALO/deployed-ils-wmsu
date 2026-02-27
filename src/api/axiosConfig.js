@@ -1,7 +1,8 @@
 import axios from 'axios';
 
 // Get API URL from environment variable with fallbacks
-const apiURL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://localhost:5000/api';
+const apiURL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 
+               (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
 
 if (import.meta.env.MODE === 'development') {
   console.log('API URL:', apiURL, 'Environment:', import.meta.env.MODE);
