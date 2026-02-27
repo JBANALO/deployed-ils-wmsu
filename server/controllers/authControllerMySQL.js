@@ -142,9 +142,7 @@ exports.login = async (req, res) => {
     if (users.length === 0) {
       users = await query('SELECT * FROM students WHERE LOWER(student_email) = LOWER(?)', [loginField]);
       
-      if (users.length === 0) {
-        users = await query('SELECT * FROM students WHERE LOWER(username) = LOWER(?)', [loginField]);
-      }
+      // No username column in students table, so only check email
     }
 
     if (users.length === 0) {

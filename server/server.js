@@ -421,19 +421,19 @@ const startServer = async () => {
           console.log(`✅ ${col.name} column already exists in users`);
         }
       } catch (err) {
-        console.warn(`⚠️ Skipping users.${col.name} check:`, err.message);
-      }
-    }
 
-    // Students table columns
-    const studentColumns = [
-      { name: 'middleName', sql: 'ALTER TABLE students ADD COLUMN middleName VARCHAR(255) AFTER first_name' },
-      { name: 'age', sql: 'ALTER TABLE students ADD COLUMN age INT AFTER middleName' },
-      { name: 'sex', sql: 'ALTER TABLE students ADD COLUMN sex VARCHAR(10) AFTER age' },
-      { name: 'lrn', sql: 'ALTER TABLE students ADD COLUMN lrn VARCHAR(20) AFTER sex' },
-      { name: 'parentFirstName', sql: 'ALTER TABLE students ADD COLUMN parentFirstName VARCHAR(255) AFTER section' },
-      { name: 'parentLastName', sql: 'ALTER TABLE students ADD COLUMN parentLastName VARCHAR(255) AFTER parentFirstName' },
-      { name: 'parentContact', sql: 'ALTER TABLE students ADD COLUMN parentContact VARCHAR(20) AFTER parentLastName' },
+// Students table columns
+const studentColumns = [
+{ name: 'middleName', sql: 'ALTER TABLE students ADD COLUMN middleName VARCHAR(255) AFTER first_name' },
+{ name: 'age', sql: 'ALTER TABLE students ADD COLUMN age INT AFTER middleName' },
+{ name: 'sex', sql: 'ALTER TABLE students ADD COLUMN sex VARCHAR(10) AFTER age' },
+{ name: 'lrn', sql: 'ALTER TABLE students ADD COLUMN lrn VARCHAR(20) AFTER sex' },
+{ name: 'parentFirstName', sql: 'ALTER TABLE students ADD COLUMN parentFirstName VARCHAR(255) AFTER section' },
+{ name: 'parentLastName', sql: 'ALTER TABLE students ADD COLUMN parentLastName VARCHAR(255) AFTER parentFirstName' },
+{ name: 'parentContact', sql: 'ALTER TABLE students ADD COLUMN parentContact VARCHAR(20) AFTER parentLastName' },
+{ name: 'parentEmail', sql: 'ALTER TABLE students ADD COLUMN parentEmail VARCHAR(255) AFTER parentContact' },
+{ name: 'qrCode', sql: 'ALTER TABLE students ADD COLUMN qrCode TEXT AFTER parentEmail' }
+];
       { name: 'parentEmail', sql: 'ALTER TABLE students ADD COLUMN parentEmail VARCHAR(255) AFTER parentContact' },
       { name: 'qrCode', sql: 'ALTER TABLE students ADD COLUMN qrCode TEXT AFTER parentEmail' }
     ];
