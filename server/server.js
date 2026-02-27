@@ -338,6 +338,48 @@ app.get('/api/admin/recent-login-attempts', async (req, res) => {
   }
 });
 
+// Get pending teachers from database
+app.get('/api/admin/pending-teachers', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    
+    // Get teachers with pending status
+    const pendingTeachers = await query(
+      'SELECT id, username, first_name, middle_name, last_name, email, role, grade_level, section, verification_status, created_at FROM teachers WHERE verification_status = "pending"'
+    );
+    
+    res.json({
+      status: 'success',
+      data: { teachers: pendingTeachers },
+      message: `Found ${pendingTeachers.length} pending teachers`
+    });
+  } catch (error) {
+    console.error('Error fetching pending teachers:', error);
+    res.status(500).json({ message: 'Error fetching pending teachers', error: error.message });
+  }
+});
+
+// Get pending students from database
+app.get('/api/admin/pending-students', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    
+    // Get students with pending status
+    const pendingStudents = await query(
+      'SELECT id, lrn, first_name, middle_name, last_name, student_email, grade_level, section, status, created_at FROM students WHERE status = "pending"'
+    );
+    
+    res.json({
+      status: 'success',
+      data: { students: pendingStudents },
+      message: `Found ${pendingStudents.length} pending students`
+    });
+  } catch (error) {
+    console.error('Error fetching pending students:', error);
+    res.status(500).json({ message: 'Error fetching pending students', error: error.message });
+  }
+});
+
 // API routes
 app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);

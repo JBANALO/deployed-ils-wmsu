@@ -76,7 +76,7 @@ exports.signupBatch = async (req, res) => {
         const userId = uuidv4();
 
         await query(
-          'INSERT INTO users (id, firstName, lastName, username, email, password, role, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+          'INSERT INTO users (id, first_name, last_name, username, email, password, role, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
           [userId, firstName, lastName, username, email, hashedPassword, role, 'pending']
         );
 
@@ -202,7 +202,7 @@ exports.getUserById = async (req, res) => {
     const { id } = req.params;
 
     const users = await query(
-      'SELECT id, firstName, lastName, username, email, role, gradeLevel, section, createdAt FROM users WHERE id = ?',
+      'SELECT id, first_name, last_name, username, email, role, created_at FROM users WHERE id = ?',
       [id]
     );
 
@@ -249,31 +249,35 @@ exports.deleteUser = async (req, res) => {
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { firstName, lastName, email, gradeLevel, section } = req.body;
+    const { firstName, lastName, username, email, phone, profile_pic } = req.body;
 
     // Build update query dynamically based on provided fields
     const updates = [];
     const values = [];
 
     if (firstName !== undefined) {
-      updates.push('firstName = ?');
+      updates.push('first_name = ?');
       values.push(firstName);
     }
     if (lastName !== undefined) {
-      updates.push('lastName = ?');
+      updates.push('last_name = ?');
       values.push(lastName);
+    }
+    if (username !== undefined) {
+      updates.push('username = ?');
+      values.push(username);
     }
     if (email !== undefined) {
       updates.push('email = ?');
       values.push(email);
     }
-    if (gradeLevel !== undefined) {
-      updates.push('gradeLevel = ?');
-      values.push(gradeLevel);
+    if (phone !== undefined) {
+      updates.push('phone = ?');
+      values.push(phone);
     }
-    if (section !== undefined) {
-      updates.push('section = ?');
-      values.push(section);
+    if (profile_pic !== undefined) {
+      updates.push('profile_pic = ?');
+      values.push(profile_pic);
     }
 
     if (updates.length === 0) {
@@ -283,7 +287,7 @@ exports.updateUser = async (req, res) => {
       });
     }
 
-    updates.push('updatedAt = NOW()');
+    updates.push('updated_at = NOW()');
     values.push(id);
 
     const result = await query(
@@ -300,7 +304,7 @@ exports.updateUser = async (req, res) => {
 
     // Fetch updated user
     const updatedUsers = await query(
-      'SELECT id, firstName, lastName, email, role, gradeLevel, section FROM users WHERE id = ?',
+      'SELECT id, first_name, last_name, username, email, phone, profile_pic, role FROM users WHERE id = ?',
       [id]
     );
 
