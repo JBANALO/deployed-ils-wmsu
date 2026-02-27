@@ -224,8 +224,8 @@ app.post('/api/admin/import-students', async (req, res) => {
                 `INSERT INTO students (
                   id, lrn, first_name, middle_name, last_name, full_name,
                   grade_level, section, sex, age, wmsu_email, password, status,
-                  qr_code, profile_pic, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+                  qr_code, profile_pic
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                   studentId,
                   student.lrn,
@@ -397,25 +397,60 @@ const startServer = async () => {
   if (isDatabaseAvailable()) {
     console.log('✅ Database is available, checking columns...');
 
-    // Users table columns (Admin accounts only) - based on actual database structure
-    // All required columns already exist in your database
-    // No additional columns needed for users table
+    // Users table columns (Admin accounts only) - Add missing columns to match local database exactly
+    const userColumns = [
+      { name: 'id', sql: 'ALTER TABLE users ADD COLUMN id VARCHAR(36) PRIMARY KEY' },
+      { name: 'first_name', sql: 'ALTER TABLE users ADD COLUMN first_name VARCHAR(100)' },
+      { name: 'last_name', sql: 'ALTER TABLE users ADD COLUMN last_name VARCHAR(100)' },
+      { name: 'username', sql: 'ALTER TABLE users ADD COLUMN username VARCHAR(100) UNIQUE' },
+      { name: 'email', sql: 'ALTER TABLE users ADD COLUMN email VARCHAR(100) UNIQUE NOT NULL' },
+      { name: 'password', sql: 'ALTER TABLE users ADD COLUMN password VARCHAR(255) NOT NULL' },
+      { name: 'role', sql: 'ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT "admin"' },
+      { name: 'created_at', sql: 'ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP' },
+      { name: 'phone', sql: 'ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT ""' },
+      { name: 'profile_pic', sql: 'ALTER TABLE users ADD COLUMN profile_pic LONGTEXT' },
+      { name: 'updated_at', sql: 'ALTER TABLE users ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP' }
+    ];
 
-    // Students table columns - Match local database structure exactly
+    for (const col of userColumns) {
+      try {
+        const exists = await query(`SHOW COLUMNS FROM users LIKE '${col.name}'`);
+        if (exists.length === 0) {
+          await query(col.sql);
+          console.log(`✅ ${col.name} column added to users`);
+        } else {
+          console.log(`✅ ${col.name} column already exists in users`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ Skipping users.${col.name} check:`, err.message);
+      }
+    }
+
+    // Students table columns - Match local database structure exactly (underscore-only)
     const studentColumns = [
+      { name: 'id', sql: 'ALTER TABLE students ADD COLUMN id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY' },
+      { name: 'lrn', sql: 'ALTER TABLE students ADD COLUMN lrn VARCHAR(12) NOT NULL UNIQUE' },
+      { name: 'first_name', sql: 'ALTER TABLE students ADD COLUMN first_name VARCHAR(100) NOT NULL' },
+      { name: 'middle_name', sql: 'ALTER TABLE students ADD COLUMN middle_name VARCHAR(100)' },
+      { name: 'last_name', sql: 'ALTER TABLE students ADD COLUMN last_name VARCHAR(100) NOT NULL' },
+      { name: 'age', sql: 'ALTER TABLE students ADD COLUMN age INT(11) NOT NULL' },
+      { name: 'sex', sql: 'ALTER TABLE students ADD COLUMN sex VARCHAR(10) NOT NULL' },
+      { name: 'grade_level', sql: 'ALTER TABLE students ADD COLUMN grade_level VARCHAR(50) NOT NULL' },
+      { name: 'section', sql: 'ALTER TABLE students ADD COLUMN section VARCHAR(50) NOT NULL' },
+      { name: 'parent_first_name', sql: 'ALTER TABLE students ADD COLUMN parent_first_name VARCHAR(255)' },
+      { name: 'parent_last_name', sql: 'ALTER TABLE students ADD COLUMN parent_last_name VARCHAR(255)' },
+      { name: 'parent_contact', sql: 'ALTER TABLE students ADD COLUMN parent_contact VARCHAR(20)' },
+      { name: 'parent_email', sql: 'ALTER TABLE students ADD COLUMN parent_email VARCHAR(255)' },
       { name: 'student_email', sql: 'ALTER TABLE students ADD COLUMN student_email VARCHAR(100) UNIQUE' },
-      { name: 'middleName', sql: 'ALTER TABLE students ADD COLUMN middleName VARCHAR(255) AFTER first_name' },
-      { name: 'age', sql: 'ALTER TABLE students ADD COLUMN age INT AFTER middleName' },
-      { name: 'sex', sql: 'ALTER TABLE students ADD COLUMN sex VARCHAR(10) AFTER age' },
-      { name: 'lrn', sql: 'ALTER TABLE students ADD COLUMN lrn VARCHAR(20) AFTER sex' },
-      { name: 'parentFirstName', sql: 'ALTER TABLE students ADD COLUMN parentFirstName VARCHAR(255) AFTER section' },
-      { name: 'parentLastName', sql: 'ALTER TABLE students ADD COLUMN parentLastName VARCHAR(255) AFTER parentFirstName' },
-      { name: 'parentContact', sql: 'ALTER TABLE students ADD COLUMN parentContact VARCHAR(20) AFTER parentLastName' },
-      { name: 'parentEmail', sql: 'ALTER TABLE students ADD COLUMN parentEmail VARCHAR(255) AFTER parentContact' },
-      { name: 'qrCode', sql: 'ALTER TABLE students ADD COLUMN qrCode TEXT AFTER parentEmail' },
+      { name: 'password', sql: 'ALTER TABLE students ADD COLUMN password VARCHAR(255) NOT NULL' },
+      { name: 'profile_pic', sql: 'ALTER TABLE students ADD COLUMN profile_pic LONGTEXT' },
+      { name: 'qr_code', sql: 'ALTER TABLE students ADD COLUMN qr_code LONGTEXT' },
+      { name: 'status', sql: 'ALTER TABLE students ADD COLUMN status VARCHAR(20) DEFAULT "pending"' },
       { name: 'attendance', sql: 'ALTER TABLE students ADD COLUMN attendance VARCHAR(10) DEFAULT "0%"' },
-      { name: 'average', sql: 'ALTER TABLE students ADD COLUMN average INT DEFAULT 0' },
+      { name: 'average', sql: 'ALTER TABLE students ADD COLUMN average INT(11) DEFAULT 0' },
       { name: 'created_by', sql: 'ALTER TABLE students ADD COLUMN created_by VARCHAR(50) DEFAULT "admin"' },
+      { name: 'created_at', sql: 'ALTER TABLE students ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP' },
+      { name: 'updated_at', sql: 'ALTER TABLE students ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP' },
       { name: 'decline_reason', sql: 'ALTER TABLE students ADD COLUMN decline_reason TEXT' }
     ];
 
@@ -453,9 +488,7 @@ const startServer = async () => {
           last_name varchar(100) NOT NULL,
           email varchar(100) NOT NULL,
           password varchar(255) NOT NULL,
-          role enum('adviser','subject_teacher','teacher','admin') NOT NULL DEFAULT 'adviser',
-          department varchar(100) DEFAULT 'WMSU-ILS Department',
-          position varchar(100) DEFAULT 'Teacher',
+          role enum('adviser','subject_teacher') NOT NULL DEFAULT 'adviser',
           subjects text DEFAULT NULL,
           grade_level varchar(50) DEFAULT NULL,
           section varchar(50) DEFAULT NULL,
