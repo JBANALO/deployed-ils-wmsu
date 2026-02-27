@@ -95,6 +95,24 @@ export default function AdminCreateTeacher() {
     }
   };
 
+  const handleSelectAllSubjects = () => {
+    if (formData.gradeLevel && formData.gradeLevel !== "Kindergarten" && subjectsByGradeLevel[formData.gradeLevel]) {
+      const allSubjects = subjectsByGradeLevel[formData.gradeLevel];
+      const currentSubjects = formData.subjects || [];
+      
+      // Check if all subjects are already selected
+      const allSelected = allSubjects.every(subject => currentSubjects.includes(subject));
+      
+      if (allSelected) {
+        // Deselect all subjects
+        setFormData(prev => ({ ...prev, subjects: [] }));
+      } else {
+        // Select all subjects
+        setFormData(prev => ({ ...prev, subjects: [...allSubjects] }));
+      }
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -384,9 +402,18 @@ export default function AdminCreateTeacher() {
               </div>
             ) : formData.gradeLevel && subjectsByGradeLevel[formData.gradeLevel].length > 0 ? (
               <div className="mt-2 space-y-2">
-                <p className="text-xs text-gray-600 mb-2">
-                  Select subjects for {formData.gradeLevel}:
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-gray-600">
+                    Select subjects for {formData.gradeLevel}:
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSelectAllSubjects}
+                    className="px-3 py-1 text-xs bg-red-800 text-white rounded hover:bg-red-900 transition-colors"
+                  >
+                    {formData.subjects.length === subjectsByGradeLevel[formData.gradeLevel].length ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {subjectsByGradeLevel[formData.gradeLevel].map((subject) => (
                     <label key={subject} className="flex items-center space-x-2 cursor-pointer">
