@@ -77,8 +77,10 @@ function App() {
           />
 
           <Routes>
+            {/* Root route - must be first */}
             <Route path="/" element={<Navigate to="/login" replace />} />
 
+            {/* Public routes */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/auth/google-callback" element={<GoogleCallbackPage />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -127,7 +129,7 @@ function App() {
               </Route>
             </Route>
 
-            <Route path="*" element={<div className="p-20 text-center text-3xl font-bold">404 - Page Not Found</div>} />
+            <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </Router>
         <ToastContainer
