@@ -31,7 +31,7 @@ exports.signup = async (req, res) => {
     const userId = uuidv4();
     await query(
       'INSERT INTO users (id, first_name, last_name, username, email, password, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
-      [userId, firstName, lastName, username, email, hashedPassword, role]
+      [userId, firstName || '', lastName || '', username || '', email || '', hashedPassword, role || 'admin']
     );
 
     res.status(201).json({ 
