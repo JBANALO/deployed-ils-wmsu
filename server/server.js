@@ -397,18 +397,10 @@ const startServer = async () => {
   if (isDatabaseAvailable()) {
     console.log('✅ Database is available, checking columns...');
 
-    // Users table columns
+    // Users table columns (Admin accounts only) - based on actual database structure
     const userColumns = [
-      { name: 'phone', sql: 'ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT ""' },
-      { name: 'profile_pic', sql: 'ALTER TABLE users ADD COLUMN profile_pic LONGTEXT' },
-      { name: 'grade_level', sql: 'ALTER TABLE users ADD COLUMN grade_level VARCHAR(50)' },
-      { name: 'section', sql: 'ALTER TABLE users ADD COLUMN section VARCHAR(50)' },
-      { name: 'subjects', sql: 'ALTER TABLE users ADD COLUMN subjects TEXT' },
-      { name: 'bio', sql: 'ALTER TABLE users ADD COLUMN bio TEXT' },
-      { name: 'verification_status', sql: 'ALTER TABLE users ADD COLUMN verification_status VARCHAR(20) DEFAULT "pending"' },
-      { name: 'decline_reason', sql: 'ALTER TABLE users ADD COLUMN decline_reason TEXT' },
-      { name: 'middle_name', sql: 'ALTER TABLE users ADD COLUMN middle_name VARCHAR(100)' },
-      { name: 'updated_at', sql: 'ALTER TABLE users ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP' }
+      // These columns already exist in your database, no need to add them
+      // Only add columns that don't exist
     ];
 
     for (const col of userColumns) {
@@ -421,19 +413,19 @@ const startServer = async () => {
           console.log(`✅ ${col.name} column already exists in users`);
         }
       } catch (err) {
+        console.warn(`⚠️ Skipping users.${col.name} check:`, err.message);
+      }
+    }
 
-// Students table columns
-const studentColumns = [
-{ name: 'middleName', sql: 'ALTER TABLE students ADD COLUMN middleName VARCHAR(255) AFTER first_name' },
-{ name: 'age', sql: 'ALTER TABLE students ADD COLUMN age INT AFTER middleName' },
-{ name: 'sex', sql: 'ALTER TABLE students ADD COLUMN sex VARCHAR(10) AFTER age' },
-{ name: 'lrn', sql: 'ALTER TABLE students ADD COLUMN lrn VARCHAR(20) AFTER sex' },
-{ name: 'parentFirstName', sql: 'ALTER TABLE students ADD COLUMN parentFirstName VARCHAR(255) AFTER section' },
-{ name: 'parentLastName', sql: 'ALTER TABLE students ADD COLUMN parentLastName VARCHAR(255) AFTER parentFirstName' },
-{ name: 'parentContact', sql: 'ALTER TABLE students ADD COLUMN parentContact VARCHAR(20) AFTER parentLastName' },
-{ name: 'parentEmail', sql: 'ALTER TABLE students ADD COLUMN parentEmail VARCHAR(255) AFTER parentContact' },
-{ name: 'qrCode', sql: 'ALTER TABLE students ADD COLUMN qrCode TEXT AFTER parentEmail' }
-];
+    // Students table columns
+    const studentColumns = [
+      { name: 'middleName', sql: 'ALTER TABLE students ADD COLUMN middleName VARCHAR(255) AFTER first_name' },
+      { name: 'age', sql: 'ALTER TABLE students ADD COLUMN age INT AFTER middleName' },
+      { name: 'sex', sql: 'ALTER TABLE students ADD COLUMN sex VARCHAR(10) AFTER age' },
+      { name: 'lrn', sql: 'ALTER TABLE students ADD COLUMN lrn VARCHAR(20) AFTER sex' },
+      { name: 'parentFirstName', sql: 'ALTER TABLE students ADD COLUMN parentFirstName VARCHAR(255) AFTER section' },
+      { name: 'parentLastName', sql: 'ALTER TABLE students ADD COLUMN parentLastName VARCHAR(255) AFTER parentFirstName' },
+      { name: 'parentContact', sql: 'ALTER TABLE students ADD COLUMN parentContact VARCHAR(20) AFTER parentLastName' },
       { name: 'parentEmail', sql: 'ALTER TABLE students ADD COLUMN parentEmail VARCHAR(255) AFTER parentContact' },
       { name: 'qrCode', sql: 'ALTER TABLE students ADD COLUMN qrCode TEXT AFTER parentEmail' }
     ];
