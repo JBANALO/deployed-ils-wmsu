@@ -401,7 +401,7 @@ const startServer = async () => {
     // All required columns already exist in your database
     // No additional columns needed for users table
 
-    // Students table columns
+    // Students table columns - Match local database structure exactly
     const studentColumns = [
       { name: 'student_email', sql: 'ALTER TABLE students ADD COLUMN student_email VARCHAR(100) UNIQUE' },
       { name: 'middleName', sql: 'ALTER TABLE students ADD COLUMN middleName VARCHAR(255) AFTER first_name' },
@@ -412,7 +412,11 @@ const startServer = async () => {
       { name: 'parentLastName', sql: 'ALTER TABLE students ADD COLUMN parentLastName VARCHAR(255) AFTER parentFirstName' },
       { name: 'parentContact', sql: 'ALTER TABLE students ADD COLUMN parentContact VARCHAR(20) AFTER parentLastName' },
       { name: 'parentEmail', sql: 'ALTER TABLE students ADD COLUMN parentEmail VARCHAR(255) AFTER parentContact' },
-      { name: 'qrCode', sql: 'ALTER TABLE students ADD COLUMN qrCode TEXT AFTER parentEmail' }
+      { name: 'qrCode', sql: 'ALTER TABLE students ADD COLUMN qrCode TEXT AFTER parentEmail' },
+      { name: 'attendance', sql: 'ALTER TABLE students ADD COLUMN attendance VARCHAR(10) DEFAULT "0%"' },
+      { name: 'average', sql: 'ALTER TABLE students ADD COLUMN average INT DEFAULT 0' },
+      { name: 'created_by', sql: 'ALTER TABLE students ADD COLUMN created_by VARCHAR(50) DEFAULT "admin"' },
+      { name: 'decline_reason', sql: 'ALTER TABLE students ADD COLUMN decline_reason TEXT' }
     ];
 
     for (const col of studentColumns) {
