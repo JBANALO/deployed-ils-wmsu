@@ -400,7 +400,15 @@ const startServer = async () => {
     // Users table columns
     const userColumns = [
       { name: 'phone', sql: 'ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT ""' },
-      { name: 'profile_pic', sql: 'ALTER TABLE users ADD COLUMN profile_pic LONGTEXT' }
+      { name: 'profile_pic', sql: 'ALTER TABLE users ADD COLUMN profile_pic LONGTEXT' },
+      { name: 'grade_level', sql: 'ALTER TABLE users ADD COLUMN grade_level VARCHAR(50)' },
+      { name: 'section', sql: 'ALTER TABLE users ADD COLUMN section VARCHAR(50)' },
+      { name: 'subjects', sql: 'ALTER TABLE users ADD COLUMN subjects TEXT' },
+      { name: 'bio', sql: 'ALTER TABLE users ADD COLUMN bio TEXT' },
+      { name: 'verification_status', sql: 'ALTER TABLE users ADD COLUMN verification_status VARCHAR(20) DEFAULT "pending"' },
+      { name: 'decline_reason', sql: 'ALTER TABLE users ADD COLUMN decline_reason TEXT' },
+      { name: 'middle_name', sql: 'ALTER TABLE users ADD COLUMN middle_name VARCHAR(100)' },
+      { name: 'updated_at', sql: 'ALTER TABLE users ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP' }
     ];
 
     for (const col of userColumns) {
@@ -447,6 +455,44 @@ const startServer = async () => {
     console.log('✅ Database setup completed successfully!');
   } else {
     console.log('⚠️ Database not available - running in file-only mode');
+  }
+
+  // 5️⃣ Create missing tables if they don't exist
+  if (isDatabaseAvailable()) {
+    console.log('✅ Creating missing tables...');
+    
+    // Create teachers table if it doesn't exist
+    try {
+      await query(`
+        CREATE TABLE IF NOT EXISTS teachers (
+          id int(11) NOT NULL AUTO_INCREMENT,
+          username varchar(50) NOT NULL,
+          first_name varchar(100) NOT NULL,
+          middle_name varchar(100) DEFAULT NULL,
+          last_name varchar(100) NOT NULL,
+          email varchar(100) NOT NULL,
+          password varchar(255) NOT NULL,
+          role enum('adviser','subject_teacher','teacher','admin') NOT NULL DEFAULT 'adviser',
+          department varchar(100) DEFAULT 'WMSU-ILS Department',
+          position varchar(100) DEFAULT 'Teacher',
+          subjects text DEFAULT NULL,
+          grade_level varchar(50) DEFAULT NULL,
+          section varchar(50) DEFAULT NULL,
+          bio text DEFAULT NULL,
+          profile_pic longtext DEFAULT NULL,
+          created_at timestamp NOT NULL DEFAULT current_timestamp(),
+          updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+          verification_status enum('pending','approved','rejected') DEFAULT 'pending',
+          decline_reason text DEFAULT NULL,
+          PRIMARY KEY (id),
+          UNIQUE KEY username (username),
+          UNIQUE KEY email (email)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+      `);
+      console.log('✅ Teachers table ready');
+    } catch (err) {
+      console.warn('⚠️ Teachers table creation error:', err.message);
+    }
   }
 
   // 4️⃣ Start Express server
