@@ -122,7 +122,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    // First check users table (for admin accounts)
+    // Check users table (for admin accounts)
     let users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [loginField]);
     
     if (users.length === 0) {
@@ -135,6 +135,15 @@ exports.login = async (req, res) => {
       
       if (users.length === 0) {
         users = await query('SELECT * FROM teachers WHERE LOWER(username) = LOWER(?)', [loginField]);
+      }
+    }
+
+    // If not found in users or teachers, check students table
+    if (users.length === 0) {
+      users = await query('SELECT * FROM students WHERE LOWER(student_email) = LOWER(?)', [loginField]);
+      
+      if (users.length === 0) {
+        users = await query('SELECT * FROM students WHERE LOWER(username) = LOWER(?)', [loginField]);
       }
     }
 

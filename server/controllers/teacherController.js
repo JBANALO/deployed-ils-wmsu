@@ -101,7 +101,6 @@ exports.getAllTeachers = async (req, res) => {
       bio: teacher.bio,
       profilePic: teacher.profile_pic,
       verificationStatus: teacher.verification_status,
-      status: teacher.verification_status, // For backward compatibility
       createdAt: teacher.created_at,
       updatedAt: teacher.updated_at
     }));
