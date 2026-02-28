@@ -673,43 +673,19 @@ export default function AdminStudents() {
                     console.error('QR Code load error. File path:', selectedStudent.qrCode);
                     console.error('Attempted URL:', e.target.src);
                     
-                    // Prevent infinite loop by checking if we've already tried alternatives
-                    if (e.target.hasAttribute('data-retried')) {
-                      console.warn('Already tried all alternatives, showing fallback');
-                      // Don't immediately show fallback - wait a bit to see if it loads
-                      setTimeout(() => {
-                        if (e.target.naturalWidth === 0) { // Still not loaded
-                          toast.error('QR code image not available');
-                          e.target.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22256%22 height=%22256%22%3E%3Crect fill=%22%23f3f4f6%22 width=%22256%22 height=%22256%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22 font-family=%22Arial%22 font-size=%2214%22 fill=%22%236b7280%22%3EQR Code%3C/text%3E%3Ctext x=%2250%25%22 y=%2260%25%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22 font-family=%22Arial%22 font-size=%2212%22 fill=%22%239ca3af%22%3ENot Available%3C/text%3E%3C/svg%3E';
-                        }
-                      }, 1000);
+                    // Try the direct qrcodes path first
+                    const filename = selectedStudent.qrCode.split('/').pop();
+                    const directUrl = `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}/qrcodes/${filename}`;
+                    
+                    if (e.target.src !== directUrl) {
+                      console.log('Trying direct qrcodes URL:', directUrl);
+                      e.target.src = directUrl;
                       return;
                     }
                     
-                    // Mark as retried to prevent infinite loop
-                    e.target.setAttribute('data-retried', 'true');
-                    
-                    // Try alternative URL patterns
-                    const alternatives = getAlternativeQRUrls(selectedStudent.qrCode);
-                    const currentSrc = e.target.src;
-                    
-                    // Find the first alternative that hasn't been tried
-                    for (const altUrl of alternatives) {
-                      if (altUrl !== currentSrc) {
-                        console.log('Trying alternative URL:', altUrl);
-                        e.target.src = altUrl;
-                        return;
-                      }
-                    }
-                    
-                    // If we get here, all alternatives failed
-                    console.warn('All QR code URL attempts failed, showing fallback');
-                    setTimeout(() => {
-                      if (e.target.naturalWidth === 0) { // Still not loaded
-                        toast.error('QR code image not available');
-                        e.target.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22256%22 height=%22256%22%3E%3Crect fill=%22%23f3f4f6%22 width=%22256%22 height=%22256%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22 font-family=%22Arial%22 font-size=%2214%22 fill=%22%236b7280%22%3EQR Code%3C/text%3E%3Ctext x=%2250%25%22 y=%2260%25%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22 font-family=%22Arial%22 font-size=%2212%22 fill=%22%239ca3af%22%3ENot Available%3C/text%3E%3C/svg%3E';
-                      }
-                    }, 1000);
+                    // If direct path fails, show fallback immediately
+                    console.warn('QR code not available, showing fallback');
+                    e.target.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22256%22 height=%22256%22%3E%3Crect fill=%22%23f3f4f6%22 width=%22256%22 height=%22256%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22 font-family=%22Arial%22 font-size=%2214%22 fill=%22%236b7280%22%3EQR Code%3C/text%3E%3Ctext x=%2250%25%22 y=%2260%25%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22 font-family=%22Arial%22 font-size=%2212%22 fill=%22%239ca3af%22%3ENot Available%3C/text%3E%3C/svg%3E';
                   }}
                   onLoad={() => {
                     console.log('QR Code loaded successfully from:', selectedStudent.qrCode);
