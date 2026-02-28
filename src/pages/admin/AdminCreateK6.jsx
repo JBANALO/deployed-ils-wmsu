@@ -310,16 +310,14 @@ const handleSubmit = async (e) => {
 
         <div>
           <label className="block font-semibold mb-1">WMSU Email</label>
-          <div className="flex items-center">
-            <input 
-              type="email" 
-              value={formData.wmsuEmail.replace('@wmsu.edu.ph', '')} 
-              onChange={(e) => setFormData({...formData, wmsuEmail: `${e.target.value}@wmsu.edu.ph`})}
-              className="flex-1 border p-3 rounded-l-lg" 
-              placeholder="wmsu_email" 
-              required 
-            />
-          </div>
+          <input 
+            type="email" 
+            name="wmsuEmail" 
+            value={formData.wmsuEmail}
+            readOnly
+            className="w-full border p-3 rounded-lg bg-gray-100 text-gray-600" 
+            placeholder="Auto-generated based on LRN" 
+          />
           <p className="text-xs text-gray-500 mt-1">Auto-generated based on LRN</p>
         </div>
 
