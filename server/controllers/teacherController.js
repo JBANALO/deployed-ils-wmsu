@@ -18,7 +18,7 @@ exports.createTeacher = async (req, res) => {
       const fileName = `teacher_${Date.now()}.${profilePic.name.split('.').pop()}`;
       profilePicPath = path.join(uploadFolder, fileName);
       fs.renameSync(profilePic.path, profilePicPath);
-    } else if (req.body.profilePic && req.body.profilePic.startsWith('data:image/')) {
+    } else if (req.body.profilePic && typeof req.body.profilePic === 'string' && req.body.profilePic.startsWith('data:image/')) {
       const matches = req.body.profilePic.match(/^data:image\/([a-zA-Z]+);base64,(.+)$/);
       if (matches) {
         const imageType = matches[1];
