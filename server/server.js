@@ -439,7 +439,44 @@ const startServer = async () => {
   if (isDatabaseAvailable()) {
     console.log('✅ Database is available, checking columns...');
 
-    // Users table columns (Admin accounts only) - Add missing columns to match local database exactly
+    // 🔧 FORCE FIX: Drop all wrong camelCase columns from Railway database
+    console.log('🔧 FORCE FIXING Railway database schema...');
+    
+    // Drop wrong camelCase columns from users table
+    const wrongUserColumns = ['firstName', 'middleName','lastName', 'gradeLevel', 'section', 'parentFirstName', 'parentLastName', 'parentContact', 'parentEmail', 'qrcode', 'status', 'user_id', 'wmsu_emaiil', 'age', 'sex', 'lrn', 'createdAt', 'updatedAt', 'grade_level', 'subjects', 'bio', 'verification_status', 'decline_reason', 'middle_name'];
+    for (const col of wrongUserColumns) {
+      try {
+        await query(`ALTER TABLE users DROP COLUMN IF EXISTS ${col}`);
+        console.log(`✅ Dropped wrong users column: ${col}`);
+      } catch (err) {
+        console.log(`⚠️ Column ${col} doesn't exist in users table`);
+      }
+    }
+
+    // Drop wrong columns from other tables if they exist
+    const wrongStudentColumns = ['middleName', 'parentFirstName', 'parentLastName', 'parentContact', 'parentEmail', 'contact', 'qrCode', 'full_name', 'wmsu_email', 'adviser_id', 'adviser_name'];
+    for (const col of wrongStudentColumns) {
+      try {
+        await query(`ALTER TABLE students DROP COLUMN IF EXISTS ${col}`);
+        console.log(`✅ Dropped wrong students column: ${col}`);
+      } catch (err) {
+        console.log(`⚠️ Column ${col} doesn't exist in students table`);
+      }
+    }
+
+    const wrongTeacherColumns = ['position', 'department'];
+    for (const col of wrongTeacherColumns) {
+      try {
+        await query(`ALTER TABLE teachers DROP COLUMN IF EXISTS ${col}`);
+        console.log(`✅ Dropped wrong teachers column: ${col}`);
+      } catch (err) {
+        console.log(`⚠️ Column ${col} doesn't exist in teachers table`);
+      }
+    }
+
+    console.log('✅ Railway database schema cleanup completed!');
+
+    // Then add correct underscore columns
     const userColumns = [
       { name: 'id', sql: 'ALTER TABLE users ADD COLUMN id VARCHAR(36) PRIMARY KEY' },
       { name: 'first_name', sql: 'ALTER TABLE users ADD COLUMN first_name VARCHAR(100)' },
@@ -490,6 +527,7 @@ const startServer = async () => {
       { name: 'status', sql: 'ALTER TABLE students ADD COLUMN status VARCHAR(20) DEFAULT "pending"' },
       { name: 'attendance', sql: 'ALTER TABLE students ADD COLUMN attendance VARCHAR(10) DEFAULT "0%"' },
       { name: 'average', sql: 'ALTER TABLE students ADD COLUMN average INT(11) DEFAULT 0' },
+      { name: 'grades', sql: 'ALTER TABLE students ADD COLUMN grades TEXT DEFAULT NULL' },
       { name: 'created_by', sql: 'ALTER TABLE students ADD COLUMN created_by VARCHAR(50) DEFAULT "admin"' },
       { name: 'created_at', sql: 'ALTER TABLE students ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP' },
       { name: 'updated_at', sql: 'ALTER TABLE students ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP' },
