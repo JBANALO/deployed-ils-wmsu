@@ -276,7 +276,18 @@ const handleSubmit = async (e) => {
           <div className="grid grid-cols-2 gap-4 mt-4">
             <div>
               <label className="block font-semibold mb-1">Parent Email</label>
-              <input type="email" name="parentEmail" value={formData.parentEmail} onChange={handleChange} className="w-full border p-3 rounded-lg" placeholder="parent@example.com" required />
+              <div className="flex items-center">
+                <input 
+                  type="email" 
+                  name="parentEmail" 
+                  value={formData.parentEmail.replace('@gmail.com', '')} 
+                  onChange={(e) => setFormData({...formData, parentEmail: `${e.target.value}@gmail.com`})}
+                  className="flex-1 border p-3 rounded-l-lg" 
+                  placeholder="Parent/Guardian's Personal Gmail" 
+                  required 
+                />
+                <span className="border border-l-0 p-3 rounded-r-lg bg-gray-100 text-gray-600">@gmail.com</span>
+              </div>
             </div>
             <div>
               <label className="block font-semibold mb-1">Parent Contact Number</label>
@@ -300,7 +311,17 @@ const handleSubmit = async (e) => {
 
         <div>
           <label className="block font-semibold mb-1">WMSU Email</label>
-          <input type="email" value={formData.wmsuEmail} className="w-full border p-3 rounded-lg bg-gray-100" readOnly />
+          <div className="flex items-center">
+            <input 
+              type="email" 
+              value={formData.wmsuEmail.replace('@wmsu.edu.ph', '')} 
+              onChange={(e) => setFormData({...formData, wmsuEmail: `${e.target.value}@wmsu.edu.ph`})}
+              className="flex-1 border p-3 rounded-l-lg" 
+              placeholder="wmsu_email" 
+              required 
+            />
+            <span className="border border-l-0 p-3 rounded-r-lg bg-gray-100 text-gray-600">@wmsu.edu.ph</span>
+          </div>
           <p className="text-xs text-gray-500 mt-1">Auto-generated based on LRN</p>
         </div>
 

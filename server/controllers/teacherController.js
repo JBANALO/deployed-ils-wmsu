@@ -64,27 +64,30 @@ exports.createTeacher = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 12);
 
     // Create teacher
-    const result = await query(
-      `INSERT INTO teachers (
-        first_name, middle_name, last_name, username, email, password, 
-        role, subjects, bio, grade_level, section, profile_pic,
-        verification_status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())`,
-      [
-        firstName, 
-        middleName || null, 
-        lastName, 
-        username, 
-        email, 
-        hashedPassword, 
-        role, 
-        subjects || null, 
-        bio || null,
-        gradeLevel || null,
-        section || null,
-        safeProfilePic || null
-      ]
-    );
+  const result = await query(
+    `INSERT INTO teachers (
+      first_name, middle_name, last_name, username, email, password, 
+      role, subjects, bio, grade_level, section, profile_pic,
+      verification_status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      firstName, 
+      middleName || null, 
+      lastName, 
+      username, 
+      email, 
+      hashedPassword, 
+      role, 
+      subjects || null, 
+      bio || null,
+      gradeLevel || null,
+      section || null,
+      safeProfilePic || null,
+      'pending',
+      new Date(),
+      new Date()
+    ]
+  );
 
     res.status(201).json({ 
       message: `${role.charAt(0).toUpperCase() + role.slice(1)} account created successfully!`,

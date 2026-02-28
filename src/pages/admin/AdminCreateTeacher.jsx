@@ -118,10 +118,7 @@ export default function AdminCreateTeacher() {
     setError("");
     setSuccess("");
 
-    if (!formData.email.endsWith("@wmsu.edu.ph")) {
-      setError("Please use an official WMSU email address ending in @wmsu.edu.ph");
-      return;
-    }
+    // Email validation no longer needed since domain is added automatically
 
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match.");
@@ -237,15 +234,18 @@ export default function AdminCreateTeacher() {
 
           <div>
             <label className="text-sm font-medium text-gray-700">Email (@wmsu.edu.ph)</label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              required
-              placeholder="wmsu_email@wmsu.edu.ph"
-              className="mt-1 w-full p-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-800"
-            />
+            <div className="flex items-center mt-1">
+              <input
+                type="email"
+                name="email"
+                value={formData.email.replace('@wmsu.edu.ph', '')}
+                onChange={(e) => setFormData({...formData, email: `${e.target.value}@wmsu.edu.ph`})}
+                required
+                placeholder="Teacher's WMSU Email"
+                className="flex-1 p-2.5 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-red-800"
+              />
+              <span className="border border-l-0 p-2.5 rounded-r-md bg-gray-100 text-gray-600">@wmsu.edu.ph</span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
