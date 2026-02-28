@@ -29,8 +29,23 @@ exports.signup = async (req, res) => {
 
     // Create admin user
     const userId = uuidv4();
+    
+    // Debug: Check what columns exist
+    console.log('🔍 Creating user with data:', { firstName, lastName, username, email, role });
+    
+    // Check if database has firstName or first_name columns
+    const columns = await query('SHOW COLUMNS FROM users');
+    const hasFirstName = columns.some(col => col.Field === 'firstName');
+    const hasFirstNameUnderscore = columns.some(col => col.Field === 'first_name');
+    
+    console.log('🔍 Database columns - firstName:', hasFirstName, 'first_name:', hasFirstNameUnderscore);
+    
+    // Use appropriate column names based on database schema
+    const firstNameCol = hasFirstName ? 'firstName' : 'first_name';
+    const lastNameCol = hasFirstName ? 'lastName' : 'last_name';
+    
     await query(
-      'INSERT INTO users (id, first_name, last_name, username, email, password, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
+      `INSERT INTO users (id, ${firstNameCol}, ${lastNameCol}, username, email, password, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [userId, firstName || '', lastName || '', username || '', email || '', hashedPassword, role || 'admin']
     );
 
