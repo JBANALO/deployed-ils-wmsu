@@ -473,7 +473,7 @@ export default function AdminApprovals() {
                     {pendingUsers.filter(u => u.role === 'student').map((user) => (
                       <tr key={user.id} className="hover:bg-gray-50">
                         <td className="p-3 border font-medium">{user.firstName} {user.lastName}</td>
-                        <td className="p-3 border text-sm">{user.wmsuEmail || user.email || 'N/A'}</td>
+                        <td className="p-3 border text-sm">{user.studentEmail || user.email || 'N/A'}</td>
                         <td className="p-3 border text-sm">
                           {user.gradeLevel && user.section 
                             ? `${user.gradeLevel} - ${user.section}`
@@ -672,7 +672,7 @@ export default function AdminApprovals() {
                         {declinedUsers.filter(u => u.role === 'student').map((user) => (
                           <tr key={user.id} className="hover:bg-gray-50">
                             <td className="p-3 border font-medium">{user.first_name || user.firstName} {user.last_name || user.lastName}</td>
-                            <td className="p-3 border text-sm">{user.wmsuEmail || user.email || 'N/A'}</td>
+                            <td className="p-3 border text-sm">{user.studentEmail || user.email || 'N/A'}</td>
                             <td className="p-3 border text-sm">
                               {(user.grade_level || user.gradeLevel) && (user.section || user.section) 
                                 ? `${user.grade_level || user.gradeLevel} - ${user.section || user.section}`
