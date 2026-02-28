@@ -286,7 +286,6 @@ const handleSubmit = async (e) => {
                   placeholder="Parent/Guardian's Personal Gmail" 
                   required 
                 />
-                <span className="border border-l-0 p-3 rounded-r-lg bg-gray-100 text-gray-600">@gmail.com</span>
               </div>
             </div>
             <div>
@@ -320,7 +319,6 @@ const handleSubmit = async (e) => {
               placeholder="wmsu_email" 
               required 
             />
-            <span className="border border-l-0 p-3 rounded-r-lg bg-gray-100 text-gray-600">@wmsu.edu.ph</span>
           </div>
           <p className="text-xs text-gray-500 mt-1">Auto-generated based on LRN</p>
         </div>
