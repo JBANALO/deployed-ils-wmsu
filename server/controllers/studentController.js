@@ -1,6 +1,11 @@
 // server/controllers/studentController.js
 const { query, isDatabaseAvailable } = require('../config/database');
 
+  // Generate QR Code for the student and save as file
+  const fs = require('fs');
+  const path = require('path');
+  const QRCode = require('qrcode');
+
 // Helper function to generate QR Code
 async function generateQRCode(studentData) {
   const qrData = JSON.stringify({
@@ -24,167 +29,245 @@ async function generateQRCode(studentData) {
 exports.createStudent = async (req, res) => {
   try {
     const { gradeLevel } = req.body;
-    
+
     console.log('Creating student with gradeLevel:', gradeLevel);
     console.log('Request body:', req.body);
-    
-    // Check if database is available
+
+    // -----------------------------
+    // DATABASE CHECK
+    // -----------------------------
     if (!isDatabaseAvailable()) {
       console.log('Database not available, falling back to file storage...');
-      
-      // Fall back to file storage
+
       const Student = require('../models/Student');
+
       const studentData = {
         ...req.body,
         qrCode: await generateQRCode(req.body),
-        status: 'active' // File storage students are active by default
+        status: 'active'
       };
-      
+
       const student = await Student.create(studentData);
-      console.log('Student created successfully in file storage');
-      
-      res.status(201).json({ status: 'success', data: { student } });
-      return;
+
+      return res.status(201).json({
+        status: 'success',
+        data: { student }
+      });
     }
-    
-    // Database is available, proceed with database insertion
+
+    // -----------------------------
+    // EXTRACT FIELDS
+    // -----------------------------
     const {
-      lrn, firstName, middleName, lastName, age, sex,
-      parentFirstName, parentLastName, parentEmail, parentContact,
-      wmsuEmail, student_email, password, profilePic
+      lrn,
+      firstName,
+      middleName,
+      lastName,
+      age,
+      sex,
+      parentFirstName,
+      parentLastName,
+      parentEmail,
+      parentContact,
+      wmsuEmail,
+      student_email,
+      password,
+      section
     } = req.body;
-    
-    // Debug logging to see what we're receiving
-    console.log('Received body:', req.body);
-    console.log('Individual fields:', {
-      lrn, firstName, middleName, lastName, age, sex,
-      parentFirstName, parentLastName, parentEmail, parentContact,
-      wmsuEmail, password, profilePic
-    });
-    
-    // Handle undefined values by converting to null
+
+    const safeWmsuEmail = wmsuEmail || student_email || null;
+    const safePassword = password || null;
+
+    // -----------------------------
+    // ✅ REQUIRED FIELD VALIDATION
+    // -----------------------------
+    if (
+      !lrn ||
+      !firstName ||
+      !lastName ||
+      !age ||
+      !sex ||
+      !gradeLevel ||
+      !section ||
+      !safePassword
+    ) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'Missing required student fields'
+      });
+    }
+
+    // -----------------------------
+    // SAFE OPTIONAL FIELDS
+    // -----------------------------
     const safeMiddleName = middleName || null;
     const safeParentFirstName = parentFirstName || null;
     const safeParentLastName = parentLastName || null;
     const safeParentEmail = parentEmail || null;
     const safeParentContact = parentContact || null;
-    
-    // Also handle potentially undefined required fields
-    const safeLrn = lrn || null;
-    const safeFirstName = firstName || null;
-    const safeLastName = lastName || null;
-    const safeAge = age || null;
-    const safeSex = sex || null;
-    const safeWmsuEmail = wmsuEmail || student_email || null;
-    const safePassword = password || null;
-    
-    // Handle profile picture upload
+
+    // -----------------------------
+    // PROFILE PICTURE UPLOAD
+    // -----------------------------
     let profilePicPath = null;
+
     if (req.files && req.files.profilePic) {
       const profilePic = req.files.profilePic;
-      const profilePicFileName = `profile_${lrn}_${Date.now()}.${profilePic.name.split('.').pop()}`;
-      profilePicPath = path.join(__dirname, '../public/profiles', profilePicFileName);
-      
-      // Ensure profiles directory exists
+      const profilePicFileName =
+        `profile_${lrn}_${Date.now()}.${profilePic.name.split('.').pop()}`;
+
+      profilePicPath = path.join(
+        __dirname,
+        '../public/profiles',
+        profilePicFileName
+      );
+
       const profilesDir = path.dirname(profilePicPath);
       if (!fs.existsSync(profilesDir)) {
         fs.mkdirSync(profilesDir, { recursive: true });
       }
-      
-      // Move uploaded file
+
       fs.renameSync(profilePic.path, profilePicPath);
-      console.log('Profile picture saved to file:', profilePicPath);
     }
-    
-    // Generate QR Code for the student and save as file
-    const fs = require('fs');
-    const path = require('path');
-    const QRCode = require('qrcode');
-    
-    // Create QR code and save as file
+
+    const safeProfilePic = profilePicPath
+      ? `/profiles/${path.basename(profilePicPath)}`
+      : null;
+
+    // -----------------------------
+    // QR CODE GENERATION
+    // -----------------------------
     const qrCodeFileName = `qr_${lrn}_${Date.now()}.png`;
-    const qrCodePath = path.join(__dirname, '../public/qrcodes', qrCodeFileName);
-    
-    // Ensure qrcodes directory exists
+    const qrCodePath = path.join(
+      __dirname,
+      '../public/qrcodes',
+      qrCodeFileName
+    );
+
     const qrcodesDir = path.dirname(qrCodePath);
     if (!fs.existsSync(qrcodesDir)) {
       fs.mkdirSync(qrcodesDir, { recursive: true });
     }
-    
+
     const qrData = {
-      lrn: lrn,
-      firstName: firstName,
+      lrn,
+      firstName,
       middleName: middleName || '',
-      lastName: lastName,
+      lastName,
       fullName: `${firstName} ${middleName || ''} ${lastName}`.trim(),
-      gradeLevel: gradeLevel,
-      section: req.body.section,
-      studentEmail: wmsuEmail
+      gradeLevel,
+      section,
+      studentEmail: safeWmsuEmail
     };
-    
-    // Generate QR code and save to file
+
     await QRCode.toFile(qrCodePath, JSON.stringify(qrData), {
       width: 200,
-      margin: 1,
-      color: { dark: '#000000', light: '#FFFFFF' }
+      margin: 1
     });
-    
-    console.log('QR Code saved to file:', qrCodePath);
-    
-    // Use profile picture path or null
-    const safeProfilePic = profilePicPath ? `/profiles/${path.basename(profilePicPath)}` : null;
-    
-    // Use QR code path with correct prefix
-    const safeQRCode = qrCodeFileName ? `/qrcodes/${qrCodeFileName}` : null;
-    
-    // Insert into students table with 'pending' status for approval workflow
-    try {
-      console.log('Attempting to insert student into students table...');
-      
-      // Check for duplicate LRN first
-      const existingStudent = await query('SELECT id FROM students WHERE lrn = ?', [lrn]);
-      if (existingStudent.length > 0) {
-        return res.status(400).json({ 
-          status: 'fail', 
-          message: 'LRN already exists. Please use a different LRN.' 
-        });
-      }
-      
-      const result = await query(
-        `INSERT INTO students (
-          id, lrn, first_name, middle_name, last_name, age, sex, 
-          grade_level, section, parent_first_name, parent_last_name, 
-          parent_email, parent_contact, student_email, password, 
-          profile_pic, qr_code, status, created_by, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-        [
-          null, safeLrn, safeFirstName, safeMiddleName, safeLastName, safeAge, safeSex, gradeLevel, req.body.section,
-          safeParentFirstName, safeParentLastName, safeParentEmail, safeParentContact,
-          safeWmsuEmail, safePassword, safeProfilePic, safeQRCode, 'pending', 'admin'
-        ]
-      );
-      
-      console.log('Student inserted successfully with ID:', result.insertId);
-      
-      const createdStudent = {
-        id: result.insertId,
-        lrn, firstName, middleName, lastName, age, sex, gradeLevel,
-        section: req.body.section, parentFirstName, parentLastName,
-        parentEmail, parentContact, wmsuEmail, profilePic: safeProfilePic,
-        qrCode: safeQRCode,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      
-      res.status(201).json({ status: 'success', data: { student: createdStudent } });
-    } catch (error) {
-      console.error('Error inserting student:', error.message);
-      res.status(400).json({ status: 'fail', message: error.message });
+
+    const safeQRCode = `/qrcodes/${qrCodeFileName}`;
+
+    // -----------------------------
+    // DUPLICATE LRN CHECK
+    // -----------------------------
+    const existingStudent = await query(
+      'SELECT id FROM students WHERE lrn = ?',
+      [lrn]
+    );
+
+    if (existingStudent.length > 0) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'LRN already exists. Please use a different LRN.'
+      });
     }
+
+    // -----------------------------
+    // INSERT INTO DATABASE
+    // -----------------------------
+    const result = await query(
+      `INSERT INTO students (
+        id,
+        lrn,
+        first_name,
+        middle_name,
+        last_name,
+        age,
+        sex,
+        grade_level,
+        section,
+        parent_first_name,
+        parent_last_name,
+        parent_email,
+        parent_contact,
+        student_email,
+        password,
+        profile_pic,
+        qr_code,
+        status,
+        created_by,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      [
+        null,
+        lrn,
+        firstName,
+        safeMiddleName,
+        lastName,
+        age,
+        sex,
+        gradeLevel,
+        section,
+        safeParentFirstName,
+        safeParentLastName,
+        safeParentEmail,
+        safeParentContact,
+        safeWmsuEmail,
+        safePassword,
+        safeProfilePic,
+        safeQRCode,
+        'pending',
+        'admin'
+      ]
+    );
+
+    // -----------------------------
+    // SUCCESS RESPONSE
+    // -----------------------------
+    const createdStudent = {
+      id: result.insertId,
+      lrn,
+      firstName,
+      middleName,
+      lastName,
+      age,
+      sex,
+      gradeLevel,
+      section,
+      parentFirstName,
+      parentLastName,
+      parentEmail,
+      parentContact,
+      wmsuEmail: safeWmsuEmail,
+      profilePic: safeProfilePic,
+      qrCode: safeQRCode,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    return res.status(201).json({
+      status: 'success',
+      data: { student: createdStudent }
+    });
+
   } catch (error) {
     console.error('Error creating student:', error);
-    res.status(400).json({ status: 'fail', message: error.message });
+    return res.status(400).json({
+      status: 'fail',
+      message: error.message
+    });
   }
 };
 
