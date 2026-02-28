@@ -45,7 +45,7 @@ export default function AdminCreateK6() {
   };
 
   const generatePassword = () => {
-    const password = `WMSU${formData.lrn.slice(-4)}${Math.floor(Math.random() * 1000)}`;
+    const password = `WMSU${formData.lrn.slice(-4)}${Math.floor(1000 + Math.random() * 9000)}`;
     setFormData({ ...formData, password: password });
     setGeneratedPassword(password);
     setShowPassword(true);
@@ -71,25 +71,26 @@ export default function AdminCreateK6() {
       const qrCodeDataUrl = await QRCode.toDataURL(qrData, {
         width: 300,
         margin: 2,
-        color: { dark: '#000000', light: '#FFFFFF' }
+        color: { dark: '#000000', light: '#FFFFFF' },
+        errorCorrectionLevel: 'H', // high error correction
       });
 
       const studentData = {
-        lrn: formData.lrn,
-        firstName: formData.firstName,
-        middleName: formData.middleName,
-        lastName: formData.lastName,
+        lrn: formData.lrn.trim(),
+        firstName: formData.firstName.trim(),
+        middleName: formData.middleName.trim(),
+        lastName: formData.lastName.trim(),
         age: parseInt(formData.age),
         sex: formData.sex,
         gradeLevel: formData.gradeLevel,
         section: formData.section,
-        parent_first_name: formData.parentFirstName,
-        parent_last_name: formData.parentLastName,
-        parent_email: formData.parentEmail,
-        parent_contact: formData.parentContact,
-        student_email: formData.wmsuEmail,
+        parent_first_name: formData.parentFirstName.trim(),
+        parent_last_name: formData.parentLastName.trim(),
+        parent_email: formData.parentEmail.trim(),
+        parent_contact: formData.parentContact.trim(),
+        student_email: formData.wmsuEmail.trim(),
         password: formData.password,
-        profilePic: formData.profilePic || null
+        profilePic: formData.profilePic || null,
       };
 
       const response = await fetch(`${API_BASE_URL}/students`, {
@@ -109,7 +110,7 @@ export default function AdminCreateK6() {
         // Redirect to AdminApprovals page after 5 seconds
         setTimeout(() => {
           navigate('/admin/approvals');
-        }, 5000);
+        }, 10000);
         
         setFormData({
           profilePic: "", lrn: "", firstName: "", middleName: "", lastName: "",
@@ -117,6 +118,7 @@ export default function AdminCreateK6() {
           parentLastName: "", parentEmail: "", parentContact: "",
           wmsuEmail: "", password: ""
         });
+        document.querySelector('input[name="lrn"]').focus();
         setGeneratedPassword("");
         setShowPassword(false);
       } else {
@@ -157,14 +159,40 @@ export default function AdminCreateK6() {
                 accept="image/*"
                 className="hidden"
                 onChange={(e) => {
-                  const file = e.target.files[0];
-                  if (file) {
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                      setFormData({ ...formData, profilePic: reader.result });
+                const file = e.target.files[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                      const canvas = document.createElement('canvas');
+                      const maxSize = 300; // max width or height
+                      let width = img.width;
+                      let height = img.height;
+
+                      if (width > height) {
+                        if (width > maxSize) {
+                          height *= maxSize / width;
+                          width = maxSize;
+                        }
+                      } else {
+                        if (height > maxSize) {
+                          width *= maxSize / height;
+                          height = maxSize;
+                        }
+                      }
+
+                      canvas.width = width;
+                      canvas.height = height;
+                      const ctx = canvas.getContext('2d');
+                      ctx.drawImage(img, 0, 0, width, height);
+                      const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7); // compress to 70%
+                      setFormData({ ...formData, profilePic: compressedDataUrl });
                     };
-                    reader.readAsDataURL(file);
-                  }
+                    img.src = event.target.result;
+                  };
+                  reader.readAsDataURL(file);
+                }
                 }}
               />
             </label>
@@ -198,7 +226,7 @@ export default function AdminCreateK6() {
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <div><label className="block font-semibold mb-1">Age</label><input type="number" name="age" value={formData.age} onChange={handleChange} className="w-full border p-3 rounded-lg" min="3" max="12" required /></div>
+          <div><label className="block font-semibold mb-1">Age</label><input type="number" name="age" value={formData.age} onChange={handleChange} className="w-full border p-3 rounded-lg" min="3" max="12" step="1" required /></div>
           <div><label className="block font-semibold mb-1">Sex</label>
             <select name="sex" value={formData.sex} onChange={handleChange} className="w-full border p-3 rounded-lg" required>
               <option value="">Select Sex</option>
@@ -331,16 +359,28 @@ export default function AdminCreateK6() {
               <div className="bg-gray-50 rounded-lg p-4 mb-4 text-left">
                 <p className="text-sm text-gray-600 mb-2">
                   <span className="font-semibold">Email:</span> {createdStudentEmail}
+                  <button
+                    onClick={() => navigator.clipboard.writeText(createdStudentEmail)}
+                    className="ml-2 text-blue-600 underline text-xs"
+                  >
+                    Copy
+                  </button>
                 </p>
                 <p className="text-sm text-gray-600">
                   <span className="font-semibold">Password:</span> {createdStudentPassword}
+                  <button
+                    onClick={() => navigator.clipboard.writeText(createdStudentPassword)}
+                    className="ml-2 text-blue-600 underline text-xs"
+                  >
+                    Copy
+                  </button>
                 </p>
               </div>
               <p className="text-sm text-red-600 font-semibold mb-4">
                 ⚠️ Please save this password! It will not be shown again.
               </p>
               <p className="text-xs text-gray-500 mb-4">
-                Redirecting to Admin Approvals in 5 seconds...
+                Redirecting to Admin Approvals in 10 seconds...
               </p>
               <button
                 onClick={() => {
