@@ -99,6 +99,9 @@ export default function AdminApprovals() {
       // Close modal
       setShowRestoreModal(false);
       setUserToRestore(null);
+      
+      // Auto-switch to pending accounts tab
+      setActiveTab("pending");
     } catch (error) {
       console.error('Error restoring user:', error); 
       toast.error('Failed to restore user: ' + error.message);
@@ -236,6 +239,9 @@ export default function AdminApprovals() {
       await fetchPendingUsers();
       await fetchDeclinedUsers();
       toast.success(`${selectedUser.firstName} ${selectedUser.lastName} declined successfully!`);
+      
+      // Auto-switch to declined accounts tab
+      setActiveTab("declined");
     } catch (error) {
       console.error('Error declining user:', error); 
       toast.error('Failed to decline user: ' + error.message);
