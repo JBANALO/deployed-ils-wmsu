@@ -69,6 +69,18 @@ exports.signupBatch = async (req, res) => {
       return res.status(400).json({ message: 'Please provide an array of users' });
     }
 
+    // Check what columns exist in database
+    const columns = await query('SHOW COLUMNS FROM users');
+    const hasFirstName = columns.some(col => col.Field === 'firstName');
+    const hasFirstNameUnderscore = columns.some(col => col.Field === 'first_name');
+    const hasCreatedAt = columns.some(col => col.Field === 'createdAt');
+    const hasCreatedAtUnderscore = columns.some(col => col.Field === 'created_at');
+
+    // Use appropriate column names based on database schema
+    const firstNameCol = hasFirstName ? 'firstName' : 'first_name';
+    const lastNameCol = hasFirstName ? 'lastName' : 'last_name';
+    const createdAtCol = hasCreatedAt ? 'createdAt' : 'created_at';
+
     const createdUsers = [];
     const errors = [];
 
@@ -91,7 +103,7 @@ exports.signupBatch = async (req, res) => {
         const userId = uuidv4();
 
         await query(
-          'INSERT INTO users (id, first_name, last_name, username, email, password, role, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+          `INSERT INTO users (id, ${firstNameCol}, ${lastNameCol}, username, email, password, role, status, ${createdAtCol}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           [userId, firstName, lastName, username, email, hashedPassword, role, 'pending']
         );
 
@@ -117,17 +129,31 @@ exports.signupBatch = async (req, res) => {
 // Get all users (admin only)
 exports.getAllUsers = async (req, res) => {
   try {
-    const users = await query('SELECT id, first_name, last_name, username, email, role, created_at FROM users ORDER BY created_at DESC');
+    // Check what columns exist in database
+    const columns = await query('SHOW COLUMNS FROM users');
+    const hasFirstName = columns.some(col => col.Field === 'firstName');
+    const hasFirstNameUnderscore = columns.some(col => col.Field === 'first_name');
+    const hasCreatedAt = columns.some(col => col.Field === 'createdAt');
+    const hasCreatedAtUnderscore = columns.some(col => col.Field === 'created_at');
+    
+    // Use appropriate column names based on database schema
+    const firstNameCol = hasFirstName ? 'firstName' : 'first_name';
+    const lastNameCol = hasFirstName ? 'lastName' : 'last_name';
+    const createdAtCol = hasCreatedAt ? 'createdAt' : 'created_at';
+
+    const users = await query(
+      `SELECT id, ${firstNameCol}, ${lastNameCol}, username, email, role, ${createdAtCol} FROM users ORDER BY ${createdAtCol} DESC`
+    );
     
     // Format users to match expected structure
     const formattedUsers = users.map(user => ({
       id: user.id,
-      firstName: user.first_name,
-      lastName: user.last_name,
+      firstName: user[firstNameCol],
+      lastName: user[lastNameCol],
       username: user.username,
       email: user.email,
       role: user.role,
-      createdAt: user.created_at
+      createdAt: user[createdAtCol]
     }));
     
     res.json({
@@ -180,8 +206,18 @@ exports.getMe = async (req, res) => {
       return res.status(401).json({ message: 'Not authenticated' });
     }
 
+    // Check what columns exist in database
+    const columns = await query('SHOW COLUMNS FROM users');
+    const hasFirstName = columns.some(col => col.Field === 'firstName');
+    const hasFirstNameUnderscore = columns.some(col => col.Field === 'first_name');
+    
+    // Use appropriate column names based on database schema
+    const firstNameCol = hasFirstName ? 'firstName' : 'first_name';
+    const lastNameCol = hasFirstName ? 'lastName' : 'last_name';
+    const createdAtCol = hasFirstName ? 'createdAt' : 'created_at';
+    
     const user = await query(
-      'SELECT id, first_name, last_name, username, email, role, created_at FROM users WHERE id = ?',
+      `SELECT id, ${firstNameCol}, ${lastNameCol}, username, email, role, ${createdAtCol} FROM users WHERE id = ?`,
       [req.user.id]
     );
 
@@ -196,12 +232,12 @@ exports.getMe = async (req, res) => {
       data: {
         user: {
           id: userData.id,
-          firstName: userData.first_name,
-          lastName: userData.last_name,
+          firstName: userData[firstNameCol],
+          lastName: userData[lastNameCol],
           username: userData.username,
           email: userData.email,
           role: userData.role,
-          createdAt: userData.created_at
+          createdAt: userData[createdAtCol]
         }
       }
     });
@@ -216,8 +252,20 @@ exports.getUserById = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Check what columns exist in database
+    const columns = await query('SHOW COLUMNS FROM users');
+    const hasFirstName = columns.some(col => col.Field === 'firstName');
+    const hasFirstNameUnderscore = columns.some(col => col.Field === 'first_name');
+    const hasCreatedAt = columns.some(col => col.Field === 'createdAt');
+    const hasCreatedAtUnderscore = columns.some(col => col.Field === 'created_at');
+    
+    // Use appropriate column names based on database schema
+    const firstNameCol = hasFirstName ? 'firstName' : 'first_name';
+    const lastNameCol = hasFirstName ? 'lastName' : 'last_name';
+    const createdAtCol = hasCreatedAt ? 'createdAt' : 'created_at';
+
     const users = await query(
-      'SELECT id, first_name, last_name, username, email, role, created_at FROM users WHERE id = ?',
+      `SELECT id, ${firstNameCol}, ${lastNameCol}, username, email, role, ${createdAtCol} FROM users WHERE id = ?`,
       [id]
     );
 
@@ -228,9 +276,21 @@ exports.getUserById = async (req, res) => {
       });
     }
 
+    // Format user data to match expected structure
+    const userData = users[0];
+    const formattedUser = {
+      id: userData.id,
+      firstName: userData[firstNameCol],
+      lastName: userData[lastNameCol],
+      username: userData.username,
+      email: userData.email,
+      role: userData.role,
+      createdAt: userData[createdAtCol]
+    };
+
     res.status(200).json({
       status: 'success',
-      data: users[0]
+      data: formattedUser
     });
   } catch (error) {
     console.error('Error fetching user by ID:', error);
@@ -266,16 +326,28 @@ exports.updateUser = async (req, res) => {
     const { id } = req.params;
     const { firstName, lastName, username, email, phone, profile_pic } = req.body;
 
+    // Check what columns exist in database
+    const columns = await query('SHOW COLUMNS FROM users');
+    const hasFirstName = columns.some(col => col.Field === 'firstName');
+    const hasFirstNameUnderscore = columns.some(col => col.Field === 'first_name');
+    const hasUpdatedAt = columns.some(col => col.Field === 'updatedAt');
+    const hasUpdatedAtUnderscore = columns.some(col => col.Field === 'updated_at');
+
+    // Use appropriate column names based on database schema
+    const firstNameCol = hasFirstName ? 'firstName' : 'first_name';
+    const lastNameCol = hasFirstName ? 'lastName' : 'last_name';
+    const updatedAtCol = hasUpdatedAt ? 'updatedAt' : 'updated_at';
+
     // Build update query dynamically based on provided fields
     const updates = [];
     const values = [];
 
     if (firstName !== undefined) {
-      updates.push('first_name = ?');
+      updates.push(`${firstNameCol} = ?`);
       values.push(firstName);
     }
     if (lastName !== undefined) {
-      updates.push('last_name = ?');
+      updates.push(`${lastNameCol} = ?`);
       values.push(lastName);
     }
     if (username !== undefined) {
@@ -302,7 +374,7 @@ exports.updateUser = async (req, res) => {
       });
     }
 
-    updates.push('updated_at = NOW()');
+    updates.push(`${updatedAtCol} = NOW()`);
     values.push(id);
 
     const result = await query(
@@ -317,16 +389,29 @@ exports.updateUser = async (req, res) => {
       });
     }
 
-    // Fetch updated user
+    // Fetch updated user with dynamic column names
     const updatedUsers = await query(
-      'SELECT id, first_name, last_name, username, email, phone, profile_pic, role FROM users WHERE id = ?',
+      `SELECT id, ${firstNameCol}, ${lastNameCol}, username, email, phone, profile_pic, role FROM users WHERE id = ?`,
       [id]
     );
+
+    // Format response to match expected structure
+    const userData = updatedUsers[0];
+    const formattedUser = {
+      id: userData.id,
+      firstName: userData[firstNameCol],
+      lastName: userData[lastNameCol],
+      username: userData.username,
+      email: userData.email,
+      phone: userData.phone,
+      profile_pic: userData.profile_pic,
+      role: userData.role
+    };
 
     res.status(200).json({ 
       status: 'success',
       message: 'User updated successfully',
-      data: updatedUsers[0]
+      data: formattedUser
     });
   } catch (error) {
     console.error('Error updating user:', error);
@@ -349,17 +434,27 @@ exports.approveTeacher = async (req, res) => {
       return res.status(400).json({ message: 'Grade level is required when approving students' });
     }
 
-    let queryStr = 'UPDATE users SET status = "approved", updatedAt = NOW()';
+    // Check what columns exist in database
+    const columns = await query('SHOW COLUMNS FROM users');
+    const hasFirstName = columns.some(col => col.Field === 'firstName');
+    const hasFirstNameUnderscore = columns.some(col => col.Field === 'first_name');
+    const hasUpdatedAt = columns.some(col => col.Field === 'updatedAt');
+    const hasUpdatedAtUnderscore = columns.some(col => col.Field === 'updated_at');
+
+    // Use appropriate column names based on database schema
+    const updatedAtCol = hasUpdatedAt ? 'updatedAt' : 'updated_at';
+
+    let queryStr = `UPDATE users SET status = "approved", ${updatedAtCol} = NOW()`;
     const params = [];
 
     if (role) {
-      queryStr += ', role = ?';
+      queryStr += `, role = ?`;
       params.push(role);
     }
 
     // Add grade level if provided (for students)
     if (gradeLevel) {
-      queryStr += ', gradeLevel = ?';
+      queryStr += `, gradeLevel = ?`;
       params.push(gradeLevel);
     }
 
@@ -387,8 +482,16 @@ exports.declineTeacher = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Check what columns exist in database
+    const columns = await query('SHOW COLUMNS FROM users');
+    const hasUpdatedAt = columns.some(col => col.Field === 'updatedAt');
+    const hasUpdatedAtUnderscore = columns.some(col => col.Field === 'updated_at');
+
+    // Use appropriate column names based on database schema
+    const updatedAtCol = hasUpdatedAt ? 'updatedAt' : 'updated_at';
+
     const result = await query(
-      'UPDATE users SET status = "declined", updatedAt = NOW() WHERE id = ?',
+      `UPDATE users SET status = "declined", ${updatedAtCol} = NOW() WHERE id = ?`,
       [id]
     );
 
