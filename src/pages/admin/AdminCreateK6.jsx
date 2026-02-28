@@ -110,7 +110,7 @@ export default function AdminCreateK6() {
         // Redirect to AdminApprovals page after 5 seconds
         setTimeout(() => {
           navigate('/admin/approvals');
-        }, 10000);
+        }, 15000);
         
         setFormData({
           profilePic: "", lrn: "", firstName: "", middleName: "", lastName: "",
@@ -380,7 +380,7 @@ export default function AdminCreateK6() {
                 ⚠️ Please save this password! It will not be shown again.
               </p>
               <p className="text-xs text-gray-500 mb-4">
-                Redirecting to Admin Approvals in 10 seconds...
+                Redirecting to Admin Approvals in 15 seconds...
               </p>
               <button
                 onClick={() => {
