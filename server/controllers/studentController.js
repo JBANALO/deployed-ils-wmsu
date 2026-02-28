@@ -187,7 +187,6 @@ exports.createStudent = async (req, res) => {
     // -----------------------------
     const result = await query(
       `INSERT INTO students (
-        id,
         lrn,
         first_name,
         middle_name,
@@ -210,7 +209,6 @@ exports.createStudent = async (req, res) => {
         updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
-        null,
         lrn,
         firstName,
         safeMiddleName,
