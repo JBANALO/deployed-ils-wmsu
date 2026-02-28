@@ -151,29 +151,14 @@ exports.createStudent = async (req, res) => {
       }
       
       const result = await query(
-        `INSERT INTO students SET 
-          lrn = ?, 
-          first_name = ?, 
-          middle_name = ?, 
-          last_name = ?, 
-          age = ?, 
-          sex = ?, 
-          grade_level = ?, 
-          section = ?, 
-          parent_first_name = ?, 
-          parent_last_name = ?, 
-          parent_email = ?, 
-          parent_contact = ?, 
-          student_email = ?, 
-          password = ?, 
-          profile_pic = ?, 
-          qr_code = ?, 
-          status = ?, 
-          created_by = ?, 
-          created_at = NOW(), 
-          updated_at = NOW()`,
+        `INSERT INTO students (
+          id, lrn, first_name, middle_name, last_name, age, sex, 
+          grade_level, section, parent_first_name, parent_last_name, 
+          parent_email, parent_contact, student_email, password, 
+          profile_pic, qr_code, status, created_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
         [
-          safeLrn, safeFirstName, safeMiddleName, safeLastName, safeAge, safeSex, gradeLevel, req.body.section,
+          null, safeLrn, safeFirstName, safeMiddleName, safeLastName, safeAge, safeSex, gradeLevel, req.body.section,
           safeParentFirstName, safeParentLastName, safeParentEmail, safeParentContact,
           safeWmsuEmail, safePassword, safeProfilePic, safeQRCode, 'pending', 'admin'
         ]
