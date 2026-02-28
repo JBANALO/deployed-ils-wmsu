@@ -189,6 +189,27 @@ app.post('/api/admin/sync-qrcodes', async (req, res) => {
   }
 });
 
+// Serve QR codes via API endpoint
+app.get('/api/qrcodes/:filename', (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const qrCodePath = path.join(__dirname, 'public/qrcodes', filename);
+    
+    console.log('QR Code request:', filename);
+    console.log('Full path:', qrCodePath);
+    
+    if (!fs.existsSync(qrCodePath)) {
+      console.error('QR Code file not found:', qrCodePath);
+      return res.status(404).json({ error: 'QR Code not found' });
+    }
+    
+    res.sendFile(qrCodePath);
+  } catch (error) {
+    console.error('Error serving QR code:', error);
+    res.status(500).json({ error: 'Failed to serve QR code' });
+  }
+});
+
 // Bulk import students from students.json  
 app.post('/api/admin/import-students', async (req, res) => {
   try {
