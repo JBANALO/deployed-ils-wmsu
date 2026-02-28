@@ -131,6 +131,20 @@ app.use('/qrcodes', (req, res, next) => {
   next();
 }, express.static(path.join(__dirname, 'public/qrcodes')));
 
+app.use('/student_profiles', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+}, express.static(path.join(__dirname, 'public/student_profiles')));
+
+app.use('/teacher_profiles', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+}, express.static(path.join(__dirname, 'public/teacher_profiles')));
+
 app.use('/profiles', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET');
@@ -198,12 +212,35 @@ app.post('/api/admin/import-students', async (req, res) => {
         const studentId = uuidv4();
         const fullName = `${student.firstName || ''} ${student.middleName || ''} ${student.lastName || ''}`.trim();
 
-        // Try to find existing student by full name
         try {
-          const existing = await query(
-            'SELECT id FROM students WHERE full_name = ? LIMIT 1',
-            [fullName]
-          );
+        // Prepare query dynamically based on whether middle_name exists
+        let existingQuery = '';
+        let queryParams = [];
+
+        if (student.middleName && student.middleName.trim() !== '') {
+          // Match first, middle, and last name
+          existingQuery = `
+            SELECT id FROM students 
+            WHERE first_name = ? 
+              AND middle_name = ? 
+              AND last_name = ? 
+            LIMIT 1
+          `;
+          queryParams = [student.firstName, student.middleName, student.lastName];
+        } else {
+          // Match only first and last name if middle name is missing
+          existingQuery = `
+            SELECT id FROM students 
+            WHERE first_name = ? 
+              AND (middle_name IS NULL OR middle_name = '') 
+              AND last_name = ? 
+            LIMIT 1
+          `;
+          queryParams = [student.firstName, student.lastName];
+        }
+
+        // Run the query
+        const existing = await query(existingQuery, queryParams);
 
           if (existing && existing.length > 0) {
             // Update existing
@@ -359,24 +396,86 @@ app.get('/api/admin/pending-teachers', async (req, res) => {
   }
 });
 
-// Get pending students from database
+// Get pending students from database (formatted for frontend)
 app.get('/api/admin/pending-students', async (req, res) => {
   try {
     const { query } = require('./config/database');
-    
-    // Get students with pending status
+    const { formatStudent } = require('./controllers/studentController');
+
+    // Fetch all pending students from DB
     const pendingStudents = await query(
-      'SELECT id, lrn, first_name, middle_name, last_name, student_email, grade_level, section, status, created_at FROM students WHERE status = "pending"'
+      'SELECT * FROM students WHERE status = "pending" ORDER BY created_at DESC'
     );
-    
+
+    // Map database rows through formatStudent to add fullName and role
+    const formattedStudents = pendingStudents.map(formatStudent);
+
     res.json({
       status: 'success',
-      data: { students: pendingStudents },
-      message: `Found ${pendingStudents.length} pending students`
+      data: { students: formattedStudents },
+      message: `Found ${formattedStudents.length} pending students`
     });
   } catch (error) {
     console.error('Error fetching pending students:', error);
-    res.status(500).json({ message: 'Error fetching pending students', error: error.message });
+    res.status(500).json({
+      status: 'fail',
+      message: 'Error fetching pending students',
+      error: error.message
+    });
+  }
+});
+
+// Get approved students from database (formatted for frontend)
+app.get('/api/admin/approved-students', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const { formatStudent } = require('./controllers/studentController');
+
+    const approvedStudents = await query(
+      'SELECT * FROM students WHERE status = "approved" ORDER BY updated_at DESC'
+    );
+
+    const formattedStudents = approvedStudents.map(formatStudent);
+
+    res.json({
+      status: 'success',
+      data: { students: formattedStudents },
+      message: `Found ${formattedStudents.length} approved students`
+    });
+  } catch (error) {
+    console.error('Error fetching approved students:', error);
+    res.status(500).json({
+      status: 'fail',
+      message: 'Error fetching approved students',
+      error: error.message
+    });
+  }
+});
+
+// Get declined students from database (formatted for frontend)
+app.get('/api/admin/declined-students', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const { formatStudent } = require('./controllers/studentController');
+
+    const declinedStudents = await query(
+      'SELECT * FROM students WHERE status = "declined" ORDER BY updated_at DESC'
+    );
+
+    const formattedStudents = declinedStudents.map(formatStudent);
+
+    res.json({
+      status: 'success',
+      data: { students: formattedStudents },
+      message: `Found ${formattedStudents.length} declined students`
+    });
+  } catch (error) {
+    console.error('Error fetching declined students:', error);
+    res.status(500).json({
+      status: 'fail',
+      message: 'Error fetching declined students',
+      error: error.message
+    });
   }
 });
 

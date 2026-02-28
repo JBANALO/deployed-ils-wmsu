@@ -2,10 +2,34 @@
 const { query } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
+const path = require('path');
 
 // Create new teacher
 exports.createTeacher = async (req, res) => {
   try {
+    // Inside createTeacher function, before inserting into DB:
+    let profilePicPath = null;
+    const uploadFolder = path.join(__dirname, '../public/teacher_profiles');
+    fs.mkdirSync(uploadFolder, { recursive: true });
+
+    if (req.files && req.files.profilePic) {
+      const profilePic = req.files.profilePic;
+      const fileName = `teacher_${Date.now()}.${profilePic.name.split('.').pop()}`;
+      profilePicPath = path.join(uploadFolder, fileName);
+      fs.renameSync(profilePic.path, profilePicPath);
+    } else if (req.body.profilePic && req.body.profilePic.startsWith('data:image/')) {
+      const matches = req.body.profilePic.match(/^data:image\/([a-zA-Z]+);base64,(.+)$/);
+      if (matches) {
+        const imageType = matches[1];
+        const base64Data = matches[2];
+        const fileName = `teacher_${Date.now()}.${imageType}`;
+        profilePicPath = path.join(uploadFolder, fileName);
+        fs.writeFileSync(profilePicPath, base64Data, 'base64');
+      }
+    }
+
+    const safeProfilePic = profilePicPath ? `/teacher_profiles/${path.basename(profilePicPath)}` : null;
     const { 
       firstName, 
       middleName, 
@@ -17,9 +41,7 @@ exports.createTeacher = async (req, res) => {
       gradeLevel,
       section,
       subjects,
-      bio,
-      department = 'WMSU-ILS Department',
-      position = 'Teacher'
+      bio
     } = req.body;
 
     // Validate input
@@ -45,9 +67,9 @@ exports.createTeacher = async (req, res) => {
     const result = await query(
       `INSERT INTO teachers (
         first_name, middle_name, last_name, username, email, password, 
-        role, department, position, subjects, bio, grade_level, section,
+        role, subjects, bio, grade_level, section, profile_pic,
         verification_status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())`,
       [
         firstName, 
         middleName || null, 
@@ -56,12 +78,11 @@ exports.createTeacher = async (req, res) => {
         email, 
         hashedPassword, 
         role, 
-        department, 
-        position, 
         subjects || null, 
         bio || null,
         gradeLevel || null,
-        section || null
+        section || null,
+        safeProfilePic || null
       ]
     );
 
@@ -266,9 +287,7 @@ exports.updateTeacher = async (req, res) => {
       gradeLevel,
       section,
       subjects,
-      bio,
-      department,
-      position
+      bio
     } = req.body;
 
     // Check if teacher exists
@@ -282,9 +301,9 @@ exports.updateTeacher = async (req, res) => {
       `UPDATE teachers SET 
         first_name = ?, middle_name = ?, last_name = ?, username = ?, email = ?, 
         role = ?, grade_level = ?, section = ?, subjects = ?, bio = ?, 
-        department = ?, position = ?, updated_at = NOW()
+        updated_at = NOW()
        WHERE id = ?`,
-      [firstName, middleName, lastName, username, email, role, gradeLevel, section, subjects, bio, department, position, id]
+      [firstName, middleName, lastName, username, email, role, gradeLevel, section, subjects, bio, id]
     );
 
     res.status(200).json({

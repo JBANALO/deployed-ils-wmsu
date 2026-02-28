@@ -51,83 +51,74 @@ export default function AdminCreateK6() {
     setShowPassword(true);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    try {
-      if (!formData.password) {
-        toast.error('Please generate a password first!');
-        return;
-      }
+const handleSubmit = async (e) => {
+  e.preventDefault();
 
-      const qrData = JSON.stringify({
-        lrn: formData.lrn,
-        name: `${formData.firstName} ${formData.middleName} ${formData.lastName}`,
-        gradeLevel: formData.gradeLevel,
-        section: formData.section,
-        email: formData.wmsuEmail
-      });
-
-      const qrCodeDataUrl = await QRCode.toDataURL(qrData, {
-        width: 300,
-        margin: 2,
-        color: { dark: '#000000', light: '#FFFFFF' },
-        errorCorrectionLevel: 'H', // high error correction
-      });
-
-      const studentData = {
-        lrn: formData.lrn.trim(),
-        firstName: formData.firstName.trim(),
-        middleName: formData.middleName.trim(),
-        lastName: formData.lastName.trim(),
-        age: parseInt(formData.age),
-        sex: formData.sex,
-        gradeLevel: formData.gradeLevel,
-        section: formData.section,
-        parentFirstName: formData.parentFirstName.trim(),
-        parentLastName: formData.parentLastName.trim(),
-        parentEmail: formData.parentEmail.trim(),
-        parentContact: formData.parentContact.trim(),
-        studentEmail: formData.wmsuEmail.trim(), 
-        password: formData.password,
-        profilePic: formData.profilePic || null,
-      };
-
-      const response = await fetch(`${API_BASE_URL}/students`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(studentData)
-      });
-
-      const result = await response.json();
-
-      if (response.ok) {
-        // Show custom success modal instead of toast
-        setCreatedStudentEmail(formData.wmsuEmail);
-        setCreatedStudentPassword(formData.password);
-        setShowSuccessModal(true);
-        
-        // Redirect to AdminApprovals page after 5 seconds
-        setTimeout(() => {
-          navigate('/admin/approvals');
-        }, 15000);
-        
-        setFormData({
-          profilePic: "", lrn: "", firstName: "", middleName: "", lastName: "",
-          age: "", sex: "", gradeLevel: "", section: "", parentFirstName: "",
-          parentLastName: "", parentEmail: "", parentContact: "",
-          wmsuEmail: "", password: ""
-        });
-        document.querySelector('input[name="lrn"]').focus();
-        setGeneratedPassword("");
-        setShowPassword(false);
-      } else {
-        toast.error(`Failed: ${result.error}`);
-      }
-    } catch (error) {
-      toast.error('Error: ' + error.message);
+  try {
+    if (!formData.password) {
+      toast.error('Please generate a password first!');
+      return;
     }
-  };
+
+    // ---------------------------
+    // Prepare FormData
+    // ---------------------------
+    const fd = new FormData();
+    fd.append('lrn', formData.lrn.trim());
+    fd.append('firstName', formData.firstName.trim());
+    fd.append('middleName', formData.middleName.trim());
+    fd.append('lastName', formData.lastName.trim());
+    fd.append('age', formData.age);
+    fd.append('sex', formData.sex);
+    fd.append('gradeLevel', formData.gradeLevel);
+    fd.append('section', formData.section);
+    fd.append('parentFirstName', formData.parentFirstName.trim());
+    fd.append('parentLastName', formData.parentLastName.trim());
+    fd.append('parentEmail', formData.parentEmail.trim());
+    fd.append('parentContact', formData.parentContact.trim());
+    fd.append('studentEmail', formData.wmsuEmail.trim());
+    fd.append('password', formData.password);
+
+    // Append profile picture file if available
+    if (formData.profilePic) {
+      fd.append('profilePic', formData.profilePic);
+    }
+
+    // ---------------------------
+    // Send to backend
+    // ---------------------------
+    const response = await fetch(`${API_BASE_URL}/students`, {
+      method: 'POST',
+      body: fd, // <-- FormData automatically sets multipart/form-data
+    });
+
+    const result = await response.json();
+
+    if (response.ok) {
+      // Success modal
+      setCreatedStudentEmail(formData.wmsuEmail);
+      setCreatedStudentPassword(formData.password);
+      setShowSuccessModal(true);
+
+      // Redirect after 15 seconds
+      setTimeout(() => navigate('/admin/approvals'), 15000);
+
+      // Reset form
+      setFormData({
+        profilePic: "", lrn: "", firstName: "", middleName: "", lastName: "",
+        age: "", sex: "", gradeLevel: "", section: "", parentFirstName: "",
+        parentLastName: "", parentEmail: "", parentContact: "",
+        wmsuEmail: "", password: ""
+      });
+      setGeneratedPassword("");
+      setShowPassword(false);
+    } else {
+      toast.error(`Failed: ${result.error}`);
+    }
+  } catch (error) {
+    toast.error('Error: ' + error.message);
+  }
+};
 
   return (
     <div className="space-y-8">
@@ -159,40 +150,46 @@ export default function AdminCreateK6() {
                 accept="image/*"
                 className="hidden"
                 onChange={(e) => {
-                const file = e.target.files[0];
-                if (file) {
-                  const reader = new FileReader();
-                  reader.onload = (event) => {
+                  const file = e.target.files[0];
+                  if (file) {
+                    // Optional: resize/compress before storing
                     const img = new Image();
-                    img.onload = () => {
-                      const canvas = document.createElement('canvas');
-                      const maxSize = 300; // max width or height
-                      let width = img.width;
-                      let height = img.height;
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const maxSize = 300; // max width/height
+                        let width = img.width;
+                        let height = img.height;
 
-                      if (width > height) {
-                        if (width > maxSize) {
-                          height *= maxSize / width;
-                          width = maxSize;
+                        if (width > height) {
+                          if (width > maxSize) {
+                            height *= maxSize / width;
+                            width = maxSize;
+                          }
+                        } else {
+                          if (height > maxSize) {
+                            width *= maxSize / height;
+                            height = maxSize;
+                          }
                         }
-                      } else {
-                        if (height > maxSize) {
-                          width *= maxSize / height;
-                          height = maxSize;
-                        }
-                      }
 
-                      canvas.width = width;
-                      canvas.height = height;
-                      const ctx = canvas.getContext('2d');
-                      ctx.drawImage(img, 0, 0, width, height);
-                      const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7); // compress to 70%
-                      setFormData({ ...formData, profilePic: compressedDataUrl });
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        // Convert canvas back to Blob
+                        canvas.toBlob((blob) => {
+                          // Store the File object in formData
+                          const resizedFile = new File([blob], file.name, { type: file.type });
+                          setFormData({ ...formData, profilePic: resizedFile });
+                        }, file.type, 0.7); // 70% quality
+                      };
+                      img.src = event.target.result;
                     };
-                    img.src = event.target.result;
-                  };
-                  reader.readAsDataURL(file);
-                }
+                    reader.readAsDataURL(file);
+                  }
                 }}
               />
             </label>
