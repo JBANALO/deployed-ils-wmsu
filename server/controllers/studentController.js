@@ -28,6 +28,7 @@ async function generateQRCode(studentData) {
 // -----------------------------
 exports.createStudent = async (req, res) => {
   try {
+    console.log("REQ BODY:", req.body); 
     const {
       lrn,
       firstName,
