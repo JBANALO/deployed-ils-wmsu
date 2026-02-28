@@ -73,15 +73,24 @@ exports.createStudent = async (req, res) => {
     }
     const safeProfilePic = profilePicPath ? `/profiles/${path.basename(profilePicPath)}` : null;
 
-    // -----------------------------
-    // QR CODE
-    // -----------------------------
     const qrCodeFileName = `qr_${lrn}_${Date.now()}.png`;
     const qrCodePath = path.join(__dirname, '../public/qrcodes', qrCodeFileName);
     fs.mkdirSync(path.dirname(qrCodePath), { recursive: true });
 
-    const qrData = { lrn, firstName, middleName: middleName || '', lastName, gradeLevel, section, studentEmail };
-    await QRCode.toFile(qrCodePath, JSON.stringify(qrData), { width: 200, margin: 1 });
+    const qrDataURL = await generateQRCode({
+      lrn,
+      firstName,
+      middleName: middleName || '',
+      lastName,
+      gradeLevel,
+      section,
+      studentEmail
+    });
+
+    // Convert Data URL to binary and save as PNG file
+    const base64Data = qrDataURL.replace(/^data:image\/png;base64,/, "");
+    fs.writeFileSync(qrCodePath, base64Data, 'base64');
+
     const safeQRCode = `/qrcodes/${qrCodeFileName}`;
 
     // -----------------------------
@@ -92,14 +101,12 @@ exports.createStudent = async (req, res) => {
         lrn, first_name, middle_name, last_name, age, sex,
         grade_level, section, parent_first_name, parent_last_name,
         parent_email, parent_contact, student_email, password,
-        profile_pic, qr_code, status, created_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-      [
-        lrn, firstName, middleName || null, lastName, age, sex,
+        profile_pic, qr_code, status, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [ lrn, firstName, middleName || null, lastName, age, sex,
         gradeLevel, section, parentFirstName || null, parentLastName || null,
         parentEmail || null, parentContact || null, studentEmail || null, password,
-        safeProfilePic, safeQRCode, 'pending', 'admin'
-      ]
+        safeProfilePic, safeQRCode, 'pending', 'admin' ]
     );
 
     const createdStudent = {
