@@ -244,7 +244,6 @@ export default function AdminCreateTeacher() {
                 placeholder="Teacher's WMSU Email"
                 className="flex-1 p-2.5 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-red-800"
               />
-              <span className="border border-l-0 p-2.5 rounded-r-md bg-gray-100 text-gray-600">@wmsu.edu.ph</span>
             </div>
           </div>
 
