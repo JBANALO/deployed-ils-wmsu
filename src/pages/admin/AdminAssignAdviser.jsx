@@ -64,7 +64,6 @@ export default function AdminAssignAdviser() {
         console.error('Teachers fetch failed:', teachersResponse.status);
         toast.error(`Failed to load teachers: ${teachersResponse.status}`);
       }
-      }
     } catch (error) {
       toast.error('Error loading data: ' + error.message);
       setMessage("Error loading data: " + error.message);
