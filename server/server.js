@@ -401,8 +401,8 @@ app.post('/api/admin/bulk-import-teachers', async (req, res) => {
 
     for (const teacher of teachers) {
       try {
-        const { v4: uuidv4 } = require('uuid');
-        const teacherId = uuidv4();
+        // Generate integer ID based on timestamp
+        const teacherId = Date.now() + Math.floor(Math.random() * 1000);
         const fullName = `${teacher.firstName || ''} ${teacher.middleName || ''} ${teacher.lastName || ''}`.trim();
 
         // Check if teacher already exists by email
