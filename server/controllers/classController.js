@@ -102,7 +102,50 @@ const writeClasses = (data) => {
 // Get all classes (from students data)
 const getAllClasses = (req, res) => {
   try {
-    const classes = generateClassesFromStudents();
+    let classes = generateClassesFromStudents();
+    
+    // Enhance classes with adviser information from users if available
+    try {
+      const { readUsers } = require('../utils/fileStorage');
+      const users = readUsers();
+      
+      // For each class, try to find adviser from users data if not already assigned
+      classes = classes.map(classItem => {
+        // Keep existing adviser assignment from classes.json
+        if (classItem.adviser_id && classItem.adviser_name) {
+          return classItem;
+        }
+        
+        // Try to find adviser in users data by class assignment
+        const adviser = users.find(user => {
+          const userRole = (user.role || '').toLowerCase();
+          const userClass = user.assignedClass || user.assigned_class;
+          
+          if (userRole !== 'adviser' || !userClass) {
+            return false;
+          }
+          
+          // Compare class info
+          const userClassKey = `${userClass.grade}-${userClass.section}`.toLowerCase().replace(/\s+/g, '-');
+          const itemClassKey = `${classItem.grade}-${classItem.section}`.toLowerCase().replace(/\s+/g, '-');
+          
+          return userClassKey === itemClassKey;
+        });
+        
+        if (adviser) {
+          return {
+            ...classItem,
+            adviser_id: adviser.id,
+            adviser_name: `${adviser.firstName || ''} ${adviser.lastName || ''}`.trim()
+          };
+        }
+        
+        return classItem;
+      });
+    } catch (err) {
+      console.log('Could not sync adviser data from users:', err.message);
+    }
+    
     console.log('Classes returned:', classes.length, classes);
     res.json({ success: true, data: classes });
   } catch (error) {
@@ -117,24 +160,51 @@ const getAdviserClasses = (req, res) => {
     const { adviserId } = req.params;
     console.log(`getAdviserClasses called with adviserId: ${adviserId}`);
     
-    const classes = generateClassesFromStudents();
-    console.log(`Total classes: ${classes.length}`);
-    classes.forEach(c => {
-      console.log(`  Class ${c.id}: adviser_id = "${c.adviser_id}"`);
-    });
+    let classes = generateClassesFromStudents();
     
-    const adviserClasses = classes.filter(c => {
-      const matches = c.adviser_id === adviserId;
-      if (matches) {
-        console.log(`  ✓ Class ${c.id} matches adviser ${adviserId}`);
+    // Sync adviser data from users.json
+    try {
+      const { readUsers } = require('../utils/fileStorage');
+      const users = readUsers();
+      const adviser = users.find(u => u.id === adviserId);
+      
+      if (adviser) {
+        classes = classes.map(classItem => {
+          // Check if already assigned
+          if (classItem.adviser_id === adviserId) {
+            return classItem;
+          }
+          
+          // Check if this adviser is assigned to this class in users data
+          const userClass = adviser.assignedClass || adviser.assigned_class;
+          if (userClass) {
+            const userClassKey = `${userClass.grade}-${userClass.section}`.toLowerCase().replace(/\s+/g, '-');
+            const itemClassKey = `${classItem.grade}-${classItem.section}`.toLowerCase().replace(/\s+/g, '-');
+            
+            if (userClassKey === itemClassKey) {
+              return {
+                ...classItem,
+                adviser_id: adviserId,
+                adviser_name: `${adviser.firstName || ''} ${adviser.lastName || ''}`.trim()
+              };
+            }
+          }
+          
+          return classItem;
+        });
       }
-      return matches;
-    });
+    } catch (err) {
+      console.log('Could not sync adviser data:', err.message);
+    }
+    
+    const adviserClasses = classes.filter(c => c.adviser_id === adviserId);
     
     console.log(`Found ${adviserClasses.length} classes for adviser ${adviserId}`);
     res.json({ success: true, data: adviserClasses });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Error fetching adviser classes' });
+  }
+};
   }
 };
 
