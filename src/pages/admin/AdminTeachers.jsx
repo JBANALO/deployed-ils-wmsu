@@ -24,6 +24,44 @@ export default function AdminTeachers() {
     fetchTeachers();
   }, []);
 
+  // Helper function to fix mixed up grade level and section data
+  const fixGradeAndSection = (teacher) => {
+    const gradeLevel = teacher.grade_level || teacher.gradeLevel || '';
+    const section = teacher.section || '';
+    const subjects = teacher.subjects || [];
+    
+    // Check if grade_level contains subject names (common subjects)
+    const commonSubjects = ['filipino', 'english', 'mathematics', 'science', 'makabansa', 'gmrc', 'mapeh', 'araling panlipunan', 'edukasyon sa pagpapakatao', 'arpan'];
+    const gradeLevelLower = gradeLevel.toLowerCase();
+    
+    // If grade_level contains a subject, it's likely the actual subject
+    if (commonSubjects.some(subject => gradeLevelLower.includes(subject))) {
+      // Swap the data: grade_level becomes subject, section becomes grade_level
+      return {
+        actualGradeLevel: section,
+        actualSection: '-', // No proper section available
+        actualSubjects: [gradeLevel]
+      };
+    }
+    
+    // Check if section contains grade level patterns
+    const gradePattern = /^(grade \d+|kindergarten|\d+)$/i;
+    if (gradePattern.test(section.trim())) {
+      return {
+        actualGradeLevel: section,
+        actualSection: gradeLevel,
+        actualSubjects: subjects
+      };
+    }
+    
+    // Normal case - no swapping needed
+    return {
+      actualGradeLevel: gradeLevel,
+      actualSection: section,
+      actualSubjects: subjects
+    };
+  };
+
   const fetchTeachers = async (isRefresh = false) => {
     try {
       console.log('Fetching teachers...');
@@ -40,7 +78,7 @@ export default function AdminTeachers() {
       
       // Only show approved teachers (not pending or rejected)
       const approvedTeachers = Array.isArray(allTeachers) 
-        ? allTeachers.filter(teacher => (teacher.verification_status === 'approved' || teacher.verificationStatus === 'approved'))
+        ? allTeachers.filter(teacher => (teacher.role === 'adviser' || teacher.role === 'subject_teacher'))
         : [];
       console.log('Approved teachers:', approvedTeachers);
       setTeachers(approvedTeachers);
@@ -295,7 +333,7 @@ export default function AdminTeachers() {
                     <th className="p-3 border">Role</th>
                     <th className="p-3 border">Class/Section</th>
                     <th className="p-3 border">Subjects</th>
-                    <th className="p-3 border">Actions</th>
+                    <th className="p-3 border w-40 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -320,47 +358,62 @@ export default function AdminTeachers() {
                           </span>
                         </td>
                         <td className="p-3 border text-sm">
-                          {(teacher.grade_level || teacher.gradeLevel) && (teacher.section || teacher.section) 
-                            ? `${teacher.grade_level || teacher.gradeLevel} - ${teacher.section || teacher.section}`
-                            : '-'
-                          }
+                          {(() => {
+                            const fixed = fixGradeAndSection(teacher);
+                            return fixed.actualGradeLevel && fixed.actualSection 
+                              ? `${fixed.actualGradeLevel} - ${fixed.actualSection}`
+                              : '-';
+                          })()}
                         </td>
-                        <td className="p-3 border text-sm">
-                          {teacher.subjects || teacher.subjectsHandled ? 
-                            (teacher.subjects ? teacher.subjects.split(', ').filter(s => s.trim()) : teacher.subjectsHandled).join(', ')
-                            : '-'
-                          }
+                        <td className="p-3 border text-sm max-w-xs break-words">
+                          {(() => {
+                            try {
+                              const fixed = fixGradeAndSection(teacher);
+                              if (fixed.actualSubjects && fixed.actualSubjects.length > 0) {
+                                return fixed.actualSubjects.join(', ');
+                              }
+                              return '-';
+                            } catch (error) {
+                              console.error('Error parsing subjects:', error);
+                              return '-';
+                            }
+                          })()}
                         </td>
-                        <td className="p-3 border flex gap-2">
-                          <button 
-                            onClick={() => handleEditTeacher(teacher)}
-                            className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                            title="Edit"
-                          >
-                            <PencilSquareIcon className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteTeacher(teacher.id)}
-                            className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                            title="Delete"
-                          >
-                            <TrashIcon className="w-5 h-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleViewTeacher(teacher)}
-                            className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                            title="View Details"
-                          >
-                            <EyeIcon className="w-5 h-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleViewCredentials(teacher)}
-                            className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                            title="View Credentials"
-                          >
-                            <KeyIcon className="w-5 h-5" />
-                          </button>
-                        </td>
+                          <td className="p-3 border w-40">
+                            <div className="flex gap-2 justify-center items-center">
+                              <button 
+                                onClick={() => handleEditTeacher(teacher)}
+                                className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                title="Edit"
+                              >
+                                <PencilSquareIcon className="w-5 h-5" />
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteTeacher(teacher.id)}
+                                className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                                title="Delete"
+                              >
+                                <TrashIcon className="w-5 h-5" />
+                              </button>
+
+                              <button 
+                                onClick={() => handleViewTeacher(teacher)}
+                                className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                                title="View Details"
+                              >
+                                <EyeIcon className="w-5 h-5" />
+                              </button>
+
+                              <button 
+                                onClick={() => handleViewCredentials(teacher)}
+                                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                title="View Credentials"
+                              >
+                                <KeyIcon className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </td>
                       </tr>
                     ))
                   ) : (
@@ -401,7 +454,7 @@ export default function AdminTeachers() {
                     <th className="p-3 border">Role</th>
                     <th className="p-3 border">Class/Section</th>
                     <th className="p-3 border">Subjects</th>
-                    <th className="p-3 border">Actions</th>
+                    <th className="p-3 border w-40 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -426,47 +479,62 @@ export default function AdminTeachers() {
                           </span>
                         </td>
                         <td className="p-3 border text-sm">
-                          {(teacher.grade_level || teacher.gradeLevel) && (teacher.section || teacher.section) 
-                            ? `${teacher.grade_level || teacher.gradeLevel} - ${teacher.section || teacher.section}`
-                            : '-'
-                          }
+                          {(() => {
+                            const fixed = fixGradeAndSection(teacher);
+                            return fixed.actualGradeLevel && fixed.actualSection 
+                              ? `${fixed.actualGradeLevel} - ${fixed.actualSection}`
+                              : '-';
+                          })()}
                         </td>
-                        <td className="p-3 border text-sm">
-                          {teacher.subjects || teacher.subjectsHandled ? 
-                            (teacher.subjects ? teacher.subjects.split(', ').filter(s => s.trim()) : teacher.subjectsHandled).join(', ')
-                            : '-'
-                          }
+                        <td className="p-3 border text-sm max-w-xs break-words">
+                          {(() => {
+                            try {
+                              const fixed = fixGradeAndSection(teacher);
+                              if (fixed.actualSubjects && fixed.actualSubjects.length > 0) {
+                                return fixed.actualSubjects.join(', ');
+                              }
+                              return '-';
+                            } catch (error) {
+                              console.error('Error parsing subjects:', error);
+                              return '-';
+                            }
+                          })()}
                         </td>
-                        <td className="p-3 border flex gap-2">
-                          <button 
-                            onClick={() => handleEditTeacher(teacher)}
-                            className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                            title="Edit"
-                          >
-                            <PencilSquareIcon className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteTeacher(teacher.id)}
-                            className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                            title="Delete"
-                          >
-                            <TrashIcon className="w-5 h-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleViewTeacher(teacher)}
-                            className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                            title="View Details"
-                          >
-                            <EyeIcon className="w-5 h-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleViewCredentials(teacher)}
-                            className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                            title="View Credentials"
-                          >
-                            <KeyIcon className="w-5 h-5" />
-                          </button>
-                        </td>
+                          <td className="p-3 border w-40">
+                            <div className="flex gap-2 justify-center items-center">
+                              <button 
+                                onClick={() => handleEditTeacher(teacher)}
+                                className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                title="Edit"
+                              >
+                                <PencilSquareIcon className="w-5 h-5" />
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteTeacher(teacher.id)}
+                                className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                                title="Delete"
+                              >
+                                <TrashIcon className="w-5 h-5" />
+                              </button>
+
+                              <button 
+                                onClick={() => handleViewTeacher(teacher)}
+                                className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                                title="View Details"
+                              >
+                                <EyeIcon className="w-5 h-5" />
+                              </button>
+
+                              <button 
+                                onClick={() => handleViewCredentials(teacher)}
+                                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                title="View Credentials"
+                              >
+                                <KeyIcon className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </td>
                       </tr>
                     ))
                   ) : (
@@ -527,9 +595,27 @@ export default function AdminTeachers() {
               </div>
               <div>
                 <p className="text-sm text-gray-600">Subjects</p>
-                <p className="font-semibold">{selectedTeacher.subjects || selectedTeacher.subjectsHandled ? 
-                (selectedTeacher.subjects ? selectedTeacher.subjects.split(', ').filter(s => s.trim()).join(', ') : selectedTeacher.subjectsHandled.join(', '))
-                : '-'}</p>
+                <p className="font-semibold">
+                  {(() => {
+                    try {
+                      if (selectedTeacher.subjects) {
+                        // Parse JSON string if it's a string, otherwise use as-is
+                        const subjectsArray = typeof selectedTeacher.subjects === 'string' 
+                          ? JSON.parse(selectedTeacher.subjects) 
+                          : selectedTeacher.subjects;
+                          
+                        // Filter out empty arrays and join subjects
+                        if (Array.isArray(subjectsArray) && subjectsArray.length > 0) {
+                          return subjectsArray.join(', ');
+                        }
+                      }
+                      return '-';
+                    } catch (error) {
+                      console.error('Error parsing subjects:', error);
+                      return '-';
+                    }
+                  })()}
+                </p>
               </div>
             </div>
             <button 
