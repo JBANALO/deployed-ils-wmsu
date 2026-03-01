@@ -739,13 +739,28 @@ export default function AdminTeachers() {
                 {selectedTeacher.profilePic ? (
                   <img 
                     src={
-                      selectedTeacher.profilePic.startsWith('http')
-                        ? selectedTeacher.profilePic
-                        : `${API_BASE?.replace(/\/api$/, '') || ''}${selectedTeacher.profilePic}`
+                      (() => {
+                        const profilePic = selectedTeacher.profilePic;
+                        console.log('Teacher profile pic data:', profilePic);
+                        console.log('API_BASE:', API_BASE);
+                        
+                        let finalUrl;
+                        if (profilePic.startsWith('http')) {
+                          finalUrl = profilePic;
+                        } else if (profilePic.startsWith('/')) {
+                          finalUrl = `${API_BASE?.replace(/\/api$/, '') || ''}${profilePic}`;
+                        } else {
+                          finalUrl = `${API_BASE?.replace(/\/api$/, '') || ''}/${profilePic}`;
+                        }
+                        
+                        console.log('Final profile pic URL:', finalUrl);
+                        return finalUrl;
+                      })()
                     } 
                     alt={`${selectedTeacher.firstName} ${selectedTeacher.lastName}`}
                     className="w-24 h-24 rounded-full object-cover border-4 border-red-800"
                     onError={(e) => {
+                      console.error('Profile picture failed to load:', e.target.src);
                       e.target.onerror = null;
                       e.target.src = '/default-avatar.jpeg';
                     }}
