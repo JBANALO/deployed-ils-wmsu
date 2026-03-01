@@ -13,12 +13,27 @@ export default function LoginPage() {
 
   const navigate = useNavigate();
 
-  // Pre-fill email from localStorage if available (from account creation)
+  // Pre-fill email from localStorage if available (from account creation or last login)
   useEffect(() => {
+    console.log('LoginPage useEffect - checking localStorage...');
+    
+    // Check for pending email from account creation first
     const pendingEmail = localStorage.getItem('pendingEmail');
+    console.log('Pending email:', pendingEmail);
+    
     if (pendingEmail) {
       setEmail(pendingEmail);
       localStorage.removeItem('pendingEmail'); // Clear after using
+      console.log('Using pending email:', pendingEmail);
+    } else {
+      // Check for last logged-in admin email
+      const lastAdminEmail = localStorage.getItem('lastAdminEmail');
+      console.log('Last admin email:', lastAdminEmail);
+      
+      if (lastAdminEmail) {
+        setEmail(lastAdminEmail);
+        console.log('Using last admin email:', lastAdminEmail);
+      }
     }
   }, []);
 
@@ -56,6 +71,12 @@ export default function LoginPage() {
       if (user) {
         localStorage.setItem('user', JSON.stringify(user));
         console.log('User stored in localStorage:', user);
+        
+        // Store admin email for next login (only for admin users)
+        if (role.toLowerCase().trim() === "admin") {
+          const adminEmail = user.email || emailOrUsername;
+          localStorage.setItem('lastAdminEmail', adminEmail);
+        }
       }
 
       // Normalize role for comparison

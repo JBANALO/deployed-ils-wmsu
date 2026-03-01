@@ -4,16 +4,25 @@ export const UserContext = createContext();
 
 export const UserProvider = ({ children }) => {
   const [adminUser, setAdminUser] = useState(null);
-  const [profileImageFile, setProfileImageFile] = useState(null); // ✅ add this
+  const [profileImageFile, setProfileImageFile] = useState(null); // 
 
   // Initialize from localStorage
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
-    if (storedUser) setAdminUser(JSON.parse(storedUser));
+    console.log('UserContext - storedUser from localStorage:', storedUser);
+    
+    if (storedUser) {
+      const parsedUser = JSON.parse(storedUser);
+      console.log('UserContext - parsedUser:', parsedUser);
+      setAdminUser(parsedUser);
+    }
 
     const handleStorage = (e) => {
+      console.log('UserContext - storage event:', e.key, e.newValue);
       if (e.key === "user" && e.newValue) {
-        setAdminUser(JSON.parse(e.newValue));
+        const parsedUser = JSON.parse(e.newValue);
+        console.log('UserContext - updating from storage event:', parsedUser);
+        setAdminUser(parsedUser);
       }
     };
     window.addEventListener("storage", handleStorage);

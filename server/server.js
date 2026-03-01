@@ -115,14 +115,6 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Serve static files (uploads directory) with CORS
-app.use('/uploads', (req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
-  next();
-}, express.static(path.join(__dirname, 'uploads')));
-
 // Serve static files from public directory (QR codes, profile pictures)
 app.use('/qrcodes', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -144,6 +136,13 @@ app.use('/teacher_profiles', (req, res, next) => {
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   next();
 }, express.static(path.join(__dirname, 'public/teacher_profiles')));
+
+app.use('/admin_profiles', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+}, express.static(path.join(__dirname, 'public/admin_profiles')));
 
 app.use('/profiles', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -329,39 +328,6 @@ app.post('/api/admin/import-students', async (req, res) => {
     console.error('Import error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
-});
-
-// Serve profile images via API endpoint with proper CORS
-app.get('/api/uploads/:filename', (req, res) => {
-  const filename = req.params.filename;
-  const imagePath = path.join(__dirname, '..', 'uploads', filename);
-  
-  console.log(`Image request received for: ${filename}`);
-  console.log(`Full image path: ${imagePath}`);
-  console.log(`File exists: ${fs.existsSync(imagePath)}`);
-  
-  // Security check - only allow image files
-  if (!filename.match(/\.(png|jpg|jpeg|gif)$/i)) {
-    console.log('File type not allowed:', filename);
-    return res.status(403).json({ error: 'File type not allowed' });
-  }
-  
-  // Check if file exists
-  if (!fs.existsSync(imagePath)) {
-    console.log('File not found:', imagePath);
-    return res.status(404).json({ error: 'File not found' });
-  }
-  
-  console.log('Sending image file:', imagePath);
-  
-  // Set CORS headers
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
-  res.header('Content-Type', 'image/png');
-  
-  // Send file
-  res.sendFile(imagePath);
 });
 
 // Get recent login attempts
