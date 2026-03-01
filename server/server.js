@@ -1,11 +1,12 @@
 // server/server.js
-require('dotenv').config();
+require('dotenv').config({ path: '../.env.development' });
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
 const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
+const bcrypt = require('bcryptjs');
 const passport = require('./config/passport');
 const { query } = require('./config/database');
 const userRoutes = require('./routes/userRoutes');
@@ -383,6 +384,113 @@ app.get('/api/admin/pending-teachers', async (req, res) => {
   }
 });
 
+// Bulk import teachers from CSV
+app.post('/api/admin/bulk-import-teachers', async (req, res) => {
+  try {
+    console.log('📚 Bulk import teachers requested');
+    
+    const { teachers } = req.body;
+    
+    if (!teachers || !Array.isArray(teachers)) {
+      return res.status(400).json({ error: 'Invalid teachers data' });
+    }
+
+    let imported = 0;
+    let updated = 0;
+    let errors = 0;
+
+    for (const teacher of teachers) {
+      try {
+        const { v4: uuidv4 } = require('uuid');
+        const teacherId = uuidv4();
+        const fullName = `${teacher.firstName || ''} ${teacher.middleName || ''} ${teacher.lastName || ''}`.trim();
+
+        // Check if teacher already exists by email
+        const existingTeachers = await query(
+          'SELECT id FROM teachers WHERE email = ?',
+          [teacher.email]
+        );
+
+        if (existingTeachers && existingTeachers.length > 0) {
+          // Update existing
+          try {
+            await query(
+              `UPDATE teachers SET 
+                first_name = ?, middle_name = ?, last_name = ?, username = ?, 
+                role = ?, grade_level = ?, section = ?, subjects = ?, bio = ?, 
+                updated_at = CURRENT_TIMESTAMP 
+              WHERE id = ?`,
+              [
+                teacher.firstName || null, 
+                teacher.middleName || null, 
+                teacher.lastName || null, 
+                teacher.username || null,
+                teacher.role || null, 
+                teacher.gradeLevel || null, 
+                teacher.section || null, 
+                JSON.stringify(teacher.subjects || []), 
+                teacher.bio || null,
+                existingTeachers[0].id
+              ]
+            );
+            updated++;
+          } catch (e) {
+            console.error(`Update error: ${e.message}`);
+            errors++;
+          }
+        } else {
+          // Insert new
+          try {
+            // Hash the password if provided, otherwise use default
+            const passwordToHash = teacher.password || 'WMSUILS123';
+            const hashedPassword = await bcrypt.hash(passwordToHash, 12);
+            
+            await query(
+              `INSERT INTO teachers (
+                id, first_name, middle_name, last_name, username, email, password, 
+                role, grade_level, section, subjects, bio, verification_status
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                teacherId,
+                teacher.firstName || null, 
+                teacher.middleName || null, 
+                teacher.lastName || null,
+                teacher.username || null, 
+                teacher.email || null, 
+                hashedPassword,
+                teacher.role || null, 
+                teacher.gradeLevel || null, 
+                teacher.section || null,
+                JSON.stringify(teacher.subjects || []), 
+                teacher.bio || null, 
+                'approved'
+              ]
+            );
+            imported++;
+          } catch (e) {
+            console.error(`Insert error: ${e.message}`);
+            errors++;
+          }
+        }
+      } catch (err) {
+        errors++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Imported ${imported}, Updated ${updated}, Errors ${errors}`,
+      imported,
+      updated,
+      errors,
+      total: teachers.length
+    });
+  } catch (err) {
+    console.error('Import error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Get pending students from database (formatted for frontend)
 app.get('/api/admin/pending-students', async (req, res) => {
   try {
@@ -654,6 +762,7 @@ const startServer = async () => {
           last_name varchar(100) NOT NULL,
           email varchar(100) NOT NULL,
           password varchar(255) NOT NULL,
+          plain_password varchar(255) DEFAULT NULL,
           role enum('adviser','subject_teacher') NOT NULL DEFAULT 'adviser',
           subjects text DEFAULT NULL,
           grade_level varchar(50) DEFAULT NULL,

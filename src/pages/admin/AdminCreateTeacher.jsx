@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { EyeIcon, EyeSlashIcon } from "@heroicons/react/24/solid";
 import api from "../../api/axiosConfig";
 import { toast } from 'react-toastify';
 
@@ -11,8 +10,7 @@ export default function AdminCreateTeacher() {
     lastName: "",
     username: "",
     email: "@wmsu.edu.ph",
-    password: "",
-    confirmPassword: "",
+    password: "", // Start empty
     role: "adviser",
     gradeLevel: "",
     section: "",
@@ -24,9 +22,21 @@ export default function AdminCreateTeacher() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [redirectTimer, setRedirectTimer] = useState(null);
   const navigate = useNavigate();
+
+  // Generate password function (based on email like students)
+  const generatePassword = () => {
+    // Extract the part before @wmsu.edu.ph from email (like students use LRN)
+    const emailPart = formData.email.replace('@wmsu.edu.ph', '').slice(-4).padStart(4, '0');
+    const randomPart = Math.floor(1000 + Math.random() * 9000);
+    const password = `WMSU${emailPart}${randomPart}`;
+    setFormData(prev => ({ 
+      ...prev, 
+      password: password
+    }));
+  };
 
   // Subjects by grade level
   const subjectsByGradeLevel = {
@@ -120,11 +130,6 @@ export default function AdminCreateTeacher() {
 
     // Email validation no longer needed since domain is added automatically
 
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-
     if (formData.password.length < 6) {
       setError("Password must be at least 6 characters long.");
       return;
@@ -162,12 +167,14 @@ export default function AdminCreateTeacher() {
 
       const response = await api.post('/teachers/create', teacherData);
 
-      toast.success("Teacher account created! Go to Admin Approvals to approve the account.");
+      // Show success modal instead of toast
+      setShowSuccessModal(true);
       
-      // Redirect to approvals page after 2 seconds
-      setTimeout(() => {
+      // Set redirect timer to approvals page after 15 seconds
+      const timer = setTimeout(() => {
         navigate('/admin/approvals');
-      }, 2000);
+      }, 15000);
+      setRedirectTimer(timer);
     } catch (err) {
       toast.error("Registration error: " + (err.message || "Failed to create teacher account."));
       setError(err.message || "Failed to create teacher account.");
@@ -294,70 +301,30 @@ export default function AdminCreateTeacher() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
+            <div className="md:col-span-2">
               <label className="text-sm font-medium text-gray-700">Password</label>
-              <div className="relative">
+              <div className="mt-1 flex gap-2">
                 <input
-                  type={showPassword ? "text" : "password"}
+                  type="text"
                   name="password"
                   value={formData.password}
                   onChange={handleChange}
-                  required
-                  className="mt-1 w-full p-2.5 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-800"
+                  placeholder="Click 'Generate Password' to create password based on email"
+                  readOnly
+                  className="flex-1 p-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-800 bg-gray-50"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  onClick={generatePassword}
+                  disabled={!formData.email || !formData.email.includes('@wmsu.edu.ph')}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed whitespace-nowrap"
                 >
-                  {showPassword ? (
-                    <EyeSlashIcon className="w-5 h-5" />
-                  ) : (
-                    <EyeIcon className="w-5 h-5" />
-                  )}
+                  Generate Password
                 </button>
               </div>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">Confirm Password</label>
-              <div className="relative">
-                <input
-                  type={showConfirmPassword ? "text" : "password"}
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                  required
-                  className={`mt-1 w-full p-2.5 pr-10 border rounded-md focus:outline-none focus:ring-2 ${
-                    formData.password && formData.confirmPassword
-                      ? formData.password === formData.confirmPassword
-                        ? "border-green-500 focus:ring-green-500"
-                        : "border-red-500 focus:ring-red-500"
-                      : "border-gray-300 focus:ring-red-800"
-                  }`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                >
-                  {showConfirmPassword ? (
-                    <EyeSlashIcon className="w-5 h-5" />
-                  ) : (
-                    <EyeIcon className="w-5 h-5" />
-                  )}
-                </button>
-              </div>
-              {formData.password && formData.confirmPassword && (
-                <p className={`text-xs mt-1 ${
-                  formData.password === formData.confirmPassword
-                    ? "text-green-600"
-                    : "text-red-600"
-                }`}>
-                  {formData.password === formData.confirmPassword
-                    ? "✓ Passwords match"
-                    : "✗ Passwords do not match"}
-                </p>
-              )}
+              <p className="text-xs text-gray-500 mt-1">
+                Generate password based on WMSU email (requires valid email first)
+              </p>
             </div>
           </div>
 
@@ -537,6 +504,59 @@ export default function AdminCreateTeacher() {
           </div>
         </form>
       </div>
+      
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6">
+            <div className="text-center">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
+                <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Teacher Account Created Successfully!</h3>
+              <div className="bg-gray-50 rounded-lg p-4 mb-4 text-left">
+                <p className="text-sm text-gray-600 mb-2">
+                  <span className="font-semibold">Email:</span> {formData.email}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-semibold">Password:</span> {formData.password}
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(formData.password);
+                      toast.success('Password copied to clipboard!');
+                    }}
+                    className="ml-2 px-2 py-1 bg-gray-200 text-gray-800 text-xs rounded hover:bg-gray-300 transition-colors"
+                  >
+                    Copy
+                  </button>
+                </p>
+              </div>
+              <p className="text-sm text-red-600 font-semibold mb-4">
+                ⚠️ Please save this password! It will not be shown again.
+              </p>
+              <p className="text-xs text-gray-500 mb-4">
+                Redirecting to Admin Approvals in 15 seconds...
+              </p>
+              <button
+                onClick={() => {
+                  // Clear the redirect timer if user closes modal manually
+                  if (redirectTimer) {
+                    clearTimeout(redirectTimer);
+                    setRedirectTimer(null);
+                  }
+                  setShowSuccessModal(false);
+                  navigate('/admin/approvals');
+                }}
+                className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 font-semibold"
+              >
+                Go to Admin Approvals Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

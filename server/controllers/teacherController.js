@@ -64,30 +64,30 @@ exports.createTeacher = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 12);
 
     // Create teacher
-  const result = await query(
-    `INSERT INTO teachers (
-      first_name, middle_name, last_name, username, email, password, 
-      role, subjects, bio, grade_level, section, profile_pic,
-      verification_status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      firstName, 
-      middleName || null, 
-      lastName, 
-      username, 
-      email, 
-      hashedPassword, 
-      role, 
-      subjects || null, 
-      bio || null,
-      gradeLevel || null,
-      section || null,
-      safeProfilePic || null,
-      'pending',
-      new Date(),
-      new Date()
-    ]
-  );
+    const result = await query(
+      `INSERT INTO teachers (
+        first_name, middle_name, last_name, username, email, password,
+        role, subjects, bio, grade_level, section, profile_pic,
+        verification_status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        firstName, 
+        middleName || null, 
+        lastName, 
+        username, 
+        email, 
+        hashedPassword,
+        role, 
+        subjects || null, 
+        bio || null,
+        gradeLevel || null,
+        section || null,
+        safeProfilePic || null,
+        'pending',
+        new Date(),
+        new Date()
+      ]
+    );
 
     res.status(201).json({ 
       message: `${role.charAt(0).toUpperCase() + role.slice(1)} account created successfully!`,
@@ -105,7 +105,7 @@ exports.getAllTeachers = async (req, res) => {
   try {
     const teachers = await query(
       `SELECT id, first_name, middle_name, last_name, username, email, role, 
-       grade_level, section, subjects, bio, profile_pic, verification_status, 
+       grade_level, section, subjects, bio, profile_pic, password, verification_status, 
        created_at, updated_at FROM teachers ORDER BY created_at DESC`
     );
     
@@ -121,9 +121,12 @@ exports.getAllTeachers = async (req, res) => {
       role: teacher.role,
       gradeLevel: teacher.grade_level,
       section: teacher.section,
-      subjects: teacher.subjects,
+      subjects: teacher.subjects ? 
+        (teacher.subjects.startsWith('[') ? JSON.parse(teacher.subjects) : teacher.subjects.split(', ').map(s => s.trim()).filter(s => s)) 
+        : [],
       bio: teacher.bio,
       profilePic: teacher.profile_pic,
+      plainPassword: teacher.password, // Use password field for CSV export
       verificationStatus: teacher.verification_status,
       createdAt: teacher.created_at,
       updatedAt: teacher.updated_at
