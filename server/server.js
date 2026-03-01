@@ -395,19 +395,21 @@ app.post('/api/admin/bulk-import-teachers', async (req, res) => {
       return res.status(400).json({ error: 'Invalid teachers data' });
     }
 
-    let imported = 0;
-    let updated = 0;
-    let errors = 0;
+let imported = 0;
+let updated = 0;
+let errors = 0;
 
-    for (const teacher of teachers) {
-      try {
-        // Generate integer ID based on timestamp
-        const teacherId = Date.now() + Math.floor(Math.random() * 1000);
-        const fullName = `${teacher.firstName || ''} ${teacher.middleName || ''} ${teacher.lastName || ''}`.trim();
+for (const teacher of teachers) {
+try {
+// Generate smaller integer ID (max 9 digits to fit in most INT ranges)
+const teacherId = Math.floor(Math.random() * 900000000) + 100000000;
+const fullName = `${teacher.firstName || ''} ${teacher.middleName || ''} ${teacher.lastName || ''}`.trim();
 
-        // Check if teacher already exists by email
-        const existingTeachers = await query(
-          'SELECT id FROM teachers WHERE email = ?',
+// Check if teacher already exists by email
+const existingTeachers = await query(
+'SELECT id FROM teachers WHERE email = ?',
+[teacher.email]
+);
           [teacher.email]
         );
 
