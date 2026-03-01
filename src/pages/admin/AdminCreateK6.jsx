@@ -10,23 +10,26 @@ export default function AdminCreateK6() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdStudentEmail, setCreatedStudentEmail] = useState('');
   const [createdStudentPassword, setCreatedStudentPassword] = useState('');
+  const [redirectTimer, setRedirectTimer] = useState(null);
   const [formData, setFormData] = useState({
-    profilePic: "",
-    lrn: "",
-    firstName: "",
-    middleName: "",
-    lastName: "",
-    age: "",
-    sex: "",
-    gradeLevel: "",
-    section: "",
-    parentFirstName: "",
-    parentLastName: "",
-    parentEmail: "@gmail.com",
-    parentContact: "",
-    wmsuEmail: "",
-    password: "",
+    lrn: '',
+    firstName: '',
+    middleName: '',
+    lastName: '',
+    age: '',
+    sex: '',
+    gradeLevel: '',
+    section: '',
+    parentFirstName: '',
+    parentLastName: '',
+    parentEmail: '@gmail.com',
+    parentContact: '',
+    wmsuEmail: '',
+    password: '',
+    profilePic: null,
   });
+
+  const [profilePicPreview, setProfilePicPreview] = useState(null);
 
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -60,36 +63,47 @@ const handleSubmit = async (e) => {
       return;
     }
 
-    // ---------------------------
-    // Prepare FormData
-    // ---------------------------
-    const fd = new FormData();
-    fd.append('lrn', formData.lrn.trim());
-    fd.append('firstName', formData.firstName.trim());
-    fd.append('middleName', formData.middleName.trim());
-    fd.append('lastName', formData.lastName.trim());
-    fd.append('age', formData.age);
-    fd.append('sex', formData.sex);
-    fd.append('gradeLevel', formData.gradeLevel);
-    fd.append('section', formData.section);
-    fd.append('parentFirstName', formData.parentFirstName.trim());
-    fd.append('parentLastName', formData.parentLastName.trim());
-    fd.append('parentEmail', formData.parentEmail.trim());
-    fd.append('parentContact', formData.parentContact.trim());
-    fd.append('studentEmail', formData.wmsuEmail.trim());
-    fd.append('password', formData.password);
-
-    // Append profile picture file if available
-    if (formData.profilePic) {
-      fd.append('profilePic', formData.profilePic);
+    // Convert profile picture to base64 if it exists
+    let profilePicBase64 = null;
+    if (formData.profilePic && formData.profilePic instanceof File) {
+      profilePicBase64 = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(formData.profilePic);
+      });
     }
+
+    // ---------------------------
+    // Prepare student data
+    // ---------------------------
+    const studentData = {
+      lrn: formData.lrn.trim(),
+      firstName: formData.firstName.trim(),
+      middleName: formData.middleName.trim(),
+      lastName: formData.lastName.trim(),
+      age: formData.age,
+      sex: formData.sex,
+      gradeLevel: formData.gradeLevel,
+      section: formData.section,
+      parentFirstName: formData.parentFirstName.trim(),
+      parentLastName: formData.parentLastName.trim(),
+      parentEmail: formData.parentEmail.trim(),
+      parentContact: formData.parentContact.trim(),
+      studentEmail: formData.wmsuEmail.trim(),
+      password: formData.password,
+      profilePic: profilePicBase64,
+    };
 
     // ---------------------------
     // Send to backend
     // ---------------------------
     const response = await fetch(`${API_BASE_URL}/students`, {
       method: 'POST',
-      body: fd, // <-- FormData automatically sets multipart/form-data
+      headers: {
+        'Content-Type': 'application/json',
+      'Accept': 'application/json'
+      },
+      body: JSON.stringify(studentData)
     });
 
     const result = await response.json();
@@ -101,7 +115,8 @@ const handleSubmit = async (e) => {
       setShowSuccessModal(true);
 
       // Redirect after 15 seconds
-      setTimeout(() => navigate('/admin/approvals'), 15000);
+      const timer = setTimeout(() => navigate('/admin/approvals'), 15000);
+      setRedirectTimer(timer);
 
       // Reset form
       setFormData({
@@ -110,6 +125,7 @@ const handleSubmit = async (e) => {
         parentLastName: "", parentEmail: "", parentContact: "",
         wmsuEmail: "", password: ""
       });
+      setProfilePicPreview(null);
       setGeneratedPassword("");
       setShowPassword(false);
     } else {
@@ -132,8 +148,8 @@ const handleSubmit = async (e) => {
         <div className="flex flex-col items-center mb-8">
           <div className="relative">
             <div className="w-32 h-32 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 p-1 shadow-xl">
-              {formData.profilePic ? (
-                <img src={formData.profilePic} alt="Student" className="w-full h-full rounded-full object-cover border-4 border-white" />
+              {profilePicPreview ? (
+                <img src={profilePicPreview} alt="Student" className="w-full h-full rounded-full object-cover border-4 border-white" />
               ) : (
                 <div className="w-full h-full rounded-full bg-gray-200 border-4 border-white flex items-center justify-center">
                   <UserCircleIcon className="w-20 h-20 text-gray-400" />
@@ -152,6 +168,10 @@ const handleSubmit = async (e) => {
                 onChange={(e) => {
                   const file = e.target.files[0];
                   if (file) {
+                    // Create preview URL immediately
+                    const previewUrl = URL.createObjectURL(file);
+                    setProfilePicPreview(previewUrl);
+                    
                     // Optional: resize/compress before storing
                     const img = new Image();
                     const reader = new FileReader();
@@ -189,6 +209,8 @@ const handleSubmit = async (e) => {
                       img.src = event.target.result;
                     };
                     reader.readAsDataURL(file);
+                  } else {
+                    setProfilePicPreview(null);
                   }
                 }}
               />
@@ -436,6 +458,11 @@ const handleSubmit = async (e) => {
               </p>
               <button
                 onClick={() => {
+                  // Clear the redirect timer if user closes modal manually
+                  if (redirectTimer) {
+                    clearTimeout(redirectTimer);
+                    setRedirectTimer(null);
+                  }
                   setShowSuccessModal(false);
                   navigate('/admin/approvals');
                 }}

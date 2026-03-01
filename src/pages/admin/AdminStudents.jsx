@@ -17,10 +17,10 @@ import { API_BASE_URL } from "../../api/config";
 
 // Helper functions for QR code URL handling
 const getQRCodeUrl = (qrCode) => {
-  // Use the new API endpoint for QR codes
-  const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  // Use the base URL without /api suffix for static files
+  const baseUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
   const filename = qrCode.split('/').pop();
-  return `${baseUrl}/api/qrcodes/${filename}`;
+  return `${baseUrl}/qrcodes/${filename}`;
 };
 
 const getAlternativeQRUrls = (qrCode) => {
@@ -667,18 +667,18 @@ export default function AdminStudents() {
                     console.error('QR Code load error. File path:', selectedStudent.qrCode);
                     console.error('Attempted URL:', e.target.src);
                     
-                    // Try the API endpoint if static route fails
-                    const filename = selectedStudent.qrCode.split('/').pop();
-                    const apiUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/qrcodes/${filename}`;
+                    // Try the exact database path if static route fails
+                    const baseUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+                    const fallbackUrl = `${baseUrl}${selectedStudent.qrCode}`;
                     
-                    if (e.target.src !== apiUrl) {
-                      console.log('Trying API endpoint:', apiUrl);
-                      e.target.src = apiUrl;
+                    if (e.target.src !== fallbackUrl) {
+                      console.log('Trying fallback path:', fallbackUrl);
+                      e.target.src = fallbackUrl;
                       return;
                     }
                     
-                    // If API endpoint fails, show fallback immediately
-                    console.warn('QR code not available via API, showing fallback');
+                    // If fallback fails, show fallback immediately
+                    console.warn('QR code not available, showing fallback');
                     e.target.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22256%22 height=%22256%22%3E%3Crect fill=%22%23f3f4f6%22 width=%22256%22 height=%22256%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22 font-family=%22Arial%22 font-size=%2214%22 fill=%22%236b7280%22%3EQR Code%3C/text%3E%3Ctext x=%2250%25%22 y=%2260%25%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22 font-family=%22Arial%22 font-size=%2212%22 fill=%22%239ca3af%22%3ENot Available%3C/text%3E%3C/svg%3E';
                   }}
                   onLoad={() => {
