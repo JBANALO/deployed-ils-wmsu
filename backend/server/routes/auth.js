@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 const { getUsers, inMemoryUsers } = require('./users'); // Import to access users array
 
 // Sample user data for fallback when MySQL is not available
-// Password hashed with bcrypt (test123 = $2b$10$3q2/J3TkVtZSTGULJ5ZGmuPj7kLPtqd1QhVQqGXJo45rZkPc8.q8K)
+// Passwords are bcrypt hashed (round 10)
 const SAMPLE_USERS = [
   {
     id: '63bc1bd0-359f-4372-8581-5a626e5e16f7',
@@ -16,7 +16,7 @@ const SAMPLE_USERS = [
     first_name: 'Josie',
     last_name: 'Banalo',
     full_name: 'Josie Banalo',
-    password: '$2b$10$3q2/J3TkVtZSTGULJ5ZGmuPj7kLPtqd1QhVQqGXJo45rZkPc8.q8K', // bcrypt hashed: Admin123
+    password: '$2b$10$hrq5BnQF9oV47hxTcfLz2eLkY72BR0LEmEIWEyYKlU0DjEQxur/du', // bcrypt hashed: Admin123
     role: 'admin',
     approval_status: 'approved'
   },
@@ -27,7 +27,7 @@ const SAMPLE_USERS = [
     first_name: 'Josie',
     last_name: 'Banalo',
     full_name: 'Josie Banalo',
-    password: '$2b$10$3q2/J3TkVtZSTGULJ5ZGmuPj7kLPtqd1QhVQqGXJo45rZkPc8.q8K', // bcrypt hashed: test123
+    password: '$2b$10$6Ouo8QRxR1wcz953iq8vq.iU7fZb5m5KxuznSuWOExVgEnFLr7PTC', // bcrypt hashed: test123
     role: 'subject_teacher',
     subjects_handled: 'Math,Science,English',
     approval_status: 'approved'
