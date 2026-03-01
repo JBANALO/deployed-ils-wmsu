@@ -103,11 +103,18 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
     setStep('importing');
     
     try {
+      console.log('🚀 Starting bulk import with', csvData.length, 'teachers');
+      console.log('📊 CSV Data:', csvData);
+      
       const response = await api.post('/admin/bulk-import-teachers', {
         teachers: csvData
       });
       
+      console.log('✅ Import API Response:', response.data);
+      
       const { imported, updated, errors, total } = response.data;
+      
+      console.log('📈 Import Results:', { imported, updated, errors, total });
       
       setImportResults([
         ...csvData.map((teacher, index) => ({
@@ -130,10 +137,11 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
       }, 2000);
       
     } catch (error) {
-      console.error('Import error:', error);
+      console.error('❌ Import error:', error);
+      console.error('❌ Error response:', error.response);
       setStep('upload');
       setIsImporting(false);
-      toast.error('Import failed: ' + error.message);
+      toast.error('Import failed: ' + (error.response?.data?.error || error.message));
     }
   };
 
