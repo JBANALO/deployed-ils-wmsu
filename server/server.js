@@ -407,11 +407,9 @@ const fullName = `${teacher.firstName || ''} ${teacher.middleName || ''} ${teach
 
 // Check if teacher already exists by email
 const existingTeachers = await query(
-'SELECT id FROM teachers WHERE email = ?',
-[teacher.email]
+  'SELECT id FROM teachers WHERE email = ?',
+  [teacher.email]
 );
-          [teacher.email]
-        );
 
         if (existingTeachers && existingTeachers.length > 0) {
           // Update existing
