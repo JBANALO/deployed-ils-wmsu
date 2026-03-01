@@ -434,8 +434,11 @@ const handleSubmit = async (e) => {
                 <p className="text-sm text-gray-600 mb-2">
                   <span className="font-semibold">Email:</span> {createdStudentEmail}
                   <button
-                    onClick={() => navigator.clipboard.writeText(createdStudentEmail)}
-                    className="ml-2 text-blue-600 underline text-xs"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdStudentEmail);
+                      toast.success('Email copied to clipboard!');
+                    }}
+                    className="ml-2 px-2 py-1 bg-gray-200 text-gray-800 text-xs rounded hover:bg-gray-300 transition-colors"
                   >
                     Copy
                   </button>
@@ -443,8 +446,11 @@ const handleSubmit = async (e) => {
                 <p className="text-sm text-gray-600">
                   <span className="font-semibold">Password:</span> {createdStudentPassword}
                   <button
-                    onClick={() => navigator.clipboard.writeText(createdStudentPassword)}
-                    className="ml-2 text-blue-600 underline text-xs"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdStudentPassword);
+                      toast.success('Password copied to clipboard!');
+                    }}
+                    className="ml-2 px-2 py-1 bg-gray-200 text-gray-800 text-xs rounded hover:bg-gray-300 transition-colors"
                   >
                     Copy
                   </button>
