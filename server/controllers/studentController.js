@@ -39,13 +39,12 @@ function formatStudent(s) {
 // HELPER: Generate QR code file
 // -----------------------------
 async function generateQRCodeFile(studentData, qrCodePath) {
-  const qrData = JSON.stringify({
-    lrn: studentData.lrn,
-    name: `${studentData.firstName} ${studentData.middleName || ''} ${studentData.lastName}`.trim(),
-    gradeLevel: studentData.gradeLevel,
-    section: studentData.section,
-    studentEmail: studentData.studentEmail
-  });
+  const qrData = `LRN: ${studentData.lrn}
+Full Name: ${studentData.lastName}, ${studentData.firstName} ${studentData.middleName || ''}
+Class: ${studentData.gradeLevel} - ${studentData.section}
+Email: ${studentData.studentEmail}
+Department: ILS - Elementary Department
+School: Western Mindanao State University`;
 
   await QRCode.toFile(qrCodePath, qrData, {
     width: 300,
@@ -62,10 +61,14 @@ exports.createStudent = async (req, res) => {
   let qrCodePath = null;
 
   try {
+    console.log('=== STUDENT CREATION DEBUG ===');
+    console.log('req.body keys:', Object.keys(req.body));
+    console.log('profilePic in req.body:', req.body.profilePic);
+    
     const {
       lrn, firstName, middleName, lastName, age, sex,
       parentFirstName, parentLastName, parentEmail, parentContact,
-      studentEmail, password, gradeLevel, section
+      studentEmail, password, gradeLevel, section, profilePic
     } = req.body;
 
     // Validate required fields
@@ -85,19 +88,15 @@ exports.createStudent = async (req, res) => {
     const uploadFolder = path.join(__dirname, '../public/student_profiles');
     fs.mkdirSync(uploadFolder, { recursive: true });
 
-    if (req.files?.profilePic) {
-      const profilePic = req.files.profilePic;
-      const fileName = `profile_${lrn}_${Date.now()}.${profilePic.name.split('.').pop()}`;
-      profilePicPath = path.join(uploadFolder, fileName);
-      fs.renameSync(profilePic.path, profilePicPath);
-    } else if (req.body.profilePic?.startsWith('data:image/')) {
-      const matches = req.body.profilePic.match(/^data:image\/([a-zA-Z]+);base64,(.+)$/);
+    if (profilePic?.startsWith('data:image/')) {
+      const matches = profilePic.match(/^data:image\/([a-zA-Z]+);base64,(.+)$/);
       if (matches) {
         const imageType = matches[1];
         const base64Data = matches[2];
         const fileName = `profile_${lrn}_${Date.now()}.${imageType}`;
         profilePicPath = path.join(uploadFolder, fileName);
         fs.writeFileSync(profilePicPath, base64Data, 'base64');
+        console.log('Profile picture saved:', profilePicPath);
       }
     }
     const safeProfilePic = profilePicPath ? `/student_profiles/${path.basename(profilePicPath)}` : null;
