@@ -46,22 +46,26 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    // Normalize email/username to lowercase for comparison
+    const normalizedEmail = email ? email.toLowerCase() : null;
+    const normalizedUsername = username ? username.toLowerCase() : null;
+
     // Combine both sample users and in-memory users
-    const allUsers = [...SAMPLE_USERS, ...IN_MEMORY_USERS];
+    const allUsers = [...SAMPLE_USERS, ...inMemoryUsers];
     let users = [];
     let usesFallback = false;
 
     try {
-      // Try to query from database
+      // Try to query from database (case-insensitive)
       let query = 'SELECT * FROM users WHERE ';
       let params = [];
 
-      if (email) {
-        query += 'email = ?';
-        params.push(email);
+      if (normalizedEmail) {
+        query += 'LOWER(email) = ?';
+        params.push(normalizedEmail);
       } else {
-        query += 'username = ?';
-        params.push(username);
+        query += 'LOWER(username) = ?';
+        params.push(normalizedUsername);
       }
 
       [users] = await pool.query(query, params);
@@ -69,10 +73,10 @@ router.post('/login', async (req, res) => {
       console.log('Database query failed, using fallback data:', dbError.message);
       usesFallback = true;
       
-      // Use combined users array directly
+      // Use combined users array directly (case-insensitive)
       users = allUsers.filter(user => {
-        if (email) return user.email === email;
-        if (username) return user.username === username;
+        if (normalizedEmail) return user.email.toLowerCase() === normalizedEmail;
+        if (normalizedUsername) return user.username.toLowerCase() === normalizedUsername;
         return false;
       });
     }
@@ -90,8 +94,8 @@ router.post('/login', async (req, res) => {
     let isPasswordValid = false;
     
     if (usesFallback) {
-      // Check if user is from IN_MEMORY_USERS (has hashed password)
-      const isInMemoryUser = IN_MEMORY_USERS.find(u => u.id === user.id);
+      // Check if user is from inMemoryUsers (has hashed password)
+      const isInMemoryUser = inMemoryUsers.find(u => u.id === user.id);
       if (isInMemoryUser) {
         // Use bcrypt comparison for in-memory users (hashed passwords)
         try {
