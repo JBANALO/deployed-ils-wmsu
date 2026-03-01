@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const { getUsers, inMemoryUsers } = require('./users'); // Import to access users array
 
 // Sample user data for fallback when MySQL is not available
+// Password hashed with bcrypt (test123 = $2b$10$3q2/J3TkVtZSTGULJ5ZGmuPj7kLPtqd1QhVQqGXJo45rZkPc8.q8K)
 const SAMPLE_USERS = [
   {
     id: '63bc1bd0-359f-4372-8581-5a626e5e16f7',
@@ -15,7 +16,7 @@ const SAMPLE_USERS = [
     first_name: 'Josie',
     last_name: 'Banalo',
     full_name: 'Josie Banalo',
-    password: 'Admin123',
+    password: '$2b$10$3q2/J3TkVtZSTGULJ5ZGmuPj7kLPtqd1QhVQqGXJo45rZkPc8.q8K', // bcrypt hashed: Admin123
     role: 'admin',
     approval_status: 'approved'
   },
@@ -26,7 +27,7 @@ const SAMPLE_USERS = [
     first_name: 'Josie',
     last_name: 'Banalo',
     full_name: 'Josie Banalo',
-    password: 'test123',
+    password: '$2b$10$3q2/J3TkVtZSTGULJ5ZGmuPj7kLPtqd1QhVQqGXJo45rZkPc8.q8K', // bcrypt hashed: test123
     role: 'subject_teacher',
     subjects_handled: 'Math,Science,English',
     approval_status: 'approved'
@@ -95,43 +96,37 @@ router.post('/login', async (req, res) => {
       email: user.email,
       username: user.username,
       has_password: !!user.password,
+      password_length: user.password?.length || 0,
+      password_starts_with_hash: user.password?.startsWith('$2') || false,
       source: usesFallback ? 'fallback' : 'database'
     });
 
     // Debug logging
     console.log('=== PASSWORD VALIDATION ===');
-    console.log('User found:', user.email);
-    console.log('Using fallback:', usesFallback);
-    console.log('Password to check:', password);
-    console.log('Stored password:', user.password);
-    console.log('Stored password length:', user.password.length);
-    console.log('Is bcrypt hash (starts with $2):', user.password.startsWith('$2'));
+    console.log('Input password:', password);
+    console.log('Stored password type:', user.password?.startsWith('$2') ? 'bcrypt' : 'plaintext');
 
-    // Compare password
+    // Compare password - always try bcrypt first
     let isPasswordValid = false;
     
-    // Try plain text comparison first (works for sample users)
-    if (password === user.password) {
-      console.log('✅ Plain text password match!');
-      isPasswordValid = true;
-    } else {
-      // Try bcrypt comparison (works for hashed passwords)
-      try {
-        isPasswordValid = await bcrypt.compare(password, user.password);
-        if (isPasswordValid) {
-          console.log('✅ Bcrypt password match!');
-        } else {
-          console.log('❌ Bcrypt comparison returned false');
-        }
-      } catch (err) {
-        console.log('⚠️ Bcrypt comparison error:', err.message);
-        // If bcrypt fails, password is likely not hashed, try plain text
+    try {
+      isPasswordValid = await bcrypt.compare(password, user.password);
+      if (isPasswordValid) {
+        console.log('✅ Bcrypt password match!');
+      } else {
+        console.log('❌ Bcrypt comparison returned false - trying plaintext...');
         isPasswordValid = password === user.password;
         if (isPasswordValid) {
-          console.log('✅ Plain text password match (after bcrypt error)!');
-        } else {
-          console.log('❌ Plain text comparison also failed');
+          console.log('✅ Plaintext password match (after bcrypt failed)!');
         }
+      }
+    } catch (err) {
+      console.log('⚠️ Bcrypt error:', err.message, '- trying plaintext...');
+      isPasswordValid = password === user.password;
+      if (isPasswordValid) {
+        console.log('✅ Plaintext password match (after bcrypt error)!');
+      } else {
+        console.log('❌ Plaintext comparison also failed');
       }
     }
 
