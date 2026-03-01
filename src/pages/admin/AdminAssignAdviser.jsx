@@ -41,19 +41,28 @@ export default function AdminAssignAdviser() {
       }
 
       // Fetch teachers/advisers
-      const teachersResponse = await fetch(`${API_BASE_URL}/users`);
+      const teachersResponse = await fetch(`${API_BASE_URL}/teachers`);
       if (teachersResponse.ok) {
         const data = await teachersResponse.json();
-        const allUsers = data.data?.users || data.users || [];
+        const allTeachers = data.data?.teachers || data.teachers || [];
         
-        // Filter for all teaching roles: teacher, subject_teacher, adviser
-        const teachersList = allUsers.filter(user => {
-          const role = (user.role || '').toLowerCase().trim();
-          return role === 'teacher' || role === 'subject_teacher' || role === 'adviser';
-        });
+        console.log('Teachers fetched:', allTeachers);
         
-        toast.success(`Found ${teachersList.length} teachers/advisers`);
+        // Include all approved teachers regardless of role (they might be advisers)
+        const teachersList = Array.isArray(allTeachers) ? allTeachers : [];
+        
+        console.log('Teachers list after filter:', teachersList);
+        console.log('Teachers list length:', teachersList.length);
+        
+        if (teachersList.length === 0) {
+          toast.warning('No teachers/advisers found in the system');
+        } else {
+          toast.success(`Found ${teachersList.length} teachers/advisers`);
+        }
         setTeachers(teachersList);
+      } else {
+        console.error('Teachers fetch failed:', teachersResponse.status);
+        toast.error(`Failed to load teachers: ${teachersResponse.status}`);
       }
     } catch (error) {
       toast.error('Error loading data: ' + error.message);

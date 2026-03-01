@@ -22,7 +22,7 @@ workflows:
       - name: Build APK via EAS
         script: |
           cd MyNewApp
-          eas build --platform android --non-interactive --wait
+          eas build --platform android --wait
     artifacts:
       - MyNewApp/dist/**/*.apk
       - MyNewApp/build/**/*.apk

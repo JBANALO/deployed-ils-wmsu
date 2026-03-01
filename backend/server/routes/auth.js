@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const { getUsers, inMemoryUsers } = require('./users'); // Import to access users array
 
 // Sample user data for fallback when MySQL is not available
+// Passwords are bcrypt hashed (round 10)
 const SAMPLE_USERS = [
   {
     id: '63bc1bd0-359f-4372-8581-5a626e5e16f7',
@@ -15,7 +16,7 @@ const SAMPLE_USERS = [
     first_name: 'Josie',
     last_name: 'Banalo',
     full_name: 'Josie Banalo',
-    password: 'Admin123',
+    password: '$2b$10$hrq5BnQF9oV47hxTcfLz2eLkY72BR0LEmEIWEyYKlU0DjEQxur/du', // bcrypt hashed: Admin123
     role: 'admin',
     approval_status: 'approved'
   },
@@ -26,7 +27,7 @@ const SAMPLE_USERS = [
     first_name: 'Josie',
     last_name: 'Banalo',
     full_name: 'Josie Banalo',
-    password: 'test123',
+    password: '$2b$10$6Ouo8QRxR1wcz953iq8vq.iU7fZb5m5KxuznSuWOExVgEnFLr7PTC', // bcrypt hashed: test123
     role: 'subject_teacher',
     subjects_handled: 'Math,Science,English',
     approval_status: 'approved'
@@ -46,22 +47,26 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    // Normalize email/username to lowercase for comparison
+    const normalizedEmail = email ? email.toLowerCase() : null;
+    const normalizedUsername = username ? username.toLowerCase() : null;
+
     // Combine both sample users and in-memory users
-    const allUsers = [...SAMPLE_USERS, ...IN_MEMORY_USERS];
+    const allUsers = [...SAMPLE_USERS, ...inMemoryUsers];
     let users = [];
     let usesFallback = false;
 
     try {
-      // Try to query from database
+      // Try to query from database (case-insensitive)
       let query = 'SELECT * FROM users WHERE ';
       let params = [];
 
-      if (email) {
-        query += 'email = ?';
-        params.push(email);
+      if (normalizedEmail) {
+        query += 'LOWER(email) = ?';
+        params.push(normalizedEmail);
       } else {
-        query += 'username = ?';
-        params.push(username);
+        query += 'LOWER(username) = ?';
+        params.push(normalizedUsername);
       }
 
       [users] = await pool.query(query, params);
@@ -69,15 +74,16 @@ router.post('/login', async (req, res) => {
       console.log('Database query failed, using fallback data:', dbError.message);
       usesFallback = true;
       
-      // Use combined users array directly
+      // Use combined users array directly (case-insensitive)
       users = allUsers.filter(user => {
-        if (email) return user.email === email;
-        if (username) return user.username === username;
+        if (normalizedEmail) return user.email.toLowerCase() === normalizedEmail;
+        if (normalizedUsername) return user.username.toLowerCase() === normalizedUsername;
         return false;
       });
     }
 
     if (users.length === 0) {
+      console.log('❌ User not found');
       return res.status(401).json({
         status: 'error',
         message: 'Invalid email or password'
@@ -85,41 +91,54 @@ router.post('/login', async (req, res) => {
     }
 
     const user = users[0];
+    console.log('✅ User found:', {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      has_password: !!user.password,
+      password_length: user.password?.length || 0,
+      password_starts_with_hash: user.password?.startsWith('$2') || false,
+      source: usesFallback ? 'fallback' : 'database'
+    });
 
-    // Compare password
+    // Debug logging
+    console.log('=== PASSWORD VALIDATION ===');
+    console.log('Input password:', password);
+    console.log('Stored password type:', user.password?.startsWith('$2') ? 'bcrypt' : 'plaintext');
+
+    // Compare password - always try bcrypt first
     let isPasswordValid = false;
     
-    if (usesFallback) {
-      // Check if user is from IN_MEMORY_USERS (has hashed password)
-      const isInMemoryUser = IN_MEMORY_USERS.find(u => u.id === user.id);
-      if (isInMemoryUser) {
-        // Use bcrypt comparison for in-memory users (hashed passwords)
-        try {
-          isPasswordValid = await bcrypt.compare(password, user.password);
-        } catch (err) {
-          console.log('Bcrypt comparison failed for in-memory user:', err.message);
-          isPasswordValid = false;
-        }
+    try {
+      isPasswordValid = await bcrypt.compare(password, user.password);
+      if (isPasswordValid) {
+        console.log('✅ Bcrypt password match!');
       } else {
-        // Direct comparison for sample users (plain text passwords)
+        console.log('❌ Bcrypt comparison returned false - trying plaintext...');
         isPasswordValid = password === user.password;
+        if (isPasswordValid) {
+          console.log('✅ Plaintext password match (after bcrypt failed)!');
+        }
       }
-    } else {
-      // Use bcrypt for database passwords
-      try {
-        isPasswordValid = await bcrypt.compare(password, user.password);
-      } catch (err) {
-        console.log('Bcrypt comparison failed, trying plain text:', err.message);
-        isPasswordValid = password === user.password;
+    } catch (err) {
+      console.log('⚠️ Bcrypt error:', err.message, '- trying plaintext...');
+      isPasswordValid = password === user.password;
+      if (isPasswordValid) {
+        console.log('✅ Plaintext password match (after bcrypt error)!');
+      } else {
+        console.log('❌ Plaintext comparison also failed');
       }
     }
 
     if (!isPasswordValid) {
+      console.log('❌ Password validation failed');
       return res.status(401).json({
         status: 'error',
         message: 'Invalid email or password'
       });
     }
+    
+    console.log('✅ Login validation passed');
 
     
     // Return user data (don't return password)
