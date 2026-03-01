@@ -448,8 +448,8 @@ const existingTeachers = await query(
             await query(
               `INSERT INTO teachers (
                 id, first_name, middle_name, last_name, username, email, password, 
-                role, grade_level, section, subjects, bio, verification_status
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                role, grade_level, section, subjects, bio, verification_status, profile_pic
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 teacherId,
                 teacher.firstName || null, 
@@ -463,7 +463,8 @@ const existingTeachers = await query(
                 teacher.section || null,
                 JSON.stringify(teacher.subjects || []), 
                 teacher.bio || null, 
-                'approved'
+                'approved',
+                'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDEyQzEyIDkuMzQzMTQgMTJDMiAxNC42NTY5IDggOCAxNkMxMi42NTY5IDEyIDEyLjQ0NzcgMiAxMSA0SDEzQzEzIDEzLjU1MjMgMTIuNDQ3NyAxNCAxMSAxNEg5QzguNDQ3NyAxNCA3LjU1MjMgMTMuNTUyMyA3LjU1MjMgMTNDNy41NTIzIDEyLjQ0NzcgOCAxMiA4QzggMTEuNTUyMyA0LjQ0NzcgMTEgMTJDMTQgMTIuNDQ3NyAxMy41NTIzIDEzLjU1MjMgMTIuNDQ3NyAxNCAxMSAxNEg5QzguNDQ3NyAxNCA3LjU1MjMgMTMuNTUyMyA3LjU1MjMgMTNDNy41NTIzIDEyLjQ0NzcgOCAxMiA4WiIgZmlsbD0iI0RDMkQyRCIvPgo8cGF0aCBkPSJNMTIgNEMxMi41NTIzIDQgMTMgMy41NTIzIDEzIDggOCAxNkMxMi42NTY5IDggOCAxNkMxMi42NTY5IDEyIDEyLjQ0NzcgMiAxMSA0SDEzQzEzIDEzLjU1MjMgMTIuNDQ3NyAxNCAxMSAxNEg5QzguNDQ3NyAxNCA3LjU1MjMgMTMuNTUyMyA3LjU1MjMgMTNDNy41NTIzIDEyLjQ0NzcgOCAxMiA4WiIgZmlsbD0iI0RDMkQyRCIvPgo8L3N2Zz4K' // Default user icon
               ]
             );
             imported++;

@@ -111,6 +111,8 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
       });
       
       console.log('✅ Import API Response:', response.data);
+      console.log('📈 Import Results:', { imported: response.data.imported, updated: response.data.updated, errors: response.data.errors, total: response.data.total });
+      console.log('📊 Response details:', JSON.stringify(response.data, null, 2));
       
       const { imported, updated, errors, total } = response.data;
       

@@ -54,7 +54,6 @@ export default function AdminApprovals() {
       setDeclinedUsers(allDeclinedUsers);
     } catch (error) {
       console.error('Error fetching declined users:', error);
-      setDeclinedUsers([]);
     }
   };
 
@@ -121,6 +120,7 @@ export default function AdminApprovals() {
       if (showLoading) {
         setLoading(true);
       }
+      
       console.log('Fetching pending users...');
       const [teachersResponse, studentsResponse] = await Promise.all([
         api.get('/teachers/pending'),
@@ -134,6 +134,7 @@ export default function AdminApprovals() {
       const pendingTeachers = teachersResponse.data?.data?.teachers || teachersResponse.data?.teachers || [];
       const pendingStudents = studentsResponse.data?.data?.students || studentsResponse.data?.students || [];
       const allPendingUsers = [...pendingTeachers, ...pendingStudents];
+      
       console.log('Pending teachers:', pendingTeachers);
       console.log('Pending students:', pendingStudents);
       console.log('All pending users:', allPendingUsers);
@@ -307,7 +308,7 @@ export default function AdminApprovals() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              {loading ? 'Refreshing...' : 'Refresh'}
+              {loading ? 'Loading...' : 'Refresh'}
             </button>
           </div>
 
@@ -526,18 +527,7 @@ export default function AdminApprovals() {
             <p className="text-gray-600">
               Review declined accounts and restore if needed. These accounts can be restored to pending status.
             </p>
-            <button
-              onClick={() => fetchDeclinedUsers()}
-              disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {loading ? 'Refreshing...' : 'Refresh'}
-            </button>
           </div>
-
           {declinedUsers.length === 0 ? (
             <div className="bg-white rounded-lg shadow p-8 text-center">
               <p className="text-gray-500 text-lg">No declined accounts at this time.</p>
