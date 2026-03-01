@@ -90,6 +90,9 @@ function App() {
               <Route path="/admin/create-account" element={<CreateAccount />} />
             </Route>
 
+            {/* Temporary public admin creation - remove after use! */}
+            <Route path="/admin/create-new-admin" element={<CreateAccount />} />
+
             <Route path="/layouts/student/student-topbar" element={<StudentTopbar />} />
             <Route path="/student/student-dashboard" element={<StudentDashboard />} />
             <Route path="/student/grades-table" element={<GradesTable />} />
