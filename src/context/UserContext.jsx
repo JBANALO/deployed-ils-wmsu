@@ -12,17 +12,27 @@ export const UserProvider = ({ children }) => {
     console.log('UserContext - storedUser from localStorage:', storedUser);
     
     if (storedUser) {
-      const parsedUser = JSON.parse(storedUser);
-      console.log('UserContext - parsedUser:', parsedUser);
-      setAdminUser(parsedUser);
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        console.log('UserContext - parsedUser:', parsedUser);
+        console.log('UserContext - parsedUser.profileImage:', parsedUser.profileImage);
+        setAdminUser(parsedUser);
+      } catch (error) {
+        console.error('UserContext - Error parsing stored user:', error);
+        localStorage.removeItem("user");
+      }
     }
 
     const handleStorage = (e) => {
       console.log('UserContext - storage event:', e.key, e.newValue);
       if (e.key === "user" && e.newValue) {
-        const parsedUser = JSON.parse(e.newValue);
-        console.log('UserContext - updating from storage event:', parsedUser);
-        setAdminUser(parsedUser);
+        try {
+          const parsedUser = JSON.parse(e.newValue);
+          console.log('UserContext - updating from storage event:', parsedUser);
+          setAdminUser(parsedUser);
+        } catch (error) {
+          console.error('UserContext - Error parsing storage event user:', error);
+        }
       }
     };
     window.addEventListener("storage", handleStorage);
