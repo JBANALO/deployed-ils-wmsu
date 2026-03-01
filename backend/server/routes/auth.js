@@ -82,6 +82,7 @@ router.post('/login', async (req, res) => {
     }
 
     if (users.length === 0) {
+      console.log('❌ User not found');
       return res.status(401).json({
         status: 'error',
         message: 'Invalid email or password'
@@ -89,41 +90,60 @@ router.post('/login', async (req, res) => {
     }
 
     const user = users[0];
+    console.log('✅ User found:', {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      has_password: !!user.password,
+      source: usesFallback ? 'fallback' : 'database'
+    });
+
+    // Debug logging
+    console.log('=== PASSWORD VALIDATION ===');
+    console.log('User found:', user.email);
+    console.log('Using fallback:', usesFallback);
+    console.log('Password to check:', password);
+    console.log('Stored password:', user.password);
+    console.log('Stored password length:', user.password.length);
+    console.log('Is bcrypt hash (starts with $2):', user.password.startsWith('$2'));
 
     // Compare password
     let isPasswordValid = false;
     
-    if (usesFallback) {
-      // Check if user is from inMemoryUsers (has hashed password)
-      const isInMemoryUser = inMemoryUsers.find(u => u.id === user.id);
-      if (isInMemoryUser) {
-        // Use bcrypt comparison for in-memory users (hashed passwords)
-        try {
-          isPasswordValid = await bcrypt.compare(password, user.password);
-        } catch (err) {
-          console.log('Bcrypt comparison failed for in-memory user:', err.message);
-          isPasswordValid = false;
-        }
-      } else {
-        // Direct comparison for sample users (plain text passwords)
-        isPasswordValid = password === user.password;
-      }
+    // Try plain text comparison first (works for sample users)
+    if (password === user.password) {
+      console.log('✅ Plain text password match!');
+      isPasswordValid = true;
     } else {
-      // Use bcrypt for database passwords
+      // Try bcrypt comparison (works for hashed passwords)
       try {
         isPasswordValid = await bcrypt.compare(password, user.password);
+        if (isPasswordValid) {
+          console.log('✅ Bcrypt password match!');
+        } else {
+          console.log('❌ Bcrypt comparison returned false');
+        }
       } catch (err) {
-        console.log('Bcrypt comparison failed, trying plain text:', err.message);
+        console.log('⚠️ Bcrypt comparison error:', err.message);
+        // If bcrypt fails, password is likely not hashed, try plain text
         isPasswordValid = password === user.password;
+        if (isPasswordValid) {
+          console.log('✅ Plain text password match (after bcrypt error)!');
+        } else {
+          console.log('❌ Plain text comparison also failed');
+        }
       }
     }
 
     if (!isPasswordValid) {
+      console.log('❌ Password validation failed');
       return res.status(401).json({
         status: 'error',
         message: 'Invalid email or password'
       });
     }
+    
+    console.log('✅ Login validation passed');
 
     
     // Return user data (don't return password)
