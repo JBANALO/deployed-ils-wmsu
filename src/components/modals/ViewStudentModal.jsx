@@ -1,4 +1,5 @@
 import { UserCircleIcon } from "@heroicons/react/24/solid";
+import { API_BASE_URL } from "../../api/config";
 
 export default function ViewStudentModal({ student, onClose }) {
   return (
@@ -19,10 +20,10 @@ export default function ViewStudentModal({ student, onClose }) {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 lg:gap-12">
             {/* Left: Picture + Name */}
             <div className="flex flex-col items-center text-center space-y-4">
-              <div className="w-40 h-40 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 p-2 shadow-2xl">
+              <div className="w-40 h-40 rounded-full bg-linear-to-br from-blue-500 to-purple-600 p-2 shadow-2xl">
                 <div className="w-full h-full rounded-full bg-white p-3 overflow-hidden">
                   {student.profilePic ? (
-                    <img src={student.profilePic} alt={student.fullName} className="w-full h-full object-cover rounded-full" />
+                    <img src={student.profilePic.startsWith('http') ? student.profilePic : `${API_BASE_URL.replace('/api', '')}${student.profilePic}`} alt={student.fullName} className="w-full h-full object-cover rounded-full" />
                   ) : (
                     <UserCircleIcon className="w-full h-full text-gray-300" />
                   )}
@@ -59,7 +60,7 @@ export default function ViewStudentModal({ student, onClose }) {
             {/* Right: QR Code */}
             <div className="flex flex-col items-center">
               <div className="bg-gray-50 p-6 rounded-2xl shadow-inner border-4 border-white">
-                <img src={student.qrCode} alt="QR Code" className="w-56 h-56 object-contain" />
+                <img src={student.qrCode.startsWith('http') ? student.qrCode : `${API_BASE_URL.replace('/api', '')}${student.qrCode}`} alt="QR Code" className="w-56 h-56 object-contain" />
               </div>
               <p className="mt-4 text-sm text-gray-600 font-medium">Student QR Code</p>
             </div>

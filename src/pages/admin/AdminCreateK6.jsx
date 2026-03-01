@@ -22,7 +22,7 @@ export default function AdminCreateK6() {
     section: "",
     parentFirstName: "",
     parentLastName: "",
-    parentEmail: "",
+    parentEmail: "@gmail.com",
     parentContact: "",
     wmsuEmail: "",
     password: "",
@@ -276,17 +276,55 @@ const handleSubmit = async (e) => {
           <div className="grid grid-cols-2 gap-4 mt-4">
             <div>
               <label className="block font-semibold mb-1">Parent Email</label>
-              <div className="flex items-center">
-                <input 
-                  type="email" 
-                  name="parentEmail" 
-                  value={formData.parentEmail.replace('@gmail.com', '')} 
-                  onChange={(e) => setFormData({...formData, parentEmail: `${e.target.value}@gmail.com`})}
-                  className="flex-1 border p-3 rounded-l-lg" 
-                  placeholder="Parent/Guardian's Personal Gmail" 
-                  required 
-                />
-              </div>
+              <input 
+                type="email" 
+                name="parentEmail" 
+                value={formData.parentEmail}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  const cursorPos = e.target.selectionStart;
+                  
+                  if (!value.includes('@gmail.com')) {
+                    const newValue = `${value}@gmail.com`;
+                    setFormData({...formData, parentEmail: newValue});
+                    // Restore cursor position after domain is added
+                    setTimeout(() => {
+                      e.target.setSelectionRange(cursorPos, cursorPos);
+                    }, 0);
+                  } else {
+                    setFormData({...formData, parentEmail: value});
+                  }
+                }}
+                onFocus={(e) => {
+                  const value = e.target.value;
+                  if (value === '@gmail.com') {
+                    // Clear the field but keep the domain
+                    setFormData({...formData, parentEmail: '@gmail.com'});
+                    // Position cursor at the beginning
+                    setTimeout(() => {
+                      e.target.setSelectionRange(0, 0);
+                    }, 0);
+                  } else {
+                    // Position cursor before @gmail.com
+                    const cursorPos = value.indexOf('@gmail.com');
+                    if (cursorPos !== -1) {
+                      setTimeout(() => {
+                        e.target.setSelectionRange(cursorPos, cursorPos);
+                      }, 0);
+                    }
+                  }
+                }}
+                onClick={(e) => {
+                  const value = e.target.value;
+                  const cursorPos = value.indexOf('@gmail.com');
+                  if (cursorPos !== -1) {
+                    e.target.setSelectionRange(cursorPos, cursorPos);
+                  }
+                }}
+                className="w-full border p-3 rounded-lg" 
+                placeholder="Parent/Guardian's Personal Gmail" 
+                required 
+              />
             </div>
             <div>
               <label className="block font-semibold mb-1">Parent Contact Number</label>

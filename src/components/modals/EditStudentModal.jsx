@@ -1,4 +1,5 @@
 import { UserCircleIcon } from "@heroicons/react/24/solid";
+import { API_BASE_URL } from "../../api/config";
 
 export default function EditStudentModal({ student, formData, setFormData, onSave, onClose }) {
   return (
@@ -12,7 +13,7 @@ export default function EditStudentModal({ student, formData, setFormData, onSav
             <div className="relative">
               <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-gray-300 shadow-lg">
                 {formData.profilePic ? (
-                  <img src={formData.profilePic} alt="Student" className="w-full h-full object-cover" />
+                  <img src={formData.profilePic.startsWith('http') ? formData.profilePic : `${API_BASE_URL.replace('/api', '')}${formData.profilePic}`} alt="Student" className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full bg-gray-200 flex items-center justify-center">
                     <UserCircleIcon className="w-20 h-20 text-gray-400" />
