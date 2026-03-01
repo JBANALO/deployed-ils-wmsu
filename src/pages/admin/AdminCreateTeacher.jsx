@@ -10,7 +10,7 @@ export default function AdminCreateTeacher() {
     middleName: "",
     lastName: "",
     username: "",
-    email: "",
+    email: "@wmsu.edu.ph",
     password: "",
     confirmPassword: "",
     role: "adviser",
@@ -133,6 +133,16 @@ export default function AdminCreateTeacher() {
     try {
       setIsSubmitting(true);
 
+      // Convert profile picture to base64 if it exists
+      let profilePicBase64 = null;
+      if (formData.profilePic && formData.profilePic instanceof File) {
+        profilePicBase64 = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.readAsDataURL(formData.profilePic);
+        });
+      }
+
       const teacherData = {
         firstName: formData.firstName,
         middleName: formData.middleName,
@@ -147,12 +157,12 @@ export default function AdminCreateTeacher() {
           ? formData.kindergartenSubjects 
           : formData.subjects.join(", "), // Convert array to comma-separated string
         bio: formData.bio,
-        profilePic: formData.profilePic,
+        profilePic: profilePicBase64,
       };
 
       const response = await api.post('/teachers/create', teacherData);
 
-      setSuccess("Teacher account created! Go to Admin Approvals to approve the account.");
+      toast.success("Teacher account created! Go to Admin Approvals to approve the account.");
       
       // Redirect to approvals page after 2 seconds
       setTimeout(() => {
@@ -234,17 +244,53 @@ export default function AdminCreateTeacher() {
 
           <div>
             <label className="text-sm font-medium text-gray-700">Email (@wmsu.edu.ph)</label>
-            <div className="flex items-center mt-1">
-              <input
-                type="email"
-                name="email"
-                value={formData.email.replace('@wmsu.edu.ph', '')}
-                onChange={(e) => setFormData({...formData, email: `${e.target.value}@wmsu.edu.ph`})}
-                required
-                placeholder="Teacher's WMSU Email"
-                className="flex-1 p-2.5 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-red-800"
-              />
-            </div>
+            <input
+              type="text"
+              name="email"
+              value={formData.email}
+              onChange={(e) => {
+                const value = e.target.value;
+                const cursorPos = e.target.selectionStart;
+                
+                if (!value.includes('@wmsu.edu.ph')) {
+                  const newValue = `${value}@wmsu.edu.ph`;
+                  setFormData({...formData, email: newValue});
+                  // Restore cursor position after domain is added
+                  setTimeout(() => {
+                    e.target.setSelectionRange(cursorPos, cursorPos);
+                  }, 0);
+                } else {
+                  setFormData({...formData, email: value});
+                }
+              }}
+              onFocus={(e) => {
+                const value = e.target.value;
+                if (value === '@wmsu.edu.ph') {
+                  // Position cursor at the beginning
+                  setTimeout(() => {
+                    e.target.setSelectionRange(0, 0);
+                  }, 0);
+                } else {
+                  // Position cursor before @wmsu.edu.ph
+                  const cursorPos = value.indexOf('@wmsu.edu.ph');
+                  if (cursorPos !== -1) {
+                    setTimeout(() => {
+                      e.target.setSelectionRange(cursorPos, cursorPos);
+                    }, 0);
+                  }
+                }
+              }}
+              onClick={(e) => {
+                const value = e.target.value;
+                const cursorPos = value.indexOf('@wmsu.edu.ph');
+                if (cursorPos !== -1) {
+                  e.target.setSelectionRange(cursorPos, cursorPos);
+                }
+              }}
+              required
+              placeholder="Teacher's WMSU Email"
+              className="mt-1 w-full p-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-800"
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
