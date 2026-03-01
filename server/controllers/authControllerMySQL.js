@@ -190,6 +190,8 @@ exports.login = async (req, res) => {
         name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
         username: user.username || '',
         email: user.email,
+        phone: user.phone || '',
+        profileImage: user.profile_pic || '',
         role: user.role || 'admin',
       };
     } else {
@@ -279,12 +281,17 @@ exports.updateProfile = async (req, res) => {
         try {
           console.log('Processing image file, size:', req.file.size);
           
-          // Generate filename and save file
+          // Generate filename and save file to admin_profiles folder
           const userId = req.user.id;
           const imageFileName = `profile_${userId}_${Date.now()}.png`;
-          const imagePath = path.join(__dirname, '..', 'uploads', imageFileName);
+          const adminProfilesDir = path.join(__dirname, '..', 'public', 'admin_profiles');
+          
+          // Create directory if it doesn't exist
+          fs.mkdirSync(adminProfilesDir, { recursive: true });
+          
+          const imagePath = path.join(adminProfilesDir, imageFileName);
           fs.writeFileSync(imagePath, req.file.buffer);
-          profileImageUrl = `/uploads/${imageFileName}`;
+          profileImageUrl = `/admin_profiles/${imageFileName}`;
           console.log('Image saved to:', imagePath);
           console.log('Image URL generated:', profileImageUrl);
           console.log('Image filename being returned:', imageFileName);
@@ -296,8 +303,8 @@ exports.updateProfile = async (req, res) => {
         console.log('No image file received');
       }
       
-      // Build update query dynamically
-      let updateQuery = 'UPDATE users SET firstName = ?, lastName = ?, username = ?, email = ?';
+      // Build update query dynamically with correct column names
+      let updateQuery = 'UPDATE users SET first_name = ?, last_name = ?, username = ?, email = ?';
       let queryParams = [firstName, lastName, username, email];
       
       if (phone !== undefined) {
@@ -327,8 +334,8 @@ exports.updateProfile = async (req, res) => {
         data: {
           user: {
             id: updatedUser.id,
-            firstName: updatedUser.firstName,
-            lastName: updatedUser.lastName,
+            firstName: updatedUser.first_name,
+            lastName: updatedUser.last_name,
             username: updatedUser.username,
             email: updatedUser.email,
             phone: updatedUser.phone || '',

@@ -32,6 +32,23 @@ export default function AdminProfile() {
     }
   }, [formData.profileImage]);
 
+  // Update form data when adminUser changes (fixes refresh issue)
+  useEffect(() => {
+    console.log('AdminProfile - adminUser changed:', adminUser);
+    if (adminUser) {
+      const newFormData = {
+        firstName: adminUser.firstName || '',
+        lastName: adminUser.lastName || '',
+        username: adminUser.username || '',
+        email: adminUser.email || '',
+        phone: adminUser.phone || '',
+        profileImage: adminUser.profileImage || ''
+      };
+      console.log('AdminProfile - setting formData to:', newFormData);
+      setFormData(newFormData);
+    }
+  }, [adminUser]);
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -83,6 +100,10 @@ const handleImageChange = (e) => {
         phone: updatedUser.phone || '',
         profileImage: updatedUser.profileImage || ''
       });
+
+      // Clear preview and profile image file after successful update
+      setPreview(null);
+      setProfileImageFile(null);
 
       toast.success('Profile updated successfully!');
       setEditMode(false);
@@ -144,7 +165,8 @@ const handleImageChange = (e) => {
               // String image: either absolute URL or relative path from backend
               <img
                 src={
-                  preview || 
+                  // Only use preview if we have a newly selected file (edit mode)
+                  editMode && preview ? preview :
                   (typeof formData.profileImage === 'string' 
                     ? (formData.profileImage.startsWith('http')
                         ? formData.profileImage
