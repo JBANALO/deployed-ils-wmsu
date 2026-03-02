@@ -187,9 +187,9 @@ const getAllClasses = async (req, res) => {
           `SELECT grade_level, section, COUNT(*) as student_count FROM students GROUP BY grade_level, section ORDER BY grade_level, section`
         );
 
-        // Also fetch advisers from users table
+        // Also fetch advisers from users table (users table uses snake_case columns)
         const [adviserRows] = await pool.query(
-          `SELECT id, firstName, lastName, gradeLevel, section FROM users WHERE role IN ('adviser', 'Adviser', 'teacher', 'Teacher') AND gradeLevel IS NOT NULL AND section IS NOT NULL`
+          `SELECT id, first_name, last_name, grade_level, section FROM users WHERE role IN ('adviser', 'Adviser', 'teacher', 'Teacher') AND grade_level IS NOT NULL AND section IS NOT NULL`
         );
         
         const gradeOrder = { 'Kindergarten': 0, 'Grade 1': 1, 'Grade 2': 2, 'Grade 3': 3, 'Grade 4': 4, 'Grade 5': 5, 'Grade 6': 6 };
@@ -198,7 +198,7 @@ const getAllClasses = async (req, res) => {
           const sectionSlug = (row.section || '').toLowerCase().replace(/\s+/g, '-');
           // Find matching adviser for this grade+section
           const adviser = adviserRows.find(u =>
-            u.gradeLevel === row.grade_level && u.section === row.section
+            u.grade_level === row.grade_level && u.section === row.section
           );
           return {
             id: `${gradeSlug}-${sectionSlug}`,
@@ -206,7 +206,7 @@ const getAllClasses = async (req, res) => {
             section: row.section,
             student_count: row.student_count,
             adviser_id: adviser ? adviser.id : null,
-            adviser_name: adviser ? `${adviser.firstName || ''} ${adviser.lastName || ''}`.trim() : ''
+            adviser_name: adviser ? `${adviser.first_name || ''} ${adviser.last_name || ''}`.trim() : ''
           };
         }).sort((a, b) => {
           const ao = gradeOrder[a.grade] ?? 99;
@@ -385,9 +385,9 @@ const assignAdviserToClass = async (req, res) => {
       }
     }
 
-    // Store assignment in users table (update adviser's gradeLevel + section)
+    // Store assignment in users table (update adviser's grade_level + section)
     const [result] = await pool.query(
-      `UPDATE users SET gradeLevel = ?, section = ? WHERE id = ?`,
+      `UPDATE users SET grade_level = ?, section = ? WHERE id = ?`,
       [gradeLevel, classSection, adviser_id]
     );
 
@@ -423,7 +423,7 @@ const unassignAdviserFromClass = async (req, res) => {
     if (adviser_id) {
       // Clear the specific adviser's grade/section
       await pool.query(
-        `UPDATE users SET gradeLevel = NULL, section = NULL WHERE id = ?`,
+        `UPDATE users SET grade_level = NULL, section = NULL WHERE id = ?`,
         [adviser_id]
       );
     } else {
