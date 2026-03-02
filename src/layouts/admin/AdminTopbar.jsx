@@ -262,13 +262,40 @@ export default function AdminTopbar() {
               // Backend image URL
               <img
                 src={
-                  adminUser.profileImage.startsWith('http')
-                    ? adminUser.profileImage
-                    : `${API_BASE.replace(/\/api$/, '')}${adminUser.profileImage}`
+                  (() => {
+                    if (adminUser.profileImage.startsWith('http')) {
+                      return adminUser.profileImage;
+                    }
+                    // Try different URL constructions for production compatibility
+                    const possibleUrls = [
+                      `${API_BASE.replace(/\/api$/, '')}${adminUser.profileImage}`,
+                      `${API_BASE}${adminUser.profileImage}`,
+                      adminUser.profileImage.startsWith('/') ? adminUser.profileImage : `/${adminUser.profileImage}`
+                    ];
+                    console.log('AdminTopbar - Trying image URLs:', possibleUrls);
+                    return possibleUrls[0]; // Default to first option
+                  })()
                 }
                 alt="Profile"
                 className="w-8 h-8 rounded-full object-cover shrink-0"
-                onError={(e) => { e.target.onerror = null; e.target.src = "/default-avatar.jpeg"; }}
+                onError={(e) => { 
+                  console.log('AdminTopbar - Image failed to load, trying fallback URLs');
+                  const originalSrc = e.target.src;
+                  const possibleUrls = [
+                    `${API_BASE}${adminUser.profileImage}`,
+                    adminUser.profileImage.startsWith('/') ? adminUser.profileImage : `/${adminUser.profileImage}`,
+                    '/default-avatar.jpeg'
+                  ];
+                  
+                  // Try next URL in the list
+                  const currentIndex = possibleUrls.findIndex(url => originalSrc.includes(url));
+                  if (currentIndex < possibleUrls.length - 1) {
+                    e.target.src = possibleUrls[currentIndex + 1];
+                  } else {
+                    e.target.onerror = null; 
+                    e.target.src = "/default-avatar.jpeg"; 
+                  }
+                }}
               />
             ) : (
               <UserCircleIcon className="w-8 h-8 text-red-800 shrink-0" />
