@@ -44,20 +44,26 @@ const formatStudent = (student) => ({
 
 const createStudent = async (req, res) => {
   try {
+    // Log entire request body for debugging
+    console.log('=== FULL REQUEST BODY ===');
+    console.log(JSON.stringify(req.body, null, 2));
+    console.log('========================');
+
     // Handle both 'email' and 'wmsuEmail' formats (bulk import sends 'email')
     const {
       lrn, firstName, middleName, lastName, age, sex,
       gradeLevel, section, contact, wmsuEmail, email, password, profilePic, qrCode, fullName, status
     } = req.body;
 
-    console.log('createStudent received:', {
-      lrn: !!lrn,
-      firstName: !!firstName,
-      lastName: !!lastName,
-      email: !!email,
-      wmsuEmail: !!wmsuEmail,
-      gradeLevel: !!gradeLevel,
-      section: !!section,
+    console.log('createStudent extracted values:', {
+      lrn: lrn || 'NOT FOUND',
+      firstName: firstName || 'NOT FOUND',
+      lastName: lastName || 'NOT FOUND',
+      email: email || 'NOT FOUND',
+      wmsuEmail: wmsuEmail || 'NOT FOUND',
+      gradeLevel: gradeLevel || 'NOT FOUND',
+      section: section || 'NOT FOUND',
+      contact: contact || 'NOT FOUND',
       receivedKeys: Object.keys(req.body)
     });
 
@@ -66,16 +72,16 @@ const createStudent = async (req, res) => {
     
     // Detailed validation with specific error messages
     const missingFields = [];
-    if (!lrn) missingFields.push('lrn');
-    if (!firstName) missingFields.push('firstName');
-    if (!lastName) missingFields.push('lastName');
-    if (!studentEmail) missingFields.push('email');
-    if (!gradeLevel) missingFields.push('gradeLevel');
-    if (!section) missingFields.push('section');
+    if (!lrn) missingFields.push(`lrn[received:"${lrn}"]`);
+    if (!firstName) missingFields.push(`firstName[received:"${firstName}"]`);
+    if (!lastName) missingFields.push(`lastName[received:"${lastName}"]`);
+    if (!studentEmail) missingFields.push(`email/wmsuEmail[email:"${email}",wmsuEmail:"${wmsuEmail}"]`);
+    if (!gradeLevel) missingFields.push(`gradeLevel[received:"${gradeLevel}"]`);
+    if (!section) missingFields.push(`section[received:"${section}"]`);
 
     if (missingFields.length > 0) {
-      const errorMsg = `Missing required fields: ${missingFields.join(', ')}`;
-      console.error('Validation error:', errorMsg);
+      const errorMsg = `Missing required fields: ${missingFields.join(' | ')}`;
+      console.error('❌ Validation error:', errorMsg);
       return res.status(400).json({ error: errorMsg });
     }
 
