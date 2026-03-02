@@ -2078,20 +2078,6 @@
     "status": "approved"
   },
   {
-    "id": "ec0ac0e1-2b28-42f9-b2b8-014e31e4aafc",
-    "firstName": "Angelice",
-    "lastName": "Araneta",
-    "username": "angelice.araneta",
-    "role": "adviser",
-    "position": "Grade 1 Adviser",
-    "department": "Elementary",
-    "subjectsHandled": [],
-    "email": "angelice.araneta@wmsu.edu.ph",
-    "password": "$2a$12$nkUa/mjF5sBnFBowhiObMOsjUpvlK27SwmWxADv2DwKy3Nf20DtB2",
-    "createdAt": "2025-12-23T17:46:34.517Z",
-    "status": "approved"
-  },
-  {
     "id": "a7740856-4f19-46b5-a4ba-55dffa139bb5",
     "firstName": "Jennee",
     "lastName": "Valencia",
@@ -2117,7 +2103,10 @@
     "email": "marites.montero@wmsu.edu.ph",
     "password": "$2a$12$BretPX77yziVL9bVJ2G8KeiDuaXkym8mZ08F.RkuSZEGTIKCDq8u2",
     "createdAt": "2025-12-23T17:46:35.577Z",
-    "status": "approved"
+    "status": "approved",
+    "archived": false,
+    "archivedAt": null,
+    "restoredAt": "2026-03-02T11:37:45.705Z"
   },
   {
     "id": "63bc1bd0-359f-4372-8581-5a626e5e16f7",
@@ -2156,22 +2145,9 @@
     "email": "heidi lynn.rubia@wmsu.edu.ph",
     "password": "$2a$12$iZfZ1AhCQG8n.prrCHGdB./jSI/6FUs6B..JUgUfJrQyxTzPuQ3ay",
     "status": "pending",
-    "createdAt": "2026-01-28T16:41:52.946Z"
-  },
-  {
-    "id": "e9c68f16-48ae-47eb-9384-2b10d7de097a",
-    "firstName": "Heidi Lynn",
-    "lastName": "vega",
-    "username": "heidi lynn.vega",
-    "role": "adviser",
-    "position": "Adviser",
-    "department": "Elementary",
-    "subjectsHandled": [],
-    "adminCreated": true,
-    "email": "heidi lynn.vega@wmsu.edu.ph",
-    "password": "$2a$12$bmSwKBmMjhi1Nu8DT6eLNemsQ7lgxVXIFldM6BGWlvM9bnycvSh52",
-    "plainPassword": "Password123",
-    "status": "approved",
-    "createdAt": "2026-01-29T06:25:33.346Z"
+    "createdAt": "2026-01-28T16:41:52.946Z",
+    "archived": false,
+    "archivedAt": null,
+    "restoredAt": "2026-03-02T11:43:26.596Z"
   }
 ]
