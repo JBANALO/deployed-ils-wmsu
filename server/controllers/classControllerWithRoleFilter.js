@@ -155,7 +155,7 @@ const getAllClasses = async (req, res) => {
     console.log('getAllClasses - attempting database connection');
 
     try {
-      // Try database first
+      // Try database first - query classes table
       const [rows] = await pool.query(
         `SELECT c.*, 
                 u.firstName as adviser_firstName, 
@@ -179,15 +179,46 @@ const getAllClasses = async (req, res) => {
       });
 
     } catch (dbError) {
-      console.log('Database unavailable, using file-based system:', dbError.message);
+      console.log('classes table not available, generating from students:', dbError.message);
       
-      // Fallback to file-based
-      const classes = readClasses();
-      res.json({ 
-        success: true, 
-        data: classes,
-        message: 'File-based fallback mode'
-      });
+      // Fallback: generate classes from students table
+      try {
+        const [studentRows] = await pool.query(
+          `SELECT gradeLevel, section, COUNT(*) as student_count FROM students GROUP BY gradeLevel, section ORDER BY gradeLevel, section`
+        );
+        
+        const gradeOrder = { 'Kindergarten': 0, 'Grade 1': 1, 'Grade 2': 2, 'Grade 3': 3, 'Grade 4': 4, 'Grade 5': 5, 'Grade 6': 6 };
+        const classes = studentRows.map(row => {
+          const gradeSlug = (row.gradeLevel || '').toLowerCase().replace(/\s+/g, '-');
+          const sectionSlug = (row.section || '').toLowerCase().replace(/\s+/g, '-');
+          return {
+            id: `${gradeSlug}-${sectionSlug}`,
+            grade: row.gradeLevel,
+            section: row.section,
+            student_count: row.student_count,
+            adviser_id: null,
+            adviser_name: ''
+          };
+        }).sort((a, b) => {
+          const ao = gradeOrder[a.grade] ?? 99;
+          const bo = gradeOrder[b.grade] ?? 99;
+          if (ao !== bo) return ao - bo;
+          return (a.section || '').localeCompare(b.section || '');
+        });
+
+        console.log(`Generated ${classes.length} classes from students table`);
+        return res.json({ success: true, data: classes });
+
+      } catch (studentsError) {
+        console.log('Students table also unavailable, using file-based system:', studentsError.message);
+        // Last resort: file-based
+        try {
+          const classes = readClasses();
+          return res.json({ success: true, data: classes, message: 'File-based fallback mode' });
+        } catch (fileError) {
+          return res.json({ success: true, data: [], message: 'No classes data available' });
+        }
+      }
     }
 
   } catch (error) {
