@@ -192,18 +192,15 @@ const getAllClasses = async (req, res) => {
           `SELECT grade_level, section, COUNT(*) as student_count FROM students GROUP BY grade_level, section ORDER BY grade_level, section`
         );
 
-        // Try to get adviser assignments from class_assignments table (may not exist yet)
+        // Fetch advisers from teachers table (has grade_level + section columns)
         let adviserRows = [];
         try {
           const [ar] = await pool.query(
-            `SELECT ca.grade_level, ca.section, ca.adviser_id, u.first_name, u.last_name
-             FROM class_assignments ca
-             JOIN users u ON ca.adviser_id = u.id`
+            `SELECT id, first_name, last_name, grade_level, section FROM teachers WHERE role IN ('adviser', 'Adviser') AND grade_level IS NOT NULL AND section IS NOT NULL`
           );
           adviserRows = ar;
         } catch (e) {
-          // class_assignments table doesn't exist yet, no adviser data available
-          console.log('class_assignments table not found, skipping adviser data');
+          console.log('Could not fetch advisers from teachers table:', e.message);
         }
         
         const gradeOrder = { 'Kindergarten': 0, 'Grade 1': 1, 'Grade 2': 2, 'Grade 3': 3, 'Grade 4': 4, 'Grade 5': 5, 'Grade 6': 6 };
@@ -387,16 +384,22 @@ const assignAdviserToClass = async (req, res) => {
         id INT AUTO_INCREMENT PRIMARY KEY,
         grade_level VARCHAR(50) NOT NULL,
         section VARCHAR(100) NOT NULL,
-        adviser_id VARCHAR(255) NOT NULL,
+        adviser_id BIGINT NOT NULL,
         UNIQUE KEY unique_class (grade_level, section)
       )
     `);
 
-    // Upsert: insert or update the assignment
+    // Upsert into class_assignments
     await pool.query(
       `INSERT INTO class_assignments (grade_level, section, adviser_id)
        VALUES (?, ?, ?)
        ON DUPLICATE KEY UPDATE adviser_id = VALUES(adviser_id)`,
+      [gradeLevel, classSection, adviser_id]
+    );
+
+    // Also update teachers table so it persists properly
+    await pool.query(
+      `UPDATE teachers SET grade_level = ?, section = ? WHERE id = ?`,
       [gradeLevel, classSection, adviser_id]
     );
 
@@ -426,15 +429,22 @@ const unassignAdviserFromClass = async (req, res) => {
     console.log(`unassignAdviserFromClass - classId: ${classId}, adviser_id: ${adviser_id}`);
 
     if (adviser_id) {
+      // Clear adviser's grade_level and section in teachers table
       await pool.query(
-        `DELETE FROM class_assignments WHERE adviser_id = ?`,
+        `UPDATE teachers SET grade_level = NULL, section = NULL WHERE id = ? AND role IN ('adviser','Adviser')`,
         [adviser_id]
       );
+      try {
+        await pool.query(`DELETE FROM class_assignments WHERE adviser_id = ?`, [adviser_id]);
+      } catch(e) { /* table may not exist */ }
     } else {
-      await pool.query(
-        `DELETE FROM class_assignments WHERE LOWER(REPLACE(CONCAT(grade_level, '-', section), ' ', '-')) = ?`,
-        [classId]
-      );
+      // Remove by grade_level+section slug
+      try {
+        await pool.query(
+          `DELETE FROM class_assignments WHERE LOWER(REPLACE(CONCAT(grade_level, '-', section), ' ', '-')) = ?`,
+          [classId]
+        );
+      } catch(e) { /* table may not exist */ }
     }
 
     return res.json({ success: true, message: 'Adviser unassigned successfully' });
