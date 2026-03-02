@@ -170,13 +170,39 @@ const handleImageChange = (e) => {
                   (typeof formData.profileImage === 'string' 
                     ? (formData.profileImage.startsWith('http')
                         ? formData.profileImage
-                        : `${API_BASE.replace(/\/api$/, '')}${formData.profileImage}`
+                        : (() => {
+                            // Try different URL constructions for production compatibility
+                            const possibleUrls = [
+                              `${API_BASE.replace(/\/api$/, '')}${formData.profileImage}`,
+                              `${API_BASE}${formData.profileImage}`,
+                              formData.profileImage.startsWith('/') ? formData.profileImage : `/${formData.profileImage}`
+                            ];
+                            console.log('AdminProfile - Trying image URLs:', possibleUrls);
+                            return possibleUrls[0]; // Default to first option
+                          })()
                       )
                     : '/default-avatar.jpeg')
                 }
                 alt="Profile"
                 className="w-32 h-32 rounded-full object-cover border-4 border-red-700"
-                onError={(e) => { e.target.onerror = null; e.target.src = "/default-avatar.jpeg"; }}
+                onError={(e) => { 
+                  console.log('AdminProfile - Image failed to load, trying fallback URLs');
+                  const originalSrc = e.target.src;
+                  const possibleUrls = [
+                    `${API_BASE}${formData.profileImage}`,
+                    formData.profileImage.startsWith('/') ? formData.profileImage : `/${formData.profileImage}`,
+                    '/default-avatar.jpeg'
+                  ];
+                  
+                  // Try next URL in the list
+                  const currentIndex = possibleUrls.findIndex(url => originalSrc.includes(url));
+                  if (currentIndex < possibleUrls.length - 1) {
+                    e.target.src = possibleUrls[currentIndex + 1];
+                  } else {
+                    e.target.onerror = null; 
+                    e.target.src = "/default-avatar.jpeg"; 
+                  }
+                }}
               />
             )
           ) : (
