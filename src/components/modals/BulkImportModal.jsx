@@ -120,6 +120,17 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
           createdAt: new Date().toISOString()
         };
 
+        // Log what we're sending
+        console.log(`[${student.firstName}] Sending to API:`, {
+          lrn: fullStudentRecord.lrn,
+          firstName: fullStudentRecord.firstName,
+          lastName: fullStudentRecord.lastName,
+          email: fullStudentRecord.email,
+          gradeLevel: fullStudentRecord.gradeLevel,
+          section: fullStudentRecord.section,
+          endpoint: `${API_BASE_URL}/students`
+        });
+
         // Save to students API with proper error handling
         const apiResponse = await fetch(`${API_BASE_URL}/students`, {
           method: 'POST',
@@ -131,6 +142,7 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
         
         if (!apiResponse.ok) {
           const errorData = await apiResponse.json();
+          console.error(`API Error for ${student.firstName}:`, errorData);
           throw new Error(`API Error ${apiResponse.status}: ${errorData.error || errorData.message || 'Unknown error'}`);
         }
 

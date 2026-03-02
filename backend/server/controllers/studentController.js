@@ -50,12 +50,33 @@ const createStudent = async (req, res) => {
       gradeLevel, section, contact, wmsuEmail, email, password, profilePic, qrCode, fullName, status
     } = req.body;
 
+    console.log('createStudent received:', {
+      lrn: !!lrn,
+      firstName: !!firstName,
+      lastName: !!lastName,
+      email: !!email,
+      wmsuEmail: !!wmsuEmail,
+      gradeLevel: !!gradeLevel,
+      section: !!section,
+      receivedKeys: Object.keys(req.body)
+    });
+
     // Use email or wmsuEmail (bulk import sends 'email')
     const studentEmail = wmsuEmail || email;
     
-    // Don't require password for bulk import (it creates user separately)
-    if (!lrn || !firstName || !lastName || !studentEmail) {
-      return res.status(400).json({ error: 'Missing required fields: lrn, firstName, lastName, email' });
+    // Detailed validation with specific error messages
+    const missingFields = [];
+    if (!lrn) missingFields.push('lrn');
+    if (!firstName) missingFields.push('firstName');
+    if (!lastName) missingFields.push('lastName');
+    if (!studentEmail) missingFields.push('email');
+    if (!gradeLevel) missingFields.push('gradeLevel');
+    if (!section) missingFields.push('section');
+
+    if (missingFields.length > 0) {
+      const errorMsg = `Missing required fields: ${missingFields.join(', ')}`;
+      console.error('Validation error:', errorMsg);
+      return res.status(400).json({ error: errorMsg });
     }
 
     const [lrnExists] = await pool.query('SELECT 1 FROM students WHERE lrn = ?', [lrn]);
