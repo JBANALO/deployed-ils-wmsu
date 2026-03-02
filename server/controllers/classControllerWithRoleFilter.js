@@ -170,13 +170,18 @@ const getAllClasses = async (req, res) => {
 
       console.log(`Database: Found ${rows.length} classes`);
       
-      return res.json({ 
-        success: true, 
-        data: rows.map(cls => ({
-          ...cls,
-          adviser_name: `${cls.adviser_firstName || ''} ${cls.adviser_lastName || ''}`.trim()
-        }))
-      });
+      // If classes table has data, return it
+      if (rows.length > 0) {
+        return res.json({ 
+          success: true, 
+          data: rows.map(cls => ({
+            ...cls,
+            adviser_name: `${cls.adviser_firstName || ''} ${cls.adviser_lastName || ''}`.trim()
+          }))
+        });
+      }
+      // Otherwise fall through to generate from students table
+      throw new Error('classes table is empty, falling back to students table');
 
     } catch (dbError) {
       console.log('classes table not available, generating from students:', dbError.message);
