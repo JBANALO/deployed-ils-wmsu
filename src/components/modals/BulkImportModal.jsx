@@ -66,7 +66,8 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
         const idx = String(i).padStart(2, '0');
         const lrn = `${yy}${mm}${dd}${hh}${min}${idx}`; // Total: 12 chars
 
-        // First, create user account via auth service
+        // First, try to create user account via auth service
+        // But skip if user already exists
         const studentData = {
           firstName: student.firstName,
           lastName: student.lastName,
@@ -79,7 +80,20 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
           section: student.section,
         };
 
-        const authResponse = await authService.register(studentData);
+        let userCreated = false;
+        try {
+          const authResponse = await authService.register(studentData);
+          userCreated = true;
+          console.log(`✓ User created for ${student.firstName}`);
+        } catch (userError) {
+          // If user already exists, that's OK - we'll just create the student record
+          if (userError.message?.includes('already exists')) {
+            console.log(`⚠ User already exists for ${student.firstName}, continuing with student creation...`);
+            userCreated = false; // User exists but we can proceed
+          } else {
+            throw userError; // Re-throw if it's a different error
+          }
+        }
 
         // Generate QR code for the student
         let qrCodeDataUrl = null;
@@ -151,7 +165,7 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
           email: student.email,
           lrn: lrn,
           success: true,
-          message: 'Account created with QR code'
+          message: userCreated ? 'Account & student record created' : 'Student record created (user already existed)'
         });
       } catch (error) {
         console.error('Import error for', student.firstName, ':', error);
