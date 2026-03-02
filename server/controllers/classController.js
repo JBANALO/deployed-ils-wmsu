@@ -116,23 +116,35 @@ const getAllClasses = (req, res) => {
           return classItem;
         }
         
-        // Try to find adviser in users data by class assignment
+        // Try to find adviser in users data by:
+        // 1. Matching gradeLevel and section fields
+        // 2. Or by assignedClass field (legacy)
         const adviser = users.find(user => {
           const userRole = (user.role || '').toLowerCase();
-          const userClass = user.assignedClass || user.assigned_class;
           
-          if (userRole !== 'adviser' || !userClass) {
+          if (userRole !== 'adviser') {
             return false;
           }
           
-          // Compare class info
-          const userClassKey = `${userClass.grade}-${userClass.section}`.toLowerCase().replace(/\s+/g, '-');
-          const itemClassKey = `${classItem.grade}-${classItem.section}`.toLowerCase().replace(/\s+/g, '-');
+          // First, try matching by gradeLevel and section
+          if (user.gradeLevel && user.section) {
+            return user.gradeLevel === classItem.grade && 
+                   user.section === classItem.section;
+          }
           
-          return userClassKey === itemClassKey;
+          // Legacy: try matching by assignedClass field
+          const userClass = user.assignedClass || user.assigned_class;
+          if (userClass) {
+            const userClassKey = `${userClass.grade}-${userClass.section}`.toLowerCase().replace(/\s+/g, '-');
+            const itemClassKey = `${classItem.grade}-${classItem.section}`.toLowerCase().replace(/\s+/g, '-');
+            return userClassKey === itemClassKey;
+          }
+          
+          return false;
         });
         
         if (adviser) {
+          console.log(`✓ Found adviser '${adviser.firstName} ${adviser.lastName}' for ${classItem.grade} - ${classItem.section}`);
           return {
             ...classItem,
             adviser_id: adviser.id,
@@ -169,13 +181,27 @@ const getAdviserClasses = (req, res) => {
       const adviser = users.find(u => u.id === adviserId);
       
       if (adviser) {
+        console.log(`Found adviser: ${adviser.firstName} ${adviser.lastName}, gradeLevel: ${adviser.gradeLevel}, section: ${adviser.section}`);
+        
         classes = classes.map(classItem => {
           // Check if already assigned
           if (classItem.adviser_id === adviserId) {
             return classItem;
           }
           
-          // Check if this adviser is assigned to this class in users data
+          // Try to match by gradeLevel and section
+          if (adviser.gradeLevel && adviser.section) {
+            if (adviser.gradeLevel === classItem.grade && adviser.section === classItem.section) {
+              console.log(`✓ Matched adviser to class ${classItem.grade} - ${classItem.section}`);
+              return {
+                ...classItem,
+                adviser_id: adviserId,
+                adviser_name: `${adviser.firstName || ''} ${adviser.lastName || ''}`.trim()
+              };
+            }
+          }
+          
+          // Legacy: Check if this adviser is assigned to this class via assignedClass field
           const userClass = adviser.assignedClass || adviser.assigned_class;
           if (userClass) {
             const userClassKey = `${userClass.grade}-${userClass.section}`.toLowerCase().replace(/\s+/g, '-');
@@ -203,8 +229,6 @@ const getAdviserClasses = (req, res) => {
     res.json({ success: true, data: adviserClasses });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Error fetching adviser classes' });
-  }
-};
   }
 };
 

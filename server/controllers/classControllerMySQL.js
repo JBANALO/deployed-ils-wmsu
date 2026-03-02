@@ -34,24 +34,64 @@ exports.getAllClasses = async (req, res) => {
           [cls.id]
         );
         
-        // Fetch adviser info if adviser_id exists
+        // Fetch adviser info - check both adviser_id in classes table and gradeLevel/section in users/teachers tables
         let adviserName = null;
+        let adviserId = cls.adviser_id;
+        
         if (cls.adviser_id) {
+          // First, check if adviser_id exists in users table
           try {
             const advisers = await query(
-              `SELECT firstName, lastName FROM users WHERE id = ?`,
+              `SELECT id, firstName, lastName FROM users WHERE id = ? AND role = 'adviser'`,
               [cls.adviser_id]
             );
             if (advisers.length > 0) {
               adviserName = `${advisers[0].firstName} ${advisers[0].lastName}`;
+              adviserId = advisers[0].id;
             }
           } catch (err) {
             console.error(`Error fetching adviser for class ${cls.id}:`, err);
           }
         }
         
+        // If no adviser found via adviser_id, search by grade and section in both tables
+        if (!adviserName) {
+          try {
+            // First check users table
+            const advisersFromUsers = await query(
+              `SELECT id, firstName, lastName FROM users 
+               WHERE role = 'adviser' AND gradeLevel = ? AND section = ?`,
+              [cls.grade, cls.section]
+            );
+            if (advisersFromUsers.length > 0) {
+              adviserName = `${advisersFromUsers[0].firstName} ${advisersFromUsers[0].lastName}`;
+              adviserId = advisersFromUsers[0].id;
+            }
+          } catch (err) {
+            console.error(`Error searching adviser in users table for class ${cls.id}:`, err);
+          }
+        }
+        
+        // If still no adviser found, check teachers table
+        if (!adviserName) {
+          try {
+            const advisersFromTeachers = await query(
+              `SELECT id, first_name, last_name FROM teachers 
+               WHERE role = 'adviser' AND grade_level = ? AND section = ?`,
+              [cls.grade, cls.section]
+            );
+            if (advisersFromTeachers.length > 0) {
+              adviserName = `${advisersFromTeachers[0].first_name} ${advisersFromTeachers[0].last_name}`;
+              adviserId = advisersFromTeachers[0].id;
+            }
+          } catch (err) {
+            console.error(`Error searching adviser in teachers table for class ${cls.id}:`, err);
+          }
+        }
+        
         return {
           ...cls,
+          adviser_id: adviserId,
           adviser_name: adviserName,
           subject_teachers: subjectTeachers.map(st => ({
             id: st.id,
@@ -128,10 +168,65 @@ exports.getAdviserClasses = async (req, res) => {
     const { adviserId } = req.params;
     console.log('Fetching classes for adviser:', adviserId);
 
-    const classes = await query(
+    // First, try to find the adviser's gradeLevel and section
+    let adviserGradeLevel = null;
+    let adviserSection = null;
+
+    // Check users table
+    try {
+      const user = await query(
+        `SELECT gradeLevel, section FROM users WHERE id = ? AND role = 'adviser'`,
+        [adviserId]
+      );
+      if (user.length > 0) {
+        adviserGradeLevel = user[0].gradeLevel;
+        adviserSection = user[0].section;
+      }
+    } catch (err) {
+      console.log('Could not find adviser in users table:', err.message);
+    }
+
+    // If not found in users table, check teachers table
+    if (!adviserGradeLevel || !adviserSection) {
+      try {
+        const teacher = await query(
+          `SELECT grade_level, section FROM teachers WHERE id = ? AND role = 'adviser'`,
+          [adviserId]
+        );
+        if (teacher.length > 0) {
+          adviserGradeLevel = teacher[0].grade_level;
+          adviserSection = teacher[0].section;
+        }
+      } catch (err) {
+        console.log('Could not find adviser in teachers table:', err.message);
+      }
+    }
+
+    // Find classes by adviser_id first, then by gradeLevel/section
+    let classes = [];
+    
+    // Query classes where adviser_id matches
+    const classesById = await query(
       'SELECT * FROM classes WHERE adviser_id = ? ORDER BY grade, section',
       [adviserId]
     );
+    classes = classesById;
+
+    // Also query classes by gradeLevel/section if adviser is assigned that way
+    if (adviserGradeLevel && adviserSection) {
+      const classesByGradeSection = await query(
+        'SELECT * FROM classes WHERE grade = ? AND section = ? ORDER BY grade, section',
+        [adviserGradeLevel, adviserSection]
+      );
+      
+      // Merge and deduplicate
+      const classIds = new Set(classes.map(c => c.id));
+      classesByGradeSection.forEach(c => {
+        if (!classIds.has(c.id)) {
+          classes.push(c);
+        }
+      });
+    }
 
     console.log('Found classes for adviser:', classes.length);
     res.json({
