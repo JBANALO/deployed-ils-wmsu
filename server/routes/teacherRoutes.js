@@ -1,20 +1,12 @@
 // server/routes/teacherRoutes.js
 const express = require('express');
 const router = express.Router();
-const teacherController = require('../controllers/teacherController');
+// Use file-based controller (works without database)
+const teacherController = require('../controllers/teacherControllerFile');
 
-// Teacher creation and management routes
-router.post('/create', teacherController.createTeacher);
+// Teacher routes
 router.get('/', teacherController.getAllTeachers);
 router.get('/pending', teacherController.getPendingTeachers);
-router.get('/declined', teacherController.getDeclinedTeachers);
-router.post('/:id/approve', teacherController.approveTeacher);
-router.post('/:id/decline', teacherController.declineTeacher);
-router.post('/:id/restore', teacherController.restoreTeacher);
-router.get('/me', teacherController.getMe);
-
-// Teacher update and delete routes
-router.put('/:id', teacherController.updateTeacher);
-router.delete('/:id', teacherController.deleteTeacher);
+router.get('/advisers', teacherController.getAdvisers);
 
 module.exports = router;

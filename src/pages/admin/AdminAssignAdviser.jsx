@@ -40,30 +40,52 @@ export default function AdminAssignAdviser() {
         toast.error(`Failed to load classes: ${classesResponse.status}`);
       }
 
-      // Fetch teachers/advisers
-      const teachersResponse = await fetch(`${API_BASE_URL}/teachers`);
-      if (teachersResponse.ok) {
-        const data = await teachersResponse.json();
-        const allTeachers = data.data?.teachers || data.teachers || [];
-        
-        console.log('Teachers fetched:', allTeachers);
-        
-        // Include all approved teachers regardless of role (they might be advisers)
-        const teachersList = Array.isArray(allTeachers) ? allTeachers : [];
-        
-        console.log('Teachers list after filter:', teachersList);
-        console.log('Teachers list length:', teachersList.length);
-        
-        if (teachersList.length === 0) {
-          toast.warning('No teachers/advisers found in the system');
-        } else {
-          toast.success(`Found ${teachersList.length} teachers/advisers`);
+      // Fetch teachers/advisers - try /teachers first, fall back to /users if it fails
+      let allTeachers = [];
+      try {
+        const teachersResponse = await fetch(`${API_BASE_URL}/teachers`);
+        if (teachersResponse.ok) {
+          const data = await teachersResponse.json();
+          allTeachers = data.data?.teachers || data.teachers || [];
+          console.log('Teachers fetched from /teachers:', allTeachers);
         }
-        setTeachers(teachersList);
-      } else {
-        console.error('Teachers fetch failed:', teachersResponse.status);
-        toast.error(`Failed to load teachers: ${teachersResponse.status}`);
+      } catch (err) {
+        console.log('Could not fetch from /teachers:', err.message);
       }
+
+      // If /teachers didn't work, fall back to /users
+      if (allTeachers.length === 0) {
+        try {
+          const usersResponse = await fetch(`${API_BASE_URL.replace('/api', '')}/api/users`);
+          if (usersResponse.ok) {
+            const data = await usersResponse.json();
+            allTeachers = (data.data || data.users || [])
+              .filter(u => u.role === 'adviser' || u.role === 'teacher')
+              .map(u => ({
+                id: u.id,
+                firstName: u.firstName || u.first_name || '',
+                lastName: u.lastName || u.last_name || '',
+                email: u.email,
+                role: u.role,
+                gradeLevel: u.gradeLevel || u.grade_level,
+                section: u.section
+              }));
+            console.log('Teachers fetched from /users:', allTeachers);
+          }
+        } catch (err) {
+          console.log('Could not fetch from /users:', err.message);
+        }
+      }
+      
+      console.log('Teachers list after filter:', allTeachers);
+      console.log('Teachers list length:', allTeachers.length);
+      
+      if (allTeachers.length === 0) {
+        toast.warning('No teachers/advisers found in the system');
+      } else {
+        toast.success(`Found ${allTeachers.length} teachers/advisers`);
+      }
+      setTeachers(allTeachers);
     } catch (error) {
       toast.error('Error loading data: ' + error.message);
       setMessage("Error loading data: " + error.message);
@@ -81,7 +103,18 @@ export default function AdminAssignAdviser() {
 
     try {
       const adviser = teachers.find(t => t.id === selectedAdviser);
-      toast.info(`Assigning ${adviser.firstName} ${adviser.lastName} to ${selectedClass.grade} - ${selectedClass.section}`);
+      
+      // Safety check: make sure adviser was found
+      if (!adviser) {
+        throw new Error(`Adviser with ID ${selectedAdviser} not found. Available teachers: ${teachers.map(t => t.id).join(', ')}`);
+      }
+      
+      if (!adviser.firstName || !adviser.lastName) {
+        throw new Error(`Adviser data incomplete - firstName: ${adviser.firstName}, lastName: ${adviser.lastName}`);
+      }
+      
+      const adviserName = `${adviser.firstName} ${adviser.lastName}`;
+      toast.info(`Assigning ${adviserName} to ${selectedClass.grade} - ${selectedClass.section}`);
       
       const response = await fetch(
         `${API_BASE_URL}/classes/${selectedClass.id}/assign`,
@@ -90,7 +123,7 @@ export default function AdminAssignAdviser() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             adviser_id: adviser.id,
-            adviser_name: `${adviser.firstName} ${adviser.lastName}`
+            adviser_name: adviserName
           })
         }
       );
@@ -99,7 +132,7 @@ export default function AdminAssignAdviser() {
       toast.info('Assignment response received');
 
       if (response.ok) {
-        setMessage(`Successfully assigned ${adviser.firstName} ${adviser.lastName} to ${selectedClass.grade} - ${selectedClass.section}`);
+        setMessage(`Successfully assigned ${adviserName} to ${selectedClass.grade} - ${selectedClass.section}`);
         setMessageType("success");
         setSelectedClass(null);
         setSelectedAdviser("");
