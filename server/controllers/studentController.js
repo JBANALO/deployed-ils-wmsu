@@ -140,19 +140,16 @@ exports.createStudent = async (req, res) => {
     const safeProfilePic = profilePicPath ? `/student_profiles/${path.basename(profilePicPath)}` : null;
 
     // -----------------------------
-    // QR CODE - Use provided base64 or generate file
+    // QR CODE - Always generate server-side as small data URL
+    // (frontend base64 is too large for MySQL packet)
     // -----------------------------
     let safeQRCode;
-    if (qrCode && (qrCode.startsWith('data:image/') || qrCode.startsWith('data:text/'))) {
-      // Use the base64 QR code directly from bulk import
-      safeQRCode = qrCode;
-    } else {
-      const qrFolder = path.join(__dirname, '../public/qrcodes');
-      fs.mkdirSync(qrFolder, { recursive: true });
-      const qrFileName = `qr_${lrn}_${Date.now()}.png`;
-      qrCodePath = path.join(qrFolder, qrFileName);
-      await generateQRCodeFile({ lrn, firstName, middleName, lastName, gradeLevel, section, studentEmail }, qrCodePath);
-      safeQRCode = `/qrcodes/${qrFileName}`;
+    try {
+      const qrData = `${lrn}|${firstName} ${lastName}|${gradeLevel}|${section}`;
+      safeQRCode = await QRCode.toDataURL(qrData, { width: 200, margin: 1 });
+    } catch (qrErr) {
+      console.error('QR generation failed:', qrErr.message);
+      safeQRCode = null;
     }
 
     // -----------------------------
@@ -171,12 +168,10 @@ exports.createStudent = async (req, res) => {
         parent_email, parent_contact, student_email, password,
         profile_pic, qr_code, status, created_by
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
       [lrn, firstName, middleName || null, lastName, age, sex || 'N/A',
         gradeLevel, section, parentFirstName || null, parentLastName || null,
         parentEmail || null, parentContact || null, studentEmail || null, hashedPassword,
         safeProfilePic, safeQRCode, reqStatus || 'Active', 'admin']
-      ]
     );
 
     const createdStudent = {
