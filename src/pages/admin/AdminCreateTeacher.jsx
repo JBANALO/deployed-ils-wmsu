@@ -165,7 +165,7 @@ export default function AdminCreateTeacher() {
         profilePic: profilePicBase64,
       };
 
-      const response = await api.post('/teachers/create', teacherData);
+      const response = await api.post('/teachers', teacherData);
 
       // Show success modal instead of toast
       setShowSuccessModal(true);

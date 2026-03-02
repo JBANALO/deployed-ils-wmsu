@@ -53,8 +53,8 @@
     "id": "grade-1-humility",
     "grade": "Grade 1",
     "section": "Humility",
-    "adviser_id": null,
-    "adviser_name": null,
+    "adviser_id": "a7740856-4f19-46b5-a4ba-55dffa139bb5",
+    "adviser_name": "Jennee Valencia",
     "createdAt": "2025-12-30T05:28:43.820Z",
     "subject_teachers": [
       {
@@ -80,5 +80,14 @@
       }
     ],
     "createdAt": "2026-01-03T07:13:25.141Z"
+  },
+  {
+    "id": "grade-6-leadership",
+    "grade": "Grade 6",
+    "section": "Leadership",
+    "adviser_id": "ff3e8a38-7cba-4372-ba48-bfc530544150",
+    "adviser_name": "Heidi Lynn Rubia",
+    "subject_teachers": [],
+    "createdAt": "2026-03-02T10:35:04.939Z"
   }
 ]
