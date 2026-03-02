@@ -20,4 +20,7 @@ router.get('/subject-teacher/:userId', classControllerWithRoleFilter.getSubjectT
 // Assign adviser to a class
 router.put('/:classId/assign', classControllerWithRoleFilter.assignAdviserToClass);
 
+// Unassign adviser from a class
+router.put('/:classId/unassign', classControllerWithRoleFilter.unassignAdviserFromClass);
+
 module.exports = router;
