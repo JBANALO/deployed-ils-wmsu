@@ -83,13 +83,15 @@ export default function AdminStudents() {
         console.log('Raw students data:', studentsArray);
         console.log('Number of students:', studentsArray.length);
         
-        // Only show approved students (not pending or rejected)
-        const approvedStudents = studentsArray.filter(student => 
-          student.status === 'approved' || student.verification_status === 'approved'
-        );
-        console.log('Approved students:', approvedStudents.length);
-        console.log('Approved students details:', approvedStudents);
-        setStudents(approvedStudents);
+        // Show all students except those with 'pending' or 'declined' status
+        // This includes: 'approved', 'active', 'Active', and any other non-rejected status
+        const validStudents = studentsArray.filter(student => {
+          const status = student.status?.toLowerCase() || 'active';
+          return status !== 'pending' && status !== 'declined' && status !== 'rejected';
+        });
+        console.log('Valid students:', validStudents.length);
+        console.log('Valid students details:', validStudents);
+        setStudents(validStudents);
       } else {
         toast('Could not fetch from new API, using empty list', { icon: '⚠️' });
         setStudents([]);
@@ -102,11 +104,12 @@ export default function AdminStudents() {
         const altResponse = await fetch(`${API_BASE_URL}/students`);
         if (altResponse.ok) {
           const data = await altResponse.json();
-          // Only show approved students
-          const approvedStudents = Array.isArray(data) ? data.filter(student => 
-            student.status === 'approved' || student.verification_status === 'approved'
-          ) : [];
-          setStudents(approvedStudents);
+          // Filter for valid (non-rejected) students
+          const validStudents = Array.isArray(data) ? data.filter(student => {
+            const status = student.status?.toLowerCase() || 'active';
+            return status !== 'pending' && status !== 'declined' && status !== 'rejected';
+          }) : [];
+          setStudents(validStudents);
         } else {
           setStudents([]);
         }
