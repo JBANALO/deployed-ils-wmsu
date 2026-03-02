@@ -192,10 +192,19 @@ const getAllClasses = async (req, res) => {
           `SELECT grade_level, section, COUNT(*) as student_count FROM students GROUP BY grade_level, section ORDER BY grade_level, section`
         );
 
-        // Also fetch advisers from users table (users table uses snake_case columns)
-        const [adviserRows] = await pool.query(
-          `SELECT id, first_name, last_name, grade_level, section FROM users WHERE role IN ('adviser', 'Adviser', 'teacher', 'Teacher') AND grade_level IS NOT NULL AND section IS NOT NULL`
-        );
+        // Try to get adviser assignments from class_assignments table (may not exist yet)
+        let adviserRows = [];
+        try {
+          const [ar] = await pool.query(
+            `SELECT ca.grade_level, ca.section, ca.adviser_id, u.first_name, u.last_name
+             FROM class_assignments ca
+             JOIN users u ON ca.adviser_id = u.id`
+          );
+          adviserRows = ar;
+        } catch (e) {
+          // class_assignments table doesn't exist yet, no adviser data available
+          console.log('class_assignments table not found, skipping adviser data');
+        }
         
         const gradeOrder = { 'Kindergarten': 0, 'Grade 1': 1, 'Grade 2': 2, 'Grade 3': 3, 'Grade 4': 4, 'Grade 5': 5, 'Grade 6': 6 };
         const classes = studentRows.map(row => {
@@ -363,42 +372,33 @@ const assignAdviserToClass = async (req, res) => {
   try {
     const { classId } = req.params;
     const { adviser_id, adviser_name, grade, section } = req.body;
+    const gradeLevel = grade;
+    const classSection = section;
 
-    console.log(`assignAdviserToClass - classId: ${classId}, adviser_id: ${adviser_id}, grade: ${grade}, section: ${section}`);
+    console.log(`assignAdviserToClass - classId: ${classId}, adviser_id: ${adviser_id}, grade: ${gradeLevel}, section: ${classSection}`);
 
-    if (!adviser_id) {
-      return res.status(400).json({ success: false, message: 'adviser_id is required' });
+    if (!adviser_id || !gradeLevel || !classSection) {
+      return res.status(400).json({ success: false, message: 'adviser_id, grade, and section are required' });
     }
 
-    // Determine grade and section: prefer sent values, otherwise parse from classId slug
-    let gradeLevel = grade;
-    let classSection = section;
+    // Ensure class_assignments table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS class_assignments (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        grade_level VARCHAR(50) NOT NULL,
+        section VARCHAR(100) NOT NULL,
+        adviser_id VARCHAR(255) NOT NULL,
+        UNIQUE KEY unique_class (grade_level, section)
+      )
+    `);
 
-    if (!gradeLevel || !classSection) {
-      // Try to get from students table using the slug
-      try {
-        const [rows] = await pool.query(
-          `SELECT grade_level, section FROM students WHERE LOWER(REPLACE(CONCAT(grade_level, '-', section), ' ', '-')) = ? LIMIT 1`,
-          [classId]
-        );
-        if (rows.length > 0) {
-          gradeLevel = rows[0].grade_level;
-          classSection = rows[0].section;
-        }
-      } catch (e) {
-        console.log('Could not resolve grade/section from slug:', e.message);
-      }
-    }
-
-    // Store assignment in users table (update adviser's grade_level + section)
-    const [result] = await pool.query(
-      `UPDATE users SET grade_level = ?, section = ? WHERE id = ?`,
+    // Upsert: insert or update the assignment
+    await pool.query(
+      `INSERT INTO class_assignments (grade_level, section, adviser_id)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE adviser_id = VALUES(adviser_id)`,
       [gradeLevel, classSection, adviser_id]
     );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: 'Adviser user not found' });
-    }
 
     return res.json({ 
       success: true, 
@@ -426,28 +426,15 @@ const unassignAdviserFromClass = async (req, res) => {
     console.log(`unassignAdviserFromClass - classId: ${classId}, adviser_id: ${adviser_id}`);
 
     if (adviser_id) {
-      // Clear the specific adviser's grade/section
       await pool.query(
-        `UPDATE users SET grade_level = NULL, section = NULL WHERE id = ?`,
+        `DELETE FROM class_assignments WHERE adviser_id = ?`,
         [adviser_id]
       );
     } else {
-      // Find the adviser assigned to this class by grade+section and clear them
-      // Parse class slug to find matching adviser
-      const [advisers] = await pool.query(
-        `SELECT u.id FROM users u
-         JOIN students s ON u.gradeLevel = s.grade_level AND u.section = s.section
-         WHERE LOWER(REPLACE(CONCAT(s.grade_level, '-', s.section), ' ', '-')) = ?
-         AND u.role IN ('adviser','Adviser','teacher','Teacher')
-         LIMIT 1`,
+      await pool.query(
+        `DELETE FROM class_assignments WHERE LOWER(REPLACE(CONCAT(grade_level, '-', section), ' ', '-')) = ?`,
         [classId]
       );
-      if (advisers.length > 0) {
-        await pool.query(
-          `UPDATE users SET gradeLevel = NULL, section = NULL WHERE id = ?`,
-          [advisers[0].id]
-        );
-      }
     }
 
     return res.json({ success: true, message: 'Adviser unassigned successfully' });
