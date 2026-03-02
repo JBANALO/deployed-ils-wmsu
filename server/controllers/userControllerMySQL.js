@@ -3,7 +3,7 @@ const { pool, query } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
-// Signup new user (Admin only)
+// Signup new user (Admin, Student, Teacher, or Adviser)
 exports.signup = async (req, res) => {
   try {
     const { firstName, lastName, username, email, password, role = 'admin' } = req.body;
@@ -13,9 +13,10 @@ exports.signup = async (req, res) => {
       return res.status(400).json({ message: 'Please provide all required fields' });
     }
 
-    // Only allow admin role
-    if (role !== 'admin') {
-      return res.status(400).json({ message: 'Invalid role. Only admin accounts can be created here.' });
+    // Allow admin, student, teacher, and adviser roles
+    const allowedRoles = ['admin', 'student', 'teacher', 'adviser', 'subject_teacher'];
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ message: `Invalid role. Allowed roles: ${allowedRoles.join(', ')}` });
     }
 
     // Check if user already exists
@@ -27,7 +28,7 @@ exports.signup = async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create admin user
+    // Create user
     const userId = uuidv4();
     
     // Debug: Check what columns exist
