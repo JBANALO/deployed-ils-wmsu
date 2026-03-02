@@ -1,0 +1,95 @@
+# ⚠️ URGENT - Manual Push Required
+
+Your code fixes are ready but NOT yet pushed to GitHub!
+
+## Why Production Still Shows Errors
+
+The fixes I created are ONLY on your local machine:
+- ✅ Local: All adviser fixes are coded and working (tested)
+- ❌ GitHub: OLD code still deployed (fixes not pushed)
+- ❌ Railway/Vercel: Running old code from GitHub
+
+## What You Need to Do NOW
+
+### Option 1: GitHub Desktop (EASIEST)
+
+1. **Open GitHub Desktop**
+2. You'll see changes like:
+   - `server/controllers/classController.js` (MODIFIED)
+   - `server/controllers/teacherControllerFile.js` (NEW FILE)
+   - `server/routes/teacherRoutes.js` (MODIFIED)
+   - `server/routes/classRoutes.js` (MODIFIED)
+   - `src/pages/admin/AdminAssignAdviser.jsx` (MODIFIED)
+
+3. **At bottom left**, type in "Summary" box:
+   ```
+   Fix: Adviser data fetching
+   ```
+
+4. **Click "Commit to main"**
+
+5. **Click "Push origin"** button (top right)
+
+6. **DONE!** - Wait 1-2 minutes for Railway/Vercel to rebuild
+
+---
+
+### Option 2: Command Line (If GitHub Desktop not available)
+
+Open PowerShell and copy-paste ONE at a time:
+
+```powershell
+cd "c:\Users\Josie O. Banalo\Desktop\myfiles\SE\software-engineering-system"
+```
+
+```powershell
+git add -A
+```
+
+```powershell
+git commit -m "Fix: Adviser data fetching"
+```
+
+```powershell
+git pull origin main
+```
+
+```powershell
+git push origin main
+```
+
+---
+
+### Option 3: Git Bash (Terminal)
+
+Same commands as Option 2, just in Git Bash instead of PowerShell
+
+---
+
+## After Push (1-2 minutes)
+
+✅ Visit: https://deployed-ils-wmsu.vercel.app/admin/assign-adviser
+✅ Refresh: Ctrl+Shift+R
+✅ Adviser dropdown should be FILLED
+✅ Classes should show advisers
+
+---
+
+## Files Being Deployed
+
+```
+server/
+  controllers/
+    ✅ classController.js (FIXED - adviser lookup)
+    ✅ teacherControllerFile.js (NEW - file-based teachers)
+  routes/
+    ✅ classRoutes.js (FIXED - uses file-based)
+    ✅ teacherRoutes.js (FIXED - uses file-based)
+
+src/pages/admin/
+  ✅ AdminAssignAdviser.jsx (FIXED - error handling)
+```
+
+---
+
+## DO THIS NOW - Pick one option above and push!

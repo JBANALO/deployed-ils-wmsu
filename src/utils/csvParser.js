@@ -7,11 +7,60 @@ const cleanCSVValue = (value) => {
   if (!value) return '';
   // Remove leading and trailing quotes if present
   let cleaned = value.trim();
-  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || 
-      (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
-    cleaned = cleaned.slice(1, -1);
+  
+  // Handle multiple quotes at the beginning and end
+  while (cleaned.startsWith('"') || cleaned.startsWith("'")) {
+    cleaned = cleaned.slice(1);
   }
+  while (cleaned.endsWith('"') || cleaned.endsWith("'")) {
+    cleaned = cleaned.slice(0, -1);
+  }
+  
   return cleaned.trim();
+};
+
+/**
+ * Parse CSV line with proper quote handling
+ * @param {string} line - CSV line to parse
+ * @param {string} delimiter - Delimiter (comma or tab)
+ * @returns {Array} Array of parsed values
+ */
+const parseCSVLine = (line, delimiter) => {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  let i = 0;
+  
+  while (i < line.length) {
+    const char = line[i];
+    const nextChar = line[i + 1];
+    
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        // Escaped quote inside quotes
+        current += '"';
+        i += 2;
+      } else {
+        // Toggle quote state
+        inQuotes = !inQuotes;
+        i++;
+      }
+    } else if (char === delimiter && !inQuotes) {
+      // Field separator
+      result.push(cleanCSVValue(current));
+      current = '';
+      i++;
+    } else {
+      // Regular character
+      current += char;
+      i++;
+    }
+  }
+  
+  // Add the last field
+  result.push(cleanCSVValue(current));
+  
+  return result;
 };
 
 /**
@@ -27,37 +76,71 @@ export const parseCSVFile = (file) => {
       try {
         const csv = event.target.result;
         const lines = csv.split('\n').filter(line => line.trim());
-        
+
         if (lines.length < 2) {
           reject(new Error('CSV file is empty or has no data rows'));
           return;
         }
 
-        // Parse header
-        const headers = lines[0].split(',').map(h => cleanCSVValue(h));
+        const headerMapping = {
+          'First Name': 'firstName',
+          'Middle Name': 'middleName',
+          'Last Name': 'lastName',
+          'Username': 'username',
+          'Email': 'email',
+          'Password': 'password',
+          'Role': 'role',
+          'Subjects': 'subjects',
+          'Grade Level': 'gradeLevel',
+          'Section': 'section',
+          'Created At': 'createdAt',
+          'Updated At': 'updatedAt'
+        };
+
         const data = [];
 
-        // Parse data rows
+        // 🔥 AUTO-DETECT DELIMITER
+        const delimiter = lines[0].includes('\t') ? '\t' : ',';
+        console.log('Detected delimiter:', delimiter);
+        console.log('First line (headers):', lines[0]);
+
+        // Parse headers (simple - no quotes in header row)
+        const headers = lines[0]
+          .split(delimiter)
+          .map(h => cleanCSVValue(h));
+        
+        console.log('Parsed headers:', headers);
+
+        // Parse rows with proper quote handling
         for (let i = 1; i < lines.length; i++) {
-          const values = lines[i].split(',').map(v => cleanCSVValue(v));
+          const values = parseCSVLine(lines[i], delimiter);
+          
+          console.log(`Row ${i} raw line:`, lines[i]);
+          console.log(`Row ${i} parsed values:`, values);
+
           const row = {};
 
           headers.forEach((header, index) => {
-            row[header] = values[index] || '';
+            const fieldName = headerMapping[header] || header;
+            row[fieldName] = values[index] || '';
           });
 
-          // Only require firstName and lastName, email is optional (will be auto-generated)
+          if (!row.password) {
+            row.password = 'WMSUILS123';
+          }
+
           if (row.firstName && row.lastName) {
             data.push(row);
           }
         }
 
         if (data.length === 0) {
-          reject(new Error('No valid data rows found in CSV. Make sure each row has firstName and lastName.'));
+          reject(new Error('No valid data rows found.'));
           return;
         }
 
         resolve(data);
+
       } catch (error) {
         reject(new Error(`Error parsing CSV: ${error.message}`));
       }
@@ -164,20 +247,21 @@ export const processTeacherData = (teachers) => {
     if (teacher.subjects?.trim()) {
       subjectsHandled = teacher.subjects
         .split(/[;,]/)
-        .map(s => s.trim())
+        .map(s => s.trim()) // Keep original capitalization
         .filter(s => s);
     }
 
-    // Determine role based on isSubjectTeacher field or position
-    let role = 'teacher';
-    if (teacher.isSubjectTeacher?.toString().toLowerCase() === 'true' || teacher.isSubjectTeacher === '1') {
+    // Determine role based on role field or default to 'adviser'
+    let role = teacher.role?.trim() || 'adviser';
+    if (role === 'subject_teacher') {
       role = 'subject_teacher';
-    } else if (teacher.position?.toLowerCase().includes('adviser')) {
+    } else if (role === 'adviser') {
       role = 'adviser';
     }
 
     return {
       firstName: teacher.firstName?.trim() || '',
+      middleName: teacher.middleName?.trim() || '',
       lastName: teacher.lastName?.trim() || '',
       email: teacher.email?.trim() 
         ? teacher.email 
@@ -185,10 +269,12 @@ export const processTeacherData = (teachers) => {
       username: teacher.username?.trim()
         ? teacher.username
         : generateUsername(teacher.firstName, teacher.lastName),
+      password: teacher.password?.trim() || 'WMSUILS123',
       role: role,
-      subjectsHandled: subjectsHandled,
-      position: teacher.position?.trim() || '',
-      department: 'Elementary'
+      gradeLevel: teacher.gradeLevel?.trim() || '',
+      section: teacher.section?.trim() || '',
+      subjects: subjectsHandled, // Fixed: use 'subjects' instead of 'subjectsHandled'
+      bio: teacher.bio?.trim() || ''
     };
   });
 };
@@ -200,27 +286,74 @@ export const processTeacherData = (teachers) => {
  */
 export const validateTeacherData = (teachers) => {
   const errors = [];
+  console.log('Validating teachers:', teachers); // Debug log
 
   teachers.forEach((teacher, index) => {
-    const rowNum = index + 2; // +2 because of header row and 0-indexing
+    const rowErrors = [];
 
-    // Required fields
+    // Required fields validation
     if (!teacher.firstName?.trim()) {
-      errors.push(`Row ${rowNum}: firstName is required`);
+      rowErrors.push(`Row ${index + 1}: First name is required`);
     }
+    
     if (!teacher.lastName?.trim()) {
-      errors.push(`Row ${rowNum}: lastName is required`);
+      rowErrors.push(`Row ${index + 1}: Last name is required`);
+    }
+    
+    if (!teacher.email?.trim()) {
+      rowErrors.push(`Row ${index + 1}: Email is required`);
     }
 
-    // Validate email format if provided
-    if (teacher.email?.trim() && !teacher.email?.includes('@wmsu.edu.ph')) {
-      errors.push(`Row ${rowNum}: email must be a valid WMSU email (@wmsu.edu.ph) if provided`);
+    // Password validation - required for import
+    if (!teacher.password?.trim()) {
+      rowErrors.push(`Row ${index + 1}: Password is required for import (use WMSUILS123)`);
     }
 
-    // If subject teacher, require subjects
-    if ((teacher.isSubjectTeacher?.toString().toLowerCase() === 'true' || teacher.isSubjectTeacher === '1') 
-        && !teacher.subjects?.trim()) {
-      errors.push(`Row ${rowNum}: subjects are required for subject teachers`);
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (teacher.email && !emailRegex.test(teacher.email)) {
+      rowErrors.push(`Row ${index + 1}: Invalid email format`);
+    }
+
+    // Role validation (case-insensitive)
+    const validRoles = ['adviser', 'subject_teacher'];
+    if (teacher.role && !validRoles.includes(teacher.role.trim().toLowerCase())) {
+      rowErrors.push(`Row ${index + 1}: Role must be 'adviser' or 'subject_teacher'`);
+    }
+
+    // Grade level validation (strict - only accept valid grades)
+    if (teacher.gradeLevel?.trim()) {
+      let normalizedGrade = teacher.gradeLevel.trim().toLowerCase();
+      console.log(`Row ${index + 1} - Original grade: "${teacher.gradeLevel}", Normalized: "${normalizedGrade}"`); // Debug log
+
+      // If it's just a number (e.g., "1"), convert to "grade 1"
+      if (/^\d+$/.test(normalizedGrade)) {
+        normalizedGrade = `grade ${normalizedGrade}`;
+      }
+
+      // Normalize formats like "GRADE 1", "Grade 1", etc.
+      normalizedGrade = normalizedGrade.replace(/\s+/g, ' ');
+
+      const validGrades = [
+        'kindergarten',
+        'grade 1',
+        'grade 2',
+        'grade 3',
+        'grade 4',
+        'grade 5',
+        'grade 6'
+      ];
+
+      console.log(`Row ${index + 1} - Final normalized grade: "${normalizedGrade}", Valid grades:`, validGrades); // Debug log
+
+      // Only accept valid grades - reject subjects
+      if (!validGrades.includes(normalizedGrade)) {
+        rowErrors.push(`Row ${index + 1}: Invalid grade level "${teacher.gradeLevel}" (must be "Kindergarten" or "Grade 1-6". Subjects like "filipino, math, gmrc, science" should be in the Subjects column)`);
+      }
+    }
+
+    if (rowErrors.length > 0) {
+      errors.push(...rowErrors);
     }
   });
 
