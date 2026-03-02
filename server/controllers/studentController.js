@@ -78,20 +78,46 @@ exports.createStudent = async (req, res) => {
     console.log('profilePic in req.body:', req.body.profilePic);
     
     const {
-      lrn, firstName, middleName, lastName, age, sex,
+      lrn, firstName, middleName, lastName, sex,
       parentFirstName, parentLastName, parentEmail, parentContact,
-      studentEmail, password, gradeLevel, section, profilePic
+      parentContact: contact,
+      password, gradeLevel, section, profilePic, qrCode, status: reqStatus
     } = req.body;
 
-    // Validate required fields
-    if (!lrn || !firstName || !lastName || !age || !sex || !gradeLevel || !section || !password) {
-      return res.status(400).json({ status: 'fail', message: 'Missing required student fields' });
+    // Accept both 'age' and default to 0 for bulk imports
+    const age = req.body.age || 0;
+    // Accept both 'studentEmail' and 'email' (bulk import sends 'email')
+    const studentEmail = req.body.studentEmail || req.body.email || null;
+
+    console.log('createStudent (server) received:', {
+      lrn: lrn || 'MISSING',
+      firstName: firstName || 'MISSING',
+      lastName: lastName || 'MISSING',
+      age,
+      sex: sex || 'MISSING',
+      gradeLevel: gradeLevel || 'MISSING',
+      section: section || 'MISSING',
+      studentEmail: studentEmail || 'MISSING',
+      hasPassword: !!password
+    });
+
+    // Validate required fields (age is optional for bulk import)
+    if (!lrn || !firstName || !lastName || !gradeLevel || !section) {
+      const missing = [];
+      if (!lrn) missing.push('lrn');
+      if (!firstName) missing.push('firstName');
+      if (!lastName) missing.push('lastName');
+      if (!gradeLevel) missing.push('gradeLevel');
+      if (!section) missing.push('section');
+      return res.status(400).json({ status: 'fail', message: `Missing required fields: ${missing.join(', ')}` });
     }
 
     // Check for duplicate LRN
     const existingStudent = await query('SELECT id FROM students WHERE lrn = ?', [lrn]);
     if (existingStudent.length > 0) {
-      return res.status(400).json({ status: 'fail', message: 'LRN already exists' });
+      // Return existing student data instead of error for bulk import tolerance
+      const existing = await query('SELECT * FROM students WHERE lrn = ?', [lrn]);
+      return res.status(200).json({ message: 'Student already exists', student: formatStudent(existing[0]) });
     }
 
     // -----------------------------
@@ -114,19 +140,26 @@ exports.createStudent = async (req, res) => {
     const safeProfilePic = profilePicPath ? `/student_profiles/${path.basename(profilePicPath)}` : null;
 
     // -----------------------------
-    // QR CODE
+    // QR CODE - Use provided base64 or generate file
     // -----------------------------
-    const qrFolder = path.join(__dirname, '../public/qrcodes');
-    fs.mkdirSync(qrFolder, { recursive: true });
-    const qrFileName = `qr_${lrn}_${Date.now()}.png`;
-    qrCodePath = path.join(qrFolder, qrFileName);
-    await generateQRCodeFile({ lrn, firstName, middleName, lastName, gradeLevel, section, studentEmail }, qrCodePath);
-    const safeQRCode = `/qrcodes/${qrFileName}`;
+    let safeQRCode;
+    if (qrCode && (qrCode.startsWith('data:image/') || qrCode.startsWith('data:text/'))) {
+      // Use the base64 QR code directly from bulk import
+      safeQRCode = qrCode;
+    } else {
+      const qrFolder = path.join(__dirname, '../public/qrcodes');
+      fs.mkdirSync(qrFolder, { recursive: true });
+      const qrFileName = `qr_${lrn}_${Date.now()}.png`;
+      qrCodePath = path.join(qrFolder, qrFileName);
+      await generateQRCodeFile({ lrn, firstName, middleName, lastName, gradeLevel, section, studentEmail }, qrCodePath);
+      safeQRCode = `/qrcodes/${qrFileName}`;
+    }
 
     // -----------------------------
-    // HASH PASSWORD
+    // HASH PASSWORD - use default if not provided (bulk import)
     // -----------------------------
-    const hashedPassword = await bcrypt.hash(password, 12);
+    const finalPassword = password || 'Password123';
+    const hashedPassword = await bcrypt.hash(finalPassword, 12);
 
     // -----------------------------
     // INSERT INTO DATABASE
@@ -139,10 +172,10 @@ exports.createStudent = async (req, res) => {
         profile_pic, qr_code, status, created_by
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        lrn, firstName, middleName || null, lastName, age, sex,
+      [lrn, firstName, middleName || null, lastName, age, sex || 'N/A',
         gradeLevel, section, parentFirstName || null, parentLastName || null,
         parentEmail || null, parentContact || null, studentEmail || null, hashedPassword,
-        safeProfilePic, safeQRCode, 'pending', 'admin'
+        safeProfilePic, safeQRCode, reqStatus || 'Active', 'admin']
       ]
     );
 
