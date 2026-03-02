@@ -17,20 +17,38 @@ import { API_BASE_URL } from "../../api/config";
 
 // Helper functions for QR code URL handling
 const getQRCodeUrl = (qrCode) => {
-  // Use the base URL without /api suffix for static files
-  const baseUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
-  const filename = qrCode.split('/').pop();
-  return `${baseUrl}/qrcodes/${filename}`;
+  if (!qrCode) return null;
+  
+  // If it's already a base64 data URL, use it directly
+  if (qrCode.startsWith('data:image/')) {
+    return qrCode;
+  }
+  
+  // If it's a file path, convert to full URL
+  if (qrCode.startsWith('/qrcodes/')) {
+    const baseUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+    return `${baseUrl}${qrCode}`;
+  }
+  
+  // Otherwise return as-is (in case it's already a full URL)
+  return qrCode;
 };
 
 const getAlternativeQRUrls = (qrCode) => {
-  // Use base URL without /api suffix for static files
+  if (!qrCode) return [];
+  
+  // If it's a data URL, no alternatives needed
+  if (qrCode.startsWith('data:image/')) {
+    return [qrCode];
+  }
+  
+  // For file paths, try different URL variations
   const baseUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
   const filename = qrCode.split('/').pop();
   
   return [
     `${baseUrl}/qrcodes/${filename}`,
-    `${baseUrl}${qrCode}`, // Try the exact database path
+    `${baseUrl}${qrCode}`,
   ];
 };
 
