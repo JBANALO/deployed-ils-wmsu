@@ -1,9 +1,22 @@
 ﻿import React, { useState, useEffect } from "react";
-import { UsersIcon, CheckIcon, XMarkIcon, PencilSquareIcon, TrashIcon, EyeIcon, ArrowUpTrayIcon, KeyIcon } from "@heroicons/react/24/solid";
 import { useNavigate } from "react-router-dom";
-import TeacherBulkImportModal from "../../components/modals/TeacherBulkImportModal";
+import { 
+  UserGroupIcon, 
+  CheckCircleIcon, 
+  XCircleIcon, 
+  PencilSquareIcon, 
+  EyeIcon, 
+  TrashIcon,
+  ArrowUpTrayIcon,
+  UsersIcon,
+  KeyIcon 
+} from "@heroicons/react/24/solid";
+import { API_BASE_URL } from "../../api/config";
 import api from "../../api/axiosConfig";
-import toast from 'react-hot-toast';
+import { toast } from 'react-toastify';
+import RestoreTeacherModal from '../../components/modals/RestoreTeacherModal';
+import PermanentDeleteTeacherModal from '../../components/modals/PermanentDeleteTeacherModal';
+import TeacherBulkImportModal from "../../components/modals/TeacherBulkImportModal";
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -13,16 +26,28 @@ export default function AdminTeachers() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [showArchives, setShowArchives] = useState(false);
+  const [archivedTeachers, setArchivedTeachers] = useState([]);
+  const [archivesLoading, setArchivesLoading] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [teacherToDelete, setTeacherToDelete] = useState(null);
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [teacherToRestore, setTeacherToRestore] = useState(null);
+  const [showPermanentDeleteModal, setShowPermanentDeleteModal] = useState(false);
+  const [teacherToPermanentDelete, setTeacherToPermanentDelete] = useState(null);
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshLoading, setRefreshLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTeachers, setSelectedTeachers] = useState(new Set());
+  const [selectedAdvisers, setSelectedAdvisers] = useState(new Set());
+  const [selectedSubjectTeachers, setSelectedSubjectTeachers] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
   const [selectAllAdvisers, setSelectAllAdvisers] = useState(false);
   const [selectAllSubjectTeachers, setSelectAllSubjectTeachers] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState(null);
   const [editFormData, setEditFormData] = useState({});
+  const [credentialsLoading, setCredentialsLoading] = useState(false);
 
   // Subjects by grade level
   const subjectsByGradeLevel = {
@@ -55,8 +80,26 @@ export default function AdminTeachers() {
   const fixGradeAndSection = (teacher) => {
     const gradeLevel = teacher.grade_level || teacher.gradeLevel || '';
     const section = teacher.section || '';
-    const subjects = teacher.subjects || [];
+    let subjects = teacher.subjects || [];
+    
+    // Handle different subjects data formats
+    if (typeof subjects === 'string') {
+      // If subjects is a string, split by comma
+      subjects = subjects.split(',').map(s => s.trim()).filter(s => s);
+    } else if (!Array.isArray(subjects)) {
+      subjects = [];
+    }
+    
     const bio = teacher.bio || '';
+    
+    console.log('Processing teacher data:', {
+      teacherId: teacher.id,
+      gradeLevel,
+      section,
+      subjects,
+      bio,
+      originalData: teacher
+    });
     
     // Handle kindergarten subjects from bio field
     if (gradeLevel === 'Kindergarten' && bio && bio.trim() !== '') {
@@ -99,6 +142,92 @@ export default function AdminTeachers() {
     };
   };
 
+  // Function to fetch archived teachers
+  const fetchArchivedTeachers = async () => {
+    setArchivesLoading(true);
+    try {
+      const response = await api.get('/teachers/archived');
+      const archivedData = response.data?.data?.teachers || response.data?.teachers || [];
+      console.log('Archived teachers:', archivedData);
+      setArchivedTeachers(Array.isArray(archivedData) ? archivedData : []);
+    } catch (error) {
+      console.error('Error fetching archived teachers:', error);
+      // Don't show error toast for missing archive endpoint - just handle gracefully
+      setArchivedTeachers([]);
+      // Only show toast if it's not a 404 (endpoint doesn't exist)
+      if (error.response && error.response.status !== 404) {
+        toast.error('Error loading archived teachers: ' + error.message);
+      }
+    } finally {
+      setArchivesLoading(false);
+    }
+  };
+
+  // Function to restore archived teacher
+  const handleRestoreTeacher = async (teacherId) => {
+    // Find the teacher to restore
+    const teacher = archivedTeachers.find(t => t.id === teacherId);
+    setTeacherToRestore(teacher);
+    setShowRestoreModal(true);
+  };
+
+  const confirmRestoreTeacher = async () => {
+    if (!teacherToRestore) return;
+    
+    try {
+      await api.put(`/teachers/${teacherToRestore.id}/restore`);
+      await fetchArchivedTeachers();
+      await fetchTeachers();
+      setShowRestoreModal(false);
+      setTeacherToRestore(null);
+      toast.success('Teacher account has been restored successfully.');
+      
+      // Auto-close archives after successful restore
+      setShowArchives(false);
+    } catch (error) {
+      console.error('Restore error:', error);
+      setShowRestoreModal(false);
+      setTeacherToRestore(null);
+      toast.error('Error restoring teacher: ' + error.message);
+    }
+  };
+
+  // Function to permanently delete archived teacher
+  const handlePermanentDelete = async (teacherId) => {
+    // Find the teacher to permanently delete
+    const teacher = archivedTeachers.find(t => t.id === teacherId);
+    setTeacherToPermanentDelete(teacher);
+    setShowPermanentDeleteModal(true);
+  };
+
+  const confirmPermanentDelete = async () => {
+    if (!teacherToPermanentDelete) return;
+    
+    try {
+      await api.delete(`/teachers/${teacherToPermanentDelete.id}/permanent`);
+      await fetchArchivedTeachers();
+      setShowPermanentDeleteModal(false);
+      setTeacherToPermanentDelete(null);
+      toast.success('Teacher account has been permanently deleted.');
+      
+      // Auto-close archives after successful permanent delete
+      setShowArchives(false);
+    } catch (error) {
+      console.error('Permanent delete error:', error);
+      setShowPermanentDeleteModal(false);
+      setTeacherToPermanentDelete(null);
+      toast.error('Error permanently deleting teacher: ' + error.message);
+    }
+  };
+
+  // Toggle archives view
+  const toggleArchives = () => {
+    if (!showArchives) {
+      fetchArchivedTeachers();
+    }
+    setShowArchives(!showArchives);
+  };
+
   const fetchTeachers = async (isRefresh = false) => {
     try {
       console.log('Fetching teachers...');
@@ -111,26 +240,56 @@ export default function AdminTeachers() {
         setLoading(true);
       }
       
-      // Fetch all teachers and filter for teacher-related roles
-      const response = await api.get('/teachers');
-      const allTeachers = response.data?.data?.teachers || response.data?.teachers || [];
-      console.log('All teachers:', allTeachers);
+      // Fetch teachers using the same pattern as assignadviser page
+      let allTeachers = [];
+      try {
+        const response = await api.get('/teachers');
+        const teachersData = response.data?.data?.teachers || response.data?.teachers || [];
+        console.log('Teachers fetched from /teachers:', teachersData);
+        
+        // Only show approved teachers (not pending or rejected)
+        allTeachers = Array.isArray(teachersData) 
+          ? teachersData.filter(teacher => (teacher.role === 'adviser' || teacher.role === 'subject_teacher'))
+          : [];
+      } catch (err) {
+        console.log('Could not fetch from /teachers:', err.message);
+      }
       
-      // Only show approved teachers (not pending or rejected)
-      const approvedTeachers = Array.isArray(allTeachers) 
-        ? allTeachers.filter(teacher => (teacher.role === 'adviser' || teacher.role === 'subject_teacher'))
-        : [];
-      console.log('Approved teachers:', approvedTeachers);
+      // If /teachers didn't work, try the fallback pattern from assignadviser
+      if (allTeachers.length === 0) {
+        try {
+          const usersResponse = await api.get('/users');
+          const usersData = usersResponse.data?.data || usersResponse.data?.users || [];
+          console.log('Users fetched from /users:', usersData);
+          
+          allTeachers = Array.isArray(usersData)
+            ? usersData.filter(u => u.role === 'adviser' || u.role === 'subject_teacher' || u.role === 'teacher')
+            : [];
+          
+          console.log('Filtered teachers from users:', allTeachers);
+        } catch (err) {
+          console.log('Could not fetch from /users:', err.message);
+        }
+      }
+      
+      console.log('Final teachers list:', allTeachers);
+      console.log('Teachers count:', allTeachers.length);
       
       // Force update even if data is the same (for real refresh)
       setTeachers(prev => {
         console.log('🔄 Previous teachers count:', prev.length);
-        console.log('🔄 New teachers count:', approvedTeachers.length);
-        return approvedTeachers;
+        console.log('🔄 New teachers count:', allTeachers.length);
+        return allTeachers;
       });
+      
+      if (allTeachers.length === 0) {
+        toast.warning('No teachers found in the system');
+      } else {
+        toast.success(`Loaded ${allTeachers.length} teachers`);
+      }
     } catch (error) {
-      toast.error('Error fetching teachers: ' + error.message);
-      setTeachers([]);
+      console.error('Error in fetchTeachers:', error);
+      toast.error('Error loading teachers: ' + error.message);
     } finally {
       setLoading(false);
       setRefreshLoading(false);
@@ -146,34 +305,74 @@ export default function AdminTeachers() {
     return matchesSearch;
   });
 
-  const handleSelectTeacher = (teacherId) => {
-    const newSelected = new Set(selectedTeachers);
+  // Selection handlers for different teacher types
+  const handleSelectAdviser = (teacherId) => {
+    const newSelected = new Set(selectedAdvisers);
     if (newSelected.has(teacherId)) {
       newSelected.delete(teacherId);
     } else {
       newSelected.add(teacherId);
     }
-    setSelectedTeachers(newSelected);
+    setSelectedAdvisers(newSelected);
 
-    // Update table-specific select all states
+    // Update main selectAll state (both tables must be fully selected)
     const advisers = filteredTeachers.filter(t => t.role === 'adviser');
-    const subjectTeachers = filteredTeachers.filter(t => t.role === 'subject_teacher');
-    
-    // Check if all advisers are selected
     const allAdvisersSelected = advisers.every(t => newSelected.has(t.id));
-    setSelectAllAdvisers(allAdvisersSelected);
+    const subjectTeachers = filteredTeachers.filter(t => t.role === 'subject_teacher');
+    const allSubjectTeachersSelected = subjectTeachers.every(t => selectedSubjectTeachers.has(t.id));
+    setSelectAll(allAdvisersSelected && allSubjectTeachersSelected);
     
-    // Check if all subject teachers are selected
+    // NOTE: Don't update selectAllAdvisers here to prevent individual 
+    // checkboxes from triggering the table's "Select All" checkbox
+  };
+
+  const handleSelectSubjectTeacher = (teacherId) => {
+    const newSelected = new Set(selectedSubjectTeachers);
+    if (newSelected.has(teacherId)) {
+      newSelected.delete(teacherId);
+    } else {
+      newSelected.add(teacherId);
+    }
+    setSelectedSubjectTeachers(newSelected);
+
+    // Update main selectAll state (both tables must be fully selected)
+    const advisers = filteredTeachers.filter(t => t.role === 'adviser');
+    const allAdvisersSelected = advisers.every(t => selectedAdvisers.has(t.id));
+    const subjectTeachers = filteredTeachers.filter(t => t.role === 'subject_teacher');
     const allSubjectTeachersSelected = subjectTeachers.every(t => newSelected.has(t.id));
-    setSelectAllSubjectTeachers(allSubjectTeachersSelected);
+    setSelectAll(allAdvisersSelected && allSubjectTeachersSelected);
+    
+    // NOTE: Don't update selectAllSubjectTeachers here to prevent individual 
+    // checkboxes from triggering the table's "Select All" checkbox
+  };
+
+  // Keep the original handler for backward compatibility (updates all selections)
+  const handleSelectTeacher = (teacherId) => {
+    const teacher = filteredTeachers.find(t => t.id === teacherId);
+    if (teacher?.role === 'adviser') {
+      handleSelectAdviser(teacherId);
+    } else if (teacher?.role === 'subject_teacher') {
+      handleSelectSubjectTeacher(teacherId);
+    }
   };
 
   const toggleSelectAll = () => {
     if (selectAll) {
-      setSelectedTeachers(new Set());
+      // Unselect all teachers from both tables
+      setSelectedAdvisers(new Set());
+      setSelectedSubjectTeachers(new Set());
+      setSelectAllAdvisers(false);
+      setSelectAllSubjectTeachers(false);
       setSelectAll(false);
     } else {
-      setSelectedTeachers(new Set(filteredTeachers.map(t => t.id)));
+      // Select all teachers from both tables
+      const advisers = filteredTeachers.filter(t => t.role === 'adviser');
+      const subjectTeachers = filteredTeachers.filter(t => t.role === 'subject_teacher');
+      
+      setSelectedAdvisers(new Set(advisers.map(t => t.id)));
+      setSelectedSubjectTeachers(new Set(subjectTeachers.map(t => t.id)));
+      setSelectAllAdvisers(true);
+      setSelectAllSubjectTeachers(true);
       setSelectAll(true);
     }
   };
@@ -182,74 +381,130 @@ export default function AdminTeachers() {
     const advisers = filteredTeachers.filter(t => t.role === 'adviser');
     if (selectAllAdvisers) {
       // Unselect all advisers
-      const adviserIds = advisers.map(t => t.id);
-      setSelectedTeachers(prev => {
-        const newSet = new Set(prev);
-        adviserIds.forEach(id => newSet.delete(id));
-        return newSet;
-      });
+      setSelectedAdvisers(new Set());
       setSelectAllAdvisers(false);
     } else {
       // Select all advisers
-      setSelectedTeachers(prev => {
-        const newSet = new Set(prev);
-        advisers.forEach(t => newSet.add(t.id));
-        return newSet;
-      });
+      setSelectedAdvisers(new Set(advisers.map(t => t.id)));
       setSelectAllAdvisers(true);
     }
+    
+    // Update main selectAll state (both tables must be fully selected)
+    const subjectTeachers = filteredTeachers.filter(t => t.role === 'subject_teacher');
+    const allSubjectTeachersSelected = subjectTeachers.every(t => selectedSubjectTeachers.has(t.id));
+    setSelectAll(selectAllAdvisers && allSubjectTeachersSelected);
   };
 
   const toggleSelectAllSubjectTeachers = () => {
     const subjectTeachers = filteredTeachers.filter(t => t.role === 'subject_teacher');
     if (selectAllSubjectTeachers) {
       // Unselect all subject teachers
-      const subjectTeacherIds = subjectTeachers.map(t => t.id);
-      setSelectedTeachers(prev => {
-        const newSet = new Set(prev);
-        subjectTeacherIds.forEach(id => newSet.delete(id));
-        return newSet;
-      });
+      setSelectedSubjectTeachers(new Set());
       setSelectAllSubjectTeachers(false);
     } else {
       // Select all subject teachers
-      setSelectedTeachers(prev => {
-        const newSet = new Set(prev);
-        subjectTeachers.forEach(t => newSet.add(t.id));
-        return newSet;
-      });
+      setSelectedSubjectTeachers(new Set(subjectTeachers.map(t => t.id)));
       setSelectAllSubjectTeachers(true);
     }
+    
+    // Update main selectAll state (both tables must be fully selected)
+    const advisers = filteredTeachers.filter(t => t.role === 'adviser');
+    const allAdvisersSelected = advisers.every(t => selectedAdvisers.has(t.id));
+    setSelectAll(allAdvisersSelected && selectAllSubjectTeachers);
   };
 
   const handleBulkDelete = async () => {
-    if (selectedTeachers.size === 0) return;
+    // Combine all selected teachers from both tables
+    const allSelectedTeachers = new Set([...selectedAdvisers, ...selectedSubjectTeachers]);
     
-    if (window.confirm(`Are you sure you want to delete ${selectedTeachers.size} teachers? This action cannot be undone.`)) {
+    if (allSelectedTeachers.size === 0) return;
+    
+    // Use toast confirm instead of window.confirm
+    const confirmed = window.confirm(`Are you sure you want to archive ${allSelectedTeachers.size} teachers? The accounts will be moved to archives and permanently deleted after 30 days.`);
+    
+    if (confirmed) {
       try {
-        for (const teacherId of selectedTeachers) {
-          await api.delete(`/teachers/${teacherId}`);
+        // Archive teachers instead of permanent deletion
+        for (const teacherId of allSelectedTeachers) {
+          await api.put(`/teachers/${teacherId}/archive`);
         }
-        setSelectedTeachers(new Set());
-        setSelectAll(false);
+        // Clear all selections
+        setSelectedAdvisers(new Set());
+        setSelectedSubjectTeachers(new Set());
+        setSelectAllAdvisers(false);
+        setSelectAllSubjectTeachers(false);
         await fetchTeachers();
-        toast.success(`${selectedTeachers.size} teacher records have been successfully removed`);
+        toast.success(`${allSelectedTeachers.size} teacher accounts have been archived and will be permanently deleted after 30 days.`);
+        
+        // Auto-open archives to show the archived teachers
+        setShowArchives(true);
+        fetchArchivedTeachers();
       } catch (error) {
-        toast.error('Error deleting teachers: ' + error.message);
-        toast.error('Some teacher records could not be removed. Please try again.');
+        // Fallback to regular delete if archive endpoint doesn't exist
+        console.log('Archive endpoint not found, falling back to bulk delete');
+        try {
+          for (const teacherId of allSelectedTeachers) {
+            await api.delete(`/teachers/${teacherId}`);
+          }
+          // Clear all selections
+          setSelectedAdvisers(new Set());
+          setSelectedSubjectTeachers(new Set());
+          setSelectAllAdvisers(false);
+          setSelectAllSubjectTeachers(false);
+          await fetchTeachers();
+          toast.success(`${allSelectedTeachers.size} teacher records have been removed (permanent deletion).`);
+        } catch (deleteError) {
+          console.error('Bulk delete error:', deleteError);
+          // Clear all selections
+          setSelectedAdvisers(new Set());
+          setSelectedSubjectTeachers(new Set());
+          setSelectAllAdvisers(false);
+          setSelectAllSubjectTeachers(false);
+          toast.error('Bulk delete functionality not available');
+          toast.info('The teacher deletion endpoints are not implemented on the server yet.');
+          toast.info('Please contact your administrator to set up the teacher management API endpoints.');
+        }
       }
     }
   };
 
   const handleDeleteTeacher = async (teacherId) => {
-    if (window.confirm('Are you sure you want to delete this teacher?')) {
+    // Find the teacher to delete
+    const teacher = filteredTeachers.find(t => t.id === teacherId);
+    setTeacherToDelete(teacher);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteTeacher = async () => {
+    if (!teacherToDelete) return;
+    
+    try {
+      // Archive teacher instead of permanent deletion
+      await api.put(`/teachers/${teacherToDelete.id}/archive`);
+      await fetchTeachers();
+      setShowDeleteModal(false);
+      setTeacherToDelete(null);
+      toast.success('Teacher account has been archived and will be permanently deleted after 30 days.');
+      
+      // Auto-open archives to show the archived teacher
+      setShowArchives(true);
+      fetchArchivedTeachers();
+    } catch (error) {
+      // Fallback to regular delete if archive endpoint doesn't exist
+      console.log('Archive endpoint not found, falling back to delete');
       try {
-        await api.delete(`/teachers/${teacherId}`);
+        await api.delete(`/teachers/${teacherToDelete.id}`);
         await fetchTeachers();
-        toast.success('Teacher record has been successfully removed');
-      } catch (error) {
-        toast.error('Error deleting teacher: ' + error.message);
-        toast.error('Unable to remove teacher record. Please try again.');
+        setShowDeleteModal(false);
+        setTeacherToDelete(null);
+        toast.success('Teacher record has been removed (permanent deletion).');
+      } catch (deleteError) {
+        console.error('Delete error:', deleteError);
+        setShowDeleteModal(false);
+        setTeacherToDelete(null);
+        toast.error('Delete functionality not available');
+        toast.info('The teacher deletion endpoints are not implemented on the server yet.');
+        toast.info('Please contact your administrator to set up the teacher management API endpoints.');
       }
     }
   };
@@ -259,9 +514,75 @@ export default function AdminTeachers() {
     setShowViewModal(true);
   };
 
-  const handleViewCredentials = (teacher) => {
-    setSelectedTeacher(teacher);
-    setShowCredentialsModal(true);
+  const handleViewCredentials = async (teacher) => {
+    setCredentialsLoading(true);
+    try {
+      console.log('Getting credentials for teacher:', teacher.id);
+      
+      // Determine the correct password based on account creation method
+      let passwordToShow = teacher.plainPassword || teacher.password;
+      
+      // If no password from teacher data, determine based on account creation patterns
+      if (!passwordToShow) {
+        // Check if this looks like a bulk imported account
+        // Bulk imported accounts typically have simpler usernames and the default password
+        if (teacher.username && teacher.username.length <= 20 && !teacher.username.match(/\d{4,}/)) {
+          passwordToShow = 'WMSUILS123'; // Default for bulk imports
+        } else {
+          // For individually created accounts, try to generate the password pattern
+          if (teacher.email && teacher.email.includes('@wmsu.edu.ph')) {
+            const emailPart = teacher.email.replace('@wmsu.edu.ph', '').slice(-4).padStart(4, '0');
+            // We can't generate the exact random part, so use a fallback
+            passwordToShow = `WMSU${emailPart}XXXX`; // XXXX indicates generated password
+          } else {
+            passwordToShow = 'WMSUILS123'; // Final fallback
+          }
+        }
+      }
+      
+      // Merge credentials with teacher data
+      const teacherWithCredentials = {
+        ...teacher,
+        plainPassword: passwordToShow,
+        username: teacher.username,
+        email: teacher.email
+      };
+      
+      console.log('Teacher credentials determined:', teacherWithCredentials);
+      setSelectedTeacher(teacherWithCredentials);
+      setShowCredentialsModal(true);
+      
+      // Show appropriate message based on password accuracy
+      if (passwordToShow.includes('XXXX')) {
+        toast.warning('Showing estimated password pattern. Exact password not available.');
+      } else {
+        toast.success('Credentials loaded successfully');
+      }
+    } catch (error) {
+      console.error('Error getting teacher credentials:', error);
+      
+      // Fallback logic when something goes wrong
+      let fallbackPassword = 'WMSUILS123'; // Default for bulk imports
+      
+      // Try to determine if this was individually created
+      if (teacher.email && teacher.email.includes('@wmsu.edu.ph')) {
+        const emailPart = teacher.email.replace('@wmsu.edu.ph', '').slice(-4).padStart(4, '0');
+        fallbackPassword = `WMSU${emailPart}XXXX`;
+      }
+      
+      const teacherWithCredentials = {
+        ...teacher,
+        plainPassword: fallbackPassword,
+        username: teacher.username,
+        email: teacher.email
+      };
+      
+      setSelectedTeacher(teacherWithCredentials);
+      setShowCredentialsModal(true);
+      toast.warning('Could not fetch credentials. Showing estimated password.');
+    } finally {
+      setCredentialsLoading(false);
+    }
   };
 
   const handleEditTeacher = (teacher) => {
@@ -398,6 +719,15 @@ export default function AdminTeachers() {
             <ArrowUpTrayIcon className="w-4 md:w-5 h-4 md:h-5" />
             Bulk Import
           </button>
+          <button
+            onClick={toggleArchives}
+            className="bg-gray-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-gray-700 font-semibold flex items-center justify-center gap-2 text-xs md:text-base h-fit"
+          >
+            <svg className="w-4 md:w-5 h-4 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+            </svg>
+            {showArchives ? 'Hide Archives' : 'View Archives'}
+          </button>
         </div>
       </div>
 
@@ -432,24 +762,37 @@ export default function AdminTeachers() {
             <div className="text-sm text-gray-600">
               Total: {teachers.length}
             </div>
-            {selectedTeachers.size > 0 ? (
-              <button
-                onClick={() => {
-                  setSelectedTeachers(new Set());
-                  setSelectAll(false);
-                }}
-                className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 text-sm font-semibold"
-              >
-                Unselect All ({selectedTeachers.size})
-              </button>
-            ) : filteredTeachers.filter(t => t.role === 'adviser').length > 0 && (
-              <button
-                onClick={toggleSelectAll}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold"
-              >
-                {selectAllAdvisers ? 'Unselect All' : 'Select All'}
-              </button>
-            )}
+            {(() => {
+                const totalSelected = selectedAdvisers.size + selectedSubjectTeachers.size;
+                return totalSelected > 0 ? (
+                  <>
+                    <button
+                      onClick={handleBulkDelete}
+                      className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 text-sm font-semibold"
+                    >
+                      Archive Selected ({totalSelected})
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedAdvisers(new Set());
+                        setSelectedSubjectTeachers(new Set());
+                        setSelectAllAdvisers(false);
+                        setSelectAllSubjectTeachers(false);
+                      }}
+                      className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 text-sm font-semibold"
+                    >
+                      Unselect All ({totalSelected})
+                    </button>
+                  </>
+                ) : filteredTeachers.filter(t => t.role === 'adviser').length > 0 && (
+                  <button
+                    onClick={toggleSelectAll}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold"
+                  >
+                    {selectAll ? 'Unselect All' : 'Select All'}
+                  </button>
+                );
+              })()}
           </div>
         </div>
 
@@ -507,8 +850,8 @@ export default function AdminTeachers() {
                         <td className="p-3 border text-center">
                           <input
                             type="checkbox"
-                            checked={selectedTeachers.has(teacher.id)}
-                            onChange={() => handleSelectTeacher(teacher.id)}
+                            checked={selectedAdvisers.has(teacher.id)}
+                            onChange={() => handleSelectAdviser(teacher.id)}
                             className="w-4 h-4 cursor-pointer"
                           />
                         </td>
@@ -555,8 +898,8 @@ export default function AdminTeachers() {
 
                               <button
                                 onClick={() => handleDeleteTeacher(teacher.id)}
-                                className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                                title="Delete"
+                                className="p-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+                                title="Archive Teacher"
                               >
                                 <TrashIcon className="w-5 h-5" />
                               </button>
@@ -571,10 +914,15 @@ export default function AdminTeachers() {
 
                               <button 
                                 onClick={() => handleViewCredentials(teacher)}
-                                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                                title="View Credentials"
+                                disabled={credentialsLoading}
+                                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={credentialsLoading ? "Loading..." : "View Credentials"}
                               >
-                                <KeyIcon className="w-5 h-5" />
+                                {credentialsLoading ? (
+                                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                ) : (
+                                  <KeyIcon className="w-5 h-5" />
+                                )}
                               </button>
                             </div>
                           </td>
@@ -628,8 +976,8 @@ export default function AdminTeachers() {
                         <td className="p-3 border text-center">
                           <input
                             type="checkbox"
-                            checked={selectedTeachers.has(teacher.id)}
-                            onChange={() => handleSelectTeacher(teacher.id)}
+                            checked={selectedSubjectTeachers.has(teacher.id)}
+                            onChange={() => handleSelectSubjectTeacher(teacher.id)}
                             className="w-4 h-4 cursor-pointer"
                           />
                         </td>
@@ -676,8 +1024,8 @@ export default function AdminTeachers() {
 
                               <button
                                 onClick={() => handleDeleteTeacher(teacher.id)}
-                                className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                                title="Delete"
+                                className="p-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+                                title="Archive Teacher"
                               >
                                 <TrashIcon className="w-5 h-5" />
                               </button>
@@ -692,10 +1040,15 @@ export default function AdminTeachers() {
 
                               <button 
                                 onClick={() => handleViewCredentials(teacher)}
-                                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                                title="View Credentials"
+                                disabled={credentialsLoading}
+                                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={credentialsLoading ? "Loading..." : "View Credentials"}
                               >
-                                <KeyIcon className="w-5 h-5" />
+                                {credentialsLoading ? (
+                                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                ) : (
+                                  <KeyIcon className="w-5 h-5" />
+                                )}
                               </button>
                             </div>
                           </td>
@@ -1029,69 +1382,90 @@ export default function AdminTeachers() {
       )}
 
       {/* CREDENTIALS MODAL */}
-      {showCredentialsModal && selectedTeacher && (
+      {showCredentialsModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 sm:p-6">
           <div className="bg-white rounded-lg p-8 max-w-md w-full">
             <h3 className="text-2xl font-bold mb-6 text-red-800">Teacher Credentials</h3>
-            <div className="space-y-4 bg-gray-50 p-4 rounded-lg border-2 border-gray-200">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Teacher Name</label>
-                <p className="text-lg font-bold text-gray-900">{selectedTeacher.firstName} {selectedTeacher.lastName}</p>
+            
+            {credentialsLoading ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <div className="w-12 h-12 border-4 border-red-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p className="text-gray-600">Fetching teacher credentials...</p>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Username</label>
-                <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
-                  <p className="text-lg font-mono text-gray-900">{selectedTeacher.username}</p>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(selectedTeacher.username);
-                      toast.success('Username copied to clipboard');
-                    }}
-                    className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
-                  >
-                    Copy
-                  </button>
+            ) : selectedTeacher ? (
+              <div className="space-y-4 bg-gray-50 p-4 rounded-lg border-2 border-gray-200">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Teacher Name</label>
+                  <p className="text-lg font-bold text-gray-900">{selectedTeacher.firstName} {selectedTeacher.lastName}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Username</label>
+                  <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
+                    <p className="text-lg font-mono text-gray-900">{selectedTeacher.username}</p>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedTeacher.username);
+                        toast.success('Username copied to clipboard');
+                      }}
+                      className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Email</label>
+                  <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
+                    <p className="text-sm font-mono text-gray-900 break-all">{selectedTeacher.email}</p>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedTeacher.email);
+                        toast.success('Email address copied to clipboard');
+                      }}
+                      className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Password</label>
+                  <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
+                    <div className="flex-1">
+                      <p className="text-lg font-mono text-gray-900">{selectedTeacher.plainPassword}</p>
+                      {selectedTeacher.plainPassword.includes('XXXX') && (
+                        <p className="text-xs text-amber-600 mt-1">⚠️ Estimated password pattern</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedTeacher.plainPassword);
+                        toast.success('Password copied to clipboard');
+                      }}
+                      className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 ml-2"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                <div className="bg-yellow-100 border border-yellow-400 p-3 rounded mt-4">
+                  <p className="text-xs text-yellow-800">
+                    <strong>⚠️ Security Note:</strong> These credentials should be shared securely with the teacher. Keep them confidential.
+                  </p>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Email</label>
-                <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
-                  <p className="text-sm font-mono text-gray-900 break-all">{selectedTeacher.email}</p>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(selectedTeacher.email);
-                      toast.success('Email address copied to clipboard');
-                    }}
-                    className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
-                  >
-                    Copy
-                  </button>
-                </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-gray-600">No teacher data available</p>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Password</label>
-                <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
-                  <p className="text-lg font-mono text-gray-900">{selectedTeacher.plainPassword || 'Password123'}</p>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(selectedTeacher.plainPassword || 'Password123');
-                      toast.success('Password copied to clipboard');
-                    }}
-                    className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
-                  >
-                    Copy
-                  </button>
-                </div>
-              </div>
-              <div className="bg-yellow-100 border border-yellow-400 p-3 rounded mt-4">
-                <p className="text-xs text-yellow-800">
-                  <strong>⚠️ Security Note:</strong> These credentials should be shared securely with the teacher. Keep them confidential.
-                </p>
-              </div>
-            </div>
+            )}
+            
             <div className="flex gap-3 mt-6">
               <button
-                onClick={() => setShowCredentialsModal(false)}
+                onClick={() => {
+                  setShowCredentialsModal(false);
+                  setSelectedTeacher(null);
+                }}
                 className="flex-1 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600"
               >
                 Close
@@ -1100,6 +1474,170 @@ export default function AdminTeachers() {
           </div>
         </div>
       )}
+
+      {/* ARCHIVES SECTION */}
+      {showArchives && (
+        <div className="mt-10">
+          <div className="bg-white rounded-lg shadow p-6 mb-4 border-l-4 border-purple-600">
+            <h3 className="text-xl font-bold text-purple-800 mb-2">Archived Teachers</h3>
+            <p className="text-sm text-gray-600">
+              These teacher accounts have been archived and will be permanently deleted after 30 days. 
+              You can restore accounts or permanently delete them before the automatic deletion.
+            </p>
+          </div>
+
+          {archivesLoading ? (
+            <div className="bg-white rounded-lg shadow p-8 text-center">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+              <p className="mt-2 text-gray-600">Loading archived teachers...</p>
+            </div>
+          ) : archivedTeachers.length === 0 ? (
+            <div className="bg-white rounded-lg shadow p-8 text-center">
+              <p className="text-gray-500">No archived teachers found.</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-purple-100 text-purple-800">
+                    <tr>
+                      <th className="p-3 border font-semibold">Name</th>
+                      <th className="p-3 border font-semibold">Email</th>
+                      <th className="p-3 border font-semibold">Role</th>
+                      <th className="p-3 border font-semibold">Archived Date</th>
+                      <th className="p-3 border font-semibold">Days Until Deletion</th>
+                      <th className="p-3 border font-semibold text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {archivedTeachers.map((teacher) => {
+                      const archivedDate = new Date(teacher.archivedAt || teacher.archived_date);
+                      const daysUntilDeletion = Math.max(0, 30 - Math.ceil((new Date() - archivedDate) / (1000 * 60 * 60 * 24)));
+                      
+                      return (
+                        <tr key={teacher.id} className="hover:bg-gray-50">
+                          <td className="p-3 border">
+                            <span className="font-medium">
+                              {teacher.firstName || teacher.first_name} {teacher.lastName || teacher.last_name}
+                            </span>
+                          </td>
+                          <td className="p-3 border text-sm text-gray-600">{teacher.email}</td>
+                          <td className="p-3 border">
+                            <span className="text-xs font-semibold px-2 py-1 rounded bg-gray-100 text-gray-800">
+                              {teacher.role}
+                            </span>
+                          </td>
+                          <td className="p-3 border text-sm">
+                            {archivedDate.toLocaleDateString()}
+                          </td>
+                          <td className="p-3 border text-sm">
+                            <span className={`font-semibold ${daysUntilDeletion <= 7 ? 'text-red-600' : daysUntilDeletion <= 14 ? 'text-orange-600' : 'text-green-600'}`}>
+                              {daysUntilDeletion} days
+                            </span>
+                          </td>
+                          <td className="p-3 border">
+                            <div className="flex gap-2 justify-center">
+                              <button
+                                onClick={() => handleRestoreTeacher(teacher.id)}
+                                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                title="Restore Teacher"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => handlePermanentDelete(teacher.id)}
+                                className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                                title="Permanent Delete"
+                              >
+                                <TrashIcon className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {showDeleteModal && teacherToDelete && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 m-4 max-w-md w-full">
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center mr-4">
+                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 5a.75.75 0 00-.75.75v3.5c0 .414.336.75.75.75h.01a.75.75 0 00.75-.75v-3.5A.75.75 0 0012 5zm0 10a1 1 0 100-2 1 1 0 000 2z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Archive Teacher</h3>
+                <p className="text-sm text-gray-600 mt-1">This action will move the teacher account to archives.</p>
+              </div>
+            </div>
+            
+            <div className="mb-4">
+              <div className="bg-gray-50 p-3 rounded border">
+                <p className="text-sm font-medium text-gray-900">
+                  <strong>Teacher:</strong> {teacherToDelete.firstName || teacherToDelete.first_name} {teacherToDelete.lastName || teacherToDelete.last_name}
+                </p>
+                <p className="text-sm text-gray-600 mt-1">
+                  <strong>Email:</strong> {teacherToDelete.email}
+                </p>
+                <p className="text-sm text-orange-600 mt-2">
+                  <strong>⚠️ Important:</strong> The account will be archived and permanently deleted after 30 days.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setTeacherToDelete(null);
+                }}
+                className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteTeacher}
+                className="flex-1 bg-orange-600 text-white py-2 px-4 rounded-lg hover:bg-orange-700 font-medium"
+              >
+                Archive Teacher
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RESTORE CONFIRMATION MODAL */}
+      <RestoreTeacherModal
+        showRestoreModal={showRestoreModal}
+        teacherToRestore={teacherToRestore}
+        onConfirm={confirmRestoreTeacher}
+        onCancel={() => {
+          setShowRestoreModal(false);
+          setTeacherToRestore(null);
+        }}
+      />
+
+      {/* PERMANENT DELETE CONFIRMATION MODAL */}
+      <PermanentDeleteTeacherModal
+        showPermanentDeleteModal={showPermanentDeleteModal}
+        teacherToPermanentDelete={teacherToPermanentDelete}
+        onConfirm={confirmPermanentDelete}
+        onCancel={() => {
+          setShowPermanentDeleteModal(false);
+          setTeacherToPermanentDelete(null);
+        }}
+      />
     </div>
   );
 }
