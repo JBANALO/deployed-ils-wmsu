@@ -12,13 +12,13 @@ function formatStudent(s) {
   let qrCodeUrl = s.qr_code;
   
   // Convert file paths to full URLs for mobile app compatibility
+  // (if any old file paths still exist in database)
   if (qrCodeUrl && typeof qrCodeUrl === 'string') {
-    // If it's a relative path, convert to full URL
     if (qrCodeUrl.startsWith('/qrcodes/')) {
-      // Use Railway production URL
+      // File path - convert to full URL
       qrCodeUrl = `https://deployed-ils-wmsu-production.up.railway.app${qrCodeUrl}`;
     }
-    // If it's already a data URL or full HTTP(S) URL, keep it as is
+    // Base64 data URLs or full HTTP(S) URLs are kept as-is
   }
   
   return {
