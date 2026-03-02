@@ -113,21 +113,18 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
           createdAt: new Date().toISOString()
         };
 
-        // Save to students API
-        try {
-          const apiResponse = await fetch(`${API_BASE_URL}/students`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(fullStudentRecord)
-          });
-          
-          if (!apiResponse.ok) {
-            console.warn('API response not OK:', apiResponse.status);
-          }
-        } catch (apiError) {
-          console.warn('Could not save to students database, but account created:', apiError);
+        // Save to students API with proper error handling
+        const apiResponse = await fetch(`${API_BASE_URL}/students`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(fullStudentRecord)
+        });
+        
+        if (!apiResponse.ok) {
+          const errorData = await apiResponse.json();
+          throw new Error(`API Error ${apiResponse.status}: ${errorData.error || errorData.message || 'Unknown error'}`);
         }
 
         results.push({

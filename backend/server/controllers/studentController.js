@@ -156,21 +156,20 @@ const getAllStudents = async (req, res) => {
       firstName: s.first_name,
       middleName: s.middle_name,
       lastName: s.last_name,
-      fullName: s.full_name,
+      fullName: `${s.first_name} ${s.middle_name || ''} ${s.last_name}`.trim(),
       age: s.age,
       sex: s.sex,
       gradeLevel: s.grade_level,
       section: s.section,
-      contact: s.contact,
-      wmsuEmail: s.wmsu_email,
+      contact: s.parent_contact,
+      email: s.student_email,
       status: s.status,
       attendance: s.attendance,
       average: s.average,
       profilePic: s.profile_pic,
       qrCode: s.qr_code,
-      adviserId: s.adviser_id,
-      adviserName: s.adviser_name,
-      createdAt: s.created_at
+      createdAt: s.created_at,
+      updatedAt: s.updated_at
     }));
 
     res.json(formattedStudents);
