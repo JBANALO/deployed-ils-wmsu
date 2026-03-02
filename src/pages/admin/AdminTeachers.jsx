@@ -5,6 +5,8 @@ import TeacherBulkImportModal from "../../components/modals/TeacherBulkImportMod
 import api from "../../api/axiosConfig";
 import toast from 'react-hot-toast';
 
+const API_BASE = import.meta.env.VITE_API_URL;
+
 export default function AdminTeachers() {
   const navigate = useNavigate();
   const [showViewModal, setShowViewModal] = useState(false);
@@ -17,18 +19,94 @@ export default function AdminTeachers() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTeachers, setSelectedTeachers] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const [selectAllAdvisers, setSelectAllAdvisers] = useState(false);
+  const [selectAllSubjectTeachers, setSelectAllSubjectTeachers] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState(null);
   const [editFormData, setEditFormData] = useState({});
+
+  // Subjects by grade level
+  const subjectsByGradeLevel = {
+    "Grade 1": ["GMRC", "Reading", "Mathematics", "Makabansa", "Language"],
+    "Grade 2": ["GMRC", "Filipino", "Makabansa", "Mathematics", "English"],
+    "Grade 3": ["GMRC", "Filipino", "Mathematics", "Makabansa", "English", "Science"],
+    "Grade 4": ["GMRC", "English", "ArPan", "Mathematics", "Filipino", "EPP", "Science", "MAPEH"],
+    "Grade 5": ["GMRC", "English", "ArPan", "Mathematics", "Filipino", "EPP", "Science", "MAPEH"],
+    "Grade 6": ["GMRC", "English", "ArPan", "Mathematics", "Filipino", "EPP", "Science", "MAPEH"],
+    "Kindergarten": [] // No specific subjects for kindergarten - will use text input
+  };
+
+  // Handle select all subjects
+  const handleSelectAllSubjects = () => {
+    const availableSubjects = subjectsByGradeLevel[editFormData.gradeLevel] || [];
+    if (editFormData.subjects?.length === availableSubjects.length) {
+      // Deselect all
+      setEditFormData({...editFormData, subjects: []});
+    } else {
+      // Select all
+      setEditFormData({...editFormData, subjects: availableSubjects});
+    }
+  };
 
   useEffect(() => {
     fetchTeachers();
   }, []);
+
+  // Helper function to fix mixed up grade level and section data
+  const fixGradeAndSection = (teacher) => {
+    const gradeLevel = teacher.grade_level || teacher.gradeLevel || '';
+    const section = teacher.section || '';
+    const subjects = teacher.subjects || [];
+    const bio = teacher.bio || '';
+    
+    // Handle kindergarten subjects from bio field
+    if (gradeLevel === 'Kindergarten' && bio && bio.trim() !== '') {
+      return {
+        actualGradeLevel: gradeLevel,
+        actualSection: section,
+        actualSubjects: [bio] // Show kindergarten subjects from bio
+      };
+    }
+    
+    // Check if grade_level contains subject names (common subjects)
+    const commonSubjects = ['filipino', 'english', 'mathematics', 'science', 'makabansa', 'gmrc', 'mapeh', 'araling panlipunan', 'edukasyon sa pagpapakatao', 'arpan'];
+    const gradeLevelLower = gradeLevel.toLowerCase();
+    
+    // If grade_level contains a subject, it's likely the actual subject
+    if (commonSubjects.some(subject => gradeLevelLower.includes(subject))) {
+      // Swap the data: grade_level becomes subject, section becomes grade_level
+      return {
+        actualGradeLevel: section,
+        actualSection: '-', // No proper section available
+        actualSubjects: [gradeLevel]
+      };
+    }
+    
+    // Check if section contains grade level patterns
+    const gradePattern = /^(grade \d+|kindergarten|\d+)$/i;
+    if (gradePattern.test(section.trim())) {
+      return {
+        actualGradeLevel: section,
+        actualSection: gradeLevel,
+        actualSubjects: subjects
+      };
+    }
+    
+    // Normal case - no swapping needed
+    return {
+      actualGradeLevel: gradeLevel,
+      actualSection: section,
+      actualSubjects: subjects
+    };
+  };
 
   const fetchTeachers = async (isRefresh = false) => {
     try {
       console.log('Fetching teachers...');
       if (isRefresh) {
         setRefreshLoading(true);
+        // Force refresh by clearing cache and fetching fresh data
+        console.log('🔄 Force refreshing data from server...');
+        setTeachers([]); // Clear current data to show loading state
       } else {
         setLoading(true);
       }
@@ -40,10 +118,16 @@ export default function AdminTeachers() {
       
       // Only show approved teachers (not pending or rejected)
       const approvedTeachers = Array.isArray(allTeachers) 
-        ? allTeachers.filter(teacher => (teacher.verification_status === 'approved' || teacher.verificationStatus === 'approved'))
+        ? allTeachers.filter(teacher => (teacher.role === 'adviser' || teacher.role === 'subject_teacher'))
         : [];
       console.log('Approved teachers:', approvedTeachers);
-      setTeachers(approvedTeachers);
+      
+      // Force update even if data is the same (for real refresh)
+      setTeachers(prev => {
+        console.log('🔄 Previous teachers count:', prev.length);
+        console.log('🔄 New teachers count:', approvedTeachers.length);
+        return approvedTeachers;
+      });
     } catch (error) {
       toast.error('Error fetching teachers: ' + error.message);
       setTeachers([]);
@@ -58,8 +142,7 @@ export default function AdminTeachers() {
     const matchesSearch = searchQuery === '' ||
       (teacher.firstName && teacher.firstName.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (teacher.lastName && teacher.lastName.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (teacher.email && teacher.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (teacher.username && teacher.username.toLowerCase().includes(searchQuery.toLowerCase()));
+      (teacher.email && teacher.email.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesSearch;
   });
 
@@ -71,6 +154,18 @@ export default function AdminTeachers() {
       newSelected.add(teacherId);
     }
     setSelectedTeachers(newSelected);
+
+    // Update table-specific select all states
+    const advisers = filteredTeachers.filter(t => t.role === 'adviser');
+    const subjectTeachers = filteredTeachers.filter(t => t.role === 'subject_teacher');
+    
+    // Check if all advisers are selected
+    const allAdvisersSelected = advisers.every(t => newSelected.has(t.id));
+    setSelectAllAdvisers(allAdvisersSelected);
+    
+    // Check if all subject teachers are selected
+    const allSubjectTeachersSelected = subjectTeachers.every(t => newSelected.has(t.id));
+    setSelectAllSubjectTeachers(allSubjectTeachersSelected);
   };
 
   const toggleSelectAll = () => {
@@ -80,6 +175,50 @@ export default function AdminTeachers() {
     } else {
       setSelectedTeachers(new Set(filteredTeachers.map(t => t.id)));
       setSelectAll(true);
+    }
+  };
+
+  const toggleSelectAllAdvisers = () => {
+    const advisers = filteredTeachers.filter(t => t.role === 'adviser');
+    if (selectAllAdvisers) {
+      // Unselect all advisers
+      const adviserIds = advisers.map(t => t.id);
+      setSelectedTeachers(prev => {
+        const newSet = new Set(prev);
+        adviserIds.forEach(id => newSet.delete(id));
+        return newSet;
+      });
+      setSelectAllAdvisers(false);
+    } else {
+      // Select all advisers
+      setSelectedTeachers(prev => {
+        const newSet = new Set(prev);
+        advisers.forEach(t => newSet.add(t.id));
+        return newSet;
+      });
+      setSelectAllAdvisers(true);
+    }
+  };
+
+  const toggleSelectAllSubjectTeachers = () => {
+    const subjectTeachers = filteredTeachers.filter(t => t.role === 'subject_teacher');
+    if (selectAllSubjectTeachers) {
+      // Unselect all subject teachers
+      const subjectTeacherIds = subjectTeachers.map(t => t.id);
+      setSelectedTeachers(prev => {
+        const newSet = new Set(prev);
+        subjectTeacherIds.forEach(id => newSet.delete(id));
+        return newSet;
+      });
+      setSelectAllSubjectTeachers(false);
+    } else {
+      // Select all subject teachers
+      setSelectedTeachers(prev => {
+        const newSet = new Set(prev);
+        subjectTeachers.forEach(t => newSet.add(t.id));
+        return newSet;
+      });
+      setSelectAllSubjectTeachers(true);
     }
   };
 
@@ -128,14 +267,15 @@ export default function AdminTeachers() {
   const handleEditTeacher = (teacher) => {
     setSelectedTeacher(teacher);
     setEditFormData({
-      firstName: teacher.firstName,
-      lastName: teacher.lastName,
+      firstName: teacher.firstName || teacher.first_name,
+      middleName: teacher.middleName || teacher.middle_name || '',
+      lastName: teacher.lastName || teacher.last_name,
       email: teacher.email,
-      role: teacher.role || 'teacher',
-      position: teacher.position || '',
-      gradeLevel: teacher.gradeLevel || '',
-      section: teacher.section || '',
-      department: teacher.department || 'Elementary'
+      role: teacher.role || 'adviser',
+      subjects: teacher.subjects || [],
+      kindergartenSubjects: teacher.kindergartenSubjects || '',
+      gradeLevel: teacher.gradeLevel || teacher.grade_level || '',
+      section: teacher.section || ''
     });
     setShowEditModal(true);
   };
@@ -143,16 +283,63 @@ export default function AdminTeachers() {
   const handleSaveEdit = async () => {
     try {
       console.log('Saving teacher with data:', editFormData);
-      const response = await api.put(`/teachers/${selectedTeacher.id}`, editFormData);
+      
+      // Prepare the data for API call - handle kindergarten subjects properly
+      let updateData;
+      
+      if (editFormData.gradeLevel === 'Kindergarten') {
+        // For kindergarten, store subjects in bio field as flexible text
+        updateData = {
+          firstName: String(editFormData.firstName || ''),
+          middleName: String(editFormData.middleName || ''),
+          lastName: String(editFormData.lastName || ''),
+          username: String(selectedTeacher.username || ''),
+          email: String(editFormData.email || ''),
+          role: String(editFormData.role || ''),
+          gradeLevel: String(editFormData.gradeLevel || ''),
+          section: String(editFormData.section || ''),
+          subjects: null, // No fixed subjects for kindergarten
+          bio: String(editFormData.kindergartenSubjects || '') // Store kindergarten subjects in bio
+        };
+      } else {
+        // For grade 1-6, store subjects as JSON array
+        updateData = {
+          firstName: String(editFormData.firstName || ''),
+          middleName: String(editFormData.middleName || ''),
+          lastName: String(editFormData.lastName || ''),
+          username: String(selectedTeacher.username || ''),
+          email: String(editFormData.email || ''),
+          role: String(editFormData.role || ''),
+          gradeLevel: String(editFormData.gradeLevel || ''),
+          section: String(editFormData.section || ''),
+          subjects: JSON.stringify(editFormData.subjects || []),
+          bio: String(selectedTeacher.bio || '') // Keep existing bio
+        };
+      }
+
+      console.log('Formatted update data:', updateData);
+      console.log('Parameter count:', Object.keys(updateData).length);
+      
+      const response = await api.put(`/teachers/${selectedTeacher.id}`, updateData);
       
       console.log('Save response:', response.data);
       
+      // Refresh the teachers list to show updated data
       await fetchTeachers();
+      
+      // Close the modal
       setShowEditModal(false);
+      
+      // Show success message
       toast.success('Teacher information has been successfully updated');
+      
+      // Clear form data
+      setEditFormData({});
+      setSelectedTeacher(null);
+      
     } catch (error) {
-      toast.error('Error updating teacher: ' + error.message);
-      toast.error(`Unable to update teacher information: ${error.message}`);
+      console.error('Error updating teacher:', error);
+      toast.error('Error updating teacher: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -217,35 +404,50 @@ export default function AdminTeachers() {
       <div className="mt-10">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-bold text-red-800">
-            All Teachers - {filteredTeachers.length} teachers
+            All Teachers
           </h3>
           <div className="flex items-center gap-3">
             <button
               onClick={() => fetchTeachers(true)}
               disabled={refreshLoading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all duration-200"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {refreshLoading ? 'Refreshing...' : 'Refresh'}
+              {refreshLoading ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0112 20c5.159 0 9.829-2.778 11.628-7.658l2.519 2.519a1 1 0 00.707.293l-2.519-2.519a8 8 0 01-2.778 11.628z"></path>
+                  </svg>
+                  <span>Refreshing...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span>Refresh</span>
+                </>
+              )}
             </button>
             <div className="text-sm text-gray-600">
               Total: {teachers.length}
             </div>
             {selectedTeachers.size > 0 ? (
               <button
-                onClick={handleBulkDelete}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 text-sm font-semibold"
+                onClick={() => {
+                  setSelectedTeachers(new Set());
+                  setSelectAll(false);
+                }}
+                className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 text-sm font-semibold"
               >
-                Delete ~ {selectedTeachers.size} Selected
+                Unselect All ({selectedTeachers.size})
               </button>
-            ) : filteredTeachers.length > 0 && (
+            ) : filteredTeachers.filter(t => t.role === 'adviser').length > 0 && (
               <button
                 onClick={toggleSelectAll}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold"
               >
-                Select All
+                {selectAllAdvisers ? 'Unselect All' : 'Select All'}
               </button>
             )}
           </div>
@@ -265,7 +467,7 @@ export default function AdminTeachers() {
           </div>
           {searchQuery && (
             <div className="text-sm text-gray-600 mt-2">
-              Searching for "{searchQuery}" â€¢ <span className="font-semibold">{filteredTeachers.length} result{filteredTeachers.length !== 1 ? 's' : ''}</span>
+              Searching for "{searchQuery}" <span className="font-semibold">{filteredTeachers.length} result{filteredTeachers.length !== 1 ? 's' : ''}</span>
             </div>
           )}
         </div>
@@ -274,8 +476,8 @@ export default function AdminTeachers() {
         <div className="mb-8">
           <div className="bg-white rounded-lg shadow">
             <div className="p-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-yellow-800 mb-4">
-                Advisers ({filteredTeachers.filter(t => t.role === 'adviser').length})
+              <h3 className="text-lg font-semibold text-yellow-800 mb-1">
+                Advisers
               </h3>
             </div>
             <div className="overflow-x-auto">
@@ -285,8 +487,8 @@ export default function AdminTeachers() {
                     <th className="p-3 border text-center">
                       <input
                         type="checkbox"
-                        checked={selectAll}
-                        onChange={toggleSelectAll}
+                        checked={selectAllAdvisers}
+                        onChange={toggleSelectAllAdvisers}
                         className="w-4 h-4 cursor-pointer"
                       />
                     </th>
@@ -295,7 +497,7 @@ export default function AdminTeachers() {
                     <th className="p-3 border">Role</th>
                     <th className="p-3 border">Class/Section</th>
                     <th className="p-3 border">Subjects</th>
-                    <th className="p-3 border">Actions</th>
+                    <th className="p-3 border w-40 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -320,47 +522,62 @@ export default function AdminTeachers() {
                           </span>
                         </td>
                         <td className="p-3 border text-sm">
-                          {(teacher.grade_level || teacher.gradeLevel) && (teacher.section || teacher.section) 
-                            ? `${teacher.grade_level || teacher.gradeLevel} - ${teacher.section || teacher.section}`
-                            : '-'
-                          }
+                          {(() => {
+                            const fixed = fixGradeAndSection(teacher);
+                            return fixed.actualGradeLevel && fixed.actualSection 
+                              ? `${fixed.actualGradeLevel} - ${fixed.actualSection}`
+                              : '-';
+                          })()}
                         </td>
-                        <td className="p-3 border text-sm">
-                          {teacher.subjects || teacher.subjectsHandled ? 
-                            (teacher.subjects ? teacher.subjects.split(', ').filter(s => s.trim()) : teacher.subjectsHandled).join(', ')
-                            : '-'
-                          }
+                        <td className="p-3 border text-sm max-w-xs break-words">
+                          {(() => {
+                            try {
+                              const fixed = fixGradeAndSection(teacher);
+                              if (fixed.actualSubjects && fixed.actualSubjects.length > 0) {
+                                return fixed.actualSubjects.join(', ');
+                              }
+                              return '-';
+                            } catch (error) {
+                              console.error('Error parsing subjects:', error);
+                              return '-';
+                            }
+                          })()}
                         </td>
-                        <td className="p-3 border flex gap-2">
-                          <button 
-                            onClick={() => handleEditTeacher(teacher)}
-                            className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                            title="Edit"
-                          >
-                            <PencilSquareIcon className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteTeacher(teacher.id)}
-                            className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                            title="Delete"
-                          >
-                            <TrashIcon className="w-5 h-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleViewTeacher(teacher)}
-                            className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                            title="View Details"
-                          >
-                            <EyeIcon className="w-5 h-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleViewCredentials(teacher)}
-                            className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                            title="View Credentials"
-                          >
-                            <KeyIcon className="w-5 h-5" />
-                          </button>
-                        </td>
+                          <td className="p-3 border w-40">
+                            <div className="flex gap-2 justify-center items-center">
+                              <button 
+                                onClick={() => handleEditTeacher(teacher)}
+                                className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                title="Edit"
+                              >
+                                <PencilSquareIcon className="w-5 h-5" />
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteTeacher(teacher.id)}
+                                className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                                title="Delete"
+                              >
+                                <TrashIcon className="w-5 h-5" />
+                              </button>
+
+                              <button 
+                                onClick={() => handleViewTeacher(teacher)}
+                                className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                                title="View Details"
+                              >
+                                <EyeIcon className="w-5 h-5" />
+                              </button>
+
+                              <button 
+                                onClick={() => handleViewCredentials(teacher)}
+                                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                title="View Credentials"
+                              >
+                                <KeyIcon className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </td>
                       </tr>
                     ))
                   ) : (
@@ -380,8 +597,8 @@ export default function AdminTeachers() {
         <div className="mb-8">
           <div className="bg-white rounded-lg shadow">
             <div className="p-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-purple-800 mb-4">
-                Subject Teachers ({filteredTeachers.filter(t => t.role === 'subject_teacher').length})
+              <h3 className="text-lg font-semibold text-purple-800 mb-1">
+                Subject Teachers 
               </h3>
             </div>
             <div className="overflow-x-auto">
@@ -391,8 +608,8 @@ export default function AdminTeachers() {
                     <th className="p-3 border text-center">
                       <input
                         type="checkbox"
-                        checked={selectAll}
-                        onChange={toggleSelectAll}
+                        checked={selectAllSubjectTeachers}
+                        onChange={toggleSelectAllSubjectTeachers}
                         className="w-4 h-4 cursor-pointer"
                       />
                     </th>
@@ -401,7 +618,7 @@ export default function AdminTeachers() {
                     <th className="p-3 border">Role</th>
                     <th className="p-3 border">Class/Section</th>
                     <th className="p-3 border">Subjects</th>
-                    <th className="p-3 border">Actions</th>
+                    <th className="p-3 border w-40 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -426,47 +643,62 @@ export default function AdminTeachers() {
                           </span>
                         </td>
                         <td className="p-3 border text-sm">
-                          {(teacher.grade_level || teacher.gradeLevel) && (teacher.section || teacher.section) 
-                            ? `${teacher.grade_level || teacher.gradeLevel} - ${teacher.section || teacher.section}`
-                            : '-'
-                          }
+                          {(() => {
+                            const fixed = fixGradeAndSection(teacher);
+                            return fixed.actualGradeLevel && fixed.actualSection 
+                              ? `${fixed.actualGradeLevel} - ${fixed.actualSection}`
+                              : '-';
+                          })()}
                         </td>
-                        <td className="p-3 border text-sm">
-                          {teacher.subjects || teacher.subjectsHandled ? 
-                            (teacher.subjects ? teacher.subjects.split(', ').filter(s => s.trim()) : teacher.subjectsHandled).join(', ')
-                            : '-'
-                          }
+                        <td className="p-3 border text-sm max-w-xs break-words">
+                          {(() => {
+                            try {
+                              const fixed = fixGradeAndSection(teacher);
+                              if (fixed.actualSubjects && fixed.actualSubjects.length > 0) {
+                                return fixed.actualSubjects.join(', ');
+                              }
+                              return '-';
+                            } catch (error) {
+                              console.error('Error parsing subjects:', error);
+                              return '-';
+                            }
+                          })()}
                         </td>
-                        <td className="p-3 border flex gap-2">
-                          <button 
-                            onClick={() => handleEditTeacher(teacher)}
-                            className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                            title="Edit"
-                          >
-                            <PencilSquareIcon className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteTeacher(teacher.id)}
-                            className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                            title="Delete"
-                          >
-                            <TrashIcon className="w-5 h-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleViewTeacher(teacher)}
-                            className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                            title="View Details"
-                          >
-                            <EyeIcon className="w-5 h-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleViewCredentials(teacher)}
-                            className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                            title="View Credentials"
-                          >
-                            <KeyIcon className="w-5 h-5" />
-                          </button>
-                        </td>
+                          <td className="p-3 border w-40">
+                            <div className="flex gap-2 justify-center items-center">
+                              <button 
+                                onClick={() => handleEditTeacher(teacher)}
+                                className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                title="Edit"
+                              >
+                                <PencilSquareIcon className="w-5 h-5" />
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteTeacher(teacher.id)}
+                                className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                                title="Delete"
+                              >
+                                <TrashIcon className="w-5 h-5" />
+                              </button>
+
+                              <button 
+                                onClick={() => handleViewTeacher(teacher)}
+                                className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                                title="View Details"
+                              >
+                                <EyeIcon className="w-5 h-5" />
+                              </button>
+
+                              <button 
+                                onClick={() => handleViewCredentials(teacher)}
+                                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                title="View Credentials"
+                              >
+                                <KeyIcon className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </td>
                       </tr>
                     ))
                   ) : (
@@ -496,48 +728,126 @@ export default function AdminTeachers() {
       {/* VIEW TEACHER MODAL */}
       {showViewModal && selectedTeacher && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 sm:p-6">
-          <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6">
-            <div className="flex justify-between items-center mb-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center p-6 pb-4">
               <h3 className="text-xl font-bold text-red-800">Teacher Details</h3>
             </div>
-            <div className="space-y-3">
-              <div>
-                <p className="text-sm text-gray-600">Name</p>
-                <p className="font-semibold">{selectedTeacher.firstName} {selectedTeacher.lastName}</p>
+            
+            <div className="flex-1 overflow-y-auto hide-scrollbar px-6 pb-4">
+              {/* Profile Picture */}
+              <div className="flex justify-center mb-6">
+                {selectedTeacher.profilePic ? (
+                  <img 
+                    src={
+                      (() => {
+                        const profilePic = selectedTeacher.profilePic;
+                        console.log('Teacher profile pic data:', profilePic);
+                        console.log('API_BASE:', API_BASE);
+                        
+                        let finalUrl;
+                        if (profilePic.startsWith('http')) {
+                          finalUrl = profilePic;
+                        } else if (profilePic.startsWith('/')) {
+                          finalUrl = `${API_BASE?.replace(/\/api$/, '') || ''}${profilePic}`;
+                        } else {
+                          finalUrl = `${API_BASE?.replace(/\/api$/, '') || ''}/${profilePic}`;
+                        }
+                        
+                        console.log('Final profile pic URL:', finalUrl);
+                        return finalUrl;
+                      })()
+                    } 
+                    alt={`${selectedTeacher.firstName} ${selectedTeacher.lastName}`}
+                    className="w-24 h-24 rounded-full object-cover border-4 border-red-800"
+                    onError={(e) => {
+                      console.error('Profile picture failed to load:', e.target.src);
+                      e.target.onerror = null;
+                      e.target.src = '/default-avatar.jpeg';
+                    }}
+                  />
+                ) : (
+                  <img 
+                    src='/default-avatar.jpeg'
+                    alt="Default Profile"
+                    className="w-24 h-24 rounded-full object-cover border-4 border-red-800"
+                  />
+                )}
               </div>
-              <div>
-                <p className="text-sm text-gray-600">Email</p>
-                <p className="font-semibold">{selectedTeacher.email}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Position</p>
-                <p className="font-semibold">{selectedTeacher.position || '-'}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Class/Section</p>
-                <p className="font-semibold">{selectedTeacher.gradeLevel && selectedTeacher.section ? `${selectedTeacher.gradeLevel} - ${selectedTeacher.section}` : '-'}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Role</p>
-                <p className="font-semibold">{selectedTeacher.role === 'subject_teacher' ? 'Subject Teacher' : 'Teacher'}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Department</p>
-                <p className="font-semibold">{selectedTeacher.department || '-'}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Subjects</p>
-                <p className="font-semibold">{selectedTeacher.subjects || selectedTeacher.subjectsHandled ? 
-                (selectedTeacher.subjects ? selectedTeacher.subjects.split(', ').filter(s => s.trim()).join(', ') : selectedTeacher.subjectsHandled.join(', '))
-                : '-'}</p>
+              
+              <div className="space-y-4">
+                {/* Name */}
+                <div>
+                  <p className="text-sm text-gray-600">Name</p>
+                  <p className="font-semibold">
+                    {selectedTeacher.firstName} {selectedTeacher.middleName ? `${selectedTeacher.middleName} ` : ''}{selectedTeacher.lastName}
+                  </p>
+                </div>
+                
+                {/* Username */}
+                <div>
+                  <p className="text-sm text-gray-600">Username</p>
+                  <p className="font-semibold">{selectedTeacher.username || '-'}</p>
+                </div>
+                
+                {/* Email */}
+                <div>
+                  <p className="text-sm text-gray-600">Email</p>
+                  <p className="font-semibold">{selectedTeacher.email}</p>
+                </div>
+                
+                {/* Class/Section Assigned */}
+                <div>
+                  <p className="text-sm text-gray-600">Class/Section Assigned</p>
+                  <p className="font-semibold">
+                    {selectedTeacher.gradeLevel && selectedTeacher.section 
+                      ? `${selectedTeacher.gradeLevel} - ${selectedTeacher.section}` 
+                      : '-'}
+                  </p>
+                </div>
+                
+                {/* Role */}
+                <div>
+                  <p className="text-sm text-gray-600">Role</p>
+                  <p className="font-semibold">
+                    {selectedTeacher.role === 'subject_teacher' ? 'Subject Teacher' : 'Adviser'}
+                  </p>
+                </div>
+                
+                {/* Subjects */}
+                <div>
+                  <p className="text-sm text-gray-600">Subjects</p>
+                  <p className="font-semibold">
+                    {(() => {
+                      try {
+                        const fixed = fixGradeAndSection(selectedTeacher);
+                        if (fixed.actualSubjects && fixed.actualSubjects.length > 0) {
+                          return fixed.actualSubjects.join(', ');
+                        }
+                        return '-';
+                      } catch (error) {
+                        console.error('Error parsing subjects:', error);
+                        return '-';
+                      }
+                    })()}
+                  </p>
+                </div>
+                
+                {/* Department */}
+                <div>
+                  <p className="text-sm text-gray-600">Department</p>
+                  <p className="font-semibold">WMSU ILS - Elementary Department</p>
+                </div>
               </div>
             </div>
-            <button 
-              onClick={() => setShowViewModal(false)}
-              className="mt-6 w-full bg-red-800 text-white py-2 rounded-lg hover:bg-red-700"
-            >
-              Close
-            </button>
+            
+            <div className="flex gap-3 p-6 pt-0">
+              <button 
+                onClick={() => setShowViewModal(false)}
+                className="w-full bg-red-800 text-white py-2 rounded-lg hover:bg-red-700"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -545,17 +855,28 @@ export default function AdminTeachers() {
       {/* EDIT TEACHER MODAL */}
       {showEditModal && selectedTeacher && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 sm:p-6">
-          <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6">
-            <div className="flex justify-between items-center mb-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center p-6 pb-4">
               <h3 className="text-xl font-bold text-red-800">Edit Teacher</h3>
             </div>
-            <div className="space-y-3">
+            <div className="flex-1 overflow-y-auto hide-scrollbar px-6 pb-4">
+              <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
                 <input 
                   type="text" 
                   value={editFormData.firstName || ''} 
                   onChange={(e) => setEditFormData({...editFormData, firstName: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
+                <input 
+                  type="text" 
+                  value={editFormData.middleName || ''} 
+                  onChange={(e) => setEditFormData({...editFormData, middleName: e.target.value})}
+                  placeholder="Optional"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
                 />
               </div>
@@ -578,16 +899,6 @@ export default function AdminTeachers() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
-                <input 
-                  type="text" 
-                  value={editFormData.position || ''} 
-                  onChange={(e) => setEditFormData({...editFormData, position: e.target.value})}
-                  placeholder="e.g., Grade 3 Adviser"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
-                />
-              </div>
-              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                 <select 
                   value={editFormData.role || ''} 
@@ -595,10 +906,77 @@ export default function AdminTeachers() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
                 >
                   <option value="">Select Role</option>
-                  <option value="teacher">Teacher</option>
-                  <option value="subject_teacher">Subject Teacher</option>
                   <option value="adviser">Adviser</option>
+                  <option value="subject_teacher">Subject Teacher</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Subjects</label>
+                {editFormData.gradeLevel === "Kindergarten" ? (
+                  <div className="mt-2 space-y-2">
+                    <p className="text-xs text-gray-600 mb-2">
+                      Kindergarten subjects (flexible - describe activities/subjects):
+                    </p>
+                    <textarea
+                      value={editFormData.kindergartenSubjects || ''}
+                      onChange={(e) => setEditFormData({...editFormData, kindergartenSubjects: e.target.value})}
+                      rows="3"
+                      placeholder="e.g., Basic Reading, Numbers, Shapes, Colors, Play Activities, Story Time..."
+                      className="mt-1 w-full p-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-800"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Since Kindergarten students are pre-schoolers, subjects are flexible. We'll confirm with client.
+                    </p>
+                  </div>
+                ) : editFormData.gradeLevel && subjectsByGradeLevel[editFormData.gradeLevel].length > 0 ? (
+                  <div className="mt-2 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-600">
+                        Select subjects for {editFormData.gradeLevel}:
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleSelectAllSubjects}
+                        className="px-3 py-1 text-xs bg-red-800 text-white rounded hover:bg-red-900 transition-colors"
+                      >
+                        {editFormData.subjects?.length === subjectsByGradeLevel[editFormData.gradeLevel].length ? 'Deselect All' : 'Select All'}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {subjectsByGradeLevel[editFormData.gradeLevel].map((subject) => (
+                        <label key={subject} className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            value={subject}
+                            checked={editFormData.subjects?.includes(subject) || false}
+                            onChange={(e) => {
+                              const updatedSubjects = e.target.checked
+                                ? [...(editFormData.subjects || []), subject]
+                                : (editFormData.subjects || []).filter(s => s !== subject);
+                              setEditFormData({...editFormData, subjects: updatedSubjects});
+                            }}
+                            className="w-4 h-4 text-red-800 border-gray-300 rounded focus:ring-red-800"
+                          />
+                          <span className="text-sm text-gray-700">{subject}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {editFormData.subjects && editFormData.subjects.length > 0 && (
+                      <p className="text-xs text-green-600 mt-2">
+                        Selected: {editFormData.subjects.join(", ")}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-2 p-3 bg-gray-50 rounded-md">
+                    <p className="text-sm text-gray-500">
+                      Please select a grade level first to see available subjects
+                    </p>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  Works for both Advisers and Subject Teachers - select relevant subjects
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
@@ -619,20 +997,20 @@ export default function AdminTeachers() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Section</label>
-                <select 
+                <input 
+                  type="text" 
                   value={editFormData.section || ''} 
                   onChange={(e) => setEditFormData({...editFormData, section: e.target.value})}
+                  placeholder="Enter section name"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
-                >
-                  <option value="">Select Section</option>
-                  <option value="Wisdom">Wisdom</option>
-                  <option value="Kindness">Kindness</option>
-                  <option value="Humility">Humility</option>
-                  <option value="Diligence">Diligence</option>
-                </select>
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Current section: {editFormData.section || 'Not set'}
+                </p>
               </div>
             </div>
-            <div className="flex gap-3 mt-6">
+            </div>
+            <div className="flex gap-3 p-6 pt-0">
               <button 
                 onClick={() => setShowEditModal(false)}
                 className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400"
