@@ -24,57 +24,65 @@ const readStudents = () => {
 const formatStudent = (student) => ({
   id: student.id,
   lrn: student.lrn,
-  firstName: student.firstName,
-  middleName: student.middleName,
-  lastName: student.lastName,
-  fullName: student.fullName,
+  firstName: student.first_name,
+  middleName: student.middle_name,
+  lastName: student.last_name,
   age: student.age,
   sex: student.sex,
-  gradeLevel: student.gradeLevel,
+  gradeLevel: student.grade_level,
   section: student.section,
-  contact: student.contact,
-  wmsuEmail: student.wmsuEmail,
-  qrCode: student.qrCode,
-  profilePic: student.profilePic,
+  contact: student.parent_contact,
+  email: student.student_email,
+  qrCode: student.qr_code,
+  profilePic: student.profile_pic,
   status: student.status,
   attendance: student.attendance,
   average: student.average,
-  createdBy: student.createdBy,
-  createdAt: student.createdAt,
-  updatedAt: student.updatedAt
+  createdAt: student.created_at,
+  updatedAt: student.updated_at
 });
 
 const createStudent = async (req, res) => {
   try {
+    // Handle both 'email' and 'wmsuEmail' formats (bulk import sends 'email')
     const {
       lrn, firstName, middleName, lastName, age, sex,
-      gradeLevel, section, contact, wmsuEmail, password, profilePic
+      gradeLevel, section, contact, wmsuEmail, email, password, profilePic, qrCode, fullName, status
     } = req.body;
 
-    if (!lrn || !firstName || !lastName || !wmsuEmail || !password) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    // Use email or wmsuEmail (bulk import sends 'email')
+    const studentEmail = wmsuEmail || email;
+    
+    // Don't require password for bulk import (it creates user separately)
+    if (!lrn || !firstName || !lastName || !studentEmail) {
+      return res.status(400).json({ error: 'Missing required fields: lrn, firstName, lastName, email' });
     }
 
     const [lrnExists] = await pool.query('SELECT 1 FROM students WHERE lrn = ?', [lrn]);
     if (lrnExists.length) return res.status(409).json({ error: 'LRN already exists' });
 
-    const [emailExists] = await pool.query('SELECT 1 FROM students WHERE wmsu_email = ?', [wmsuEmail]);
+    const [emailExists] = await pool.query('SELECT 1 FROM students WHERE student_email = ?', [studentEmail]);
     if (emailExists.length) return res.status(409).json({ error: 'Email already exists' });
 
-    const fullName = `${firstName} ${middleName || ''} ${lastName}`.trim();
-    const qrData = JSON.stringify({ lrn, name: fullName, gradeLevel, section, email: wmsuEmail });
-    const qrCode = await QRCode.toDataURL(qrData, { width: 300, margin: 2 });
+    const studentFullName = fullName || `${firstName} ${middleName || ''} ${lastName}`.trim();
+    
+    // Use provided QR code if available (from bulk import), otherwise generate
+    let finalQrCode = qrCode;
+    if (!finalQrCode) {
+      const qrData = JSON.stringify({ lrn, name: studentFullName, gradeLevel, section, email: studentEmail });
+      finalQrCode = await QRCode.toDataURL(qrData, { width: 300, margin: 2 });
+    }
 
     await pool.query(
-      `INSERT INTO students (lrn, first_name, middle_name, last_name, full_name, age, sex, grade_level, section, contact, wmsu_email, password, profile_pic, qr_code)
+      `INSERT INTO students (lrn, first_name, middle_name, last_name, age, sex, grade_level, section, parent_contact, student_email, password, profile_pic, qr_code, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [lrn, firstName, middleName || '', lastName, fullName, age || null, sex, gradeLevel, section, contact, wmsuEmail, password, profilePic || null, qrCode]
+      [lrn, firstName, middleName || '', lastName, age || 0, sex || 'N/A', gradeLevel, section, contact || '', studentEmail, password || 'temp123', profilePic || null, finalQrCode, status || 'Active']
     );
 
     const [[newStudent]] = await pool.query('SELECT * FROM students WHERE lrn = ?', [lrn]);
     res.status(201).json({ message: 'Student created successfully', student: formatStudent(newStudent) });
   } catch (err) {
-    console.error(err);
+    console.error('Error in createStudent:', err);
     res.status(500).json({ error: 'Failed to create student', details: err.message });
   }
 };
@@ -85,9 +93,9 @@ const getAllStudents = async (req, res) => {
 
     // Build query to fetch from database
     let query = `
-      SELECT id, lrn, first_name, middle_name, last_name, full_name, age, sex,
-             grade_level, section, contact, wmsu_email, status, attendance, average,
-             profile_pic, qr_code, adviser_id, adviser_name, created_at
+      SELECT id, lrn, first_name, middle_name, last_name, age, sex,
+             grade_level, section, parent_contact, student_email, status, attendance, average,
+             profile_pic, qr_code, created_at, updated_at
       FROM students
       WHERE 1=1
     `;
@@ -107,7 +115,7 @@ const getAllStudents = async (req, res) => {
       params.push(status);
     }
 
-    query += ` ORDER BY full_name ASC`;
+    query += ` ORDER BY first_name, last_name ASC`;
 
     const [students] = await pool.query(query, params);
 
