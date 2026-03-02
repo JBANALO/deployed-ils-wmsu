@@ -55,16 +55,16 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
     for (let i = 0; i < csvData.length; i++) {
       const student = csvData[i];
       try {
-        // Generate LRN (Learning Record Number) - must be 12 chars or less
-        // Format: YYMMDDHHmm + sequential 2-digit index
+        // Generate LRN (Learning Record Number) - must be max 12 chars
+        // Format: YYMMDDHHXXXX (8 chars timestamp + 4-digit index = 12 chars)
+        // Supports up to 9999 students without overflow
         const now = new Date();
         const yy = String(now.getFullYear()).slice(-2);
         const mm = String(now.getMonth() + 1).padStart(2, '0');
         const dd = String(now.getDate()).padStart(2, '0');
         const hh = String(now.getHours()).padStart(2, '0');
-        const min = String(now.getMinutes()).padStart(2, '0');
-        const idx = String(i).padStart(2, '0');
-        const lrn = `${yy}${mm}${dd}${hh}${min}${idx}`; // Total: 12 chars
+        const idx = String(i).padStart(4, '0');
+        const lrn = `${yy}${mm}${dd}${hh}${idx}`; // Total: exactly 12 chars
 
         // First, try to create user account via auth service
         // But skip if user already exists
