@@ -88,7 +88,8 @@ console.log('GOOGLE_CLIENT_ID:', process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET
 console.log('========================');
 const authRoutes = require('./routes/authRoutes');
 const studentRoutes = require('./routes/studentRoutes');
-const classRoutes = require('./routes/classRoutes');
+// Use role-filtered class routes (MySQL with Railway backend)
+const classRoutes = require('./routes/classRoutesWithRoleFilter');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const gradeRoutes = require('./routes/grades');
 const teacherRoutes = require('./routes/teacherRoutes');

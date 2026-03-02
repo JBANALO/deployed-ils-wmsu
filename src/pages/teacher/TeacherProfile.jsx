@@ -71,33 +71,46 @@ export default function TeacherProfile() {
             position: user.role === 'adviser' ? 'Adviser' : user.role === 'subject_teacher' ? 'Subject Teacher' : 'Teacher'
           }));
 
-          // Fetch assigned classes/schedule
+          // Fetch assigned classes/schedule (ROLE-FILTERED from Railway MySQL)
           if (user.id) {
             try {
               const scheduleData = [];
               
-              // Fetch subject teacher classes
+              // Use NEW unified endpoint that returns ONLY classes visible to this teacher
+              // based on their role (adviser OR subject teacher)
               try {
-                const subjectTeacherResponse = await api.get(`/classes/subject-teacher/${user.id}`);
-                const subjectTeacherClasses = Array.isArray(subjectTeacherResponse.data.data) ? subjectTeacherResponse.data.data : [];
+                const visibleClassesResponse = await api.get(`/classes/teacher/${user.id}`);
+                const visibleClasses = Array.isArray(visibleClassesResponse.data.data) ? visibleClassesResponse.data.data : [];
                 
-                console.log('Subject teacher classes:', subjectTeacherClasses);
+                console.log(`✓ Fetched ${visibleClasses.length} classes for teacher ${user.id}`);
                 
-                // Extract schedules from subject teacher assignments
-                subjectTeacherClasses.forEach(cls => {
-                  if (cls.subject_teachers && Array.isArray(cls.subject_teachers)) {
+                // Convert 24-hour time to 12-hour format
+                const convertTime = (time24) => {
+                  if (!time24) return '8:00 AM';
+                  const [hours, minutes] = time24.split(':');
+                  const hour = parseInt(hours);
+                  const ampm = hour >= 12 ? 'PM' : 'AM';
+                  const hour12 = hour % 12 || 12;
+                  return `${hour12}:${minutes} ${ampm}`;
+                };
+                
+                // Process each visible class
+                visibleClasses.forEach(cls => {
+                  // If user is adviser of this class
+                  if (cls.role_in_class === 'adviser' || cls.adviser_id === user.id) {
+                    scheduleData.push({
+                      id: `adviser-${cls.id}`,
+                      day: "Monday - Friday",
+                      time: "8:00 AM - 3:00 PM",
+                      subject: "Advisory Class",
+                      gradeSection: `${cls.grade || 'Grade'} - ${cls.section || 'Section'}`
+                    });
+                  }
+                  
+                  // If user is subject teacher in this class
+                  if ((cls.role_in_class === 'subject_teacher' || cls.subjects_teaching) && cls.subject_teachers) {
                     cls.subject_teachers.forEach(st => {
                       if (st.teacher_id === user.id) {
-                        // Convert 24-hour time to 12-hour format
-                        const convertTime = (time24) => {
-                          if (!time24) return '8:00 AM';
-                          const [hours, minutes] = time24.split(':');
-                          const hour = parseInt(hours);
-                          const ampm = hour >= 12 ? 'PM' : 'AM';
-                          const hour12 = hour % 12 || 12;
-                          return `${hour12}:${minutes} ${ampm}`;
-                        };
-                        
                         scheduleData.push({
                           id: `${cls.id}-${st.subject}`,
                           day: st.day || "Monday - Friday",
@@ -109,42 +122,22 @@ export default function TeacherProfile() {
                     });
                   }
                 });
-              } catch (err) {
-                console.error('Error fetching subject teacher classes:', err);
-              }
-
-              // Fetch adviser classes
-              try {
-                const adviserResponse = await api.get(`/classes/adviser/${user.id}`);
-                const adviserClasses = Array.isArray(adviserResponse.data.data) ? adviserResponse.data.data : [];
                 
-                console.log('Adviser classes:', adviserClasses);
+                // Extract unique subjects for display
+                const subjects = [...new Set(scheduleData.map(s => s.subject))].filter(s => s !== 'Advisory Class').join(', ');
+                setProfileData(prev => ({
+                  ...prev,
+                  subjects: subjects || "Advisory Class Only"
+                }));
                 
-                // Add adviser classes to schedule (usually full day advisory)
-                adviserClasses.forEach(cls => {
-                  scheduleData.push({
-                    id: `adviser-${cls.id}`,
-                    day: "Monday - Friday",
-                    time: "8:00 AM - 3:00 PM",
-                    subject: "Advisory Class",
-                    gradeSection: `${cls.grade || 'Grade'} - ${cls.section || 'Section'}`
-                  });
-                });
+                setSchedules(scheduleData);
+                console.log('✓ Teacher schedule loaded:', scheduleData);
               } catch (err) {
-                console.error('Error fetching adviser classes:', err);
+                console.error('Error fetching teacher visible classes:', err);
+                setSchedules([]);
               }
-
-              // Extract unique subjects for display
-              const subjects = [...new Set(scheduleData.map(s => s.subject))].filter(Boolean).join(', ');
-              setProfileData(prev => ({
-                ...prev,
-                subjects: subjects || "No subjects assigned yet"
-              }));
-              
-              setSchedules(scheduleData);
-              console.log('Final schedules:', scheduleData);
             } catch (err) {
-              console.error('Error fetching classes:', err);
+              console.error('Error in class loading:', err);
             }
           }
         } else {
