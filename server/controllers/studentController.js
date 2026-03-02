@@ -9,6 +9,18 @@ const bcrypt = require('bcryptjs');
 // HELPER: Format student object
 // -----------------------------
 function formatStudent(s) {
+  let qrCodeUrl = s.qr_code;
+  
+  // Convert file paths to full URLs for mobile app compatibility
+  if (qrCodeUrl && typeof qrCodeUrl === 'string') {
+    // If it's a relative path, convert to full URL
+    if (qrCodeUrl.startsWith('/qrcodes/')) {
+      // Use Railway production URL
+      qrCodeUrl = `https://deployed-ils-wmsu-production.up.railway.app${qrCodeUrl}`;
+    }
+    // If it's already a data URL or full HTTP(S) URL, keep it as is
+  }
+  
   return {
     id: s.id,
     lrn: s.lrn,
@@ -26,7 +38,7 @@ function formatStudent(s) {
     parentContact: s.parent_contact,
     studentEmail: s.student_email,
     profilePic: s.profile_pic,
-    qrCode: s.qr_code,
+    qrCode: qrCodeUrl,
     status: s.status,
     declineReason: s.decline_reason || undefined,
     createdAt: s.created_at,
