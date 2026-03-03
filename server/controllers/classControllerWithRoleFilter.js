@@ -47,22 +47,13 @@ const getTeacherVisibleClasses = async (req, res) => {
       // If adviser: get the class they advise
       if (user.role === 'adviser' || user.role === 'teacher') {
         const [adviserClasses] = await pool.query(
-          `SELECT c.*, 
-                  u.firstName as adviser_firstName, 
-                  u.lastName as adviser_lastName,
-                  COUNT(DISTINCT s.id) as student_count
-           FROM classes c
-           LEFT JOIN users u ON c.adviser_id = u.id
-           LEFT JOIN students s ON c.id = s.class_id
-           WHERE c.adviser_id = ?
-           GROUP BY c.id`,
+          `SELECT c.* FROM classes c WHERE c.adviser_id = ?`,
           [userId]
         );
 
         visibleClasses = adviserClasses.map(cls => ({
           ...cls,
-          role_in_class: 'adviser',
-          adviser_name: `${cls.adviser_firstName || ''} ${cls.adviser_lastName || ''}`.trim()
+          role_in_class: 'adviser'
         }));
 
         console.log(`Found ${visibleClasses.length} classes as adviser`);
@@ -71,28 +62,19 @@ const getTeacherVisibleClasses = async (req, res) => {
       // If subject teacher: get classes where they teach
       if (user.role === 'subject_teacher' || user.role === 'teacher') {
         const [teacherClasses] = await pool.query(
-          `SELECT DISTINCT c.*, 
-                  u.firstName as adviser_firstName, 
-                  u.lastName as adviser_lastName,
-                  GROUP_CONCAT(DISTINCT st.subject) as subjects_teaching,
-                  COUNT(DISTINCT s.id) as student_count
+          `SELECT DISTINCT c.*,
+                  GROUP_CONCAT(DISTINCT st.subject) as subjects_teaching
            FROM classes c
-           LEFT JOIN users u ON c.adviser_id = u.id
-           LEFT JOIN subject_teachers st ON c.id = st.class_id AND st.teacher_id = ?
-           LEFT JOIN students s ON c.id = s.class_id
-           WHERE st.teacher_id = ? OR c.adviser_id = ?
+           JOIN subject_teachers st ON c.id = st.class_id
+           WHERE st.teacher_id = ?
            GROUP BY c.id`,
-          [userId, userId, userId]
+          [userId]
         );
 
-        // Include subject teacher classes
-        const subjectTeacherClasses = teacherClasses
-          .filter(cls => cls.subjects_teaching) // Only if teaching subjects
-          .map(cls => ({
-            ...cls,
-            role_in_class: 'subject_teacher',
-            adviser_name: `${cls.adviser_firstName || ''} ${cls.adviser_lastName || ''}`.trim()
-          }));
+        const subjectTeacherClasses = teacherClasses.map(cls => ({
+          ...cls,
+          role_in_class: 'subject_teacher'
+        }));
 
         // Combine and deduplicate
         visibleClasses = [...visibleClasses, ...subjectTeacherClasses];
@@ -141,15 +123,7 @@ const getAllClasses = async (req, res) => {
     try {
       // Try database first - query classes table
       const [rows] = await pool.query(
-        `SELECT c.*, 
-                u.firstName as adviser_firstName, 
-                u.lastName as adviser_lastName,
-                COUNT(DISTINCT s.id) as student_count
-         FROM classes c
-         LEFT JOIN users u ON c.adviser_id = u.id
-         LEFT JOIN students s ON c.id = s.class_id
-         GROUP BY c.id
-         ORDER BY c.grade, c.section`
+        `SELECT c.* FROM classes c ORDER BY c.grade, c.section`
       );
 
       console.log(`Database: Found ${rows.length} classes`);
@@ -158,10 +132,7 @@ const getAllClasses = async (req, res) => {
       if (rows.length > 0) {
         return res.json({ 
           success: true, 
-          data: rows.map(cls => ({
-            ...cls,
-            adviser_name: `${cls.adviser_firstName || ''} ${cls.adviser_lastName || ''}`.trim()
-          }))
+          data: rows
         });
       }
       // Otherwise fall through to generate from students table
@@ -251,12 +222,7 @@ const getAdviserClasses = async (req, res) => {
     try {
       // First try direct match on classes.adviser_id
       const [rows] = await pool.query(
-        `SELECT c.*, 
-                COUNT(DISTINCT s.id) as student_count
-         FROM classes c
-         LEFT JOIN students s ON c.id = s.class_id
-         WHERE c.adviser_id = ?
-         GROUP BY c.id`,
+        `SELECT c.* FROM classes c WHERE c.adviser_id = ?`,
         [adviserId]
       );
 
@@ -278,11 +244,7 @@ const getAdviserClasses = async (req, res) => {
 
         if (teacher.grade_level && teacher.section) {
           const [classRows] = await pool.query(
-            `SELECT c.*, COUNT(DISTINCT s.id) as student_count
-             FROM classes c
-             LEFT JOIN students s ON c.id = s.class_id
-             WHERE c.grade = ? AND c.section = ?
-             GROUP BY c.id`,
+            `SELECT c.* FROM classes c WHERE c.grade = ? AND c.section = ?`,
             [teacher.grade_level, teacher.section]
           );
 
@@ -328,14 +290,12 @@ const getSubjectTeacherClasses = async (req, res) => {
     try {
       const [rows] = await pool.query(
         `SELECT DISTINCT c.*,
-                GROUP_CONCAT(DISTINCT st.subject) as subjects_teaching,
-                COUNT(DISTINCT s.id) as student_count
+                GROUP_CONCAT(DISTINCT st.subject) as subjects_teaching
          FROM classes c
-         LEFT JOIN subject_teachers st ON c.id = st.class_id AND st.teacher_id = ?
-         LEFT JOIN students s ON c.id = s.class_id
+         JOIN subject_teachers st ON c.id = st.class_id
          WHERE st.teacher_id = ?
          GROUP BY c.id`,
-        [userId, userId]
+        [userId]
       );
 
       console.log(`Database: Found ${rows.length} classes for subject teacher ${userId}`);
