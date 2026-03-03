@@ -18,18 +18,68 @@ exports.googleCallback = async (req, res) => {
     const name = displayName;
     const avatar = photos[0]?.value || null;
 
-    // Check if user exists by email
+    // Check if user exists by email in any table
     let users = await query('SELECT * FROM users WHERE email = ?', [email]);
+    let user = null;
+    let userTable = 'users'; // Default to users table
 
-    let user;
     if (users.length > 0) {
       user = users[0];
+      userTable = 'users';
       // Update Google ID if not set
       if (!user.googleId) {
         await query('UPDATE users SET googleId = ? WHERE id = ?', [googleId, user.id]);
       }
     } else {
-      // Create new user with Google data - use correct database column names
+      // Check teachers table
+      users = await query('SELECT * FROM teachers WHERE email = ?', [email]);
+      if (users.length > 0) {
+        user = users[0];
+        userTable = 'teachers';
+        // Update Google ID if not set (add column if needed)
+        try {
+          await query('UPDATE teachers SET googleId = ? WHERE id = ?', [googleId, user.id]);
+        } catch (err) {
+          console.log('googleId column not in teachers table, skipping update');
+        }
+      } else {
+        // Check students table
+        users = await query('SELECT * FROM students WHERE student_email = ?', [email]);
+        if (users.length > 0) {
+          user = users[0];
+          userTable = 'students';
+          // Update Google ID if not set (add column if needed)
+          try {
+            await query('UPDATE students SET googleId = ? WHERE id = ?', [googleId, user.id]);
+          } catch (err) {
+            console.log('googleId column not in students table, skipping update');
+          }
+        }
+      }
+    }
+
+    // If user still doesn't exist, determine role based on email domain and create in appropriate table
+    if (!user) {
+      let role = 'student'; // Default role
+      let targetTable = 'users';
+      
+      // Determine role based on email domain and patterns
+      if (email.includes('@wmsu.edu.ph')) {
+        // Check for admin patterns - you can customize these
+        const adminPatterns = ['admin@', 'administrator@', 'info@', 'support@'];
+        const isAdmin = adminPatterns.some(pattern => email.toLowerCase().startsWith(pattern));
+        
+        if (isAdmin) {
+          role = 'admin';
+          targetTable = 'users';
+        } else {
+          // Default @wmsu.edu.ph emails to teacher role
+          role = 'teacher';
+          targetTable = 'teachers';
+        }
+      }
+
+      // Create new user with Google data in the appropriate table
       const username = email.split('@')[0] + '_' + Math.random().toString(36).substr(2, 5);
       const firstName = displayName.split(' ')[0] || displayName;
       const lastName = displayName.split(' ').slice(1).join(' ') || '';
@@ -39,23 +89,60 @@ exports.googleCallback = async (req, res) => {
       const userId = uuidv4();
 
       try {
-        await query(
-          'INSERT INTO users (id, googleId, email, username, first_name, last_name, name, profile_pic, role, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [
-            userId,
-            googleId,
-            email,
-            username,
-            firstName,
-            lastName,
-            name,
-            avatar,
-            'student', // Default role
-            'approved', // Auto-approve Google sign-ups
-          ]
-        );
+        if (targetTable === 'users') {
+          await query(
+            'INSERT INTO users (id, googleId, email, username, first_name, last_name, name, profile_pic, role, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              userId,
+              googleId,
+              email,
+              username,
+              firstName,
+              lastName,
+              name,
+              avatar,
+              role,
+              'approved', // Auto-approve Google sign-ups
+            ]
+          );
+        } else if (targetTable === 'teachers') {
+          await query(
+            'INSERT INTO teachers (id, googleId, email, username, first_name, last_name, profile_pic, role, verification_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              userId,
+              googleId,
+              email,
+              username,
+              firstName,
+              lastName,
+              avatar,
+              role,
+              'approved', // Auto-approve Google sign-ups
+            ]
+          );
+        } else if (targetTable === 'students') {
+          await query(
+            'INSERT INTO students (id, googleId, student_email, first_name, last_name, profile_pic, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [
+              userId,
+              googleId,
+              email,
+              firstName,
+              lastName,
+              avatar,
+              'approved', // Auto-approve Google sign-ups
+            ]
+          );
+        }
 
-        users = await query('SELECT * FROM users WHERE email = ?', [email]);
+        // Fetch the created user
+        if (targetTable === 'users') {
+          users = await query('SELECT * FROM users WHERE email = ?', [email]);
+        } else if (targetTable === 'teachers') {
+          users = await query('SELECT * FROM teachers WHERE email = ?', [email]);
+        } else if (targetTable === 'students') {
+          users = await query('SELECT * FROM students WHERE student_email = ?', [email]);
+        }
         user = users[0];
       } catch (insertError) {
         console.error('Error creating user:', insertError);
