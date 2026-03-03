@@ -252,7 +252,7 @@ export default function LogScreen() {
           </View>
         )}
 
-        <ScrollView style={styles.scrollView} key={refreshKey}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 100 }} key={refreshKey}>
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#8B0000" />
@@ -370,7 +370,6 @@ export default function LogScreen() {
             </>
           )}
 
-          <View style={{ height: 80 }} />
         </ScrollView>
       </View>
     </>
