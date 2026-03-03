@@ -42,7 +42,7 @@ export default function AdminProfile() {
         username: adminUser.username || '',
         email: adminUser.email || '',
         phone: adminUser.phone || '',
-        profileImage: adminUser.profileImage || ''
+        profileImage: (adminUser.profileImage && adminUser.profileImage !== 'null' && adminUser.profileImage !== 'undefined') ? adminUser.profileImage : ''
       };
       console.log('AdminProfile - setting formData to:', newFormData);
       setFormData(newFormData);
@@ -171,11 +171,21 @@ const handleImageChange = (e) => {
                     ? (formData.profileImage.startsWith('http')
                         ? formData.profileImage
                         : (() => {
+                            // Handle different image path formats for production compatibility
+                            if (!formData.profileImage || formData.profileImage === 'null' || formData.profileImage === 'undefined') {
+                              return '/default-avatar.jpeg';
+                            }
+                            
                             // Try different URL constructions for production compatibility
                             const possibleUrls = [
+                              // Remove /api from base and add path
                               `${API_BASE.replace(/\/api$/, '')}${formData.profileImage}`,
+                              // Keep /api and add path
                               `${API_BASE}${formData.profileImage}`,
-                              formData.profileImage.startsWith('/') ? formData.profileImage : `/${formData.profileImage}`
+                              // Direct path if it starts with /
+                              formData.profileImage.startsWith('/') ? formData.profileImage : `/${formData.profileImage}`,
+                              // Fallback to default
+                              '/default-avatar.jpeg'
                             ];
                             console.log('AdminProfile - Trying image URLs:', possibleUrls);
                             return possibleUrls[0]; // Default to first option
@@ -188,17 +198,24 @@ const handleImageChange = (e) => {
                 onError={(e) => { 
                   console.log('AdminProfile - Image failed to load, trying fallback URLs');
                   const originalSrc = e.target.src;
-                  const possibleUrls = [
+                  
+                  // Define fallback URLs in order
+                  const fallbackUrls = [
+                    `${API_BASE.replace(/\/api$/, '')}${formData.profileImage}`,
                     `${API_BASE}${formData.profileImage}`,
                     formData.profileImage.startsWith('/') ? formData.profileImage : `/${formData.profileImage}`,
                     '/default-avatar.jpeg'
                   ];
                   
-                  // Try next URL in the list
-                  const currentIndex = possibleUrls.findIndex(url => originalSrc.includes(url));
-                  if (currentIndex < possibleUrls.length - 1) {
-                    e.target.src = possibleUrls[currentIndex + 1];
+                  // Find current index
+                  const currentIndex = fallbackUrls.findIndex(url => originalSrc.includes(url));
+                  
+                  // Try next URL or set to default
+                  if (currentIndex < fallbackUrls.length - 1) {
+                    console.log('AdminProfile - Trying next URL:', fallbackUrls[currentIndex + 1]);
+                    e.target.src = fallbackUrls[currentIndex + 1];
                   } else {
+                    console.log('AdminProfile - All URLs failed, using default avatar');
                     e.target.onerror = null; 
                     e.target.src = "/default-avatar.jpeg"; 
                   }
