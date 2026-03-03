@@ -311,16 +311,19 @@ export default function LogScreen() {
                       </View>
                     )}
 
-                    {/* Only show PRESENT students in the list */}
+                    {/* Only show PRESENT and LATE students in the list */}
                     {section.students
                       .filter(student => {
+                        const isPresentOrLate = (status) =>
+                          status === 'present' || status === 'Present' ||
+                          status === 'late' || status === 'Late';
                         if (selectedPeriod === 'all') {
-                          return student.morningLog?.status === 'present' || student.morningLog?.status === 'Present' ||
-                                 student.afternoonLog?.status === 'present' || student.afternoonLog?.status === 'Present';
+                          return isPresentOrLate(student.morningLog?.status) ||
+                                 isPresentOrLate(student.afternoonLog?.status);
                         } else if (selectedPeriod === 'morning') {
-                          return student.morningLog?.status === 'present' || student.morningLog?.status === 'Present';
+                          return isPresentOrLate(student.morningLog?.status);
                         } else {
-                          return student.afternoonLog?.status === 'present' || student.afternoonLog?.status === 'Present';
+                          return isPresentOrLate(student.afternoonLog?.status);
                         }
                       })
                       .map((student, index) => (
@@ -387,16 +390,19 @@ export default function LogScreen() {
                     ))}
 
                     {section.students.filter(student => {
+                        const isPresentOrLate = (status) =>
+                          status === 'present' || status === 'Present' ||
+                          status === 'late' || status === 'Late';
                         if (selectedPeriod === 'all') {
-                          return student.morningLog?.status === 'present' || student.morningLog?.status === 'Present' ||
-                                 student.afternoonLog?.status === 'present' || student.afternoonLog?.status === 'Present';
+                          return isPresentOrLate(student.morningLog?.status) ||
+                                 isPresentOrLate(student.afternoonLog?.status);
                         } else if (selectedPeriod === 'morning') {
-                          return student.morningLog?.status === 'present' || student.morningLog?.status === 'Present';
+                          return isPresentOrLate(student.morningLog?.status);
                         } else {
-                          return student.afternoonLog?.status === 'present' || student.afternoonLog?.status === 'Present';
+                          return isPresentOrLate(student.afternoonLog?.status);
                         }
                       }).length === 0 && (
-                      <Text style={{ textAlign: 'center', color: '#999', padding: 16 }}>No present students today</Text>
+                      <Text style={{ textAlign: 'center', color: '#999', padding: 16 }}>No present or late students yet</Text>
                     )}
                   </View>
                 );

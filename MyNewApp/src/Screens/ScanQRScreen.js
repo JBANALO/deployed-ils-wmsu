@@ -20,7 +20,7 @@ export default function ScanQRScreen() {
   const [successData, setSuccessData] = useState(null);
   const [sendingEmail, setSendingEmail] = useState(false);
 
-  const { addAttendance, checkAttendanceStatus } = useAttendance();
+  const { addAttendance, checkAttendanceStatus, loadAttendanceLogs } = useAttendance();
   const { user, userData } = useAuth();
 
   // Get teacher name
@@ -310,7 +310,7 @@ export default function ScanQRScreen() {
 
       setSendingEmail(true);
      
-      await addAttendance(
+      const attendanceResult = await addAttendance(
         scannedStudent.studentId,
         attendancePeriod,
         attendanceStatus
@@ -322,7 +322,12 @@ export default function ScanQRScreen() {
       const emailResult = await sendAutoEmailToParent(scannedStudent, attendanceStatus, attendancePeriod, scannedStudent.scanTime);
       
       setSendingEmail(false);
-      
+
+      // Only refresh from server if the save succeeded (so we don't wipe optimistic update)
+      if (attendanceResult?.success) {
+        loadAttendanceLogs();
+      }
+
       // Show custom success modal with real icons
       setSuccessData({
         studentName: scannedStudent.name,
