@@ -214,6 +214,61 @@ exports.createStudent = async (req, res) => {
 // -----------------------------
 exports.getStudents = async (req, res) => {
   try {
+    const { teacherId, gradeLevel, section } = req.query;
+
+    // If teacherId provided, filter to only that teacher's assigned class
+    if (teacherId) {
+      let assignedGradeLevel = gradeLevel;
+      let assignedSection = section;
+
+      // 1. Check class_assignments table first (UUID-based teachers from web)
+      try {
+        const classAssignments = await query(
+          'SELECT grade_level, section FROM class_assignments WHERE adviser_id = ? LIMIT 1',
+          [teacherId]
+        );
+        if (classAssignments.length > 0) {
+          assignedGradeLevel = classAssignments[0].grade_level;
+          assignedSection = classAssignments[0].section;
+          console.log(`[getStudents] Found class_assignments for teacher ${teacherId}: ${assignedGradeLevel} - ${assignedSection}`);
+        }
+      } catch (assignErr) {
+        console.log('[getStudents] class_assignments lookup failed:', assignErr.message);
+      }
+
+      // 2. Fall back to teachers table (numeric IDs)
+      if (!assignedGradeLevel || !assignedSection) {
+        try {
+          const teacherRows = await query(
+            'SELECT grade_level, section FROM teachers WHERE id = ? AND grade_level IS NOT NULL AND section IS NOT NULL LIMIT 1',
+            [teacherId]
+          );
+          if (teacherRows.length > 0) {
+            assignedGradeLevel = teacherRows[0].grade_level;
+            assignedSection = teacherRows[0].section;
+            console.log(`[getStudents] Found teachers table for teacher ${teacherId}: ${assignedGradeLevel} - ${assignedSection}`);
+          }
+        } catch (teacherErr) {
+          console.log('[getStudents] teachers table lookup failed:', teacherErr.message);
+        }
+      }
+
+      // 3. If we found the teacher's assigned class, return only those students
+      if (assignedGradeLevel && assignedSection) {
+        const filteredStudents = await query(
+          'SELECT * FROM students WHERE grade_level = ? AND section = ? ORDER BY last_name ASC',
+          [assignedGradeLevel, assignedSection]
+        );
+        console.log(`[getStudents] Returning ${filteredStudents.length} students for ${assignedGradeLevel} - ${assignedSection}`);
+        return res.status(200).json({ status: 'success', data: filteredStudents.map(formatStudent) });
+      }
+
+      // 4. If teacher has no assigned class, return empty array
+      console.log(`[getStudents] Teacher ${teacherId} has no assigned class — returning empty`);
+      return res.status(200).json({ status: 'success', data: [] });
+    }
+
+    // No teacherId — return all students (admin/web use)
     const allDbStudents = await query('SELECT * FROM students ORDER BY created_at DESC');
     const formattedStudents = allDbStudents.map(formatStudent);
     res.status(200).json({ status: 'success', data: formattedStudents });
