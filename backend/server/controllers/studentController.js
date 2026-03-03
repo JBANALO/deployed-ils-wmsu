@@ -3,6 +3,8 @@ const pool = require('../config/db');
 const QRCode = require('qrcode');
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcryptjs');
+const { v4: uuidv4 } = require('uuid');
 
 // JSON file path for students data
 const studentsFilePath = path.join(__dirname, '../../../data/students.json');
@@ -100,13 +102,34 @@ const createStudent = async (req, res) => {
       finalQrCode = await QRCode.toDataURL(qrData, { width: 300, margin: 2 });
     }
 
+    // Create unique IDs for student and user
+    const studentId = uuidv4();
+    const tempPassword = password || 'TempPassword123!';
+    
+    // Generate username from LRN or create one from email
+    const username = lrn || `student_${studentId.substring(0, 8)}`;
+
+    // 1. Insert into students table
     await pool.query(
-      `INSERT INTO students (lrn, first_name, middle_name, last_name, age, sex, grade_level, section, parent_contact, student_email, password, profile_pic, qr_code, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [lrn, firstName, middleName || '', lastName, age || 0, sex || 'N/A', gradeLevel, section, contact || '', studentEmail, password || 'temp123', profilePic || null, finalQrCode, status || 'Active']
+      `INSERT INTO students (id, lrn, first_name, middle_name, last_name, age, sex, grade_level, section, parent_contact, student_email, password, profile_pic, qr_code, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [studentId, lrn, firstName, middleName || '', lastName, age || 0, sex || 'N/A', gradeLevel, section, contact || '', studentEmail, tempPassword, profilePic || null, finalQrCode, status || 'Active']
     );
 
-    const [[newStudent]] = await pool.query('SELECT * FROM students WHERE lrn = ?', [lrn]);
+    // 2. Hash password and insert into users table
+    try {
+      const hashedPassword = await bcrypt.hash(tempPassword, 10);
+      await pool.query(
+        `INSERT INTO users (id, first_name, last_name, full_name, email, username, password, role, approval_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [studentId, firstName, lastName, studentFullName, studentEmail, username, hashedPassword, 'student', 'approved']
+      );
+    } catch (userError) {
+      // If user insert fails (e.g., duplicate email), log but don't fail the entire request
+      console.error('Error inserting student into users table:', userError.message);
+    }
+
+    const [[newStudent]] = await pool.query('SELECT * FROM students WHERE id = ?', [studentId]);
     res.status(201).json({ message: 'Student created successfully', student: formatStudent(newStudent) });
   } catch (err) {
     console.error('Error in createStudent:', err);

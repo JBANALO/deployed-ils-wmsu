@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
  * Bulk Import Students from students.json to Database
- * This script imports/updates all students from students.json into the students table
+ * This script imports/updates all students from students.json into BOTH:
+ * - students table (profile/academic data)
+ * - users table (login credentials)
  * Matches by name and creates missing students
  * 
  * Run: node bulk-import-students.cjs
@@ -12,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const QRCode = require('qrcode');
+const bcrypt = require('bcryptjs');
 
 // Import database query function
 const { query } = require('./server/config/database');
@@ -77,7 +80,13 @@ async function bulkImportStudents() {
           );
           updated++;
         } else {
-          // Insert new student
+          // Generate student email and username
+          const studentEmail = `${student.firstName.toLowerCase()}.${student.lastName.toLowerCase()}@student.wmsu.edu.ph`;
+          const username = student.lrn || `student_${studentId.substring(0, 8)}`;
+          const tempPassword = 'TempPassword123!';
+          const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+          // 1. Insert new student into students table
           await query(
             `INSERT INTO students (
               id, lrn, first_name, middle_name, last_name, full_name,
@@ -95,13 +104,37 @@ async function bulkImportStudents() {
               student.section || 'Wisdom',
               student.sex || 'Not Specified',
               student.age || 10,
-              `${student.firstName.toLowerCase()}.${student.lastName.toLowerCase()}@student.wmsu.edu.ph`,
-              'TempPassword123!',
+              studentEmail,
+              tempPassword,
               'Active',
               student.qrCode,
               student.profilePic
             ]
           );
+
+          // 2. Insert login account into users table
+          try {
+            await query(
+              `INSERT INTO users (
+                id, first_name, last_name, full_name, email, username, password, role, approval_status, created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+              [
+                studentId,
+                student.firstName,
+                student.lastName,
+                fullName,
+                studentEmail,
+                username,
+                hashedPassword,
+                'student',
+                'approved'
+              ]
+            );
+          } catch (userError) {
+            // If user already exists, just continue (don't fail the student import)
+            console.log(`  ℹ️ User login already exists for ${studentEmail}`);
+          }
+
           imported++;
         }
 
@@ -119,7 +152,10 @@ async function bulkImportStudents() {
     console.log(`   📥 Imported: ${imported}`);
     console.log(`   📝 Updated: ${updated}`);
     console.log(`   ⚠️  Errors: ${errors}`);
-    console.log(`\n✨ All students now have QR codes from students.json`);
+    console.log(`\n✨ All students now have:`);
+    console.log(`   • QR codes from students.json`);
+    console.log(`   • Login accounts in users table`);
+    console.log(`   • Temporary password: TempPassword123!`);
 
     process.exit(0);
   } catch (error) {

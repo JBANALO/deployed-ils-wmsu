@@ -28,104 +28,73 @@ export default function AdminClasses() {
 
 
 
-  // Fetch students and organize by grade and section
-
+  // Fetch classes from backend with adviser info
   useEffect(() => {
-
     const fetchAndOrganizeClasses = async () => {
-
       try {
+        // First, try to fetch classes from backend (includes adviser_name)
+        let backendClasses = [];
+        try {
+          const classesResponse = await fetch(`${API_BASE_URL}/classes`);
+          if (classesResponse.ok) {
+            const classesResult = await classesResponse.json();
+            backendClasses = Array.isArray(classesResult) ? classesResult : (classesResult.data || []);
+            console.log('Classes fetched from backend:', backendClasses);
+          }
+        } catch (err) {
+          console.log('Could not fetch classes from backend:', err.message);
+        }
 
         // Fetch students
-
         const studentsResponse = await fetch(`${API_BASE_URL}/students`);
-
         if (studentsResponse.ok) {
-
           const result = await studentsResponse.json();
-
           const students = result.data ? result.data : (Array.isArray(result) ? result : []);
-
           setAllStudents(students);
-
-          const classes = organizeByGradeAndSection(students);
-
-          setClassesData(classes);
-
+          
+          // If we have backend classes with adviser info, use them
+          // Otherwise organize from students
+          if (backendClasses.length > 0) {
+            setClassesData(backendClasses);
+          } else {
+            const classes = organizeByGradeAndSection(students);
+            setClassesData(classes);
+          }
         } else {
-
-          setClassesData([]);
-
+          if (backendClasses.length > 0) {
+            setClassesData(backendClasses);
+          }
           setAllStudents([]);
-
         }
-
-
 
         // Fetch teachers
-
         try {
-
           const teachersResponse = await fetch(`${API_BASE_URL}/users`);
-
           if (teachersResponse.ok) {
-
             const data = await teachersResponse.json();
-
             const allUsers = data.data?.users || data.users || [];
-
             console.log('All Users fetched:', allUsers.length);
-
             const teachersList = Array.isArray(allUsers) 
-
               ? allUsers.filter(user => ['teacher', 'subject_teacher', 'adviser'].includes(user.role))
-
               : [];
-
             console.log('Teachers filtered:', teachersList.length);
-
-            teachersList.forEach(t => {
-
-              console.log(`Teacher: ${t.firstName} ${t.lastName} | Grade: ${t.gradeLevel} | Section: ${t.section} | Role: ${t.role}`);
-
-            });
-
             setTeachers(teachersList);
-
           } else {
-
             console.log('Teachers response not ok');
-
             setTeachers([]);
-
           }
-
         } catch (teacherError) {
-
           console.error('Error fetching teachers:', teacherError);
-
           setTeachers([]);
-
         }
-
       } catch (error) {
-
         console.error('Error fetching data:', error);
-
-        setClassesData([]);
-
-        setAllStudents([]);
-
       }
 
       setLoading(false);
-
     };
 
-
-
     fetchAndOrganizeClasses();
-
   }, []);
 
 
@@ -376,17 +345,37 @@ export default function AdminClasses() {
 
                         <UserGroupIcon className="w-5 h-5 text-gray-600" />
 
-                        Students Enrolled: <span className="font-semibold">{cls.students}</span>
+                        Students Enrolled: <span className="font-semibold">{cls.students || cls.studentList?.length || 0}</span>
 
                       </p>
 
-                      {getTeacherForClass(cls.grade, cls.section) && (
+                      {cls.adviser_name ? (
+
+                        <p className="text-gray-600 mt-1 flex items-center gap-2">
+
+                          <UserGroupIcon className="w-5 h-5 text-red-700" />
+
+                          Adviser: <span className="font-semibold text-green-600">{cls.adviser_name}</span>
+
+                        </p>
+
+                      ) : getTeacherForClass(cls.grade, cls.section) ? (
 
                         <p className="text-gray-600 mt-1 flex items-center gap-2">
 
                           <UserGroupIcon className="w-5 h-5 text-red-700" />
 
                           Adviser: <span className="font-semibold">{getTeacherForClass(cls.grade, cls.section).firstName} {getTeacherForClass(cls.grade, cls.section).lastName}</span>
+
+                        </p>
+
+                      ) : (
+
+                        <p className="text-gray-600 mt-1 flex items-center gap-2">
+
+                          <UserGroupIcon className="w-5 h-5 text-red-700" />
+
+                          Adviser: <span className="font-semibold text-red-500">Not Assigned</span>
 
                         </p>
 
