@@ -32,7 +32,7 @@ export default function AdminClasses() {
   useEffect(() => {
     const fetchAndOrganizeClasses = async () => {
       try {
-        // First, try to fetch classes from backend (includes adviser_name)
+        // Fetch classes from backend (includes adviser_name)
         let backendClasses = [];
         try {
           const classesResponse = await fetch(`${API_BASE_URL}/classes`);
@@ -45,20 +45,33 @@ export default function AdminClasses() {
           console.log('Could not fetch classes from backend:', err.message);
         }
 
-        // Fetch students
+        // Fetch students for enrollment count
         const studentsResponse = await fetch(`${API_BASE_URL}/students`);
         if (studentsResponse.ok) {
           const result = await studentsResponse.json();
           const students = result.data ? result.data : (Array.isArray(result) ? result : []);
           setAllStudents(students);
+          console.log('Students fetched:', students.length);
           
-          // If we have backend classes with adviser info, use them
-          // Otherwise organize from students
+          // Organize students by grade/section
+          const studentClasses = organizeByGradeAndSection(students);
+          
+          // Merge adviser info from backend classes
           if (backendClasses.length > 0) {
-            setClassesData(backendClasses);
+            const mergedClasses = studentClasses.map(studentClass => {
+              const backendClass = backendClasses.find(bc => 
+                bc.grade === studentClass.grade && bc.section === studentClass.section
+              );
+              return {
+                ...studentClass,
+                adviser_name: backendClass?.adviser_name || null,
+                adviser_id: backendClass?.adviser_id || null
+              };
+            });
+            console.log('Merged classes with adviser info:', mergedClasses);
+            setClassesData(mergedClasses);
           } else {
-            const classes = organizeByGradeAndSection(students);
-            setClassesData(classes);
+            setClassesData(studentClasses);
           }
         } else {
           if (backendClasses.length > 0) {
