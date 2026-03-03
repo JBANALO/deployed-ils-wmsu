@@ -19,10 +19,9 @@ export function AttendanceProvider({ children }) {
 
   // Load attendance logs
   useEffect(() => {
-    // Disabled automatic loading to prevent app blocking
-    // if (user) {
-    //   loadAttendanceLogs();
-    // }
+    if (user) {
+      loadAttendanceLogs();
+    }
   }, [user]);
 
   // Load attendance logs from backend API
@@ -183,13 +182,21 @@ export function AttendanceProvider({ children }) {
 
   // Get today's attendance statistics
   const getTodayStats = () => {
-    const today = new Date().toLocaleDateString('en-US', {
-      month: 'numeric',
-      day: 'numeric',
-      year: 'numeric'
-    });
+    // Use ISO date format to match server response (YYYY-MM-DD)
+    const today = new Date().toISOString().split('T')[0];
 
-    const todayLogs = attendanceLog.filter(log => log.date === today);
+    const todayLogs = attendanceLog.filter(log => {
+      // Normalize log.date - server returns YYYY-MM-DD, local adds may use other formats
+      let logDate = log.date;
+      if (logDate && logDate.includes('/')) {
+        // Convert M/D/YYYY to YYYY-MM-DD
+        const parts = logDate.split('/');
+        if (parts.length === 3) {
+          logDate = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
+        }
+      }
+      return logDate === today;
+    });
 
     const stats = {
       morning: { present: 0, late: 0, absent: 0 },

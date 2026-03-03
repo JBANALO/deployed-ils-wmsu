@@ -15,7 +15,7 @@ export default function HomeScreen() {
   const [emailModalVisible, setEmailModalVisible] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [pendingEmailData, setPendingEmailData] = useState(null);
-  const { attendanceLog, getTodayStats, addManualAbsence, removeAbsence, getAttendancePeriod, recordAttendance } = useAttendance();
+  const { attendanceLog, getTodayStats, addManualAbsence, removeAbsence, getAttendancePeriod, recordAttendance, loadAttendanceLogs } = useAttendance();
   const { user, userData, loading: authLoading } = useAuth();
   
   const getTeacherName = () => {
@@ -60,6 +60,7 @@ export default function HomeScreen() {
     React.useCallback(() => {
       if (user) {
         loadStudents();
+        loadAttendanceLogs();
         setRefreshKey(prev => prev + 1);
       }
     }, [user])
@@ -136,13 +137,19 @@ export default function HomeScreen() {
   };
 
   const getSectionAttendance = (sectionName, studentsList) => {
-    const today = new Date().toLocaleDateString('en-US', {
-      month: 'numeric',
-      day: 'numeric',
-      year: 'numeric'
-    });
+    // Use ISO date format to match server response
+    const today = new Date().toISOString().split('T')[0];
 
-    const todayLogs = attendanceLog.filter(log => log.date === today);
+    const todayLogs = attendanceLog.filter(log => {
+      let logDate = log.date;
+      if (logDate && logDate.includes('/')) {
+        const parts = logDate.split('/');
+        if (parts.length === 3) {
+          logDate = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
+        }
+      }
+      return logDate === today;
+    });
     
     const studentsWithAttendance = studentsList.map(student => {
       const morningLog = todayLogs.find(log => 

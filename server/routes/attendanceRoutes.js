@@ -8,13 +8,11 @@ router.post('/', async (req, res) => {
   try {
     console.log('Attendance POST request body:', req.body);
     
-    // Handle both QR scan format and mobile app format
     const { 
       studentId, 
       qrData, 
       location, 
       deviceInfo,
-      // Mobile app format
       teacherId,
       teacherName,
       timestamp,
@@ -31,72 +29,101 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Get student data from MySQL database (users table)
-    const students = await query('SELECT * FROM users WHERE role = "student"');
-    console.log(`Found ${students.length} students in database`);
-    console.log(`Looking for student with ID: ${studentId}`);
-    
-    // Check for student by ID
-    const student = students.find(s => 
-      s.id === studentId || 
-      s.username === studentId
+    // Look up student in the students table by lrn or id
+    const studentRows = await query(
+      'SELECT * FROM students WHERE lrn = ? OR id = ?',
+      [studentId, studentId]
     );
     
-    if (!student) {
-      console.log('Student not found with ID:', studentId);
-      console.log('Sample student IDs:', students.slice(0, 3).map(s => ({ id: s.id, username: s.username })));
-      return res.status(404).json({
-        success: false,
-        message: 'Student not found'
-      });
-    }
-    
-    console.log(`Found student: ${student.firstName} ${student.lastName}`);
+    let student = studentRows[0] || null;
+    let studentName = 'Unknown';
+    let studentGradeLevel = 'N/A';
+    let studentSection = 'N/A';
 
-    // Check if already recorded today
+    if (student) {
+      studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim();
+      studentGradeLevel = student.grade_level || 'N/A';
+      studentSection = student.section || 'N/A';
+      console.log(`Found student in students table: ${studentName}`);
+    } else {
+      // Fallback: check users table
+      const userRows = await query('SELECT * FROM users WHERE id = ? OR username = ?', [studentId, studentId]);
+      const userStudent = userRows[0];
+      if (userStudent) {
+        studentName = `${userStudent.firstName || userStudent.first_name || ''} ${userStudent.lastName || userStudent.last_name || ''}`.trim();
+        studentGradeLevel = userStudent.gradeLevel || userStudent.grade_level || 'N/A';
+        studentSection = userStudent.section || 'N/A';
+        console.log(`Found student in users table: ${studentName}`);
+      } else {
+        console.log('Student not found with ID:', studentId);
+        return res.status(404).json({
+          success: false,
+          message: 'Student not found'
+        });
+      }
+    }
+
     const today = date || new Date().toISOString().split('T')[0];
-    const existingRecords = await query(
-      'SELECT * FROM attendance WHERE student_id = ? AND date = ?',
-      [studentId, today]
-    );
-
-    // For mobile app, allow updating existing records
-    if (existingRecords.length > 0 && !teacherId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Attendance already recorded for today',
-        data: existingRecords[0]
-      });
-    }
-
-    // Create new attendance record
-    const attendanceId = Date.now().toString();
+    const currentPeriod = period || 'morning';
+    const currentStatus = status || 'present';
     const currentTimestamp = timestamp || new Date().toISOString();
     const currentTime = time || new Date().toLocaleTimeString();
-    
-    // If updating existing record, delete old one
-    if (existingRecords.length > 0 && teacherId) {
-      await query('DELETE FROM attendance WHERE student_id = ? AND date = ?', [studentId, today]);
+
+    // Check if already recorded for this student + date + period
+    const existingRecords = await query(
+      'SELECT * FROM attendance WHERE studentId = ? AND date = ? AND period = ?',
+      [studentId, today, currentPeriod]
+    );
+
+    // If record exists, update it (override)
+    if (existingRecords.length > 0) {
+      await query(
+        'UPDATE attendance SET status = ?, time = ?, timestamp = ?, teacherId = ?, teacherName = ? WHERE studentId = ? AND date = ? AND period = ?',
+        [currentStatus, currentTime, currentTimestamp, teacherId || null, teacherName || null, studentId, today, currentPeriod]
+      );
+      const updated = await query('SELECT * FROM attendance WHERE studentId = ? AND date = ? AND period = ?', [studentId, today, currentPeriod]);
+      const rec = updated[0];
+      console.log('Updated attendance record:', rec);
+      return res.json({
+        success: true,
+        message: 'Attendance updated successfully',
+        data: {
+          id: rec.id,
+          studentId: rec.studentId,
+          studentName: rec.studentName,
+          gradeLevel: rec.gradeLevel,
+          section: rec.section,
+          date: rec.date instanceof Date ? rec.date.toISOString().split('T')[0] : rec.date,
+          timestamp: rec.timestamp,
+          time: rec.time,
+          status: rec.status,
+          period: rec.period,
+          location: rec.location,
+          teacherId: rec.teacherId,
+          teacherName: rec.teacherName
+        }
+      });
     }
 
     // Insert new record
+    const attendanceId = Date.now().toString();
     await query(
       `INSERT INTO attendance (
-        id, student_id, student_name, grade_level, section,
+        id, studentId, studentName, gradeLevel, section,
         date, timestamp, time, status, period,
-        location, teacher_id, teacher_name, device_info, qr_data
+        location, teacherId, teacherName, deviceInfo, qrData
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         attendanceId,
         studentId,
-        `${student.firstName} ${student.lastName}`.trim(),
-        student.gradeLevel || 'N/A',
-        student.section || 'N/A',
+        studentName,
+        studentGradeLevel,
+        studentSection,
         today,
         currentTimestamp,
         currentTime,
-        status || 'Present',
-        period || 'morning',
+        currentStatus,
+        currentPeriod,
         location || 'Mobile App',
         teacherId || null,
         teacherName || null,
@@ -105,7 +132,6 @@ router.post('/', async (req, res) => {
       ]
     );
 
-    // Get the inserted record
     const insertedRecords = await query('SELECT * FROM attendance WHERE id = ?', [attendanceId]);
     const attendanceRecord = insertedRecords[0];
     
@@ -116,18 +142,18 @@ router.post('/', async (req, res) => {
       message: 'Attendance recorded successfully',
       data: {
         id: attendanceRecord.id,
-        studentId: attendanceRecord.student_id,
-        studentName: attendanceRecord.student_name,
-        gradeLevel: attendanceRecord.grade_level,
+        studentId: attendanceRecord.studentId,
+        studentName: attendanceRecord.studentName,
+        gradeLevel: attendanceRecord.gradeLevel,
         section: attendanceRecord.section,
-        date: attendanceRecord.date,
+        date: attendanceRecord.date instanceof Date ? attendanceRecord.date.toISOString().split('T')[0] : attendanceRecord.date,
         timestamp: attendanceRecord.timestamp,
         time: attendanceRecord.time,
         status: attendanceRecord.status,
         period: attendanceRecord.period,
         location: attendanceRecord.location,
-        teacherId: attendanceRecord.teacher_id,
-        teacherName: attendanceRecord.teacher_name
+        teacherId: attendanceRecord.teacherId,
+        teacherName: attendanceRecord.teacherName
       }
     });
 
@@ -155,12 +181,12 @@ router.get('/', async (req, res) => {
     }
     
     if (studentId) {
-      sqlQuery += ' AND student_id = ?';
+      sqlQuery += ' AND studentId = ?';
       params.push(studentId);
     }
     
     if (gradeLevel) {
-      sqlQuery += ' AND grade_level = ?';
+      sqlQuery += ' AND gradeLevel = ?';
       params.push(gradeLevel);
     }
     
@@ -173,12 +199,12 @@ router.get('/', async (req, res) => {
     
     const records = await query(sqlQuery, params);
     
-    // Transform snake_case to camelCase for frontend
+    // Columns are already camelCase in the attendance table
     const transformedRecords = records.map(record => ({
       id: record.id,
-      studentId: record.student_id,
-      studentName: record.student_name,
-      gradeLevel: record.grade_level,
+      studentId: record.studentId,
+      studentName: record.studentName,
+      gradeLevel: record.gradeLevel,
       section: record.section,
       date: record.date instanceof Date ? record.date.toISOString().split('T')[0] : record.date,
       timestamp: record.timestamp,
@@ -186,11 +212,11 @@ router.get('/', async (req, res) => {
       status: record.status,
       period: record.period,
       location: record.location,
-      teacherId: record.teacher_id,
-      teacherName: record.teacher_name,
-      deviceInfo: record.device_info,
-      qrData: record.qr_data,
-      createdAt: record.created_at
+      teacherId: record.teacherId,
+      teacherName: record.teacherName,
+      deviceInfo: record.deviceInfo,
+      qrData: record.qrData,
+      createdAt: record.createdAt
     }));
 
     res.json({
@@ -215,12 +241,12 @@ router.get('/today', async (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     const records = await query('SELECT * FROM attendance WHERE date = ? ORDER BY timestamp DESC', [today]);
     
-    // Transform snake_case to camelCase
+    // Columns are already camelCase in the attendance table
     const transformedRecords = records.map(record => ({
       id: record.id,
-      studentId: record.student_id,
-      studentName: record.student_name,
-      gradeLevel: record.grade_level,
+      studentId: record.studentId,
+      studentName: record.studentName,
+      gradeLevel: record.gradeLevel,
       section: record.section,
       date: record.date instanceof Date ? record.date.toISOString().split('T')[0] : record.date,
       timestamp: record.timestamp,
@@ -228,11 +254,11 @@ router.get('/today', async (req, res) => {
       status: record.status,
       period: record.period,
       location: record.location,
-      teacherId: record.teacher_id,
-      teacherName: record.teacher_name,
-      deviceInfo: record.device_info,
-      qrData: record.qr_data,
-      createdAt: record.created_at
+      teacherId: record.teacherId,
+      teacherName: record.teacherName,
+      deviceInfo: record.deviceInfo,
+      qrData: record.qrData,
+      createdAt: record.createdAt
     }));
 
     res.json({
@@ -255,14 +281,14 @@ router.get('/today', async (req, res) => {
 router.get('/student/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const records = await query('SELECT * FROM attendance WHERE student_id = ? ORDER BY date DESC', [id]);
+    const records = await query('SELECT * FROM attendance WHERE studentId = ? ORDER BY date DESC', [id]);
     
-    // Transform snake_case to camelCase
+    // Columns are already camelCase in the attendance table
     const transformedRecords = records.map(record => ({
       id: record.id,
-      studentId: record.student_id,
-      studentName: record.student_name,
-      gradeLevel: record.grade_level,
+      studentId: record.studentId,
+      studentName: record.studentName,
+      gradeLevel: record.gradeLevel,
       section: record.section,
       date: record.date instanceof Date ? record.date.toISOString().split('T')[0] : record.date,
       timestamp: record.timestamp,
@@ -270,11 +296,11 @@ router.get('/student/:id', async (req, res) => {
       status: record.status,
       period: record.period,
       location: record.location,
-      teacherId: record.teacher_id,
-      teacherName: record.teacher_name,
-      deviceInfo: record.device_info,
-      qrData: record.qr_data,
-      createdAt: record.created_at
+      teacherId: record.teacherId,
+      teacherName: record.teacherName,
+      deviceInfo: record.deviceInfo,
+      qrData: record.qrData,
+      createdAt: record.createdAt
     }));
 
     res.json({
