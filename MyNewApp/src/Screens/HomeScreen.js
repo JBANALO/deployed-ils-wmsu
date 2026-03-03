@@ -166,13 +166,21 @@ export default function HomeScreen() {
       };
     });
 
-    const morningPresent = studentsWithAttendance.filter(s => s.morningLog?.status === 'present').length;
-    const morningLate = studentsWithAttendance.filter(s => s.morningLog?.status === 'late').length;
-    const morningAbsent = studentsWithAttendance.filter(s => !s.morningLog || s.morningLog?.status === 'absent').length;
+    const nowHour = new Date().getHours();
+    const morningCutoffPassed = nowHour >= 10;   // 10:00 AM
+    const afternoonCutoffPassed = nowHour >= 14;  // 2:00 PM
+
+    const morningPresent = studentsWithAttendance.filter(s => s.morningLog?.status === 'present' || s.morningLog?.status === 'Present').length;
+    const morningLate = studentsWithAttendance.filter(s => s.morningLog?.status === 'late' || s.morningLog?.status === 'Late').length;
+    const morningAbsent = morningCutoffPassed
+      ? studentsWithAttendance.filter(s => !s.morningLog || s.morningLog?.status === 'absent' || s.morningLog?.status === 'Absent').length
+      : studentsWithAttendance.filter(s => s.morningLog?.status === 'absent' || s.morningLog?.status === 'Absent').length;
     
-    const afternoonPresent = studentsWithAttendance.filter(s => s.afternoonLog?.status === 'present').length;
-    const afternoonLate = studentsWithAttendance.filter(s => s.afternoonLog?.status === 'late').length;
-    const afternoonAbsent = studentsWithAttendance.filter(s => !s.afternoonLog || s.afternoonLog?.status === 'absent').length;
+    const afternoonPresent = studentsWithAttendance.filter(s => s.afternoonLog?.status === 'present' || s.afternoonLog?.status === 'Present').length;
+    const afternoonLate = studentsWithAttendance.filter(s => s.afternoonLog?.status === 'late' || s.afternoonLog?.status === 'Late').length;
+    const afternoonAbsent = afternoonCutoffPassed
+      ? studentsWithAttendance.filter(s => !s.afternoonLog || s.afternoonLog?.status === 'absent' || s.afternoonLog?.status === 'Absent').length
+      : studentsWithAttendance.filter(s => s.afternoonLog?.status === 'absent' || s.afternoonLog?.status === 'Absent').length;
 
     return {
       students: studentsWithAttendance,
@@ -586,15 +594,23 @@ WMSU ILS - Elementary Department`;
 
                 <ScrollView style={styles.modalScroll}>
                   {selectedSection.students.map((student, index) => {
-                    const morningStatus = student.morningLog?.status || 'absent';
-                    const afternoonStatus = student.afternoonLog?.status || 'absent';
+                    const nowHour = new Date().getHours();
+                    // Only auto-mark absent after cutoff; before cutoff show neutral
+                    const getEffectiveStatus = (log, period) => {
+                      if (log?.status) return log.status.toLowerCase();
+                      if (period === 'morning') return nowHour >= 10 ? 'absent' : 'unknown';
+                      if (period === 'afternoon') return nowHour >= 14 ? 'absent' : 'unknown';
+                      return 'unknown';
+                    };
+                    const morningStatus = getEffectiveStatus(student.morningLog, 'morning');
+                    const afternoonStatus = getEffectiveStatus(student.afternoonLog, 'afternoon');
                     
                     const getStatusColor = (status) => {
                       switch(status) {
                         case 'present': return '#2e7d32';
                         case 'late': return '#e65100';
                         case 'absent': return '#c62828';
-                        default: return '#757575';
+                        default: return '#9e9e9e';  // unknown = neutral gray
                       }
                     };
 
@@ -603,7 +619,7 @@ WMSU ILS - Elementary Department`;
                         case 'present': return '#e8f5e9';
                         case 'late': return '#fff3e0';
                         case 'absent': return '#ffebee';
-                        default: return '#f5f5f5';
+                        default: return '#f5f5f5';  // unknown = neutral
                       }
                     };
 
@@ -612,7 +628,7 @@ WMSU ILS - Elementary Department`;
                         case 'present': return 'check-circle';
                         case 'late': return 'clock-alert';
                         case 'absent': return 'close-circle';
-                        default: return 'help-circle';
+                        default: return 'minus-circle';  // unknown = dash
                       }
                     };
 
@@ -621,7 +637,7 @@ WMSU ILS - Elementary Department`;
                         case 'present': return 'Present';
                         case 'late': return 'Late';
                         case 'absent': return 'Absent';
-                        default: return 'N/A';
+                        default: return '—';  // unknown = dash
                       }
                     };
 
