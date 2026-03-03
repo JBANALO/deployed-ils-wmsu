@@ -11,13 +11,14 @@ export default function LogScreen() {
   const [selectedPeriod, setSelectedPeriod] = useState('all'); 
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const { attendanceLog, getTodayStats } = useAttendance();
+  const { attendanceLog, getTodayStats, loadAttendanceLogs } = useAttendance();
   const { user } = useAuth();
 
   useFocusEffect(
     React.useCallback(() => {
       if (user) {
         loadStudents();
+        loadAttendanceLogs();
         setRefreshKey(prev => prev + 1);
       }
     }, [user])
@@ -69,16 +70,24 @@ export default function LogScreen() {
   };
 
   const getTodayString = () => {
-    return selectedDate.toLocaleDateString('en-US', {
-      month: 'numeric',
-      day: 'numeric',
-      year: 'numeric'
-    });
+    // Return ISO format (YYYY-MM-DD) to match server response
+    const d = selectedDate;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
 
   const getFilteredLogs = () => {
     const dateString = getTodayString();
-    let logs = attendanceLog.filter(log => log.date === dateString);
+    let logs = attendanceLog.filter(log => {
+      let logDate = log.date;
+      // Normalize old M/D/YYYY format if present
+      if (logDate && logDate.includes('/')) {
+        const parts = logDate.split('/');
+        if (parts.length === 3) {
+          logDate = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
+        }
+      }
+      return logDate === dateString;
+    });
     
     if (selectedPeriod !== 'all') {
       logs = logs.filter(log => log.period === selectedPeriod);
@@ -252,7 +261,7 @@ export default function LogScreen() {
           </View>
         )}
 
-        <ScrollView style={styles.scrollView} key={refreshKey}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 120 }} key={refreshKey}>
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#8B0000" />
@@ -302,7 +311,22 @@ export default function LogScreen() {
                       </View>
                     )}
 
-                    {section.students.map((student, index) => (
+                    {/* Only show PRESENT and LATE students in the list */}
+                    {section.students
+                      .filter(student => {
+                        const isPresentOrLate = (status) =>
+                          status === 'present' || status === 'Present' ||
+                          status === 'late' || status === 'Late';
+                        if (selectedPeriod === 'all') {
+                          return isPresentOrLate(student.morningLog?.status) ||
+                                 isPresentOrLate(student.afternoonLog?.status);
+                        } else if (selectedPeriod === 'morning') {
+                          return isPresentOrLate(student.morningLog?.status);
+                        } else {
+                          return isPresentOrLate(student.afternoonLog?.status);
+                        }
+                      })
+                      .map((student, index) => (
                       <View key={student.id} style={styles.studentRow}>
                         <View style={styles.studentInfo}>
                           <Text style={styles.studentName}>{student.name}</Text>
@@ -364,13 +388,28 @@ export default function LogScreen() {
                         )}
                       </View>
                     ))}
+
+                    {section.students.filter(student => {
+                        const isPresentOrLate = (status) =>
+                          status === 'present' || status === 'Present' ||
+                          status === 'late' || status === 'Late';
+                        if (selectedPeriod === 'all') {
+                          return isPresentOrLate(student.morningLog?.status) ||
+                                 isPresentOrLate(student.afternoonLog?.status);
+                        } else if (selectedPeriod === 'morning') {
+                          return isPresentOrLate(student.morningLog?.status);
+                        } else {
+                          return isPresentOrLate(student.afternoonLog?.status);
+                        }
+                      }).length === 0 && (
+                      <Text style={{ textAlign: 'center', color: '#999', padding: 16 }}>No present or late students yet</Text>
+                    )}
                   </View>
                 );
               })}
             </>
           )}
 
-          <View style={{ height: 80 }} />
         </ScrollView>
       </View>
     </>

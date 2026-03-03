@@ -17,20 +17,38 @@ import { API_BASE_URL } from "../../api/config";
 
 // Helper functions for QR code URL handling
 const getQRCodeUrl = (qrCode) => {
-  // Use the base URL without /api suffix for static files
-  const baseUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
-  const filename = qrCode.split('/').pop();
-  return `${baseUrl}/qrcodes/${filename}`;
+  if (!qrCode) return null;
+  
+  // If it's already a base64 data URL, use it directly
+  if (qrCode.startsWith('data:image/')) {
+    return qrCode;
+  }
+  
+  // If it's a file path, convert to full URL
+  if (qrCode.startsWith('/qrcodes/')) {
+    const baseUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+    return `${baseUrl}${qrCode}`;
+  }
+  
+  // Otherwise return as-is (in case it's already a full URL)
+  return qrCode;
 };
 
 const getAlternativeQRUrls = (qrCode) => {
-  // Use base URL without /api suffix for static files
+  if (!qrCode) return [];
+  
+  // If it's a data URL, no alternatives needed
+  if (qrCode.startsWith('data:image/')) {
+    return [qrCode];
+  }
+  
+  // For file paths, try different URL variations
   const baseUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
   const filename = qrCode.split('/').pop();
   
   return [
     `${baseUrl}/qrcodes/${filename}`,
-    `${baseUrl}${qrCode}`, // Try the exact database path
+    `${baseUrl}${qrCode}`,
   ];
 };
 
@@ -67,13 +85,15 @@ export default function AdminStudents() {
         console.log('Raw students data:', studentsArray);
         console.log('Number of students:', studentsArray.length);
         
-        // Only show approved students (not pending or rejected)
-        const approvedStudents = studentsArray.filter(student => 
-          student.status === 'approved' || student.verification_status === 'approved'
-        );
-        console.log('Approved students:', approvedStudents.length);
-        console.log('Approved students details:', approvedStudents);
-        setStudents(approvedStudents);
+        // Show all students except those with 'pending' or 'declined' status
+        // This includes: 'approved', 'active', 'Active', and any other non-rejected status
+        const validStudents = studentsArray.filter(student => {
+          const status = student.status?.toLowerCase() || 'active';
+          return status !== 'pending' && status !== 'declined' && status !== 'rejected';
+        });
+        console.log('Valid students:', validStudents.length);
+        console.log('Valid students details:', validStudents);
+        setStudents(validStudents);
       } else {
         toast('Could not fetch from new API, using empty list', { icon: '⚠️' });
         setStudents([]);
@@ -86,11 +106,12 @@ export default function AdminStudents() {
         const altResponse = await fetch(`${API_BASE_URL}/students`);
         if (altResponse.ok) {
           const data = await altResponse.json();
-          // Only show approved students
-          const approvedStudents = Array.isArray(data) ? data.filter(student => 
-            student.status === 'approved' || student.verification_status === 'approved'
-          ) : [];
-          setStudents(approvedStudents);
+          // Filter for valid (non-rejected) students
+          const validStudents = Array.isArray(data) ? data.filter(student => {
+            const status = student.status?.toLowerCase() || 'active';
+            return status !== 'pending' && status !== 'declined' && status !== 'rejected';
+          }) : [];
+          setStudents(validStudents);
         } else {
           setStudents([]);
         }
@@ -163,6 +184,33 @@ export default function AdminStudents() {
     
     return matchesSearch && matchesSection;
   });
+
+  // Helper function to group students by section
+  const groupStudentsBySection = (studentsList) => {
+    const grouped = {};
+    studentsList.forEach(student => {
+      const sectionKey = `${student.gradeLevel}-${student.section}`;
+      if (!grouped[sectionKey]) {
+        grouped[sectionKey] = {
+          grade: student.gradeLevel,
+          section: student.section,
+          students: []
+        };
+      }
+      grouped[sectionKey].students.push(student);
+    });
+    
+    // Sort by grade (K, 1, 2, 3) and then by section
+    return Object.fromEntries(
+      Object.entries(grouped).sort((a, b) => {
+        const gradeOrder = { 'Kindergarten': 0, 'Grade 1': 1, 'Grade 2': 2, 'Grade 3': 3 };
+        const gradeA = gradeOrder[a[1].grade] ?? 999;
+        const gradeB = gradeOrder[b[1].grade] ?? 999;
+        if (gradeA !== gradeB) return gradeA - gradeB;
+        return a[1].section.localeCompare(b[1].section);
+      })
+    );
+  };
 
   // VIEW QR CODE
   const handleViewQR = (student) => {
@@ -473,7 +521,7 @@ export default function AdminStudents() {
         </div>
       </div>
 
-      {/* K-3 STUDENTS TABLE */}
+      {/* K-3 STUDENTS TABLE - GROUPED BY SECTION */}
       <div className="mb-8">
         <div className="bg-white rounded-lg shadow">
           <div className="p-4 border-b border-gray-200">
@@ -481,116 +529,117 @@ export default function AdminStudents() {
               Kinder - Grade 3 Students ({filteredK3Students.length})
             </h3>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-blue-100 text-blue-800">
-                <tr>
-                  <th className="p-3 border text-center">
-                    <input
-                      type="checkbox"
-                      checked={selectAll && filteredK3Students.length > 0}
-                      onChange={toggleSelectAll}
-                      className="w-4 h-4 cursor-pointer"
-                      title="Select all students"
-                    />
-                  </th>
-                  <th className="p-3 border">LRN</th>
-                  <th className="p-3 border">Name</th>
-                  <th className="p-3 border">Sex</th>
-                  <th className="p-3 border">Grade</th>
-                  <th className="p-3 border">Section</th>
-                  <th className="p-3 border">Status</th>
-                  <th className="p-3 border">QR</th>
-                  <th className="p-3 border">Actions</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan="9" className="p-6 text-center text-gray-500">
-                      Loading students...
-                    </td>
-                  </tr>
-                ) : filteredK3Students.length === 0 ? (
-                  <tr>
-                    <td colSpan="9" className="p-6 text-center text-gray-500">
-                      {searchQuery || selectedSection !== 'All' 
-                        ? 'No K-3 students match your search criteria.'
-                        : 'No K-3 students found. Create your first student account!'}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredK3Students.map((student) => (
-                    <tr key={student.id} className="hover:bg-gray-50">
-                      <td className="p-3 border text-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedStudents.has(student.id)}
-                          onChange={() => toggleStudentSelection(student.id)}
-                          className="w-4 h-4 cursor-pointer"
-                        />
-                      </td>
-                      <td className="p-3 border">{student.lrn}</td>
-                      <td className="p-3 border font-semibold">
-                        {student.fullName || `${student.firstName} ${student.lastName}` || 'N/A'}
-                      </td>
-                      <td className="p-3 border">{student.sex || 'N/A'}</td>
-                      <td className="p-3 border">{student.gradeLevel}</td>
-                      <td className="p-3 border">{student.section}</td>
-                      <td className="p-3 border">
-                        <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
-                          {student.status}
-                        </span>
-                      </td>
-                      <td className="p-3 border">
-                        <button 
-                          onClick={() => handleViewQR(student)}
-                          className="p-2 bg-gray-700 text-white rounded-lg hover:bg-black flex items-center gap-1"
-                        >
-                          <QrCodeIcon className="w-5 h-5" /> View
-                        </button>
-                      </td>
-                      <td className="p-3 border flex gap-3">
-                        <button 
-                          onClick={() => handleView(student)}
-                          className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                          title="View Details"
-                        >
-                          <EyeIcon className="w-5 h-5" />
-                        </button>
-                        <button 
-                          onClick={() => handleViewCredentials(student)}
-                          className="p-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
-                          title="View Credentials"
-                        >
-                          <KeyIcon className="w-5 h-5" />
-                        </button>
-                        <button 
-                          onClick={() => handleEdit(student)}
-                          className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                          title="Edit Student"
-                        >
-                          <PencilSquareIcon className="w-5 h-5" />
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(student.id)}
-                          className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                          title="Delete Student"
-                        >
-                          <TrashIcon className="w-5 h-5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          
+          {loading ? (
+            <div className="p-6 text-center text-gray-500">
+              Loading students...
+            </div>
+          ) : filteredK3Students.length === 0 ? (
+            <div className="p-6 text-center text-gray-500">
+              {searchQuery || selectedSection !== 'All' 
+                ? 'No K-3 students match your search criteria.'
+                : 'No K-3 students found. Create your first student account!'}
+            </div>
+          ) : (
+            Object.entries(groupStudentsBySection(filteredK3Students)).map(([sectionKey, { grade, section, students: sectionStudents }]) => (
+              <div key={sectionKey} className="mb-0">
+                <div className="bg-blue-50 px-4 py-2 border-b border-blue-200">
+                  <h4 className="text-md font-semibold text-blue-700">
+                    {grade} - {section} ({sectionStudents.length})
+                  </h4>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-blue-100 text-blue-800">
+                      <tr>
+                        <th className="p-3 border text-center">
+                          <input
+                            type="checkbox"
+                            //checked={selectAll && sectionStudents.length > 0}
+                            //onChange={toggleSelectAll}
+                            className="w-4 h-4 cursor-pointer"
+                            title="Select students"
+                          />
+                        </th>
+                        <th className="p-3 border">LRN</th>
+                        <th className="p-3 border">Name</th>
+                        <th className="p-3 border">Sex</th>
+                        <th className="p-3 border">Status</th>
+                        <th className="p-3 border">QR</th>
+                        <th className="p-3 border">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sectionStudents.map((student) => (
+                        <tr key={student.id} className="hover:bg-gray-50">
+                          <td className="p-3 border text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedStudents.has(student.id)}
+                              onChange={() => toggleStudentSelection(student.id)}
+                              className="w-4 h-4 cursor-pointer"
+                            />
+                          </td>
+                          <td className="p-3 border">{student.lrn}</td>
+                          <td className="p-3 border font-semibold">
+                            {student.fullName || `${student.firstName} ${student.lastName}` || 'N/A'}
+                          </td>
+                          <td className="p-3 border">{student.sex || 'N/A'}</td>
+                          <td className="p-3 border">
+                            <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                              {student.status}
+                            </span>
+                          </td>
+                          <td className="p-3 border">
+                            <button 
+                              onClick={() => handleViewQR(student)}
+                              className="p-2 bg-gray-700 text-white rounded-lg hover:bg-black flex items-center gap-1"
+                            >
+                              <QrCodeIcon className="w-5 h-5" /> View
+                            </button>
+                          </td>
+                          <td className="p-3 border flex gap-2">
+                            <button 
+                              onClick={() => handleView(student)}
+                              className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                              title="View Details"
+                            >
+                              <EyeIcon className="w-5 h-5" />
+                            </button>
+                            <button 
+                              onClick={() => handleViewCredentials(student)}
+                              className="p-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
+                              title="View Credentials"
+                            >
+                              <KeyIcon className="w-5 h-5" />
+                            </button>
+                            <button 
+                              onClick={() => handleEdit(student)}
+                              className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                              title="Edit Student"
+                            >
+                              <PencilSquareIcon className="w-5 h-5" />
+                            </button>
+                            <button 
+                              onClick={() => handleDelete(student.id)}
+                              className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                              title="Delete Student"
+                            >
+                              <TrashIcon className="w-5 h-5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
-      {/* GRADE 4-6 STUDENTS TABLE */}
+      {/* GRADE 4-6 STUDENTS TABLE - GROUPED BY SECTION */}
       <div className="mt-10">
         <div className="mb-8">
           <div className="bg-white rounded-lg shadow">
@@ -599,106 +648,107 @@ export default function AdminStudents() {
                 Grade 4-6 Students ({g4to6Students.length})
               </h3>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-green-100 text-green-800">
-                  <tr>
-                    <th className="p-3 border text-center">
-                      <input
-                        type="checkbox"
-                        className="w-4 h-4 cursor-pointer"
-                        title="Select all students"
-                      />
-                    </th>
-                    <th className="p-3 border">LRN</th>
-                    <th className="p-3 border">Name</th>
-                    <th className="p-3 border">Sex</th>
-                    <th className="p-3 border">Grade</th>
-                    <th className="p-3 border">Section</th>
-                    <th className="p-3 border">Status</th>
-                    <th className="p-3 border">QR</th>
-                    <th className="p-3 border">Actions</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {loading ? (
-                    <tr>
-                      <td colSpan="9" className="p-6 text-center text-gray-500">
-                        Loading students...
-                      </td>
-                    </tr>
-                  ) : g4to6Students.length === 0 ? (
-                    <tr>
-                      <td colSpan="9" className="p-6 text-center text-gray-500">
-                        No Grade 4-6 students found.
-                      </td>
-                    </tr>
-                  ) : (
-                    g4to6Students.map((student) => (
-                      <tr key={student.id} className="hover:bg-gray-50">
-                        <td className="p-3 border text-center">
-                          <input
-                            type="checkbox"
-                            className="w-4 h-4 cursor-pointer"
-                          />
-                        </td>
-                        <td className="p-3 border">{student.lrn}</td>
-                        <td className="p-3 border font-semibold">
-                          {student.fullName || `${student.firstName} ${student.lastName}` || 'N/A'}
-                        </td>
-                        <td className="p-3 border">{student.sex || 'N/A'}</td>
-                        <td className="p-3 border">{student.gradeLevel}</td>
-                        <td className="p-3 border">{student.section}</td>
-                        <td className="p-3 border">
-                          <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
-                            {student.status}
-                          </span>
-                        </td>
-                        <td className="p-3 border">
-                          <button 
-                            onClick={() => handleViewQR(student)}
-                            className="p-2 bg-gray-700 text-white rounded-lg hover:bg-black flex items-center gap-1"
-                          >
-                            <QrCodeIcon className="w-5 h-5" /> View
-                          </button>
-                        </td>
-                        <td className="p-3 border flex gap-3">
-                          <button 
-                            onClick={() => handleView(student)}
-                            className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                            title="View Details"
-                          >
-                            <EyeIcon className="w-5 h-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleViewCredentials(student)}
-                            className="p-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
-                            title="View Credentials"
-                          >
-                            <KeyIcon className="w-5 h-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleEdit(student)}
-                            className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                            title="Edit Student"
-                          >
-                            <PencilSquareIcon className="w-5 h-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleDelete(student.id)}
-                            className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                            title="Delete Student"
-                          >
-                            <TrashIcon className="w-5 h-5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            
+            {loading ? (
+              <div className="p-6 text-center text-gray-500">
+                Loading students...
+              </div>
+            ) : g4to6Students.length === 0 ? (
+              <div className="p-6 text-center text-gray-500">
+                No Grade 4-6 students found.
+              </div>
+            ) : (
+              Object.entries(groupStudentsBySection(g4to6Students)).map(([sectionKey, { grade, section, students: sectionStudents }]) => (
+                <div key={sectionKey} className="mb-0">
+                  <div className="bg-green-50 px-4 py-2 border-b border-green-200">
+                    <h4 className="text-md font-semibold text-green-700">
+                      {grade} - {section} ({sectionStudents.length})
+                    </h4>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-green-100 text-green-800">
+                        <tr>
+                          <th className="p-3 border text-center">
+                            <input
+                              type="checkbox"
+                              className="w-4 h-4 cursor-pointer"
+                              title="Select students"
+                            />
+                          </th>
+                          <th className="p-3 border">LRN</th>
+                          <th className="p-3 border">Name</th>
+                          <th className="p-3 border">Sex</th>
+                          <th className="p-3 border">Status</th>
+                          <th className="p-3 border">QR</th>
+                          <th className="p-3 border">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sectionStudents.map((student) => (
+                          <tr key={student.id} className="hover:bg-gray-50">
+                            <td className="p-3 border text-center">
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 cursor-pointer"
+                              />
+                            </td>
+                            <td className="p-3 border">{student.lrn}</td>
+                            <td className="p-3 border font-semibold">
+                              {student.fullName || `${student.firstName} ${student.lastName}` || 'N/A'}
+                            </td>
+                            <td className="p-3 border">{student.sex || 'N/A'}</td>
+                            <td className="p-3 border">
+                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                                {student.status}
+                              </span>
+                            </td>
+                            <td className="p-3 border">
+                              <button 
+                                onClick={() => handleViewQR(student)}
+                                className="p-2 bg-gray-700 text-white rounded-lg hover:bg-black flex items-center gap-1"
+                              >
+                                <QrCodeIcon className="w-5 h-5" /> View
+                              </button>
+                            </td>
+                            <td className="p-3 border flex gap-2">
+                              <button 
+                                onClick={() => handleView(student)}
+                                className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                                title="View Details"
+                              >
+                                <EyeIcon className="w-5 h-5" />
+                              </button>
+                              <button 
+                                onClick={() => handleViewCredentials(student)}
+                                className="p-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
+                                title="View Credentials"
+                              >
+                                <KeyIcon className="w-5 h-5" />
+                              </button>
+                              <button 
+                                onClick={() => handleEdit(student)}
+                                className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                title="Edit Student"
+                              >
+                                <PencilSquareIcon className="w-5 h-5" />
+                              </button>
+                              <button 
+                                onClick={() => handleDelete(student.id)}
+                                className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                                title="Delete Student"
+                              >
+                                <TrashIcon className="w-5 h-5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

@@ -51,12 +51,14 @@ function formatStudent(s) {
 // HELPER: Generate QR code file
 // -----------------------------
 async function generateQRCodeFile(studentData, qrCodePath) {
-  const qrData = `LRN: ${studentData.lrn}
-Full Name: ${studentData.lastName}, ${studentData.firstName} ${studentData.middleName || ''}
-Class: ${studentData.gradeLevel} - ${studentData.section}
-Email: ${studentData.studentEmail}
-Department: ILS - Elementary Department
-School: Western Mindanao State University`;
+  // Use JSON format so the mobile scanner can parse it consistently
+  const qrData = JSON.stringify({
+    studentId: studentData.lrn,
+    lrn: studentData.lrn,
+    name: `${studentData.firstName} ${studentData.lastName}`.trim(),
+    gradeLevel: studentData.gradeLevel,
+    section: studentData.section
+  });
 
   await QRCode.toFile(qrCodePath, qrData, {
     width: 300,
@@ -78,20 +80,46 @@ exports.createStudent = async (req, res) => {
     console.log('profilePic in req.body:', req.body.profilePic);
     
     const {
-      lrn, firstName, middleName, lastName, age, sex,
+      lrn, firstName, middleName, lastName, sex,
       parentFirstName, parentLastName, parentEmail, parentContact,
-      studentEmail, password, gradeLevel, section, profilePic
+      parentContact: contact,
+      password, gradeLevel, section, profilePic, qrCode, status: reqStatus
     } = req.body;
 
-    // Validate required fields
-    if (!lrn || !firstName || !lastName || !age || !sex || !gradeLevel || !section || !password) {
-      return res.status(400).json({ status: 'fail', message: 'Missing required student fields' });
+    // Accept both 'age' and default to 0 for bulk imports
+    const age = req.body.age || 0;
+    // Accept both 'studentEmail' and 'email' (bulk import sends 'email')
+    const studentEmail = req.body.studentEmail || req.body.email || null;
+
+    console.log('createStudent (server) received:', {
+      lrn: lrn || 'MISSING',
+      firstName: firstName || 'MISSING',
+      lastName: lastName || 'MISSING',
+      age,
+      sex: sex || 'MISSING',
+      gradeLevel: gradeLevel || 'MISSING',
+      section: section || 'MISSING',
+      studentEmail: studentEmail || 'MISSING',
+      hasPassword: !!password
+    });
+
+    // Validate required fields (age is optional for bulk import)
+    if (!lrn || !firstName || !lastName || !gradeLevel || !section) {
+      const missing = [];
+      if (!lrn) missing.push('lrn');
+      if (!firstName) missing.push('firstName');
+      if (!lastName) missing.push('lastName');
+      if (!gradeLevel) missing.push('gradeLevel');
+      if (!section) missing.push('section');
+      return res.status(400).json({ status: 'fail', message: `Missing required fields: ${missing.join(', ')}` });
     }
 
     // Check for duplicate LRN
     const existingStudent = await query('SELECT id FROM students WHERE lrn = ?', [lrn]);
     if (existingStudent.length > 0) {
-      return res.status(400).json({ status: 'fail', message: 'LRN already exists' });
+      // Return existing student data instead of error for bulk import tolerance
+      const existing = await query('SELECT * FROM students WHERE lrn = ?', [lrn]);
+      return res.status(200).json({ message: 'Student already exists', student: formatStudent(existing[0]) });
     }
 
     // -----------------------------
@@ -114,19 +142,30 @@ exports.createStudent = async (req, res) => {
     const safeProfilePic = profilePicPath ? `/student_profiles/${path.basename(profilePicPath)}` : null;
 
     // -----------------------------
-    // QR CODE
+    // QR CODE - Always generate server-side as small data URL
+    // (frontend base64 is too large for MySQL packet)
+    // JSON format so mobile scanner can parse it consistently
     // -----------------------------
-    const qrFolder = path.join(__dirname, '../public/qrcodes');
-    fs.mkdirSync(qrFolder, { recursive: true });
-    const qrFileName = `qr_${lrn}_${Date.now()}.png`;
-    qrCodePath = path.join(qrFolder, qrFileName);
-    await generateQRCodeFile({ lrn, firstName, middleName, lastName, gradeLevel, section, studentEmail }, qrCodePath);
-    const safeQRCode = `/qrcodes/${qrFileName}`;
+    let safeQRCode;
+    try {
+      const qrData = JSON.stringify({
+        studentId: lrn,
+        lrn: lrn,
+        name: `${firstName} ${lastName}`.trim(),
+        gradeLevel: gradeLevel,
+        section: section
+      });
+      safeQRCode = await QRCode.toDataURL(qrData, { width: 200, margin: 1 });
+    } catch (qrErr) {
+      console.error('QR generation failed:', qrErr.message);
+      safeQRCode = null;
+    }
 
     // -----------------------------
-    // HASH PASSWORD
+    // HASH PASSWORD - use default if not provided (bulk import)
     // -----------------------------
-    const hashedPassword = await bcrypt.hash(password, 12);
+    const finalPassword = password || 'Password123';
+    const hashedPassword = await bcrypt.hash(finalPassword, 12);
 
     // -----------------------------
     // INSERT INTO DATABASE
@@ -138,12 +177,10 @@ exports.createStudent = async (req, res) => {
         parent_email, parent_contact, student_email, password,
         profile_pic, qr_code, status, created_by
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        lrn, firstName, middleName || null, lastName, age, sex,
+      [lrn, firstName, middleName || null, lastName, age, sex || 'N/A',
         gradeLevel, section, parentFirstName || null, parentLastName || null,
         parentEmail || null, parentContact || null, studentEmail || null, hashedPassword,
-        safeProfilePic, safeQRCode, 'pending', 'admin'
-      ]
+        safeProfilePic, safeQRCode, reqStatus || 'Active', 'admin']
     );
 
     const createdStudent = {
@@ -186,6 +223,61 @@ exports.createStudent = async (req, res) => {
 // -----------------------------
 exports.getStudents = async (req, res) => {
   try {
+    const { teacherId, gradeLevel, section } = req.query;
+
+    // If teacherId provided, filter to only that teacher's assigned class
+    if (teacherId) {
+      let assignedGradeLevel = gradeLevel;
+      let assignedSection = section;
+
+      // 1. Check class_assignments table first (UUID-based teachers from web)
+      try {
+        const classAssignments = await query(
+          'SELECT grade_level, section FROM class_assignments WHERE adviser_id = ? LIMIT 1',
+          [teacherId]
+        );
+        if (classAssignments.length > 0) {
+          assignedGradeLevel = classAssignments[0].grade_level;
+          assignedSection = classAssignments[0].section;
+          console.log(`[getStudents] Found class_assignments for teacher ${teacherId}: ${assignedGradeLevel} - ${assignedSection}`);
+        }
+      } catch (assignErr) {
+        console.log('[getStudents] class_assignments lookup failed:', assignErr.message);
+      }
+
+      // 2. Fall back to teachers table (numeric IDs)
+      if (!assignedGradeLevel || !assignedSection) {
+        try {
+          const teacherRows = await query(
+            'SELECT grade_level, section FROM teachers WHERE id = ? AND grade_level IS NOT NULL AND section IS NOT NULL LIMIT 1',
+            [teacherId]
+          );
+          if (teacherRows.length > 0) {
+            assignedGradeLevel = teacherRows[0].grade_level;
+            assignedSection = teacherRows[0].section;
+            console.log(`[getStudents] Found teachers table for teacher ${teacherId}: ${assignedGradeLevel} - ${assignedSection}`);
+          }
+        } catch (teacherErr) {
+          console.log('[getStudents] teachers table lookup failed:', teacherErr.message);
+        }
+      }
+
+      // 3. If we found the teacher's assigned class, return only those students
+      if (assignedGradeLevel && assignedSection) {
+        const filteredStudents = await query(
+          'SELECT * FROM students WHERE grade_level = ? AND section = ? ORDER BY last_name ASC',
+          [assignedGradeLevel, assignedSection]
+        );
+        console.log(`[getStudents] Returning ${filteredStudents.length} students for ${assignedGradeLevel} - ${assignedSection}`);
+        return res.status(200).json({ status: 'success', data: filteredStudents.map(formatStudent) });
+      }
+
+      // 4. If teacher has no assigned class, return empty array
+      console.log(`[getStudents] Teacher ${teacherId} has no assigned class — returning empty`);
+      return res.status(200).json({ status: 'success', data: [] });
+    }
+
+    // No teacherId — return all students (admin/web use)
     const allDbStudents = await query('SELECT * FROM students ORDER BY created_at DESC');
     const formattedStudents = allDbStudents.map(formatStudent);
     res.status(200).json({ status: 'success', data: formattedStudents });
@@ -320,3 +412,38 @@ exports.restoreStudent = async (req, res) => {
 // -----------------------------
 exports.getAllStudents = exports.getStudents;
 exports.getStudentById = exports.getStudent;
+
+// -----------------------------
+// REGENERATE ALL QR CODES (JSON format)
+// Call POST /api/students/regenerate-qr to fix existing students
+// -----------------------------
+exports.regenerateQRCodes = async (req, res) => {
+  try {
+    const allStudents = await query('SELECT id, lrn, first_name, last_name, grade_level, section FROM students');
+    let updated = 0;
+    let failed = 0;
+
+    for (const s of allStudents) {
+      try {
+        const qrPayload = JSON.stringify({
+          studentId: s.lrn,
+          lrn: s.lrn,
+          name: `${s.first_name} ${s.last_name}`.trim(),
+          gradeLevel: s.grade_level,
+          section: s.section
+        });
+        const newQR = await QRCode.toDataURL(qrPayload, { width: 200, margin: 1 });
+        await query('UPDATE students SET qr_code = ? WHERE id = ?', [newQR, s.id]);
+        updated++;
+      } catch (err) {
+        console.error(`QR regen failed for student ${s.id}:`, err.message);
+        failed++;
+      }
+    }
+
+    res.json({ status: 'success', message: `QR codes regenerated: ${updated} updated, ${failed} failed` });
+  } catch (error) {
+    console.error('Error regenerating QR codes:', error);
+    res.status(500).json({ status: 'fail', message: error.message });
+  }
+};
