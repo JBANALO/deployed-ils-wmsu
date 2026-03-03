@@ -400,11 +400,6 @@ const assignAdviserToClass = async (req, res) => {
         UNIQUE KEY unique_class (grade_level, section)
       )
     `);
-    // Ensure adviser_id column is VARCHAR (fix if previously created as BIGINT)
-    try {
-      await pool.query(`ALTER TABLE class_assignments MODIFY COLUMN adviser_id VARCHAR(255) NOT NULL`);
-      await pool.query(`ALTER TABLE class_assignments ADD COLUMN IF NOT EXISTS adviser_name VARCHAR(255) DEFAULT ''`);
-    } catch(e) { /* already correct type */ }
 
     // Upsert into class_assignments
     await pool.query(
