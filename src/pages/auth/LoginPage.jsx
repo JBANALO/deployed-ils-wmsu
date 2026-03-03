@@ -201,7 +201,7 @@ export default function LoginPage() {
         {/* Google Sign-In Button */}
         <div className="flex justify-center mb-6">
           <GoogleLogin
-            clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}
+            clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.GOOGLE_CLIENT_ID || "878904993699-d6g63nckj41um96h4kul8vv34pd4b6b1.apps.googleusercontent.com"}
             onSuccess={handleGoogleSuccess}
             onError={handleGoogleError}
             text="signin_with"
