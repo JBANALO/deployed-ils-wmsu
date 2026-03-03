@@ -207,41 +207,59 @@ exports.getMe = async (req, res) => {
       return res.status(401).json({ message: 'Not authenticated' });
     }
 
-    // Check what columns exist in database
-    const columns = await query('SHOW COLUMNS FROM users');
-    const hasFirstName = columns.some(col => col.Field === 'firstName');
-    const hasFirstNameUnderscore = columns.some(col => col.Field === 'first_name');
-    
-    // Use appropriate column names based on database schema
-    const firstNameCol = hasFirstName ? 'firstName' : 'first_name';
-    const lastNameCol = hasFirstName ? 'lastName' : 'last_name';
-    const createdAtCol = hasFirstName ? 'createdAt' : 'created_at';
-    
-    const user = await query(
-      `SELECT id, ${firstNameCol}, ${lastNameCol}, username, email, role, ${createdAtCol} FROM users WHERE id = ?`,
+    // 1. Try users table first (admin accounts)
+    let rows = await query(
+      'SELECT id, first_name, last_name, username, email, role, created_at FROM users WHERE id = ?',
       [req.user.id]
     );
 
-    if (user.length === 0) {
-      return res.status(404).json({ message: 'User not found' });
+    if (rows.length > 0) {
+      const u = rows[0];
+      return res.status(200).json({
+        status: 'success',
+        data: {
+          user: {
+            id: u.id,
+            firstName: u.first_name,
+            lastName: u.last_name,
+            username: u.username,
+            email: u.email,
+            role: u.role,
+            createdAt: u.created_at
+          }
+        }
+      });
     }
 
-    const userData = user[0];
-    
-    res.status(200).json({
-      status: 'success',
-      data: {
-        user: {
-          id: userData.id,
-          firstName: userData[firstNameCol],
-          lastName: userData[lastNameCol],
-          username: userData.username,
-          email: userData.email,
-          role: userData.role,
-          createdAt: userData[createdAtCol]
+    // 2. Not in users — try teachers table (adviser/subject_teacher accounts)
+    rows = await query(
+      'SELECT id, first_name, middle_name, last_name, username, email, role, grade_level, section, profile_pic, created_at FROM teachers WHERE id = ?',
+      [req.user.id]
+    );
+
+    if (rows.length > 0) {
+      const u = rows[0];
+      return res.status(200).json({
+        status: 'success',
+        data: {
+          user: {
+            id: u.id,
+            firstName: u.first_name,
+            middleName: u.middle_name || '',
+            lastName: u.last_name,
+            username: u.username,
+            email: u.email,
+            role: u.role,
+            gradeLevel: u.grade_level,
+            section: u.section,
+            profilePic: u.profile_pic,
+            createdAt: u.created_at
+          }
         }
-      }
-    });
+      });
+    }
+
+    return res.status(404).json({ message: 'User not found' });
   } catch (error) {
     console.error('Error fetching current user:', error);
     res.status(500).json({ message: 'Error fetching user', error: error.message });
