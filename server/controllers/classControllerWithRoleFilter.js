@@ -270,28 +270,59 @@ const getAdviserClasses = async (req, res) => {
     console.log(`getAdviserClasses - adviserId: ${adviserId}`);
 
     try {
+      // First try direct match on classes.adviser_id
       const [rows] = await pool.query(
         `SELECT c.*, 
-                u.firstName as adviser_firstName, 
-                u.lastName as adviser_lastName,
                 COUNT(DISTINCT s.id) as student_count
          FROM classes c
-         LEFT JOIN users u ON c.adviser_id = u.id
          LEFT JOIN students s ON c.id = s.class_id
          WHERE c.adviser_id = ?
          GROUP BY c.id`,
         [adviserId]
       );
 
-      console.log(`Database: Found ${rows.length} classes for adviser ${adviserId}`);
-      
-      return res.json({ 
-        success: true, 
-        data: rows.map(cls => ({
-          ...cls,
-          adviser_name: `${cls.adviser_firstName || ''} ${cls.adviser_lastName || ''}`.trim()
-        }))
-      });
+      console.log(`Database: Found ${rows.length} classes for adviser ${adviserId} (direct match)`);
+
+      if (rows.length > 0) {
+        return res.json({ success: true, data: rows });
+      }
+
+      // Fallback: look up teacher in teachers table by id, match class by grade_level+section
+      const [teachers] = await pool.query(
+        `SELECT id, first_name, last_name, grade_level, section FROM teachers WHERE id = ?`,
+        [adviserId]
+      );
+
+      if (teachers.length > 0) {
+        const teacher = teachers[0];
+        console.log(`Found teacher: ${teacher.first_name} ${teacher.last_name}, grade_level: ${teacher.grade_level}, section: ${teacher.section}`);
+
+        if (teacher.grade_level && teacher.section) {
+          const [classRows] = await pool.query(
+            `SELECT c.*, COUNT(DISTINCT s.id) as student_count
+             FROM classes c
+             LEFT JOIN students s ON c.id = s.class_id
+             WHERE c.grade = ? AND c.section = ?
+             GROUP BY c.id`,
+            [teacher.grade_level, teacher.section]
+          );
+
+          console.log(`Matched ${classRows.length} class(es) by grade_level+section for teacher ${adviserId}`);
+
+          // Stamp adviser info onto the result so frontend knows it's assigned
+          const enriched = classRows.map(cls => ({
+            ...cls,
+            adviser_id: adviserId,
+            adviser_name: `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim()
+          }));
+
+          return res.json({ success: true, data: enriched });
+        }
+      }
+
+      // No match found at all
+      console.log(`No classes found for adviser ${adviserId}`);
+      return res.json({ success: true, data: [] });
 
     } catch (dbError) {
       console.log('Database unavailable, fallback to file-based');
