@@ -44,6 +44,29 @@ const FALLBACK_CLASSES = [
   }
 ];
 
+// Debug endpoint - show all class IDs
+router.get('/debug/class-ids', async (req, res) => {
+  try {
+    const [classes] = await pool.query('SELECT id, grade, section, adviser_id, adviser_name FROM classes ORDER BY grade, section');
+    
+    const formatted = classes.map(c => ({
+      id: c.id,
+      displayName: `${c.grade} - ${c.section}`,
+      adviser: c.adviser_name || 'Not assigned',
+      adviser_id: c.adviser_id || null
+    }));
+    
+    res.json({
+      totalClasses: classes.length,
+      classes: formatted,
+      message: 'Use these exact IDs in assignments'
+    });
+  } catch (err) {
+    console.error('Error fetching class IDs:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get all classes with their subjects
 router.get('/', async (req, res) => {
   try {
