@@ -24,57 +24,92 @@ const readStudents = () => {
 const formatStudent = (student) => ({
   id: student.id,
   lrn: student.lrn,
-  firstName: student.firstName,
-  middleName: student.middleName,
-  lastName: student.lastName,
-  fullName: student.fullName,
+  firstName: student.first_name,
+  middleName: student.middle_name,
+  lastName: student.last_name,
   age: student.age,
   sex: student.sex,
-  gradeLevel: student.gradeLevel,
+  gradeLevel: student.grade_level,
   section: student.section,
-  contact: student.contact,
-  wmsuEmail: student.wmsuEmail,
-  qrCode: student.qrCode,
-  profilePic: student.profilePic,
+  contact: student.parent_contact,
+  email: student.student_email,
+  qrCode: student.qr_code,
+  profilePic: student.profile_pic,
   status: student.status,
   attendance: student.attendance,
   average: student.average,
-  createdBy: student.createdBy,
-  createdAt: student.createdAt,
-  updatedAt: student.updatedAt
+  createdAt: student.created_at,
+  updatedAt: student.updated_at
 });
 
 const createStudent = async (req, res) => {
   try {
+    // Log entire request body for debugging
+    console.log('=== FULL REQUEST BODY ===');
+    console.log(JSON.stringify(req.body, null, 2));
+    console.log('========================');
+
+    // Handle both 'email' and 'wmsuEmail' formats (bulk import sends 'email')
     const {
       lrn, firstName, middleName, lastName, age, sex,
-      gradeLevel, section, contact, wmsuEmail, password, profilePic
+      gradeLevel, section, contact, wmsuEmail, email, password, profilePic, qrCode, fullName, status
     } = req.body;
 
-    if (!lrn || !firstName || !lastName || !wmsuEmail || !password) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    console.log('createStudent extracted values:', {
+      lrn: lrn || 'NOT FOUND',
+      firstName: firstName || 'NOT FOUND',
+      lastName: lastName || 'NOT FOUND',
+      email: email || 'NOT FOUND',
+      wmsuEmail: wmsuEmail || 'NOT FOUND',
+      gradeLevel: gradeLevel || 'NOT FOUND',
+      section: section || 'NOT FOUND',
+      contact: contact || 'NOT FOUND',
+      receivedKeys: Object.keys(req.body)
+    });
+
+    // Use email or wmsuEmail (bulk import sends 'email')
+    const studentEmail = wmsuEmail || email;
+    
+    // Detailed validation with specific error messages
+    const missingFields = [];
+    if (!lrn) missingFields.push(`lrn[received:"${lrn}"]`);
+    if (!firstName) missingFields.push(`firstName[received:"${firstName}"]`);
+    if (!lastName) missingFields.push(`lastName[received:"${lastName}"]`);
+    if (!studentEmail) missingFields.push(`email/wmsuEmail[email:"${email}",wmsuEmail:"${wmsuEmail}"]`);
+    if (!gradeLevel) missingFields.push(`gradeLevel[received:"${gradeLevel}"]`);
+    if (!section) missingFields.push(`section[received:"${section}"]`);
+
+    if (missingFields.length > 0) {
+      const errorMsg = `Missing required fields: ${missingFields.join(' | ')}`;
+      console.error('❌ Validation error:', errorMsg);
+      return res.status(400).json({ error: errorMsg });
     }
 
     const [lrnExists] = await pool.query('SELECT 1 FROM students WHERE lrn = ?', [lrn]);
     if (lrnExists.length) return res.status(409).json({ error: 'LRN already exists' });
 
-    const [emailExists] = await pool.query('SELECT 1 FROM students WHERE wmsu_email = ?', [wmsuEmail]);
+    const [emailExists] = await pool.query('SELECT 1 FROM students WHERE student_email = ?', [studentEmail]);
     if (emailExists.length) return res.status(409).json({ error: 'Email already exists' });
 
-    const fullName = `${firstName} ${middleName || ''} ${lastName}`.trim();
-    const qrData = JSON.stringify({ lrn, name: fullName, gradeLevel, section, email: wmsuEmail });
-    const qrCode = await QRCode.toDataURL(qrData, { width: 300, margin: 2 });
+    const studentFullName = fullName || `${firstName} ${middleName || ''} ${lastName}`.trim();
+    
+    // Use provided QR code if available (from bulk import), otherwise generate
+    let finalQrCode = qrCode;
+    if (!finalQrCode) {
+      const qrData = JSON.stringify({ lrn, name: studentFullName, gradeLevel, section, email: studentEmail });
+      finalQrCode = await QRCode.toDataURL(qrData, { width: 300, margin: 2 });
+    }
 
     await pool.query(
-      `INSERT INTO students (lrn, first_name, middle_name, last_name, full_name, age, sex, grade_level, section, contact, wmsu_email, password, profile_pic, qr_code)
+      `INSERT INTO students (lrn, first_name, middle_name, last_name, age, sex, grade_level, section, parent_contact, student_email, password, profile_pic, qr_code, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [lrn, firstName, middleName || '', lastName, fullName, age || null, sex, gradeLevel, section, contact, wmsuEmail, password, profilePic || null, qrCode]
+      [lrn, firstName, middleName || '', lastName, age || 0, sex || 'N/A', gradeLevel, section, contact || '', studentEmail, password || 'temp123', profilePic || null, finalQrCode, status || 'Active']
     );
 
     const [[newStudent]] = await pool.query('SELECT * FROM students WHERE lrn = ?', [lrn]);
     res.status(201).json({ message: 'Student created successfully', student: formatStudent(newStudent) });
   } catch (err) {
-    console.error(err);
+    console.error('Error in createStudent:', err);
     res.status(500).json({ error: 'Failed to create student', details: err.message });
   }
 };
@@ -85,9 +120,9 @@ const getAllStudents = async (req, res) => {
 
     // Build query to fetch from database
     let query = `
-      SELECT id, lrn, first_name, middle_name, last_name, full_name, age, sex,
-             grade_level, section, contact, wmsu_email, status, attendance, average,
-             profile_pic, qr_code, adviser_id, adviser_name, created_at
+      SELECT id, lrn, first_name, middle_name, last_name, age, sex,
+             grade_level, section, parent_contact, student_email, status, attendance, average,
+             profile_pic, qr_code, created_at, updated_at
       FROM students
       WHERE 1=1
     `;
@@ -107,7 +142,7 @@ const getAllStudents = async (req, res) => {
       params.push(status);
     }
 
-    query += ` ORDER BY full_name ASC`;
+    query += ` ORDER BY first_name, last_name ASC`;
 
     const [students] = await pool.query(query, params);
 
@@ -148,21 +183,20 @@ const getAllStudents = async (req, res) => {
       firstName: s.first_name,
       middleName: s.middle_name,
       lastName: s.last_name,
-      fullName: s.full_name,
+      fullName: `${s.first_name} ${s.middle_name || ''} ${s.last_name}`.trim(),
       age: s.age,
       sex: s.sex,
       gradeLevel: s.grade_level,
       section: s.section,
-      contact: s.contact,
-      wmsuEmail: s.wmsu_email,
+      contact: s.parent_contact,
+      email: s.student_email,
       status: s.status,
       attendance: s.attendance,
       average: s.average,
       profilePic: s.profile_pic,
       qrCode: s.qr_code,
-      adviserId: s.adviser_id,
-      adviserName: s.adviser_name,
-      createdAt: s.created_at
+      createdAt: s.created_at,
+      updatedAt: s.updated_at
     }));
 
     res.json(formattedStudents);

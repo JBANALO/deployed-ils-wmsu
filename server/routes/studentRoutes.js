@@ -9,6 +9,7 @@ router.post('/', studentController.createStudent);
 router.get('/', studentController.getStudents);
 router.get('/pending', studentController.getPendingStudents);
 router.get('/declined', studentController.getDeclinedStudents);
+router.post('/regenerate-qr', studentController.regenerateQRCodes); // fix all QR codes to JSON format
 router.get('/:id', studentController.getStudent);
 
 // Protected routes (require authentication)

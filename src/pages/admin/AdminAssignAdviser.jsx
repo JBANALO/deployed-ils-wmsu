@@ -123,7 +123,9 @@ export default function AdminAssignAdviser() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             adviser_id: adviser.id,
-            adviser_name: adviserName
+            adviser_name: adviserName,
+            grade: selectedClass.grade,
+            section: selectedClass.section
           })
         }
       );
@@ -154,7 +156,11 @@ export default function AdminAssignAdviser() {
     try {
       const response = await fetch(
         `${API_BASE_URL}/classes/${classItem.id}/unassign`,
-        { method: 'PUT' }
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ adviser_id: classItem.adviser_id })
+        }
       );
 
       if (response.ok) {

@@ -20,7 +20,7 @@ export default function ScanQRScreen() {
   const [successData, setSuccessData] = useState(null);
   const [sendingEmail, setSendingEmail] = useState(false);
 
-  const { addAttendance, checkAttendanceStatus } = useAttendance();
+  const { addAttendance, checkAttendanceStatus, loadAttendanceLogs } = useAttendance();
   const { user, userData } = useAuth();
 
   // Get teacher name
@@ -73,12 +73,52 @@ export default function ScanQRScreen() {
 
     try {
       console.log('📱 QR Scan - Raw data:', data);
-      const qrData = JSON.parse(data);
+
+      // --- Parse QR data: support JSON, pipe-delimited, and multi-line text formats ---
+      let qrData = {};
+      let studentIdFromQR = null;
+
+      try {
+        // Format 1: JSON  {"studentId":"...","lrn":"...","name":"..."}
+        qrData = JSON.parse(data);
+        studentIdFromQR = qrData.studentId || qrData.lrn || qrData.id;
+        console.log('📱 QR Scan - Parsed as JSON');
+      } catch (_) {
+        if (data.includes('|')) {
+          // Format 2: Pipe-delimited  LRN|Full Name|Grade Level|Section
+          const parts = data.split('|');
+          studentIdFromQR = parts[0]?.trim();
+          qrData = {
+            studentId: studentIdFromQR,
+            lrn: studentIdFromQR,
+            name: parts[1]?.trim() || '',
+            gradeLevel: parts[2]?.trim() || '',
+            section: parts[3]?.trim() || '',
+          };
+          console.log('📱 QR Scan - Parsed as pipe-delimited');
+        } else if (data.includes('LRN:')) {
+          // Format 3: Multi-line text  "LRN: xxx\nFull Name: ..."
+          const lines = data.split('\n');
+          const lrnLine = lines.find(l => l.startsWith('LRN:'));
+          const nameLine = lines.find(l => l.startsWith('Full Name:'));
+          const classLine = lines.find(l => l.startsWith('Class:'));
+          studentIdFromQR = lrnLine ? lrnLine.replace('LRN:', '').trim() : null;
+          const classStr = classLine ? classLine.replace('Class:', '').trim() : '';
+          const classParts = classStr.split(' - ');
+          qrData = {
+            studentId: studentIdFromQR,
+            lrn: studentIdFromQR,
+            name: nameLine ? nameLine.replace('Full Name:', '').trim() : '',
+            gradeLevel: classParts[0]?.trim() || '',
+            section: classParts[1]?.trim() || '',
+          };
+          console.log('📱 QR Scan - Parsed as multi-line text');
+        }
+      }
+
       console.log('📱 QR Scan - Parsed data:', qrData);
-      
-      // Extract studentId from various possible fields
-      const studentIdFromQR = qrData.studentId || qrData.lrn || qrData.id;
-      
+      // -----------------------------------------------------------------------
+
       if (studentIdFromQR) {
         try {
           // Get all students and check if the scanned student exists
@@ -189,10 +229,10 @@ export default function ScanQRScreen() {
         })
       }));
     } catch (e) {
-     
+      console.error('📱 QR Scan - Unexpected error:', e);
       Alert.alert(
-        'Invalid QR Code',
-        'This QR code format is not recognized. Please generate a new one.',
+        'Scan Error',
+        'An unexpected error occurred while scanning. Please try again.',
         [{ text: 'OK', onPress: () => resetScanner() }]
       );
     }
@@ -270,7 +310,7 @@ export default function ScanQRScreen() {
 
       setSendingEmail(true);
      
-      await addAttendance(
+      const attendanceResult = await addAttendance(
         scannedStudent.studentId,
         attendancePeriod,
         attendanceStatus
@@ -282,7 +322,12 @@ export default function ScanQRScreen() {
       const emailResult = await sendAutoEmailToParent(scannedStudent, attendanceStatus, attendancePeriod, scannedStudent.scanTime);
       
       setSendingEmail(false);
-      
+
+      // Only refresh from server if the save succeeded (so we don't wipe optimistic update)
+      if (attendanceResult?.success) {
+        loadAttendanceLogs();
+      }
+
       // Show custom success modal with real icons
       setSuccessData({
         studentName: scannedStudent.name,

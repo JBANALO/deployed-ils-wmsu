@@ -55,11 +55,19 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
     for (let i = 0; i < csvData.length; i++) {
       const student = csvData[i];
       try {
-        // Generate LRN (Learning Record Number) based on timestamp and index
-        const timestamp = Date.now();
-        const lrn = `${timestamp}${String(i).padStart(4, '0')}`;
+        // Generate LRN (Learning Record Number) - must be max 12 chars
+        // Format: YYMMDDHHXXXX (8 chars timestamp + 4-digit index = 12 chars)
+        // Supports up to 9999 students without overflow
+        const now = new Date();
+        const yy = String(now.getFullYear()).slice(-2);
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const hh = String(now.getHours()).padStart(2, '0');
+        const idx = String(i).padStart(4, '0');
+        const lrn = `${yy}${mm}${dd}${hh}${idx}`; // Total: exactly 12 chars
 
-        // First, create user account via auth service
+        // First, try to create user account via auth service
+        // But skip if user already exists
         const studentData = {
           firstName: student.firstName,
           lastName: student.lastName,
@@ -72,7 +80,20 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
           section: student.section,
         };
 
-        const authResponse = await authService.register(studentData);
+        let userCreated = false;
+        try {
+          const authResponse = await authService.register(studentData);
+          userCreated = true;
+          console.log(`✓ User created for ${student.firstName}`);
+        } catch (userError) {
+          // If user already exists, that's OK - we'll just create the student record
+          if (userError.message?.includes('already exists')) {
+            console.log(`⚠ User already exists for ${student.firstName}, continuing with student creation...`);
+            userCreated = false; // User exists but we can proceed
+          } else {
+            throw userError; // Re-throw if it's a different error
+          }
+        }
 
         // Generate QR code for the student
         let qrCodeDataUrl = null;
@@ -113,21 +134,30 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
           createdAt: new Date().toISOString()
         };
 
-        // Save to students API
-        try {
-          const apiResponse = await fetch(`${API_BASE_URL}/students`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(fullStudentRecord)
-          });
-          
-          if (!apiResponse.ok) {
-            console.warn('API response not OK:', apiResponse.status);
-          }
-        } catch (apiError) {
-          console.warn('Could not save to students database, but account created:', apiError);
+        // Log what we're sending
+        console.log(`[${student.firstName}] Sending to API:`, {
+          lrn: fullStudentRecord.lrn,
+          firstName: fullStudentRecord.firstName,
+          lastName: fullStudentRecord.lastName,
+          email: fullStudentRecord.email,
+          gradeLevel: fullStudentRecord.gradeLevel,
+          section: fullStudentRecord.section,
+          endpoint: `${API_BASE_URL}/students`
+        });
+
+        // Save to students API with proper error handling
+        const apiResponse = await fetch(`${API_BASE_URL}/students`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(fullStudentRecord)
+        });
+        
+        if (!apiResponse.ok) {
+          const errorData = await apiResponse.json();
+          console.error(`API Error for ${student.firstName}:`, errorData);
+          throw new Error(`API Error ${apiResponse.status}: ${errorData.error || errorData.message || 'Unknown error'}`);
         }
 
         results.push({
@@ -135,7 +165,7 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
           email: student.email,
           lrn: lrn,
           success: true,
-          message: 'Account created with QR code'
+          message: userCreated ? 'Account & student record created' : 'Student record created (user already existed)'
         });
       } catch (error) {
         console.error('Import error for', student.firstName, ':', error);

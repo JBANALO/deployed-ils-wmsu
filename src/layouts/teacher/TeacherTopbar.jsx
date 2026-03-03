@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { BellIcon, UserCircleIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
-import { authService } from "../../api/userService";
 
 export default function TeacherTopbar({ sidebarOpen }) {
   const [showDropdown, setShowDropdown] = useState(false);
@@ -9,20 +8,16 @@ export default function TeacherTopbar({ sidebarOpen }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const response = await authService.getCurrentUser();
-        if (response.data && response.data.user) {
-          const user = response.data.user;
-          localStorage.setItem('user', JSON.stringify(user));
-          const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.name || "User";
-          setUserName(fullName);
-        }
-      } catch (error) {
-        console.error("Failed to fetch user data:", error);
+    try {
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) {
+        const user = JSON.parse(storedUser);
+        const fullName = `${user.firstName || user.first_name || ""} ${user.lastName || user.last_name || ""}`.trim() || user.name || user.email || "User";
+        setUserName(fullName);
       }
-    };
-    fetchUser();
+    } catch (error) {
+      console.error("Failed to read user from localStorage:", error);
+    }
   }, []);
 
   const handleLogout = () => navigate("/login");

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, StatusBar, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, StatusBar, Alert, ActivityIndicator, Image } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthProvider'; 
@@ -125,14 +125,23 @@ export default function GenerateScreen() {
   };
 
   const handleGenerateQR = (student) => {
-    const data = JSON.stringify({
-      name: student.name || student.fullName,
-      studentId: student.lrn || student.studentId || student.id, // Use LRN first
-      section: student.section,
-      teacherId: student.teacherId || user?.id, // Include teacherId in QR
-    });
-    setQrData(data);
-    setSelectedStudent(student);
+    // If student has a pre-generated QR code from database, use it
+    if (student.qrCode) {
+      setSelectedStudent({
+        ...student,
+        displayQRFromDB: true // Flag to show database QR instead of generating new one
+      });
+    } else {
+      // Fallback: generate new QR code if none exists
+      const data = JSON.stringify({
+        name: student.name || student.fullName,
+        studentId: student.lrn || student.studentId || student.id,
+        section: student.section,
+        teacherId: student.teacherId || user?.id,
+      });
+      setQrData(data);
+      setSelectedStudent(student);
+    }
   };
 
   const handleDeleteStudent = async (studentToDelete) => {
@@ -265,17 +274,29 @@ export default function GenerateScreen() {
         </View>
 
         {/* QR Code Display */}
-        {qrData && selectedStudent ? (
+        {selectedStudent ? (
           <View style={styles.qrCard}>
-            <Text style={styles.qrTitle}> Scan This QR Code</Text>
+            <Text style={styles.qrTitle}> Student QR Code</Text>
             <View style={styles.qrContainer}>
-              <QRCode
-                value={qrData}
-                size={200}
-                fgColor="#000000"
-                bgColor="#ffffff"
-                logo={null}
-              />
+              {selectedStudent.displayQRFromDB && selectedStudent.qrCode ? (
+                // Display pre-generated QR code from database
+                <Image
+                  source={{ uri: selectedStudent.qrCode }}
+                  style={{ width: 200, height: 200, borderRadius: 8 }}
+                  onError={() => console.log('QR image load error')}
+                />
+              ) : qrData ? (
+                // Generate new QR code for manual entry
+                <QRCode
+                  value={qrData}
+                  size={200}
+                  fgColor="#000000"
+                  bgColor="#ffffff"
+                  logo={null}
+                />
+              ) : (
+                <Text style={styles.qrSubInfo}>No QR code available</Text>
+              )}
             </View>
             <View style={styles.studentInfo}>
               <Text style={styles.qrInfo}>{selectedStudent.name}</Text>
@@ -289,7 +310,7 @@ export default function GenerateScreen() {
                 setSelectedStudent(null);
               }}
             >
-              <Text style={styles.clearButtonText}>Clear QR Code</Text>
+              <Text style={styles.clearButtonText}>Close QR Code</Text>
             </TouchableOpacity>
           </View>
         ) : null}
