@@ -3,6 +3,7 @@ require('dotenv').config(); // Load environment variables
 console.log('Environment variables loaded:');
 console.log('GOOGLE_CLIENT_ID:', process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET');
 console.log('GOOGLE_CLIENT_SECRET:', process.env.GOOGLE_CLIENT_SECRET ? 'SET' : 'NOT SET');
+console.log('FRONTEND_URL:', process.env.FRONTEND_URL || 'NOT SET');
 
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
@@ -15,7 +16,11 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       {
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: `http://localhost:5000/api/auth/google/callback`,
+        callbackURL: process.env.BACKEND_URL ? 
+          `${process.env.BACKEND_URL}/api/auth/google/callback` : 
+          (process.env.NODE_ENV === 'production' ? 
+            `https://deployed-ils-wmsu-production.up.railway.app/api/auth/google/callback` : 
+            `http://localhost:5000/api/auth/google/callback`),
       },
       async (accessToken, refreshToken, profile, done) => {
         try {
