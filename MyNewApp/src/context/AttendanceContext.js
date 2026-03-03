@@ -47,14 +47,27 @@ export function AttendanceProvider({ children }) {
       const response = await Promise.race([fetchPromise, timeoutPromise]);
       const result = await response.json();
       if (result.success) {
-        setAttendanceLog(result.data || []);
+        const serverRecords = result.data || [];
+        // Merge: keep optimistic (local_*) records that the server doesn't have yet,
+        // so they survive a refresh until the server catches up.
+        setAttendanceLog(prev => {
+          const localOnly = prev.filter(l =>
+            String(l.id).startsWith('local_') &&
+            !serverRecords.some(s =>
+              s.studentId === l.studentId &&
+              s.date === l.date &&
+              s.period === l.period
+            )
+          );
+          return [...serverRecords, ...localOnly];
+        });
       } else {
-        console.log('Attendance response not successful:', result);
+        console.log('Attendance response not successful — keeping local records');
+        // Don't clear local state when server fails
       }
     } catch (error) {
       console.error('Error loading attendance logs:', error.message);
-      // Don't block the UI - just log the error silently
-      setAttendanceLog([]);
+      // Don't clear local state on error — keep optimistic records visible
     } finally {
       setLoading(false);
     }
