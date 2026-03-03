@@ -56,6 +56,9 @@ router.get('/', async (req, res) => {
       ORDER BY c.grade, c.section
     `);
     
+    // Log class IDs for debugging
+    console.log('Available class IDs:', classes.map(c => ({ id: c.id, grade: c.grade, section: c.section })));
+    
     // Parse subjects into arrays
     const classesWithSubjects = classes.map(cls => ({
       ...cls,
@@ -223,11 +226,28 @@ router.put('/:classId/assign', async (req, res) => {
     const { classId } = req.params;
     const { adviser_id, adviser_name, grade, section } = req.body;
 
-    console.log('Assigning adviser:', { classId, adviser_id, adviser_name, grade, section });
+    console.log('\n=== ADVISER ASSIGNMENT ===');
+    console.log('Request params:', { classId, adviser_id, adviser_name, grade, section });
 
     if (!adviser_id || !adviser_name) {
       return res.status(400).json({ error: 'adviser_id and adviser_name are required' });
     }
+
+    // Check if class exists first
+    const [[existingClass]] = await pool.query(
+      'SELECT id, grade, section FROM classes WHERE id = ?',
+      [classId]
+    );
+
+    if (!existingClass) {
+      console.error('❌ Class not found:', classId);
+      console.log('Trying to find class with similar name...');
+      const [allClasses] = await pool.query('SELECT id, grade, section FROM classes LIMIT 5');
+      console.log('Available classes:', allClasses);
+      return res.status(404).json({ error: `Class not found: ${classId}` });
+    }
+
+    console.log('✅ Class found:', existingClass);
 
     // 1. Update the class with adviser info
     const [classResult] = await pool.query(
@@ -235,30 +255,43 @@ router.put('/:classId/assign', async (req, res) => {
       [adviser_id, adviser_name, classId]
     );
 
+    console.log('Class update result:', { affectedRows: classResult.affectedRows });
+
     if (classResult.affectedRows === 0) {
-      return res.status(404).json({ error: 'Class not found' });
+      console.error('❌ Update failed - no rows affected');
+      return res.status(500).json({ error: 'Failed to update class' });
     }
 
     // 2. Also update the adviser's record with their assigned class
     try {
-      await pool.query(
+      const [userResult] = await pool.query(
         'UPDATE users SET grade_level = ?, section = ? WHERE id = ?',
         [grade, section, adviser_id]
       );
+      console.log('User update result:', { affectedRows: userResult.affectedRows });
       console.log('✅ Updated adviser record with class assignment');
     } catch (updateError) {
       console.log('Note: Could not update adviser record, but class assignment succeeded');
+      console.log(updateError.message);
     }
 
-    console.log('✅ Adviser assigned successfully');
+    // Verify the update
+    const [[verifyClass]] = await pool.query(
+      'SELECT adviser_id, adviser_name FROM classes WHERE id = ?',
+      [classId]
+    );
+    console.log('Verification - Class now has adviser:', verifyClass);
+    console.log('=== ASSIGNMENT COMPLETE ===\n');
+
     res.json({ 
       message: 'Adviser assigned successfully', 
       classId, 
       adviser_id, 
-      adviser_name 
+      adviser_name,
+      verification: verifyClass
     });
   } catch (err) {
-    console.error('Error assigning adviser:', err);
+    console.error('❌ Error assigning adviser:', err);
     res.status(500).json({ error: 'Failed to assign adviser', details: err.message });
   }
 });
