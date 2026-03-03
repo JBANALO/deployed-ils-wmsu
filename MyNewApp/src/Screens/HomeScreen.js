@@ -542,10 +542,13 @@ WMSU ILS - Elementary Department`;
             {selectedSection && (
               <>
                 <View style={styles.modalHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.modalTitle}>{selectedSection.name}</Text>
+                  <View style={styles.modalHeaderLeft}>
+                    <View style={styles.modalTitleRow}>
+                      <Icon name="account-group" size={22} color="#8B0000" />
+                      <Text style={styles.modalTitle}>{selectedSection.name}</Text>
+                    </View>
                     <Text style={styles.modalSubtitle}>
-                      {selectedSection.stats.total} students
+                      {selectedSection.stats.total} students enrolled
                     </Text>
                   </View>
                   <TouchableOpacity onPress={() => setModalVisible(false)}>
@@ -581,10 +584,28 @@ WMSU ILS - Elementary Department`;
                     
                     const getStatusColor = (status) => {
                       switch(status) {
-                        case 'present': return '#4caf50';
-                        case 'late': return '#ff9800';
-                        case 'absent': return '#f44336';
-                        default: return '#999';
+                        case 'present': return '#2e7d32';
+                        case 'late': return '#e65100';
+                        case 'absent': return '#c62828';
+                        default: return '#757575';
+                      }
+                    };
+
+                    const getStatusBg = (status) => {
+                      switch(status) {
+                        case 'present': return '#e8f5e9';
+                        case 'late': return '#fff3e0';
+                        case 'absent': return '#ffebee';
+                        default: return '#f5f5f5';
+                      }
+                    };
+
+                    const getStatusIcon = (status) => {
+                      switch(status) {
+                        case 'present': return 'check-circle';
+                        case 'late': return 'clock-alert';
+                        case 'absent': return 'close-circle';
+                        default: return 'help-circle';
                       }
                     };
 
@@ -599,41 +620,51 @@ WMSU ILS - Elementary Department`;
 
                     return (
                       <View key={index} style={styles.studentRow}>
+                        {/* Row number */}
+                        <View style={styles.studentIndex}>
+                          <Text style={styles.studentIndexText}>{index + 1}</Text>
+                        </View>
+
+                        {/* Student info */}
                         <View style={styles.studentInfo}>
-                          <Text style={styles.studentName}>{student.name}</Text>
-                          <Text style={styles.studentId}>{student.studentId}</Text>
+                          <Text style={styles.studentName} numberOfLines={1}>{student.name}</Text>
+                          <Text style={styles.studentId}>LRN: {student.studentId}</Text>
                         </View>
                         
+                        {/* AM / PM chips */}
                         <View style={styles.attendanceDisplay}>
                           <TouchableOpacity 
-                            style={styles.periodAttendance}
+                            style={[styles.statusChip, { backgroundColor: getStatusBg(morningStatus) }]}
                             onPress={() => toggleAttendance(student, 'morning')}
                             onLongPress={() => sendEmailToParent(student, 'morning')}
                           >
-                            <Text style={styles.periodLabel}>AM</Text>
-                            <Text style={[styles.statusText, { color: getStatusColor(morningStatus) }]}>
+                            <Icon name={getStatusIcon(morningStatus)} size={13} color={getStatusColor(morningStatus)} />
+                            <Text style={[styles.chipLabel, { color: '#555' }]}>AM</Text>
+                            <Text style={[styles.chipStatus, { color: getStatusColor(morningStatus) }]}>
                               {getStatusText(morningStatus)}
                             </Text>
                             {student.morningLog?.scanTime && (
-                              <Text style={styles.timeTextSmall}>{student.morningLog.scanTime}</Text>
+                              <Text style={styles.chipTime}>{student.morningLog.scanTime}</Text>
                             )}
                           </TouchableOpacity>
                           
                           <TouchableOpacity 
-                            style={styles.periodAttendance}
+                            style={[styles.statusChip, { backgroundColor: getStatusBg(afternoonStatus) }]}
                             onPress={() => toggleAttendance(student, 'afternoon')}
                             onLongPress={() => sendEmailToParent(student, 'afternoon')}
                           >
-                            <Text style={styles.periodLabel}>PM</Text>
-                            <Text style={[styles.statusText, { color: getStatusColor(afternoonStatus) }]}>
+                            <Icon name={getStatusIcon(afternoonStatus)} size={13} color={getStatusColor(afternoonStatus)} />
+                            <Text style={[styles.chipLabel, { color: '#555' }]}>PM</Text>
+                            <Text style={[styles.chipStatus, { color: getStatusColor(afternoonStatus) }]}>
                               {getStatusText(afternoonStatus)}
                             </Text>
                             {student.afternoonLog?.scanTime && (
-                              <Text style={styles.timeTextSmall}>{student.afternoonLog.scanTime}</Text>
+                              <Text style={styles.chipTime}>{student.afternoonLog.scanTime}</Text>
                             )}
                           </TouchableOpacity>
                         </View>
 
+                        {/* Email button */}
                         <TouchableOpacity 
                           style={styles.emailButton}
                           onPress={() => {
@@ -648,7 +679,7 @@ WMSU ILS - Elementary Department`;
                             );
                           }}
                         >
-                          <Icon name="email-outline" size={20} color="#8B0000" />
+                          <Icon name="email-outline" size={18} color="#8B0000" />
                         </TouchableOpacity>
                       </View>
                     );
@@ -844,8 +875,10 @@ const styles = StyleSheet.create({
     maxHeight: '80%',
   },
   modalHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#333' },
-  modalSubtitle: { fontSize: 14, color: '#666', marginTop: 4 },
+  modalHeaderLeft: { flex: 1 },
+  modalTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#8B0000' },
+  modalSubtitle: { fontSize: 13, color: '#777', marginLeft: 30 },
   modalPeriodStats: {
     flexDirection: 'row',
     gap: 12,
@@ -869,26 +902,52 @@ const styles = StyleSheet.create({
   studentRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#f9f9f9',
-    padding: 12,
-    borderRadius: 8,
+    backgroundColor: '#fff',
+    padding: 10,
+    borderRadius: 10,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#efefef',
+    elevation: 1,
   },
-  studentInfo: { flex: 1 },
-  studentName: { fontSize: 15, fontWeight: '600', color: '#333' },
-  studentId: { fontSize: 12, color: '#8B0000', marginTop: 2 },
-  attendanceDisplay: { flexDirection: 'row', gap: 16 },
+  studentIndex: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#8B0000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+    flexShrink: 0,
+  },
+  studentIndexText: { fontSize: 11, fontWeight: 'bold', color: '#fff' },
+  studentInfo: { flex: 1, marginRight: 8 },
+  studentName: { fontSize: 14, fontWeight: '700', color: '#222' },
+  studentId: { fontSize: 11, color: '#8B0000', marginTop: 1 },
+  attendanceDisplay: { flexDirection: 'row', gap: 6 },
+  statusChip: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    borderRadius: 8,
+    minWidth: 58,
+    gap: 1,
+  },
+  chipLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  chipStatus: { fontSize: 11, fontWeight: '700', marginTop: 1 },
+  chipTime: { fontSize: 9, color: '#888', marginTop: 1 },
   periodAttendance: { alignItems: 'center', minWidth: 70 },
   periodLabel: { fontSize: 11, fontWeight: 'bold', color: '#666', marginBottom: 4 },
   statusText: { fontSize: 13, fontWeight: '600', marginTop: 4 },
   timeTextSmall: { fontSize: 10, color: '#666', marginTop: 2 },
   emailButton: {
-    padding: 8,
-    backgroundColor: '#f0f0f0',
+    padding: 7,
+    backgroundColor: '#fce4ec',
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
+    marginLeft: 6,
   },
   closeButton: {
     backgroundColor: '#8B0000',
