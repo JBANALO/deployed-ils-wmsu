@@ -51,12 +51,14 @@ function formatStudent(s) {
 // HELPER: Generate QR code file
 // -----------------------------
 async function generateQRCodeFile(studentData, qrCodePath) {
-  const qrData = `LRN: ${studentData.lrn}
-Full Name: ${studentData.lastName}, ${studentData.firstName} ${studentData.middleName || ''}
-Class: ${studentData.gradeLevel} - ${studentData.section}
-Email: ${studentData.studentEmail}
-Department: ILS - Elementary Department
-School: Western Mindanao State University`;
+  // Use JSON format so the mobile scanner can parse it consistently
+  const qrData = JSON.stringify({
+    studentId: studentData.lrn,
+    lrn: studentData.lrn,
+    name: `${studentData.firstName} ${studentData.lastName}`.trim(),
+    gradeLevel: studentData.gradeLevel,
+    section: studentData.section
+  });
 
   await QRCode.toFile(qrCodePath, qrData, {
     width: 300,
@@ -142,10 +144,17 @@ exports.createStudent = async (req, res) => {
     // -----------------------------
     // QR CODE - Always generate server-side as small data URL
     // (frontend base64 is too large for MySQL packet)
+    // JSON format so mobile scanner can parse it consistently
     // -----------------------------
     let safeQRCode;
     try {
-      const qrData = `${lrn}|${firstName} ${lastName}|${gradeLevel}|${section}`;
+      const qrData = JSON.stringify({
+        studentId: lrn,
+        lrn: lrn,
+        name: `${firstName} ${lastName}`.trim(),
+        gradeLevel: gradeLevel,
+        section: section
+      });
       safeQRCode = await QRCode.toDataURL(qrData, { width: 200, margin: 1 });
     } catch (qrErr) {
       console.error('QR generation failed:', qrErr.message);
@@ -403,3 +412,38 @@ exports.restoreStudent = async (req, res) => {
 // -----------------------------
 exports.getAllStudents = exports.getStudents;
 exports.getStudentById = exports.getStudent;
+
+// -----------------------------
+// REGENERATE ALL QR CODES (JSON format)
+// Call POST /api/students/regenerate-qr to fix existing students
+// -----------------------------
+exports.regenerateQRCodes = async (req, res) => {
+  try {
+    const allStudents = await query('SELECT id, lrn, first_name, last_name, grade_level, section FROM students');
+    let updated = 0;
+    let failed = 0;
+
+    for (const s of allStudents) {
+      try {
+        const qrPayload = JSON.stringify({
+          studentId: s.lrn,
+          lrn: s.lrn,
+          name: `${s.first_name} ${s.last_name}`.trim(),
+          gradeLevel: s.grade_level,
+          section: s.section
+        });
+        const newQR = await QRCode.toDataURL(qrPayload, { width: 200, margin: 1 });
+        await query('UPDATE students SET qr_code = ? WHERE id = ?', [newQR, s.id]);
+        updated++;
+      } catch (err) {
+        console.error(`QR regen failed for student ${s.id}:`, err.message);
+        failed++;
+      }
+    }
+
+    res.json({ status: 'success', message: `QR codes regenerated: ${updated} updated, ${failed} failed` });
+  } catch (error) {
+    console.error('Error regenerating QR codes:', error);
+    res.status(500).json({ status: 'fail', message: error.message });
+  }
+};
