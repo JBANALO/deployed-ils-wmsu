@@ -29,33 +29,29 @@ exports.googleCallback = async (req, res) => {
         await query('UPDATE users SET googleId = ? WHERE id = ?', [googleId, user.id]);
       }
     } else {
-      // Create new user with Google data
+      // Create new user with Google data - use correct database column names
       const username = email.split('@')[0] + '_' + Math.random().toString(36).substr(2, 5);
-      const newUser = {
-        googleId,
-        email,
-        username,
-        firstName: displayName.split(' ')[0] || displayName,
-        lastName: displayName.split(' ').slice(1).join(' ') || '',
-        name: displayName,
-        avatar,
-        role: 'student', // Default role
-        status: 'approved', // Auto-approve Google sign-ups
-      };
+      const firstName = displayName.split(' ')[0] || displayName;
+      const lastName = displayName.split(' ').slice(1).join(' ') || '';
+      
+      // Generate a proper UUID for the user ID
+      const { v4: uuidv4 } = require('uuid');
+      const userId = uuidv4();
 
       try {
         await query(
-          'INSERT INTO users (googleId, email, username, firstName, lastName, name, avatar, role, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO users (id, googleId, email, username, first_name, last_name, name, profile_pic, role, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [
-            newUser.googleId,
-            newUser.email,
-            newUser.username,
-            newUser.firstName,
-            newUser.lastName,
-            newUser.name,
-            newUser.avatar,
-            newUser.role,
-            newUser.status,
+            userId,
+            googleId,
+            email,
+            username,
+            firstName,
+            lastName,
+            name,
+            avatar,
+            'student', // Default role
+            'approved', // Auto-approve Google sign-ups
           ]
         );
 
@@ -63,7 +59,7 @@ exports.googleCallback = async (req, res) => {
         user = users[0];
       } catch (insertError) {
         console.error('Error creating user:', insertError);
-        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}?error=unable_to_create_account`);
+        return res.redirect(`${process.env.LOCAL_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173'}?error=unable_to_create_account`);
       }
     }
 
@@ -71,14 +67,14 @@ exports.googleCallback = async (req, res) => {
     const token = signToken(user.id);
 
     // Redirect to frontend with token
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUrl = process.env.LOCAL_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
     res.redirect(
       `${frontendUrl}/auth/google-callback?token=${token}&user=${encodeURIComponent(
         JSON.stringify({
           id: user.id,
-          firstName: user.firstName || '',
-          lastName: user.lastName || '',
-          name: user.name || `${user.firstName} ${user.lastName}`,
+          firstName: user.first_name || user.firstName || '',
+          lastName: user.last_name || user.lastName || '',
+          name: user.name || `${user.first_name || user.firstName} ${user.last_name || user.lastName}`,
           email: user.email,
           role: user.role,
         })
@@ -86,7 +82,7 @@ exports.googleCallback = async (req, res) => {
     );
   } catch (error) {
     console.error('Google OAuth error:', error);
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}?error=auth_failed`);
+    res.redirect(`${process.env.LOCAL_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173'}?error=auth_failed`);
   }
 };
 
@@ -124,12 +120,12 @@ exports.getCurrentUser = async (req, res) => {
       data: {
         user: {
           id: user.id,
-          firstName: user.firstName || '',
-          lastName: user.lastName || '',
-          name: user.name || '',
+          firstName: user.firstName || user.first_name || '',
+          lastName: user.lastName || user.last_name || '',
+          name: user.name || `${user.firstName || user.first_name} ${user.lastName || user.last_name}`,
           email: user.email,
           role: user.role,
-          avatar: user.avatar || null,
+          avatar: user.avatar || user.profile_pic || null,
         },
       },
     });
