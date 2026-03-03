@@ -10,7 +10,12 @@ const dbUrl = process.env.DATABASE_URL;
 if (dbUrl) {
   // Production / Railway
   console.log('Using Railway DATABASE_URL configuration');
-  pool = mysql.createPool(dbUrl); // pass URL string directly
+  pool = mysql.createPool({
+    uri: dbUrl,
+    dateStrings: true,  // Return DATE/DATETIME as strings, not JS Date objects
+    waitForConnections: true,
+    connectionLimit: 10,
+  });
 } else {
   // Local XAMPP
   console.log('Using local XAMPP database configuration');
@@ -20,6 +25,7 @@ if (dbUrl) {
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'wmsu_ed',
     port: parseInt(process.env.DB_PORT || '3307'),
+    dateStrings: true,  // Return DATE/DATETIME as strings, not JS Date objects
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
