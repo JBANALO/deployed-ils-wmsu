@@ -46,6 +46,10 @@ import { UserProvider } from "./context/UserContext";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "878904993699-d6g63nckj41um96h4kul8vv34pd4b6b1.apps.googleusercontent.com";
 
+// Debug: Log environment variables
+console.log('Environment check - VITE_GOOGLE_CLIENT_ID:', import.meta.env.VITE_GOOGLE_CLIENT_ID);
+console.log('Environment check - Final GOOGLE_CLIENT_ID:', GOOGLE_CLIENT_ID);
+
 function App() {
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
