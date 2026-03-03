@@ -297,17 +297,39 @@ export function AttendanceProvider({ children }) {
   const addAttendance = async (studentId, period, status) => {
     if (!user) return { success: false, error: 'User not logged in' };
 
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = now.toLocaleTimeString();
+    const currentStatus = status || 'present';
+    const currentPeriod = period || getAttendancePeriod();
+
+    // Optimistic update: add to local state immediately so UI shows right away
+    const optimisticRecord = {
+      id: 'local_' + Date.now(),
+      studentId,
+      date: dateStr,
+      time: timeStr,
+      status: currentStatus,
+      period: currentPeriod,
+      teacherId: user.id,
+      teacherName: user.name,
+    };
+    setAttendanceLog(prev => {
+      // Remove any existing record for same student+date+period before adding
+      const filtered = prev.filter(l => !(l.studentId === studentId && l.date === dateStr && l.period === currentPeriod));
+      return [optimisticRecord, ...filtered];
+    });
+
     try {
-      const now = new Date();
       const attendanceData = {
         studentId,
         teacherId: user.id,
         teacherName: user.name,
         timestamp: now.toISOString(),
-        date: now.toISOString().split('T')[0],
-        time: now.toLocaleTimeString(),
-        status: status || 'present',
-        period: period || getAttendancePeriod()
+        date: dateStr,
+        time: timeStr,
+        status: currentStatus,
+        period: currentPeriod
       };
 
       const response = await fetch('https://deployed-ils-wmsu-production.up.railway.app/api/attendance', {
@@ -322,13 +344,20 @@ export function AttendanceProvider({ children }) {
       const result = await response.json();
       
       if (result.success) {
-        setAttendanceLog(prev => [result.data, ...prev]);
+        // Replace optimistic record with real server record
+        setAttendanceLog(prev => {
+          const filtered = prev.filter(l => l.id !== optimisticRecord.id);
+          return [result.data, ...filtered];
+        });
         return { success: true };
       } else {
+        console.warn('Server attendance save failed:', result.message);
+        // Keep optimistic record in state so UI still shows it this session
         return { success: false, error: result.message || 'Failed to record attendance' };
       }
     } catch (error) {
       console.error('Error adding attendance:', error);
+      // Keep optimistic record in state
       return { success: false, error: 'Failed to record attendance' };
     }
   };
