@@ -34,6 +34,14 @@ export default function AdminAssignAdviser() {
           classesArray = classesData.classes;
         }
         
+        // Log class details
+        console.log('Classes array:', classesArray.map(c => ({
+          id: c.id,
+          grade: c.grade,
+          section: c.section,
+          adviser_name: c.adviser_name
+        })));
+        
         toast.success('Classes loaded successfully');
         setClasses(classesArray);
       } else {
@@ -114,10 +122,15 @@ export default function AdminAssignAdviser() {
       }
       
       const adviserName = `${adviser.firstName} ${adviser.lastName}`;
+      
+      // Generate class ID if not present (format: grade-section like "grade-3-diligence")
+      const classId = selectedClass.id || `${selectedClass.grade.toLowerCase().replace(/\s+/g, '-')}-${selectedClass.section.toLowerCase()}`;
+      
+      console.log('Assigning adviser:', { classId, adviserName, adviser_id: adviser.id });
       toast.info(`Assigning ${adviserName} to ${selectedClass.grade} - ${selectedClass.section}`);
       
       const response = await fetch(
-        `${API_BASE_URL}/classes/${selectedClass.id}/assign`,
+        `${API_BASE_URL}/classes/${classId}/assign`,
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -131,6 +144,7 @@ export default function AdminAssignAdviser() {
       );
 
       const responseData = await response.json();
+      console.log('Assignment response:', responseData);
       toast.info('Assignment response received');
 
       if (response.ok) {
@@ -207,20 +221,23 @@ export default function AdminAssignAdviser() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Select Class</label>
               <select
-                value={selectedClass ? selectedClass.id : ""}
+                value={selectedClass ? (selectedClass.id || `${selectedClass.grade.toLowerCase().replace(/\s+/g, '-')}-${selectedClass.section.toLowerCase()}`) : ""}
                 onChange={(e) => {
-                  const selected = classes.find(c => c.id === e.target.value);
+                  const selected = classes.find(c => (c.id || `${c.grade.toLowerCase().replace(/\s+/g, '-')}-${c.section.toLowerCase()}`) === e.target.value);
                   setSelectedClass(selected);
                 }}
                 className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
               >
                 <option value="">-- Choose a class --</option>
-                {classes.map(classItem => (
-                  <option key={classItem.id} value={classItem.id}>
-                    {classItem.grade} - {classItem.section}
-                    {classItem.adviser_name && ` (Currently: ${classItem.adviser_name})`}
-                  </option>
-                ))}
+                {classes.map(classItem => {
+                  const classId = classItem.id || `${classItem.grade.toLowerCase().replace(/\s+/g, '-')}-${classItem.section.toLowerCase()}`;
+                  return (
+                    <option key={classId} value={classId}>
+                      {classItem.grade} - {classItem.section}
+                      {classItem.adviser_name && ` (Currently: ${classItem.adviser_name})`}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
