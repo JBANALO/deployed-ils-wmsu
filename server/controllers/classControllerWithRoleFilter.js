@@ -3,7 +3,6 @@
 // Returns ONLY the classes a teacher is assigned to (as adviser or subject teacher)
 
 const { pool } = require('../config/database');
-const { readClasses } = require('../utils/fileStorage');
 
 /**
  * Get classes visible to a specific teacher based on their role
@@ -111,23 +110,8 @@ const getTeacherVisibleClasses = async (req, res) => {
       });
 
     } catch (dbError) {
-      console.log('Database query failed, falling back to file-based system:', dbError.message);
-      
-      // Fallback to file-based system
-      const classes = readClasses();
-      
-      // Filter classes based on user role in that class
-      const visibleClasses = classes.filter(cls => {
-        // User is the adviser of this class
-        if (cls.adviser_id === userId) return true;
-        
-        // User is a subject teacher in this class
-        if (cls.subject_teachers && Array.isArray(cls.subject_teachers)) {
-          return cls.subject_teachers.some(st => st.teacher_id === userId);
-        }
-        
-        return false;
-      });
+      console.log('Database query failed in getTeacherVisibleClasses:', dbError.message);
+      const visibleClasses = [];
 
       console.log(`Fallback: Found ${visibleClasses.length} classes for user ${userId}`);
       
@@ -243,12 +227,7 @@ const getAllClasses = async (req, res) => {
       } catch (studentsError) {
         console.log('Students table also unavailable, using file-based system:', studentsError.message);
         // Last resort: file-based
-        try {
-          const classes = readClasses();
-          return res.json({ success: true, data: classes, message: 'File-based fallback mode' });
-        } catch (fileError) {
-          return res.json({ success: true, data: [], message: 'No classes data available' });
-        }
+        return res.json({ success: true, data: [], message: 'No classes data available' });
       }
     }
 
@@ -325,16 +304,8 @@ const getAdviserClasses = async (req, res) => {
       return res.json({ success: true, data: [] });
 
     } catch (dbError) {
-      console.log('Database unavailable, fallback to file-based');
-      
-      const classes = readClasses();
-      const adviserClasses = classes.filter(c => c.adviser_id === adviserId);
-      
-      return res.json({ 
-        success: true, 
-        data: adviserClasses,
-        message: 'File-based fallback mode'
-      });
+      console.log('DB error in getAdviserClasses:', dbError.message);
+      return res.json({ success: true, data: [] });
     }
 
   } catch (error) {
@@ -356,13 +327,10 @@ const getSubjectTeacherClasses = async (req, res) => {
 
     try {
       const [rows] = await pool.query(
-        `SELECT DISTINCT c.*, 
-                u.firstName as adviser_firstName, 
-                u.lastName as adviser_lastName,
+        `SELECT DISTINCT c.*,
                 GROUP_CONCAT(DISTINCT st.subject) as subjects_teaching,
                 COUNT(DISTINCT s.id) as student_count
          FROM classes c
-         LEFT JOIN users u ON c.adviser_id = u.id
          LEFT JOIN subject_teachers st ON c.id = st.class_id AND st.teacher_id = ?
          LEFT JOIN students s ON c.id = s.class_id
          WHERE st.teacher_id = ?
@@ -372,27 +340,11 @@ const getSubjectTeacherClasses = async (req, res) => {
 
       console.log(`Database: Found ${rows.length} classes for subject teacher ${userId}`);
       
-      return res.json({ 
-        success: true, 
-        data: rows.map(cls => ({
-          ...cls,
-          adviser_name: `${cls.adviser_firstName || ''} ${cls.adviser_lastName || ''}`.trim()
-        }))
-      });
+      return res.json({ success: true, data: rows });
 
     } catch (dbError) {
-      console.log('Database unavailable, fallback to file-based');
-      
-      const classes = readClasses();
-      const teacherClasses = classes.filter(c => 
-        c.subject_teachers && c.subject_teachers.some(st => st.teacher_id === userId)
-      );
-      
-      return res.json({ 
-        success: true, 
-        data: teacherClasses,
-        message: 'File-based fallback mode'
-      });
+      console.log('DB error in getSubjectTeacherClasses:', dbError.message);
+      return res.json({ success: true, data: [] });
     }
 
   } catch (error) {
