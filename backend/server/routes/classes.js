@@ -59,7 +59,9 @@ router.get('/', async (req, res) => {
     // Parse subjects into arrays
     const classesWithSubjects = classes.map(cls => ({
       ...cls,
-      subjects: cls.subjects ? cls.subjects.split(',') : []
+      subjects: cls.subjects ? cls.subjects.split(',') : [],
+      adviser_id: cls.adviser_id,
+      adviser_name: cls.adviser_name
     }));
     
     res.json(classesWithSubjects);
@@ -123,7 +125,9 @@ router.get('/:classId', async (req, res) => {
     
     const classWithSubjects = {
       ...classData,
-      subjects: classData.subjects ? classData.subjects.split(',') : []
+      subjects: classData.subjects ? classData.subjects.split(',') : [],
+      adviser_id: classData.adviser_id,
+      adviser_name: classData.adviser_name
     };
     
     res.json(classWithSubjects);
@@ -210,6 +214,67 @@ router.get('/subject-teacher/:userId', async (req, res) => {
   } catch (err) {
     console.error('Error fetching subject teacher classes:', err);
     res.status(500).json({ error: 'Failed to fetch subject teacher classes' });
+  }
+});
+
+// Assign adviser to a class
+router.put('/:classId/assign', async (req, res) => {
+  try {
+    const { classId } = req.params;
+    const { adviser_id, adviser_name } = req.body;
+
+    console.log('Assigning adviser:', { classId, adviser_id, adviser_name });
+
+    if (!adviser_id || !adviser_name) {
+      return res.status(400).json({ error: 'adviser_id and adviser_name are required' });
+    }
+
+    const [result] = await pool.query(
+      'UPDATE classes SET adviser_id = ?, adviser_name = ? WHERE id = ?',
+      [adviser_id, adviser_name, classId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Class not found' });
+    }
+
+    console.log('✅ Adviser assigned successfully');
+    res.json({ 
+      message: 'Adviser assigned successfully', 
+      classId, 
+      adviser_id, 
+      adviser_name 
+    });
+  } catch (err) {
+    console.error('Error assigning adviser:', err);
+    res.status(500).json({ error: 'Failed to assign adviser', details: err.message });
+  }
+});
+
+// Unassign adviser from a class
+router.put('/:classId/unassign', async (req, res) => {
+  try {
+    const { classId } = req.params;
+
+    console.log('Unassigning adviser from class:', classId);
+
+    const [result] = await pool.query(
+      'UPDATE classes SET adviser_id = NULL, adviser_name = NULL WHERE id = ?',
+      [classId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Class not found' });
+    }
+
+    console.log('✅ Adviser unassigned successfully');
+    res.json({ 
+      message: 'Adviser unassigned successfully', 
+      classId 
+    });
+  } catch (err) {
+    console.error('Error unassigning adviser:', err);
+    res.status(500).json({ error: 'Failed to unassign adviser', details: err.message });
   }
 });
 
