@@ -66,8 +66,13 @@ router.post('/', async (req, res) => {
     const today = date || new Date().toISOString().split('T')[0];
     const currentPeriod = period || 'morning';
     const currentStatus = status || 'present';
-    const currentTimestamp = timestamp || new Date().toISOString();
-    const currentTime = time || new Date().toLocaleTimeString();
+    // MySQL datetime requires 'YYYY-MM-DD HH:MM:SS' — convert ISO string if needed
+    const toMySQLDatetime = (isoStr) => {
+      const d = new Date(isoStr || Date.now());
+      return d.toISOString().replace('T', ' ').substring(0, 19);
+    };
+    const currentTimestamp = toMySQLDatetime(timestamp);
+    const currentTime = time || new Date().toLocaleTimeString('en-US', { hour12: false });
 
     // Check if already recorded for this student + date + period
     const existingRecords = await query(
