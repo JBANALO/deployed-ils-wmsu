@@ -45,6 +45,8 @@ export default function AdminStudents() {
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [editFormData, setEditFormData] = useState({});
+  const [studentCredentials, setStudentCredentials] = useState(null);
+  const [loadingCredentials, setLoadingCredentials] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSection, setSelectedSection] = useState('All');
   const [selectedStudents, setSelectedStudents] = useState(new Set());
@@ -177,12 +179,32 @@ export default function AdminStudents() {
 
   const handleUpdateStudent = async () => {
     try {
+      // Create the update data object with all fields
+      const updateData = {
+        lrn: editFormData.lrn,
+        firstName: editFormData.firstName,
+        middleName: editFormData.middleName,
+        lastName: editFormData.lastName,
+        age: editFormData.age,
+        gradeLevel: editFormData.gradeLevel,
+        section: editFormData.section,
+        sex: editFormData.sex,
+        parentFirstName: editFormData.parentFirstName,
+        parentLastName: editFormData.parentLastName,
+        parentEmail: editFormData.parentEmail,
+        parentContact: editFormData.parentContact,
+        // Include other existing fields that might be needed
+        email: editFormData.email,
+        username: editFormData.username,
+        status: editFormData.status
+      };
+
       const response = await fetch(`${API_BASE_URL}/students/${selectedStudent.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(editFormData)
+        body: JSON.stringify(updateData)
       });
 
       if (response.ok) {
@@ -236,8 +258,37 @@ export default function AdminStudents() {
   };
 
   // VIEW CREDENTIALS
-  const handleViewCredentials = (student) => {
+  const handleViewCredentials = async (student) => {
     setSelectedStudent(student);
+    setLoadingCredentials(true);
+    
+    try {
+      // Fetch student credentials from API
+      const response = await fetch(`${API_BASE_URL}/students/${student.id}/credentials`);
+      
+      if (response.ok) {
+        const credentialsData = await response.json();
+        setStudentCredentials(credentialsData);
+      } else {
+        // Fallback to student data if credentials endpoint doesn't exist
+        setStudentCredentials({
+          username: student.username || `${student.lrn}@wmsu.edu.ph`,
+          email: student.email || student.parentEmail || `${student.lrn}@wmsu.edu.ph`,
+          password: student.password || `Temp@${student.lrn}`
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching credentials:', error);
+      // Fallback to student data
+      setStudentCredentials({
+        username: student.username || `${student.lrn}@wmsu.edu.ph`,
+        email: student.email || student.parentEmail || `${student.lrn}@wmsu.edu.ph`,
+        password: student.password || `Temp@${student.lrn}`
+      });
+    } finally {
+      setLoadingCredentials(false);
+    }
+    
     setShowCredentialsModal(true);
   };
 
@@ -722,12 +773,32 @@ export default function AdminStudents() {
             <h3 className="text-xl font-bold mb-4">Edit Student - {selectedStudent.fullName}</h3>
             <div className="space-y-4">
               <div>
+                <label className="block font-semibold mb-1">LRN</label>
+                <input
+                  type="text"
+                  value={editFormData.lrn || ''}
+                  onChange={(e) => setEditFormData({...editFormData, lrn: e.target.value})}
+                  className="w-full border p-2 rounded-lg"
+                  placeholder="e.g., 123456789012"
+                />
+              </div>
+              <div>
                 <label className="block font-semibold mb-1">First Name</label>
                 <input
                   type="text"
                   value={editFormData.firstName}
                   onChange={(e) => setEditFormData({...editFormData, firstName: e.target.value})}
                   className="w-full border p-2 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Middle Name</label>
+                <input
+                  type="text"
+                  value={editFormData.middleName || ''}
+                  onChange={(e) => setEditFormData({...editFormData, middleName: e.target.value})}
+                  className="w-full border p-2 rounded-lg"
+                  placeholder="e.g., Juan"
                 />
               </div>
               <div>
@@ -738,6 +809,35 @@ export default function AdminStudents() {
                   onChange={(e) => setEditFormData({...editFormData, lastName: e.target.value})}
                   className="w-full border p-2 rounded-lg"
                 />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Age</label>
+                <input
+                  type="number"
+                  value={editFormData.age || ''}
+                  onChange={(e) => setEditFormData({...editFormData, age: e.target.value})}
+                  className="w-full border p-2 rounded-lg"
+                  placeholder="e.g., 12"
+                  min="6"
+                  max="18"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Grade Level</label>
+                <select
+                  value={editFormData.gradeLevel || ''}
+                  onChange={(e) => setEditFormData({...editFormData, gradeLevel: e.target.value})}
+                  className="w-full border p-2 rounded-lg"
+                >
+                  <option value="">Select Grade Level</option>
+                  <option value="Kinder">Kinder</option>
+                  <option value="Grade 1">Grade 1</option>
+                  <option value="Grade 2">Grade 2</option>
+                  <option value="Grade 3">Grade 3</option>
+                  <option value="Grade 4">Grade 4</option>
+                  <option value="Grade 5">Grade 5</option>
+                  <option value="Grade 6">Grade 6</option>
+                </select>
               </div>
               <div>
                 <label className="block font-semibold mb-1">Section</label>
@@ -763,6 +863,26 @@ export default function AdminStudents() {
               <div className="border-t pt-4 mt-4">
                 <h4 className="font-bold text-red-800 mb-3">📧 Parent/Guardian Contact Info</h4>
                 <div className="space-y-3">
+                  <div>
+                    <label className="block font-semibold mb-1">Parent First Name</label>
+                    <input
+                      type="text"
+                      value={editFormData.parentFirstName || ''}
+                      onChange={(e) => setEditFormData({...editFormData, parentFirstName: e.target.value})}
+                      placeholder="e.g., Juan"
+                      className="w-full border p-2 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">Parent Last Name</label>
+                    <input
+                      type="text"
+                      value={editFormData.parentLastName || ''}
+                      onChange={(e) => setEditFormData({...editFormData, parentLastName: e.target.value})}
+                      placeholder="e.g., Santos"
+                      className="w-full border p-2 rounded-lg"
+                    />
+                  </div>
                   <div>
                     <label className="block font-semibold mb-1">Parent/Guardian Email</label>
                     <input
@@ -807,39 +927,100 @@ export default function AdminStudents() {
       {/* VIEW DETAILS MODAL */}
       {showViewModal && selectedStudent && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-lg w-full">
-            <h3 className="text-xl font-bold mb-4">Student Details</h3>
-            <div className="space-y-3">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto hide-scrollbar">
+            {/* Profile Picture at Top Center */}
+            <div className="flex justify-center mb-6">
+              <div className="relative">
+                {selectedStudent.profileImage ? (
+                  <img
+                    src={
+                      selectedStudent.profileImage.startsWith('http')
+                        ? selectedStudent.profileImage
+                        : `${import.meta.env.VITE_API_URL?.replace('/api', '')}${selectedStudent.profileImage}`
+                    }
+                    alt="Student Profile"
+                    className="w-24 h-24 rounded-full object-cover border-4 border-red-700"
+                    onError={(e) => {
+                      e.target.src = '/default-avatar.jpeg';
+                    }}
+                  />
+                ) : (
+                  <div className="w-24 h-24 rounded-full bg-gray-200 border-4 border-red-700 flex items-center justify-center">
+                    <span className="text-3xl text-gray-500 font-bold">
+                      {selectedStudent.firstName?.charAt(0) || selectedStudent.fullName?.charAt(0) || 'S'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <h3 className="text-xl font-bold mb-6 text-center">Student Details</h3>
+            
+            {/* Student Information Section */}
+            <div className="border-2 border-gray-200 rounded-lg p-4 mb-6">
+              <h4 className="font-semibold text-lg mb-4 text-red-800">Student Information</h4>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-gray-600 text-sm">LRN</p>
-                  <p className="font-semibold">{selectedStudent.lrn}</p>
+                  <p className="font-semibold">{selectedStudent.lrn || 'N/A'}</p>
                 </div>
                 <div>
-                  <p className="text-gray-600 text-sm">Name</p>
-                  <p className="font-semibold">{selectedStudent.fullName}</p>
+                  <p className="text-gray-600 text-sm">First Name</p>
+                  <p className="font-semibold">{selectedStudent.firstName || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 text-sm">Middle Name</p>
+                  <p className="font-semibold">{selectedStudent.middleName || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 text-sm">Last Name</p>
+                  <p className="font-semibold">{selectedStudent.lastName || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 text-sm">Age</p>
+                  <p className="font-semibold">{selectedStudent.age || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-gray-600 text-sm">Sex</p>
-                  <p className="font-semibold">{selectedStudent.sex}</p>
+                  <p className="font-semibold">{selectedStudent.sex || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-gray-600 text-sm">Grade Level</p>
-                  <p className="font-semibold">{selectedStudent.gradeLevel}</p>
+                  <p className="font-semibold">{selectedStudent.gradeLevel || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-gray-600 text-sm">Section</p>
-                  <p className="font-semibold">{selectedStudent.section}</p>
-                </div>
-                <div>
-                  <p className="text-gray-600 text-sm">Status</p>
-                  <p className="font-semibold">{selectedStudent.status}</p>
+                  <p className="font-semibold">{selectedStudent.section || 'N/A'}</p>
                 </div>
               </div>
             </div>
+
+            {/* Parent Information Section */}
+            <div className="border-2 border-gray-200 rounded-lg p-4 mb-6">
+              <h4 className="font-semibold text-lg mb-4 text-red-800">Parent/Guardian Information</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-gray-600 text-sm">Parent First Name</p>
+                  <p className="font-semibold">{selectedStudent.parentFirstName || selectedStudent.parentName?.split(' ')[0] || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 text-sm">Parent Last Name</p>
+                  <p className="font-semibold">{selectedStudent.parentLastName || selectedStudent.parentName?.split(' ').slice(-1)[0] || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 text-sm">Contact Number</p>
+                  <p className="font-semibold">{selectedStudent.parentContact || selectedStudent.contactNumber || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 text-sm">Email Address</p>
+                  <p className="font-semibold">{selectedStudent.parentEmail || selectedStudent.email || 'N/A'}</p>
+                </div>
+              </div>
+            </div>
+
             <button
               onClick={() => setShowViewModal(false)}
-              className="w-full bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600 mt-6"
+              className="w-full bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600"
             >
               Close
             </button>
@@ -852,66 +1033,85 @@ export default function AdminStudents() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-8 max-w-md w-full">
             <h3 className="text-2xl font-bold mb-6 text-red-800">Student Credentials</h3>
-            <div className="space-y-4 bg-gray-50 p-4 rounded-lg border-2 border-gray-200">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Student Name</label>
-                <p className="text-lg font-bold text-gray-900">{selectedStudent.fullName || `${selectedStudent.firstName} ${selectedStudent.lastName}`}</p>
+            
+            {loadingCredentials ? (
+              <div className="flex justify-center items-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-800"></div>
+                <span className="ml-3 text-gray-600">Loading credentials...</span>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Username</label>
-                <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
-                  <p className="text-lg font-mono text-gray-900">{selectedStudent.username}</p>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(selectedStudent.username);
-                      toast.success('Username copied to clipboard!');
-                    }}
-                    className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
-                  >
-                    Copy
-                  </button>
+            ) : (
+              <div className="space-y-4 bg-gray-50 p-4 rounded-lg border-2 border-gray-200">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Student Name</label>
+                  <p className="text-lg font-bold text-gray-900">{selectedStudent.fullName || `${selectedStudent.firstName} ${selectedStudent.lastName}`}</p>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Username</label>
+                  <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
+                    <p className="text-lg font-mono text-gray-900 flex-1 mr-2">{studentCredentials?.username || 'N/A'}</p>
+                    <button
+                      onClick={() => {
+                        const username = studentCredentials?.username || '';
+                        navigator.clipboard.writeText(username);
+                        toast.success('Username copied to clipboard!');
+                      }}
+                      className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Email</label>
+                  <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
+                    <p className="text-sm font-mono text-gray-900 break-all flex-1 mr-2">{studentCredentials?.email || 'N/A'}</p>
+                    <button
+                      onClick={() => {
+                        const email = studentCredentials?.email || '';
+                        navigator.clipboard.writeText(email);
+                        toast.success('Email copied to clipboard!');
+                      }}
+                      className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Password</label>
+                  <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
+                    <p className="text-lg font-mono text-gray-900 flex-1 mr-2">{studentCredentials?.password || 'N/A'}</p>
+                    <button
+                      onClick={() => {
+                        const password = studentCredentials?.password || '';
+                        navigator.clipboard.writeText(password);
+                        toast.success('Password copied to clipboard!');
+                      }}
+                      className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="bg-yellow-100 border border-yellow-400 p-3 rounded mt-4">
+                  <p className="text-xs text-yellow-800">
+                    <strong>⚠️ Security Note:</strong> These credentials should be shared securely with the student's parents/guardians. Keep them confidential.
+                  </p>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Email</label>
-                <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
-                  <p className="text-sm font-mono text-gray-900 break-all">{selectedStudent.email}</p>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(selectedStudent.email);
-                      toast.success('Email copied to clipboard!');
-                    }}
-                    className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
-                  >
-                    Copy
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Password</label>
-                <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
-                  <p className="text-lg font-mono text-gray-900">{selectedStudent.password}</p>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(selectedStudent.password);
-                      toast.success('Password copied to clipboard!');
-                    }}
-                    className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
-                  >
-                    Copy
-                  </button>
-                </div>
-              </div>
-              <div className="bg-yellow-100 border border-yellow-400 p-3 rounded mt-4">
-                <p className="text-xs text-yellow-800">
-                  <strong>⚠️ Security Note:</strong> These credentials should be shared securely with the student's parents/guardians. Keep them confidential.
-                </p>
-              </div>
-            </div>
+            )}
+            
             <div className="flex gap-3 mt-6">
               <button
-                onClick={() => setShowCredentialsModal(false)}
-                className="flex-1 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600"
+                onClick={() => {
+                  setShowCredentialsModal(false);
+                  setStudentCredentials(null);
+                }}
+                className="flex-1 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600 transition-colors"
               >
                 Close
               </button>

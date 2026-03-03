@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   BellIcon, UserCircleIcon, ChevronDownIcon, 
@@ -17,6 +17,10 @@ export default function AdminTopbar() {
   const [unreadCount, setUnreadCount] = useState(0);
   const { adminUser, profileImageFile } = useContext(UserContext);
   const navigate = useNavigate();
+
+  // Refs for click outside detection
+  const notificationsRef = useRef(null);
+  const dropdownRef = useRef(null);
 
   // Navigation handlers
   const handleLogout = () => navigate("/login");
@@ -113,6 +117,26 @@ export default function AdminTopbar() {
     return () => clearInterval(interval);
   }, []);
 
+  // Click outside to close dropdowns
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      // Close notifications if clicking outside
+      if (showNotifications && notificationsRef.current && !notificationsRef.current.contains(event.target)) {
+        setShowNotifications(false);
+      }
+      
+      // Close user dropdown if clicking outside
+      if (showDropdown && dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNotifications, showDropdown]);
+
   const handleAccountApproval = async (userId, userType, approved) => {
     try {
       await axios.post(`/admin/${userType}s/${userId}/approve`, { approved });
@@ -169,7 +193,7 @@ export default function AdminTopbar() {
 
             {/* Notifications Dropdown */}
             {showNotifications && (
-              <div className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-md shadow-lg w-80 max-h-96 overflow-hidden z-50">
+              <div ref={notificationsRef} className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-md shadow-lg w-80 max-h-96 overflow-hidden z-50">
                 <div className="px-4 py-3 border-b flex items-center justify-between bg-gray-50">
                   <h3 className="font-semibold text-gray-700">Notifications</h3>
                   {unreadCount > 0 && (
@@ -308,7 +332,7 @@ export default function AdminTopbar() {
             </button>
 
             {showDropdown && (
-              <div className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-md shadow-lg w-48 text-sm z-50">
+              <div ref={dropdownRef} className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-md shadow-lg w-48 text-sm z-50">
                 <div className="px-4 py-2 border-b font-semibold text-gray-700">
                   {adminUser ? `${adminUser.firstName} ${adminUser.lastName}` : 'Admin Account'}
                 </div>
