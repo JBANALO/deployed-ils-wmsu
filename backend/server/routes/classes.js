@@ -221,21 +221,33 @@ router.get('/subject-teacher/:userId', async (req, res) => {
 router.put('/:classId/assign', async (req, res) => {
   try {
     const { classId } = req.params;
-    const { adviser_id, adviser_name } = req.body;
+    const { adviser_id, adviser_name, grade, section } = req.body;
 
-    console.log('Assigning adviser:', { classId, adviser_id, adviser_name });
+    console.log('Assigning adviser:', { classId, adviser_id, adviser_name, grade, section });
 
     if (!adviser_id || !adviser_name) {
       return res.status(400).json({ error: 'adviser_id and adviser_name are required' });
     }
 
-    const [result] = await pool.query(
+    // 1. Update the class with adviser info
+    const [classResult] = await pool.query(
       'UPDATE classes SET adviser_id = ?, adviser_name = ? WHERE id = ?',
       [adviser_id, adviser_name, classId]
     );
 
-    if (result.affectedRows === 0) {
+    if (classResult.affectedRows === 0) {
       return res.status(404).json({ error: 'Class not found' });
+    }
+
+    // 2. Also update the adviser's record with their assigned class
+    try {
+      await pool.query(
+        'UPDATE users SET grade_level = ?, section = ? WHERE id = ?',
+        [grade, section, adviser_id]
+      );
+      console.log('✅ Updated adviser record with class assignment');
+    } catch (updateError) {
+      console.log('Note: Could not update adviser record, but class assignment succeeded');
     }
 
     console.log('✅ Adviser assigned successfully');
@@ -258,13 +270,33 @@ router.put('/:classId/unassign', async (req, res) => {
 
     console.log('Unassigning adviser from class:', classId);
 
-    const [result] = await pool.query(
+    // 1. Get the class info first to find the adviser
+    const [[classData]] = await pool.query(
+      'SELECT adviser_id, grade, section FROM classes WHERE id = ?',
+      [classId]
+    );
+
+    // 2. Unassign from the class
+    const [classResult] = await pool.query(
       'UPDATE classes SET adviser_id = NULL, adviser_name = NULL WHERE id = ?',
       [classId]
     );
 
-    if (result.affectedRows === 0) {
+    if (classResult.affectedRows === 0) {
       return res.status(404).json({ error: 'Class not found' });
+    }
+
+    // 3. Clear the class info from the adviser's record
+    if (classData && classData.adviser_id) {
+      try {
+        await pool.query(
+          'UPDATE users SET grade_level = NULL, section = NULL WHERE id = ?',
+          [classData.adviser_id]
+        );
+        console.log('✅ Cleared adviser record');
+      } catch (updateError) {
+        console.log('Note: Could not update adviser record, but unassignment succeeded');
+      }
     }
 
     console.log('✅ Adviser unassigned successfully');
