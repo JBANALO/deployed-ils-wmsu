@@ -528,7 +528,7 @@ WMSU ILS - Elementary Department`;
           )}
         </View>
 
-        <View style={{ height: 80 }} />
+        <View style={{ height: 100 }} />
       </ScrollView>
 
       <Modal
@@ -872,7 +872,9 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
-    maxHeight: '80%',
+    paddingBottom: 28,
+    maxHeight: '85%',
+    marginBottom: 70,
   },
   modalHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   modalHeaderLeft: { flex: 1 },
