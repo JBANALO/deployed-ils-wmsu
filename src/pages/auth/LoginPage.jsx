@@ -13,6 +13,9 @@ export default function LoginPage() {
 
   const navigate = useNavigate();
 
+  // Debug: Check if environment variable is loading
+  console.log('VITE_GOOGLE_CLIENT_ID:', import.meta.env.VITE_GOOGLE_CLIENT_ID);
+
   // Pre-fill email from localStorage if available (from account creation or last login)
   useEffect(() => {
     console.log('LoginPage useEffect - checking localStorage...');
@@ -104,8 +107,11 @@ export default function LoginPage() {
       // Get API URL from Vite environment variables (not React App variables)
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
       
+      // Remove /api suffix if present to avoid double /api in URL
+      const baseUrl = apiUrl.replace(/\/api$/, '');
+      
       // Redirect to backend for Google OAuth flow
-      window.location.href = `${apiUrl}/api/auth/google`;
+      window.location.href = `${baseUrl}/api/auth/google`;
     } catch (err) {
       setError('Google sign-in failed. Please try again.');
       setIsSubmitting(false);
@@ -195,6 +201,7 @@ export default function LoginPage() {
         {/* Google Sign-In Button */}
         <div className="flex justify-center mb-6">
           <GoogleLogin
+            clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}
             onSuccess={handleGoogleSuccess}
             onError={handleGoogleError}
             text="signin_with"

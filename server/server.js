@@ -675,6 +675,7 @@ const startServer = async () => {
     // Then add correct underscore columns
     const userColumns = [
       { name: 'id', sql: 'ALTER TABLE users ADD COLUMN id VARCHAR(36) PRIMARY KEY' },
+      { name: 'googleId', sql: 'ALTER TABLE users ADD COLUMN googleId VARCHAR(255)' },
       { name: 'first_name', sql: 'ALTER TABLE users ADD COLUMN first_name VARCHAR(100)' },
       { name: 'last_name', sql: 'ALTER TABLE users ADD COLUMN last_name VARCHAR(100)' },
       { name: 'username', sql: 'ALTER TABLE users ADD COLUMN username VARCHAR(100) UNIQUE' },
@@ -684,6 +685,9 @@ const startServer = async () => {
       { name: 'created_at', sql: 'ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP' },
       { name: 'phone', sql: 'ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT ""' },
       { name: 'profile_pic', sql: 'ALTER TABLE users ADD COLUMN profile_pic LONGTEXT' },
+      { name: 'avatar', sql: 'ALTER TABLE users ADD COLUMN avatar LONGTEXT' },
+      { name: 'name', sql: 'ALTER TABLE users ADD COLUMN name VARCHAR(255)' },
+      { name: 'status', sql: 'ALTER TABLE users ADD COLUMN status VARCHAR(20) DEFAULT "approved"' },
       { name: 'updated_at', sql: 'ALTER TABLE users ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP' }
     ];
 
