@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const { verifyUser } = require('../middleware/auth');
+const pool = require('../config/db');
 
 // Sample users storage (fallback when MySQL is not available)
 let sampleUsers = [
