@@ -43,10 +43,19 @@ export default function AdminAssignSubjectTeacher() {
       // Fetch teachers/advisers - use /teachers endpoint which includes both teachers and advisers
       try {
         const teachersResponse = await api.get('/teachers');
-        const teachersList = Array.isArray(teachersResponse.data) ? teachersResponse.data : 
-                            Array.isArray(teachersResponse.data.data) ? teachersResponse.data.data : [];
+        console.log('Teachers response:', teachersResponse);
         
-        console.log(`Found ${teachersList.length} teachers/advisers:`, teachersList.map(t => `${t.firstName} ${t.lastName} (${t.role})`));
+        // Extract teachers from response - could be in different places
+        let teachersList = [];
+        if (Array.isArray(teachersResponse.data)) {
+          teachersList = teachersResponse.data;
+        } else if (teachersResponse.data?.teachers && Array.isArray(teachersResponse.data.teachers)) {
+          teachersList = teachersResponse.data.teachers;
+        } else if (teachersResponse.teachers && Array.isArray(teachersResponse.teachers)) {
+          teachersList = teachersResponse.teachers;
+        }
+        
+        console.log(`✅ Found ${teachersList.length} teachers/advisers:`, teachersList.map(t => `${t.firstName} ${t.lastName} (${t.role})`));
         setTeachers(teachersList);
       } catch (teachersError) {
         console.log('Teachers endpoint error, falling back to users:', teachersError.message);
@@ -54,12 +63,13 @@ export default function AdminAssignSubjectTeacher() {
         const usersResponse = await api.get('/users');
         const allUsers = usersResponse.data.data?.users || usersResponse.data.users || [];
         
+        console.log('Users response users count:', allUsers.length);
         const teachersList = allUsers.filter(user => {
           const role = (user.role || '').toLowerCase().trim();
           return role === 'subject_teacher' || role === 'teacher' || role === 'adviser';
         });
         
-        console.log(`Found ${teachersList.length} teachers:`, teachersList.map(t => `${t.firstName} ${t.lastName} (${t.role})`));
+        console.log(`✅ Found ${teachersList.length} teachers (from fallback):`, teachersList.map(t => `${t.firstName} ${t.lastName} (${t.role})`));
         setTeachers(teachersList);
       }
     } catch (error) {
