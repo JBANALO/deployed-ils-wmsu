@@ -12,6 +12,7 @@ const studentRoutes = require('./routes/students');
 const deleteRequestRoutes = require('./routes/deleteRequests');
 const gradeRoutes = require('./routes/grades');
 const classRoutes = require('./routes/classes');
+const teacherRoutes = require('./routes/teachers');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -144,6 +145,7 @@ app.post('/api/admin/sync-data', async (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/classes', classRoutes);
+app.use('/api/teachers', teacherRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/delete-requests', deleteRequestRoutes);
 app.use('/api/students', gradeRoutes); // grades under students
