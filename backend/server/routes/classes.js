@@ -375,7 +375,9 @@ router.put('/:classId/assign-subject-teacher', async (req, res) => {
     const { teacher_id, teacher_name, subject, day, start_time, end_time } = req.body;
 
     console.log('\n=== SUBJECT TEACHER ASSIGNMENT ===');
-    console.log('Request:', { classId, teacher_id, teacher_name, subject, day, start_time, end_time });
+    console.log('✅ Route hit - /api/classes/:classId/assign-subject-teacher');
+    console.log('Request params:', { classId });
+    console.log('Request body:', { teacher_id, teacher_name, subject, day, start_time, end_time });
 
     if (!teacher_id || !teacher_name || !subject) {
       return res.status(400).json({ error: 'teacher_id, teacher_name, and subject are required' });
