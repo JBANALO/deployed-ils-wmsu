@@ -35,10 +35,19 @@ export default function AdminAssignSubjectTeacher() {
   const fetchData = async () => {
     try {
       // Fetch all classes with adviser info
-      const classesResponse = await api.get('/classes');
-      const classList = Array.isArray(classesResponse.data.data) ? classesResponse.data.data : [];
-      console.log('Classes loaded:', classList);
-      setClasses(classList);
+      try {
+        const classesResponse = await api.get('/classes');
+        // Classes endpoint returns array directly, not wrapped in data object
+        const classList = Array.isArray(classesResponse.data) ? classesResponse.data : 
+                         Array.isArray(classesResponse.data?.data) ? classesResponse.data.data : [];
+        console.log(`✅ Classes loaded: ${classList.length}`, classList.map(c => `${c.grade} - ${c.section}`));
+        setClasses(classList);
+      } catch (classError) {
+        console.error('Error fetching classes:', classError.message);
+        setMessage("Error loading classes: " + classError.message);
+        setMessageType("error");
+        setClasses([]);
+      }
 
       // Fetch teachers/advisers - use /teachers endpoint which includes both teachers and advisers
       try {
@@ -60,22 +69,26 @@ export default function AdminAssignSubjectTeacher() {
       } catch (teachersError) {
         console.log('Teachers endpoint error, falling back to users:', teachersError.message);
         // Fallback: get from /users and filter for teachers/advisers including role='adviser'
-        const usersResponse = await api.get('/users');
-        const allUsers = usersResponse.data.data?.users || usersResponse.data.users || [];
-        
-        console.log('Users response users count:', allUsers.length);
-        const teachersList = allUsers.filter(user => {
-          const role = (user.role || '').toLowerCase().trim();
-          return role === 'subject_teacher' || role === 'teacher' || role === 'adviser';
-        });
-        
-        console.log(`✅ Found ${teachersList.length} teachers (from fallback):`, teachersList.map(t => `${t.firstName} ${t.lastName} (${t.role})`));
-        setTeachers(teachersList);
+        try {
+          const usersResponse = await api.get('/users');
+          const allUsers = usersResponse.data.data?.users || usersResponse.data.users || [];
+          
+          console.log('Users response users count:', allUsers.length);
+          const teachersList = allUsers.filter(user => {
+            const role = (user.role || '').toLowerCase().trim();
+            return role === 'subject_teacher' || role === 'teacher' || role === 'adviser';
+          });
+          
+          console.log(`✅ Found ${teachersList.length} teachers (from fallback):`, teachersList.map(t => `${t.firstName} ${t.lastName} (${t.role})`));
+          setTeachers(teachersList);
+        } catch (usersError) {
+          console.error('Error fetching users fallback:', usersError.message);
+          setTeachers([]);
+        }
       }
     } catch (error) {
-      console.error('Error fetching data:', error);
-      setMessage("Error loading data: " + error.message);
-      setMessageType("error");
+      console.error('Error in fetchData:', error);
+      // Don't show generic error since we handle specific errors above
     }
     setLoading(false);
   };
