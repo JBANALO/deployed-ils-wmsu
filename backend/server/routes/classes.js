@@ -368,4 +368,121 @@ router.put('/:classId/unassign', async (req, res) => {
   }
 });
 
+// Assign subject teacher to a class
+router.put('/:classId/assign-subject-teacher', async (req, res) => {
+  try {
+    const { classId } = req.params;
+    const { teacher_id, teacher_name, subject, day, start_time, end_time } = req.body;
+
+    console.log('\n=== SUBJECT TEACHER ASSIGNMENT ===');
+    console.log('Request:', { classId, teacher_id, teacher_name, subject, day, start_time, end_time });
+
+    if (!teacher_id || !teacher_name || !subject) {
+      return res.status(400).json({ error: 'teacher_id, teacher_name, and subject are required' });
+    }
+
+    // Check if class exists
+    const [[classData]] = await pool.query(
+      'SELECT id, grade, section FROM classes WHERE id = ?',
+      [classId]
+    );
+
+    if (!classData) {
+      return res.status(404).json({ error: `Class not found: ${classId}` });
+    }
+
+    console.log('✅ Class found:', classData);
+
+    // Check for time conflicts - can't teach same class same day/time
+    const [conflicts] = await pool.query(
+      `SELECT st.id, st.teacher_id, st.subject, st.day, st.start_time, st.end_time
+       FROM subject_teachers st
+       WHERE st.class_id = ? 
+       AND st.day = ?
+       AND (
+         (st.start_time < ? AND st.end_time > ?) OR
+         (st.start_time < ? AND st.end_time > ?)
+       )`,
+      [classId, day, end_time, start_time, end_time, start_time]
+    );
+
+    if (conflicts.length > 0) {
+      const conflict = conflicts[0];
+      console.log('❌ Time conflict detected:', conflict);
+      return res.status(400).json({ 
+        error: `Time conflict! Another teacher is already teaching ${conflict.subject} at this class on ${day} from ${conflict.start_time} to ${conflict.end_time}` 
+      });
+    }
+
+    // Check if this teacher already teaches the same subject to this class
+    const [[duplicate]] = await pool.query(
+      'SELECT id FROM subject_teachers WHERE class_id = ? AND teacher_id = ? AND subject = ?',
+      [classId, teacher_id, subject]
+    );
+
+    if (duplicate) {
+      return res.status(400).json({ 
+        error: `${teacher_name} already teaches ${subject} to ${classData.grade} - ${classData.section}` 
+      });
+    }
+
+    // Insert the subject teacher assignment
+    const [result] = await pool.query(
+      `INSERT INTO subject_teachers (class_id, teacher_id, teacher_name, subject, day, start_time, end_time, assignedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [classId, teacher_id, teacher_name, subject, day, start_time, end_time]
+    );
+
+    console.log('✅ Subject teacher assigned:', { insertId: result.insertId, affectedRows: result.affectedRows });
+
+    res.json({
+      message: `${teacher_name} assigned to teach ${subject} at ${classData.grade} - ${classData.section}`,
+      classId,
+      teacher_id,
+      teacher_name,
+      subject,
+      day,
+      start_time,
+      end_time
+    });
+  } catch (err) {
+    console.error('❌ Error assigning subject teacher:', err);
+    res.status(500).json({ 
+      error: 'Failed to assign subject teacher', 
+      details: err.message 
+    });
+  }
+});
+
+// Unassign subject teacher from a class
+router.put('/:classId/unassign-subject-teacher/:teacherId', async (req, res) => {
+  try {
+    const { classId, teacherId } = req.params;
+
+    console.log('Unassigning subject teacher:', { classId, teacherId });
+
+    const [result] = await pool.query(
+      'DELETE FROM subject_teachers WHERE class_id = ? AND teacher_id = ?',
+      [classId, teacherId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Assignment not found' });
+    }
+
+    console.log('✅ Subject teacher unassigned');
+    res.json({ 
+      message: 'Subject teacher unassigned successfully',
+      classId,
+      teacherId
+    });
+  } catch (err) {
+    console.error('Error unassigning subject teacher:', err);
+    res.status(500).json({ 
+      error: 'Failed to unassign subject teacher', 
+      details: err.message 
+    });
+  }
+});
+
 module.exports = router;
