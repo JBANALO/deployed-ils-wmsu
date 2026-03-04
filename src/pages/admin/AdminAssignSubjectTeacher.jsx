@@ -40,18 +40,28 @@ export default function AdminAssignSubjectTeacher() {
       console.log('Classes loaded:', classList);
       setClasses(classList);
 
-      // Fetch teachers/subject teachers
-      const teachersResponse = await api.get('/users');
-      const allUsers = teachersResponse.data.data?.users || teachersResponse.data.users || [];
-      
-      // Filter for subject teachers and regular teachers
-      const teachersList = allUsers.filter(user => {
-        const role = (user.role || '').toLowerCase().trim();
-        return role === 'subject_teacher' || role === 'teacher';
-      });
-      
-      console.log(`Found ${teachersList.length} subject teachers:`, teachersList.map(t => `${t.firstName} ${t.lastName} (${t.role})`));
-      setTeachers(teachersList);
+      // Fetch teachers/advisers - use /teachers endpoint which includes both teachers and advisers
+      try {
+        const teachersResponse = await api.get('/teachers');
+        const teachersList = Array.isArray(teachersResponse.data) ? teachersResponse.data : 
+                            Array.isArray(teachersResponse.data.data) ? teachersResponse.data.data : [];
+        
+        console.log(`Found ${teachersList.length} teachers/advisers:`, teachersList.map(t => `${t.firstName} ${t.lastName} (${t.role})`));
+        setTeachers(teachersList);
+      } catch (teachersError) {
+        console.log('Teachers endpoint error, falling back to users:', teachersError.message);
+        // Fallback: get from /users and filter for teachers/advisers including role='adviser'
+        const usersResponse = await api.get('/users');
+        const allUsers = usersResponse.data.data?.users || usersResponse.data.users || [];
+        
+        const teachersList = allUsers.filter(user => {
+          const role = (user.role || '').toLowerCase().trim();
+          return role === 'subject_teacher' || role === 'teacher' || role === 'adviser';
+        });
+        
+        console.log(`Found ${teachersList.length} teachers:`, teachersList.map(t => `${t.firstName} ${t.lastName} (${t.role})`));
+        setTeachers(teachersList);
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
       setMessage("Error loading data: " + error.message);
@@ -99,7 +109,12 @@ export default function AdminAssignSubjectTeacher() {
       await fetchData();
     } catch (error) {
       console.error('Error assigning subject teacher:', error);
-      setMessage("Error assigning subject teacher: " + (error.response?.data?.message || error.message));
+      const errorMessage = error.response?.data?.error || 
+                          error.response?.data?.message || 
+                          error.response?.data?.details ||
+                          error.message || 
+                          'An error occurred';
+      setMessage("Error: " + errorMessage);
       setMessageType("error");
     }
   };
