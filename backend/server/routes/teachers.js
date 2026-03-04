@@ -12,21 +12,26 @@ const path = require('path');
 router.get('/', async (req, res) => {
   try {
     // Try to get from database first
+    // Query with aliases to handle both camelCase and snake_case column names
     const [teachers] = await pool.query(
-      `SELECT id, first_name, last_name, email, role FROM users 
+      `SELECT id, 
+              COALESCE(first_name, firstName) as firstName, 
+              COALESCE(last_name, lastName) as lastName, 
+              email, role FROM users 
        WHERE role IN ('teacher', 'adviser', 'subject_teacher') 
-       ORDER BY first_name, last_name`
+       ORDER BY COALESCE(first_name, firstName), COALESCE(last_name, lastName)`
     );
 
     if (teachers && teachers.length > 0) {
       const formatted = teachers.map(t => ({
         id: t.id,
-        firstName: t.first_name,
-        lastName: t.last_name,
+        firstName: t.firstName,
+        lastName: t.lastName,
         email: t.email,
         role: t.role
       }));
 
+      console.log(`✅ Loaded ${formatted.length} teachers from database:`, formatted.map(t => `${t.firstName} ${t.lastName}`));
       return res.json({
         status: 'success',
         data: {

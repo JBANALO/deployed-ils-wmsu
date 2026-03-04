@@ -223,10 +223,14 @@ router.get('/', async (req, res) => {
     // Try to load from database first
     try {
       const [dbUsers] = await pool.query(
-        'SELECT id, firstName, lastName, email, role, approval_status FROM users ORDER BY firstName, lastName'
+        `SELECT id, 
+                COALESCE(first_name, firstName) as firstName, 
+                COALESCE(last_name, lastName) as lastName, 
+                email, role, approval_status FROM users 
+         ORDER BY COALESCE(first_name, firstName), COALESCE(last_name, lastName)`
       );
       allUsers = dbUsers || [];
-      console.log(`Loaded ${allUsers.length} users from database`);
+      console.log(`✅ Loaded ${allUsers.length} users from database`);
     } catch (dbError) {
       console.log('Database query failed, using in-memory users:', dbError.message);
       // Fall back to in-memory users and sample users
