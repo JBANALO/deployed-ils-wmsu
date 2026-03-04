@@ -218,8 +218,26 @@ router.get('/me', verifyUser, async (req, res) => {
 // GET /users - Get all users (admin only)
 router.get('/', async (req, res) => {
   try {
+    let allUsers = [];
+    
+    // Try to load from database first
+    try {
+      const [dbUsers] = await pool.query(
+        'SELECT id, firstName, lastName, email, role, approval_status FROM users ORDER BY firstName, lastName'
+      );
+      allUsers = dbUsers || [];
+      console.log(`Loaded ${allUsers.length} users from database`);
+    } catch (dbError) {
+      console.log('Database query failed, using in-memory users:', dbError.message);
+      // Fall back to in-memory users and sample users
+      allUsers = [...sampleUsers, ...users, ...inMemoryUsers];
+    }
+    
     // Return users without passwords
-    const usersWithoutPasswords = users.map(({ password, ...user }) => user);
+    const usersWithoutPasswords = allUsers.map(user => {
+      const { password: _, ...userWithoutPassword } = user;
+      return userWithoutPassword;
+    });
     
     res.json({
       status: 'success',
@@ -228,6 +246,7 @@ router.get('/', async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('Error fetching users:', error);
     res.status(500).json({
       status: 'error',
       message: 'Failed to fetch users'
