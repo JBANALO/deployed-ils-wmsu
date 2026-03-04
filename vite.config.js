@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
     },
     // Expose env variables to the client
     define: {
-      'import.meta.env.VITE_API_URL': JSON.stringify(env.VITE_API_URL || (mode === 'development' ? 'http://localhost:3001/api' : 'http://localhost:5000/api')),
+      'import.meta.env.VITE_API_URL': JSON.stringify(env.VITE_API_URL || (mode === 'development' ? 'http://localhost:5000/api' : 'https://deployed-ils-wmsu-production.up.railway.app/api')),
     },
     server: {
       port: 5173,
