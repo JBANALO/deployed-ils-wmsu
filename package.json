@@ -10,8 +10,8 @@
     "postinstall": "if [ \"$CI\" != \"true\" ]; then cd server && npm ci --omit=dev || true; fi",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "node server/server.js",
-    "start:prod": "cd server && npm start"
+    "start": "node backend/server/server.js",
+    "start:prod": "node backend/server/server.js"
   },
   "dependencies": {
     "@fontsource/montserrat": "^5.2.8",
