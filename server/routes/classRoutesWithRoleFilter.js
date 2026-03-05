@@ -23,4 +23,10 @@ router.put('/:classId/assign', classControllerWithRoleFilter.assignAdviserToClas
 // Unassign adviser from a class
 router.put('/:classId/unassign', classControllerWithRoleFilter.unassignAdviserFromClass);
 
+// Assign subject teacher to a class (with time conflict validation)
+router.put('/:classId/assign-subject-teacher', classControllerWithRoleFilter.assignSubjectTeacher);
+
+// Unassign subject teacher from a class
+router.put('/:classId/unassign-subject-teacher/:teacherId', classControllerWithRoleFilter.unassignSubjectTeacher);
+
 module.exports = router;

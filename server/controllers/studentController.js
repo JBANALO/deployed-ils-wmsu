@@ -225,54 +225,96 @@ exports.getStudents = async (req, res) => {
   try {
     const { teacherId, gradeLevel, section } = req.query;
 
-    // If teacherId provided, filter to only that teacher's assigned class
+    // If teacherId provided, filter to only that teacher's assigned classes
     if (teacherId) {
-      let assignedGradeLevel = gradeLevel;
-      let assignedSection = section;
+      let assignedClasses = []; // Array of {gradeLevel, section} objects
 
-      // 1. Check class_assignments table first (UUID-based teachers from web)
+      // 1. Check classes table for adviser assignments
       try {
-        const classAssignments = await query(
-          'SELECT grade_level, section FROM class_assignments WHERE adviser_id = ? LIMIT 1',
+        const classesRows = await query(
+          'SELECT grade, section FROM classes WHERE adviser_id = ?',
           [teacherId]
         );
+        classesRows.forEach(row => {
+          assignedClasses.push({ gradeLevel: row.grade, section: row.section });
+        });
+        if (classesRows.length > 0) {
+          console.log(`[getStudents] Found ${classesRows.length} classes as adviser for teacher ${teacherId}`);
+        }
+      } catch (classesErr) {
+        console.log('[getStudents] classes table lookup failed:', classesErr.message);
+      }
+
+      // 2. Check class_assignments table (legacy UUID-based teachers from web)
+      try {
+        const classAssignments = await query(
+          'SELECT grade_level, section FROM class_assignments WHERE adviser_id = ?',
+          [teacherId]
+        );
+        classAssignments.forEach(row => {
+          // Avoid duplicates
+          const exists = assignedClasses.some(c => c.gradeLevel === row.grade_level && c.section === row.section);
+          if (!exists) {
+            assignedClasses.push({ gradeLevel: row.grade_level, section: row.section });
+          }
+        });
         if (classAssignments.length > 0) {
-          assignedGradeLevel = classAssignments[0].grade_level;
-          assignedSection = classAssignments[0].section;
-          console.log(`[getStudents] Found class_assignments for teacher ${teacherId}: ${assignedGradeLevel} - ${assignedSection}`);
+          console.log(`[getStudents] Found ${classAssignments.length} class_assignments for teacher ${teacherId}`);
         }
       } catch (assignErr) {
         console.log('[getStudents] class_assignments lookup failed:', assignErr.message);
       }
 
-      // 2. Fall back to teachers table (numeric IDs)
-      if (!assignedGradeLevel || !assignedSection) {
+      // 3. Check subject_teachers table for subject teacher assignments
+      try {
+        const subjectTeacherRows = await query(
+          'SELECT DISTINCT c.grade, c.section FROM subject_teachers st JOIN classes c ON st.class_id = c.id WHERE st.teacher_id = ?',
+          [teacherId]
+        );
+        subjectTeacherRows.forEach(row => {
+          const exists = assignedClasses.some(c => c.gradeLevel === row.grade && c.section === row.section);
+          if (!exists) {
+            assignedClasses.push({ gradeLevel: row.grade, section: row.section });
+          }
+        });
+        if (subjectTeacherRows.length > 0) {
+          console.log(`[getStudents] Found ${subjectTeacherRows.length} classes as subject teacher for teacher ${teacherId}`);
+        }
+      } catch (stErr) {
+        console.log('[getStudents] subject_teachers lookup failed:', stErr.message);
+      }
+
+      // 4. Fall back to teachers table (numeric IDs)
+      if (assignedClasses.length === 0) {
         try {
           const teacherRows = await query(
             'SELECT grade_level, section FROM teachers WHERE id = ? AND grade_level IS NOT NULL AND section IS NOT NULL LIMIT 1',
             [teacherId]
           );
           if (teacherRows.length > 0) {
-            assignedGradeLevel = teacherRows[0].grade_level;
-            assignedSection = teacherRows[0].section;
-            console.log(`[getStudents] Found teachers table for teacher ${teacherId}: ${assignedGradeLevel} - ${assignedSection}`);
+            assignedClasses.push({ gradeLevel: teacherRows[0].grade_level, section: teacherRows[0].section });
+            console.log(`[getStudents] Found teachers table for teacher ${teacherId}: ${teacherRows[0].grade_level} - ${teacherRows[0].section}`);
           }
         } catch (teacherErr) {
           console.log('[getStudents] teachers table lookup failed:', teacherErr.message);
         }
       }
 
-      // 3. If we found the teacher's assigned class, return only those students
-      if (assignedGradeLevel && assignedSection) {
+      // 5. If we found assigned classes, return students from all of them
+      if (assignedClasses.length > 0) {
+        // Build query for multiple classes
+        const conditions = assignedClasses.map(() => '(grade_level = ? AND section = ?)').join(' OR ');
+        const params = assignedClasses.flatMap(c => [c.gradeLevel, c.section]);
+        
         const filteredStudents = await query(
-          'SELECT * FROM students WHERE grade_level = ? AND section = ? ORDER BY last_name ASC',
-          [assignedGradeLevel, assignedSection]
+          `SELECT * FROM students WHERE (${conditions}) ORDER BY grade_level, section, last_name ASC`,
+          params
         );
-        console.log(`[getStudents] Returning ${filteredStudents.length} students for ${assignedGradeLevel} - ${assignedSection}`);
+        console.log(`[getStudents] Returning ${filteredStudents.length} students from ${assignedClasses.length} assigned class(es)`);
         return res.status(200).json({ status: 'success', data: filteredStudents.map(formatStudent) });
       }
 
-      // 4. If teacher has no assigned class, return empty array
+      // 6. If teacher has no assigned class, return empty array
       console.log(`[getStudents] Teacher ${teacherId} has no assigned class — returning empty`);
       return res.status(200).json({ status: 'success', data: [] });
     }
