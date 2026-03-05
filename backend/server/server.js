@@ -152,7 +152,12 @@ app.use('/api/students', gradeRoutes); // grades under students
 app.use('/api/student', require('./routes/studentPortal'));
 
 app.get('/', (req, res) => {
-  res.json({ message: 'Student Management API Running!' });
+  res.json({ message: 'Student Management API Running!', version: '2.0', deployedAt: '2026-03-05' });
+});
+
+// Version check - used to verify Railway has latest code
+app.get('/api/version', (req, res) => {
+  res.json({ version: '2.0', hasSubjectTeacherEndpoint: true, deployedAt: '2026-03-05' });
 });
 
 // Sync data and start server
