@@ -144,7 +144,7 @@ app.post('/api/admin/sync-data', async (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes);
-app.use('/api/classes', classRoutes);
+app.use('/api/classes', classRoutes); // includes /assign-subject-teacher and /unassign-subject-teacher
 app.use('/api/teachers', teacherRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/delete-requests', deleteRequestRoutes);
