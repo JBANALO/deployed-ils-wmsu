@@ -28,6 +28,11 @@ export default function AdminApprovals() {
   useEffect(() => {
     fetchPendingUsers();
     fetchDeclinedUsers();
+    
+    // Debug: Check if we're on the right page
+    console.log('🎯 AdminApprovals page loaded, pathname:', window.location.pathname);
+    console.log('🎯 Active tab:', activeTab);
+    console.log('🎯 Pending users count:', pendingUsers.length);
   }, []);
 
   // Fetch declined users
@@ -138,6 +143,7 @@ export default function AdminApprovals() {
       console.log('Pending teachers:', pendingTeachers);
       console.log('Pending students:', pendingStudents);
       console.log('All pending users:', allPendingUsers);
+      console.log('Setting pendingUsers state with length:', allPendingUsers.length);
       setPendingUsers(allPendingUsers);
     } catch (error) {
       console.error('Error fetching pending users:', error);
@@ -263,6 +269,11 @@ export default function AdminApprovals() {
 
   return (
     <div className="space-y-8">
+      {/* Debug indicator */}
+      <div style={{background: 'red', color: 'white', padding: '10px', margin: '10px', borderRadius: '5px'}}>
+        🎯 ADMIN APPROVALS PAGE IS LOADING - Active Tab: {activeTab} - Pending Users: {pendingUsers.length}
+      </div>
+      
       <div className="bg-white rounded-lg shadow p-5 border border-gray-300 border-b-red-800 border-b-4">
         <div className="flex items-center gap-4 mb-4">
           <ClockIcon className="w-20 h-20 text-yellow-600 transition-transform duration-300 hover:scale-105 translate-x-[5px]" />
@@ -316,11 +327,13 @@ export default function AdminApprovals() {
         <div className="p-4 bg-purple-50 rounded-lg text-center shadow-sm border border-purple-100">
           <h3 className="text-lg font-semibold text-purple-800">Advisers</h3>
           <p className="text-2xl font-bold">{pendingUsers.filter(u => u.role === 'adviser').length}</p>
+          {console.log('Rendering advisers tab, advisers count:', pendingUsers.filter(u => u.role === 'adviser').length)}
         </div>
 
         <div className="p-4 bg-blue-50 rounded-lg text-center shadow-sm border border-blue-100">
           <h3 className="text-lg font-semibold text-blue-800">Subject Teachers</h3>
           <p className="text-2xl font-bold">{pendingUsers.filter(u => u.role === 'subject_teacher').length}</p>
+          {console.log('Rendering subject teachers tab, subject teachers count:', pendingUsers.filter(u => u.role === 'subject_teacher').length)}
         </div>
 
         <div className="p-4 bg-green-50 rounded-lg text-center shadow-sm border border-green-100">
@@ -355,9 +368,16 @@ export default function AdminApprovals() {
                     </tr>
                   </thead>
                   <tbody>
+                    {(() => {
+                      console.log('Pending teachers array length:', pendingUsers.length);
+                      console.log('Pending teachers contents:', pendingUsers);
+                      console.log('Advisers in pendingUsers:', pendingUsers.filter(u => u.role === 'adviser'));
+                      console.log('Advisers count:', pendingUsers.filter(u => u.role === 'adviser').length);
+                      return null;
+                    })()}
                     {pendingUsers.filter(u => u.role === 'adviser').map((user) => (
                       <tr key={user.id} className="hover:bg-gray-50">
-                        <td className="p-3 border font-medium">{user.firstName} {user.lastName}</td>
+                        <td className="p-3 border font-medium">{user.firstName || user.first_name} {user.lastName || user.last_name}</td>
                         <td className="p-3 border text-sm">{user.email}</td>
                         <td className="p-3 border text-sm">
                           {user.gradeLevel && user.section 
@@ -418,7 +438,7 @@ export default function AdminApprovals() {
                   <tbody>
                     {pendingUsers.filter(u => u.role === 'subject_teacher').map((user) => (
                       <tr key={user.id} className="hover:bg-gray-50">
-                        <td className="p-3 border font-medium">{user.firstName} {user.lastName}</td>
+                        <td className="p-3 border font-medium">{user.firstName || user.first_name} {user.lastName || user.last_name}</td>
                         <td className="p-3 border text-sm">{user.email}</td>
                         <td className="p-3 border text-sm">
                           {user.gradeLevel && user.section 
@@ -479,7 +499,7 @@ export default function AdminApprovals() {
                   <tbody>
                     {pendingUsers.filter(u => u.role === 'student').map((user) => (
                       <tr key={user.id} className="hover:bg-gray-50">
-                        <td className="p-3 border font-medium">{user.firstName} {user.lastName}</td>
+                        <td className="p-3 border font-medium">{user.firstName || user.first_name} {user.lastName || user.last_name}</td>
                         <td className="p-3 border text-sm">{user.studentEmail || user.email || 'N/A'}</td>
                         <td className="p-3 border text-sm">
                           {user.gradeLevel && user.section 
@@ -557,7 +577,7 @@ export default function AdminApprovals() {
                       <tbody>
                         {declinedUsers.filter(u => u.role === 'adviser').map((user) => (
                           <tr key={user.id} className="hover:bg-gray-50">
-                            <td className="p-3 border font-medium">{user.first_name || user.firstName} {user.last_name || user.lastName}</td>
+                            <td className="p-3 border font-medium">{user.firstName || user.first_name} {user.lastName || user.last_name}</td>
                             <td className="p-3 border text-sm">{user.email}</td>
                             <td className="p-3 border text-sm">
                               {(user.grade_level || user.gradeLevel) && (user.section || user.section) 

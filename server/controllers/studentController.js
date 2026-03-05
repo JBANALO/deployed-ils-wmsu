@@ -289,8 +289,14 @@ exports.getStudents = async (req, res) => {
 
 exports.getStudent = async (req, res) => {
   try {
-    const { id } = req.params;
-    const students = await query('SELECT * FROM students WHERE id = ?', [id]);
+    // Handle both query parameter (studentId) and URL parameter (id)
+    const studentId = req.query.studentId || req.params.id;
+    
+    if (!studentId) {
+      return res.status(400).json({ status: 'fail', message: 'Student ID is required' });
+    }
+    
+    const students = await query('SELECT * FROM students WHERE id = ?', [studentId]);
     if (students.length === 0) return res.status(404).json({ status: 'fail', message: 'Student not found' });
     res.status(200).json({ status: 'success', data: { student: formatStudent(students[0]) } });
   } catch (error) {

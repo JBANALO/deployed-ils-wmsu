@@ -22,7 +22,6 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
     { name: "Dashboard", icon: <ChartBarIcon className="w-6 h-6" />, path: "/admin/admin-dashboard" },
     { name: "Create Admin Account", icon: <UserPlusIcon className="w-6 h-6" />, path: "/admin/create-account" },
     { name: "Teachers", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/admin-teachers" },
-    { name: "Approvals", icon: <ClockIcon className="w-6 h-6" />, path: "/admin/approvals" },
     { name: "Students", icon: <AcademicCapIcon className="w-6 h-6" />, path: "/admin/admin-students" },
     { name: "Grades", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, path: "/admin/admin-grades" },
     { name: "Classes", icon: <BuildingLibraryIcon className="w-6 h-6" />, path: "/admin/admin-classes" },

@@ -552,8 +552,8 @@ const loadDashboardStats = async () => {
                     <p className="text-2xl font-bold text-orange-600">{loading ? '...' : pendingApprovals.pendingTeachers}</p>
                     <button 
                       onClick={() => {
-                        logActivity('navigation', 'Section Change', 'Navigated to admin approvals', 'orange');
-                        navigate("/admin/approvals");
+                        logActivity('navigation', 'Section Change', 'Navigated to admin teachers', 'orange');
+                        navigate("/admin/admin-teachers");
                       }}
                       className="mt-2 text-sm text-orange-700 hover:text-orange-900"
                     >
@@ -565,8 +565,8 @@ const loadDashboardStats = async () => {
                     <p className="text-2xl font-bold text-blue-600">{loading ? '...' : pendingApprovals.pendingStudents}</p>
                     <button 
                       onClick={() => {
-                        logActivity('navigation', 'Section Change', 'Navigated to admin approvals', 'blue');
-                        navigate("/admin/approvals");
+                        logActivity('navigation', 'Section Change', 'Navigated to admin students', 'blue');
+                        navigate("/admin/admin-students");
                       }}
                       className="mt-2 text-sm text-blue-700 hover:text-blue-900"
                     >

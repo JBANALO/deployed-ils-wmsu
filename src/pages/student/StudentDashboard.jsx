@@ -19,7 +19,9 @@ const StudentPortal = () => {
 
       try {
         console.log('Fetching for studentId:', studentId); // ← DEBUG
-        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/student/portal?studentId=${studentId}`);
+        const baseURL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 
+                 (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
+const res = await fetch(`${baseURL}/student/portal?studentId=${studentId}`);
         if (!res.ok) throw new Error('Failed to fetch');
         const result = await res.json();
         console.log('Data received:', result); // ← DEBUG

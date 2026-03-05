@@ -7,6 +7,7 @@ const teacherController = require('../controllers/teacherControllerFile');
 // Teacher routes
 router.get('/', teacherController.getAllTeachers);
 router.get('/pending', teacherController.getPendingTeachers);
+router.get('/declined', teacherController.getDeclinedTeachers);
 router.get('/advisers', teacherController.getAdvisers);
 router.get('/archived', teacherController.getArchivedTeachers);
 
@@ -15,6 +16,8 @@ router.post('/', teacherController.createTeacher);
 router.put('/:id', teacherController.updateTeacher);
 router.put('/:id/archive', teacherController.archiveTeacher);
 router.put('/:id/restore', teacherController.restoreTeacher);
+router.put('/:id/approve', teacherController.approveTeacher);
+router.put('/:id/decline', teacherController.declineTeacher);
 router.delete('/:id/permanent', teacherController.permanentDeleteTeacher);
 router.delete('/:id', teacherController.deleteTeacher);
 
