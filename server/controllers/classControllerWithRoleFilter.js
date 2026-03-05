@@ -326,7 +326,7 @@ const assignAdviserToClass = async (req, res) => {
     const gradeLevel = grade;
     const classSection = section;
 
-    console.log(`assignAdviserToClass - classId: ${classId}, adviser_id: ${adviser_id}, grade: ${gradeLevel}, section: ${classSection}`);
+    console.log(`assignAdviserToClass - classId: ${classId}, adviser_id: ${adviser_id}, adviser_name: ${adviser_name}, grade: ${gradeLevel}, section: ${classSection}`);
 
     if (!adviser_id || !gradeLevel || !classSection) {
       return res.status(400).json({ success: false, message: 'adviser_id, grade, and section are required' });
@@ -351,6 +351,17 @@ const assignAdviserToClass = async (req, res) => {
        ON DUPLICATE KEY UPDATE adviser_id = VALUES(adviser_id), adviser_name = VALUES(adviser_name)`,
       [gradeLevel, classSection, String(adviser_id), adviser_name || '']
     );
+
+    // ALSO update the classes table (critical for frontend display)
+    try {
+      await pool.query(
+        `UPDATE classes SET adviser_id = ?, adviser_name = ? WHERE grade = ? AND section = ?`,
+        [String(adviser_id), adviser_name || '', gradeLevel, classSection]
+      );
+      console.log('✅ Updated classes table');
+    } catch(e) { 
+      console.log('Could not update classes table:', e.message); 
+    }
 
     // Also try to update teachers table if adviser_id is an integer
     const numericId = parseInt(adviser_id);
@@ -384,9 +395,9 @@ const assignAdviserToClass = async (req, res) => {
 const unassignAdviserFromClass = async (req, res) => {
   try {
     const { classId } = req.params;
-    const { adviser_id } = req.body;
+    const { adviser_id, grade, section } = req.body;
 
-    console.log(`unassignAdviserFromClass - classId: ${classId}, adviser_id: ${adviser_id}`);
+    console.log(`unassignAdviserFromClass - classId: ${classId}, adviser_id: ${adviser_id}, grade: ${grade}, section: ${section}`);
 
     if (adviser_id) {
       // Remove from class_assignments
@@ -407,6 +418,25 @@ const unassignAdviserFromClass = async (req, res) => {
           [classId]
         );
       } catch(e) { /* table may not exist */ }
+    }
+
+    // ALSO clear from classes table (critical for frontend display)
+    try {
+      if (grade && section) {
+        await pool.query(
+          `UPDATE classes SET adviser_id = NULL, adviser_name = NULL WHERE grade = ? AND section = ?`,
+          [grade, section]
+        );
+      } else if (classId) {
+        // Parse classId to get grade and section
+        await pool.query(
+          `UPDATE classes SET adviser_id = NULL, adviser_name = NULL WHERE id = ?`,
+          [classId]
+        );
+      }
+      console.log('✅ Cleared adviser from classes table');
+    } catch(e) { 
+      console.log('Could not update classes table:', e.message); 
     }
 
     return res.json({ success: true, message: 'Adviser unassigned successfully' });
