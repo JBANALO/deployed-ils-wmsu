@@ -26,7 +26,6 @@ import AdminLayout from "./layouts/admin/AdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminProfile from "./pages/admin/AdminProfile";
 import AdminTeachers from "./pages/admin/AdminTeachers";
-import AdminApprovals from "./pages/admin/AdminApprovals";
 import AdminTeacherApproval from "./pages/admin/AdminTeacherApproval";
 import AdminStudents from "./pages/admin/AdminStudents";
 import AdminCreateK6 from "./pages/admin/AdminCreateK6.jsx";
@@ -122,7 +121,6 @@ function App() {
                 <Route path="/admin/admin-dashboard" element={<AdminDashboard />} />
                 <Route path="/admin/admin-profile" element={<AdminProfile />} />
                 <Route path="/admin/admin-teachers" element={<AdminTeachers />} />
-                <Route path="/admin/approvals" element={<AdminApprovals />} />
                 <Route path="/admin/teacher-approvals" element={<AdminTeacherApproval />} />
                 <Route path="/admin/admin-students" element={<AdminStudents />} />
                 <Route path="/admin/admin/create-k6" element={<AdminCreateK6 />} />

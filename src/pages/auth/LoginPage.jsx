@@ -29,13 +29,25 @@ export default function LoginPage() {
       localStorage.removeItem('pendingEmail'); // Clear after using
       console.log('Using pending email:', pendingEmail);
     } else {
-      // Check for last logged-in admin email
+      // Check for last logged-in emails by priority
       const lastAdminEmail = localStorage.getItem('lastAdminEmail');
-      console.log('Last admin email:', lastAdminEmail);
+      const lastTeacherEmail = localStorage.getItem('lastTeacherEmail');
+      const lastStudentEmail = localStorage.getItem('lastStudentEmail');
       
+      console.log('Last admin email:', lastAdminEmail);
+      console.log('Last teacher email:', lastTeacherEmail);
+      console.log('Last student email:', lastStudentEmail);
+      
+      // Use the most recently stored email (priority: admin > teacher > student)
       if (lastAdminEmail) {
         setEmail(lastAdminEmail);
         console.log('Using last admin email:', lastAdminEmail);
+      } else if (lastTeacherEmail) {
+        setEmail(lastTeacherEmail);
+        console.log('Using last teacher email:', lastTeacherEmail);
+      } else if (lastStudentEmail) {
+        setEmail(lastStudentEmail);
+        console.log('Using last student email:', lastStudentEmail);
       }
     }
   }, []);
@@ -75,10 +87,16 @@ export default function LoginPage() {
         localStorage.setItem('user', JSON.stringify(user));
         console.log('User stored in localStorage:', user);
         
-        // Store admin email for next login (only for admin users)
-        if (role.toLowerCase().trim() === "admin") {
-          const adminEmail = user.email || emailOrUsername;
-          localStorage.setItem('lastAdminEmail', adminEmail);
+        // Store email for next login (for all user types)
+        const userEmail = user.email || emailOrUsername;
+        const normalizedRole = role?.toLowerCase().trim();
+        
+        if (normalizedRole === "admin") {
+          localStorage.setItem('lastAdminEmail', userEmail);
+        } else if (normalizedRole === "teacher" || normalizedRole === "subject_teacher" || normalizedRole === "adviser") {
+          localStorage.setItem('lastTeacherEmail', userEmail);
+        } else if (normalizedRole === "student") {
+          localStorage.setItem('lastStudentEmail', userEmail);
         }
       }
 

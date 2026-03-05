@@ -46,6 +46,7 @@ export default function AdminCreateTeacher() {
     "Grade 4": ["GMRC", "English", "ArPan", "Mathematics", "Filipino", "EPP", "Science", "MAPEH"],
     "Grade 5": ["GMRC", "English", "ArPan", "Mathematics", "Filipino", "EPP", "Science", "MAPEH"],
     "Grade 6": ["GMRC", "English", "ArPan", "Mathematics", "Filipino", "EPP", "Science", "MAPEH"],
+    "Multiple Grade Level (MG)": ["GMRC", "English", "ArPan", "Mathematics", "Filipino", "EPP", "Science", "MAPEH"],
     "Kindergarten": [] // No specific subjects for kindergarten - will use text input
   };
 
@@ -55,9 +56,10 @@ export default function AdminCreateTeacher() {
     "Grade 1": ["Humility"],
     "Grade 2": ["Kindness"],
     "Grade 3": ["Wisdom", "Diligence"],
-    "Grade 4": ["Wisdom", "Diligence"], // Same as Grade 3 for now
-    "Grade 5": ["Wisdom", "Diligence"], // Same as Grade 3 for now
-    "Grade 6": ["Wisdom", "Diligence"], // Same as Grade 3 for now
+    "Grade 4": ["Prudence", "Generosity"], 
+    "Grade 5": ["Courage", "Justice"],
+    "Grade 6": ["Honesty", "Loyalty", "Industry"], 
+    "Multiple Grade Level": ["Responsibility"],
   };
 
   // Auto-generate username based on first name
@@ -161,20 +163,39 @@ export default function AdminCreateTeacher() {
         subjects: formData.gradeLevel === "Kindergarten" 
           ? formData.kindergartenSubjects 
           : formData.subjects.join(", "), // Convert array to comma-separated string
-        bio: formData.bio,
+        bio: formData.bio || '',
         profilePic: profilePicBase64,
+        status: 'approved', // Teachers are now immediately approved
       };
 
       const response = await api.post('/teachers', teacherData);
 
+      console.log('🎯 Teacher creation response:', response.data);
+      console.log('🎯 Teacher created with status:', teacherData.status);
+      console.log('🎯 Teacher role selected:', teacherData.role);
+      console.log('🎯 Full teacher data sent:', teacherData);
+
       // Show success modal instead of toast
       setShowSuccessModal(true);
       
-      // Set redirect timer to approvals page after 15 seconds
+      // Set redirect timer to admin-teachers page after 15 seconds
       const timer = setTimeout(() => {
-        navigate('/admin/approvals');
+        console.log('🔄 Redirecting to admin/admin-teachers...');
+        navigate('/admin/admin-teachers');
       }, 15000);
       setRedirectTimer(timer);
+      
+      // Also add immediate redirect as backup
+      console.log('✅ Teacher created successfully, should redirect to teachers displayed accounts in 15 seconds');
+      
+      // Add safeguard redirect in case modal is closed immediately
+      setTimeout(() => {
+        console.log('🔄 Safeguard redirect check - should be at admin-teachers page');
+        if (window.location.pathname !== '/admin/admin-teachers') {
+          console.log('🚨 Not at admin-teachers page, forcing redirect...');
+          navigate('/admin/admin-teachers');
+        }
+      }, 16000); // 1 second after main redirect
     } catch (err) {
       toast.error("Registration error: " + (err.message || "Failed to create teacher account."));
       setError(err.message || "Failed to create teacher account.");
@@ -359,6 +380,7 @@ export default function AdminCreateTeacher() {
                 <option value="Grade 4">Grade 4</option>
                 <option value="Grade 5">Grade 5</option>
                 <option value="Grade 6">Grade 6</option>
+                <option value="MG">Multiple Grade Level (MG)</option>
               </select>
             </div>
             <div>
@@ -378,10 +400,14 @@ export default function AdminCreateTeacher() {
                   ))
                 ) : (
                   <>
-                    <option value="Wisdom">Wisdom</option>
-                    <option value="Kindness">Kindness</option>
-                    <option value="Humility">Humility</option>
-                    <option value="Diligence">Diligence</option>
+                    <option value="Prudence">Prudence</option>
+                    <option value="Generosity">Generosity</option>
+                    <option value="Courage">Courage</option>
+                    <option value="Justice">Justice</option>
+                    <option value="Honesty">Honesty</option>
+                    <option value="Loyalty">Loyalty</option>
+                    <option value="Industry">Industry</option>
+                    <option value="Responsibility">Responsibility</option>
                   </>
                 )}
               </select>
@@ -459,31 +485,6 @@ export default function AdminCreateTeacher() {
             </p>
           </div>
 
-          <div>
-            <label className="text-sm font-medium text-gray-700">Bio</label>
-            <textarea
-              name="bio"
-              value={formData.bio}
-              onChange={handleChange}
-              rows="4"
-              placeholder="Brief professional biography..."
-              className="mt-1 w-full p-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-800"
-            />
-            <p className="text-xs text-gray-500 mt-1">Optional: Brief description about the teacher</p>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-gray-700">Profile Picture</label>
-            <input
-              type="file"
-              name="profilePic"
-              onChange={handleChange}
-              accept="image/*"
-              className="mt-1 w-full p-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-800"
-            />
-            <p className="text-xs text-gray-500 mt-1">Optional: Upload teacher's profile picture</p>
-          </div>
-
           <div className="flex justify-end gap-3 pt-4">
             <button
               type="button"
@@ -519,6 +520,15 @@ export default function AdminCreateTeacher() {
               <div className="bg-gray-50 rounded-lg p-4 mb-4 text-left">
                 <p className="text-sm text-gray-600 mb-2">
                   <span className="font-semibold">Email:</span> {formData.email}
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(formData.email);
+                      toast.success('Email copied to clipboard!');
+                    }}
+                    className="ml-2 px-2 py-1 bg-gray-200 text-gray-800 text-xs rounded hover:bg-gray-300 transition-colors"
+                  >
+                    Copy
+                  </button>
                 </p>
                 <p className="text-sm text-gray-600">
                   <span className="font-semibold">Password:</span> {formData.password}
@@ -537,7 +547,7 @@ export default function AdminCreateTeacher() {
                 ⚠️ Please save this password! It will not be shown again.
               </p>
               <p className="text-xs text-gray-500 mb-4">
-                Redirecting to Admin Approvals in 15 seconds...
+                Redirecting to Admin Teachers in 15 seconds...
               </p>
               <button
                 onClick={() => {
@@ -547,11 +557,11 @@ export default function AdminCreateTeacher() {
                     setRedirectTimer(null);
                   }
                   setShowSuccessModal(false);
-                  navigate('/admin/approvals');
+                  navigate('/admin/admin-teachers');
                 }}
                 className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 font-semibold"
               >
-                Go to Admin Approvals Now
+                Go to Teachers Display Now
               </button>
             </div>
           </div>

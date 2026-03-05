@@ -246,10 +246,18 @@ export default function AdminTeachers() {
         const response = await api.get('/teachers');
         const teachersData = response.data?.data?.teachers || response.data?.teachers || [];
         console.log('Teachers fetched from /teachers:', teachersData);
+        console.log('Teachers data type:', typeof teachersData);
+        console.log('Teachers data is array:', Array.isArray(teachersData));
+        console.log('Raw response data:', response.data);
+        console.log('Response status:', response.status);
         
-        // Only show approved teachers (not pending or rejected)
+        // Only show approved teachers (not pending or declined)
         allTeachers = Array.isArray(teachersData) 
-          ? teachersData.filter(teacher => (teacher.role === 'adviser' || teacher.role === 'subject_teacher'))
+          ? teachersData.filter(teacher => {
+              console.log('Checking teacher:', teacher.firstName, teacher.role, teacher.status);
+              return (teacher.role === 'adviser' || teacher.role === 'subject_teacher') &&
+              teacher.status === 'approved'
+            })
           : [];
       } catch (err) {
         console.log('Could not fetch from /teachers:', err.message);
@@ -263,7 +271,11 @@ export default function AdminTeachers() {
           console.log('Users fetched from /users:', usersData);
           
           allTeachers = Array.isArray(usersData)
-            ? usersData.filter(u => u.role === 'adviser' || u.role === 'subject_teacher' || u.role === 'teacher')
+            ? usersData.filter(u => {
+                console.log('Checking user from fallback:', u.firstName, u.role, u.status);
+                return (u.role === 'adviser' || u.role === 'subject_teacher' || u.role === 'teacher') &&
+                u.status === 'approved'
+              })
             : [];
           
           console.log('Filtered teachers from users:', allTeachers);
@@ -587,13 +599,23 @@ export default function AdminTeachers() {
 
   const handleEditTeacher = (teacher) => {
     setSelectedTeacher(teacher);
+    // Handle subjects field - it can be string or array
+    let subjectsArray = [];
+    if (teacher.subjects) {
+      if (Array.isArray(teacher.subjects)) {
+        subjectsArray = teacher.subjects;
+      } else if (typeof teacher.subjects === 'string') {
+        subjectsArray = teacher.subjects.split(',').map(s => s.trim()).filter(s => s);
+      }
+    }
+    
     setEditFormData({
       firstName: teacher.firstName || teacher.first_name,
       middleName: teacher.middleName || teacher.middle_name || '',
       lastName: teacher.lastName || teacher.last_name,
       email: teacher.email,
       role: teacher.role || 'adviser',
-      subjects: teacher.subjects || [],
+      subjects: subjectsArray,
       kindergartenSubjects: teacher.kindergartenSubjects || '',
       gradeLevel: teacher.gradeLevel || teacher.grade_level || '',
       section: teacher.section || ''

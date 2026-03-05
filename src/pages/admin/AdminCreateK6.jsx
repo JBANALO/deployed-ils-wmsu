@@ -92,6 +92,7 @@ const handleSubmit = async (e) => {
       studentEmail: formData.wmsuEmail.trim(),
       password: formData.password,
       profilePic: profilePicBase64,
+      status: 'approved', // Students are now immediately approved
     };
 
     // ---------------------------
@@ -115,7 +116,7 @@ const handleSubmit = async (e) => {
       setShowSuccessModal(true);
 
       // Redirect after 15 seconds
-      const timer = setTimeout(() => navigate('/admin/approvals'), 15000);
+      const timer = setTimeout(() => navigate('/admin/admin-students'), 15000);
       setRedirectTimer(timer);
 
       // Reset form
@@ -266,6 +267,7 @@ const handleSubmit = async (e) => {
               <option value="Grade 4">Grade 4</option>
               <option value="Grade 5">Grade 5</option>
               <option value="Grade 6">Grade 6</option>
+              <option value="NG">Multiple Grade Level (MG)</option>
             </select>
           </div>
           <div><label className="block font-semibold mb-1">Section</label>
@@ -275,9 +277,10 @@ const handleSubmit = async (e) => {
               {formData.gradeLevel === "Grade 1" && <option value="Humility">Humility</option>}
               {formData.gradeLevel === "Grade 2" && <option value="Kindness">Kindness</option>}
               {formData.gradeLevel === "Grade 3" && <> <option value="Diligence">Diligence</option> <option value="Wisdom">Wisdom</option> </>}
-              {formData.gradeLevel === "Grade 4" && <> <option value="Courage">Courage</option> <option value="Honesty">Honesty</option> </>}
-              {formData.gradeLevel === "Grade 5" && <> <option value="Respect">Respect</option> <option value="Responsibility">Responsibility</option> </>}
-              {formData.gradeLevel === "Grade 6" && <> <option value="Leadership">Leadership</option> <option value="Excellence">Excellence</option> </>}
+              {formData.gradeLevel === "Grade 4" && <> <option value="Prudence">Prudence</option> <option value="Generosity">Generosity</option> </>}
+              {formData.gradeLevel === "Grade 5" && <> <option value="Courage">Courage</option> <option value="Justice">Justice</option> </>}
+              {formData.gradeLevel === "Grade 6" && <> <option value="Honesty">Honesty</option> <option value="Loyalty">Loyalty</option> <option value="Industry">Industry</option></>}
+              {formData.gradeLevel === "MG" && <option value="Responsibility">Responsibility</option>}
             </select>
           </div>
         </div>
@@ -460,7 +463,7 @@ const handleSubmit = async (e) => {
                 ⚠️ Please save this password! It will not be shown again.
               </p>
               <p className="text-xs text-gray-500 mb-4">
-                Redirecting to Admin Approvals in 15 seconds...
+                Redirecting to Admin Students in 15 seconds...
               </p>
               <button
                 onClick={() => {
@@ -470,11 +473,11 @@ const handleSubmit = async (e) => {
                     setRedirectTimer(null);
                   }
                   setShowSuccessModal(false);
-                  navigate('/admin/approvals');
+                  navigate('/admin/admin-students');
                 }}
                 className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 font-semibold"
               >
-                Go to Admin Approvals Now
+                Go to Admin Students Now
               </button>
             </div>
           </div>

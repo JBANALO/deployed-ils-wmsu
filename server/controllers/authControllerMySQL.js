@@ -124,17 +124,53 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Check users table (for admin accounts)
-    let users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [loginField]);
-    console.log(`🔍 Checking users table for email: ${loginField}, found: ${users.length} users`);
-    
-    if (users.length === 0) {
-      users = await query('SELECT * FROM users WHERE LOWER(username) = LOWER(?)', [loginField]);
-      console.log(`🔍 Checking users table for username: ${loginField}, found: ${users.length} users`);
+    // Check if database is available first
+    let dbAvailable = false;
+    try {
+      await query('SELECT 1');
+      dbAvailable = true;
+      console.log('🔍 Database is available');
+    } catch (dbError) {
+      console.log('🔍 Database not available, using file storage only');
+      dbAvailable = false;
     }
 
-    // If not found in users, check teachers table
+    // Check users table (for admin accounts) - ONLY if database available
+    let users = [];
+    if (dbAvailable) {
+      users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [loginField]);
+      console.log(`🔍 Checking users table for email: ${loginField}, found: ${users.length} users`);
+      
+      if (users.length === 0) {
+        users = await query('SELECT * FROM users WHERE LOWER(username) = LOWER(?)', [loginField]);
+        console.log(`🔍 Checking users table for username: ${loginField}, found: ${users.length} users`);
+      }
+    }
+
+    // If not found in users table, check JSON files first (for mobile compatibility)
     if (users.length === 0) {
+      try {
+        const { readUsers } = require('../utils/fileStorage');
+        const allUsers = readUsers();
+        
+        // Check for teacher accounts in users.json
+        const teacherUsers = allUsers.filter(u => 
+          (u.role === 'teacher' || u.role === 'adviser' || u.role === 'subject_teacher') &&
+          (u.email?.toLowerCase() === loginField.toLowerCase() || 
+           u.username?.toLowerCase() === loginField.toLowerCase())
+        );
+        
+        if (teacherUsers.length > 0) {
+          users = teacherUsers;
+          console.log(`🔍 Found ${teacherUsers.length} teacher(s) in users.json file for: ${loginField}`);
+        }
+      } catch (fileError) {
+        console.log('Error reading users.json file:', fileError.message);
+      }
+    }
+
+    // If not found in users table or JSON file, check teachers table - ONLY if database available
+    if (users.length === 0 && dbAvailable) {
       users = await query('SELECT * FROM teachers WHERE LOWER(email) = LOWER(?)', [loginField]);
       
       if (users.length === 0) {
@@ -142,11 +178,33 @@ exports.login = async (req, res) => {
       }
     }
 
-    // If not found in users or teachers, check students table
+    // If not found in users or teachers, check students table - ONLY if database available
     if (users.length === 0) {
-      users = await query('SELECT * FROM students WHERE LOWER(student_email) = LOWER(?)', [loginField]);
+      // Check students.json file first (for mobile compatibility)
+      try {
+        const { readUsers } = require('../utils/fileStorage');
+        const allUsers = readUsers();
+        
+        // Check for student accounts in users.json
+        const studentUsers = allUsers.filter(u => 
+          u.role === 'student' &&
+          (u.email?.toLowerCase() === loginField.toLowerCase() || 
+           u.username?.toLowerCase() === loginField.toLowerCase())
+        );
+        
+        if (studentUsers.length > 0) {
+          users = studentUsers;
+          console.log(`🔍 Found ${studentUsers.length} student(s) in users.json file for: ${loginField}`);
+        }
+      } catch (fileError) {
+        console.log('Error reading users.json file:', fileError.message);
+      }
       
-      // No username column in students table, so only check email
+      // If still not found, check students table in database - ONLY if database available
+      if (users.length === 0 && dbAvailable) {
+        users = await query('SELECT * FROM students WHERE LOWER(student_email) = LOWER(?)', [loginField]);
+        console.log(`🔍 Checking students table for email: ${loginField}, found: ${users.length} students`);
+      }
     }
 
     if (users.length === 0) {
@@ -164,8 +222,18 @@ exports.login = async (req, res) => {
       last_name: user.last_name,
       role: user.role
     });
-    const passwordMatch = await bcrypt.compare(password, user.password);
-    console.log(`🔍 Password comparison: provided="${password}", stored_hash="${user.password}", match=${passwordMatch}`);
+    
+    // Handle password comparison for both database (bcrypt) and JSON file (plain text)
+    let passwordMatch = false;
+    if (typeof user.password === 'string' && user.password.startsWith('$2')) {
+      // Database user with bcrypt hash
+      passwordMatch = await bcrypt.compare(password, user.password);
+      console.log(`🔍 Database password comparison: provided="${password}", stored_hash="${user.password}", match=${passwordMatch}`);
+    } else {
+      // JSON file user with plain text password
+      passwordMatch = password === user.password;
+      console.log(`🔍 JSON file password comparison: provided="${password}", stored="${user.password}", match=${passwordMatch}`);
+    }
 
     if (!passwordMatch) {
       return res.status(401).json({
@@ -181,21 +249,36 @@ exports.login = async (req, res) => {
 
     // Handle different table structures
     let userData;
-    if (user.first_name && user.last_name) {
-      // From users table (admin)
+    if (user.student_email) {
+      // From students table (database)
       userData = {
         id: user.id,
         firstName: user.first_name || '',
         lastName: user.last_name || '',
         name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
         username: user.username || '',
-        email: user.email,
+        email: user.student_email, // Use student_email field
         phone: user.phone || '',
         profileImage: user.profile_pic || '',
+        role: 'student', // Explicitly set role to student
+        gradeLevel: user.grade_level,
+        section: user.section
+      };
+    } else if ((user.first_name && user.last_name) || (user.firstName && user.lastName)) {
+      // From users table (admin) OR from JSON file (teachers/students)
+      userData = {
+        id: user.id,
+        firstName: user.first_name || user.firstName || '',
+        lastName: user.last_name || user.lastName || '',
+        name: `${user.first_name || user.firstName || ''} ${user.last_name || user.lastName || ''}`.trim(),
+        username: user.username || '',
+        email: user.email,
+        phone: user.phone || '',
+        profileImage: user.profile_pic || user.profileImage || '',
         role: user.role || 'admin',
       };
     } else {
-      // From teachers table
+      // From teachers table (database)
       userData = {
         id: user.id,
         firstName: user.first_name || '',

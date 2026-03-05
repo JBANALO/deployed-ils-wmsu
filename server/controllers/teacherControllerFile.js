@@ -480,15 +480,158 @@ const updateTeacher = (req, res) => {
   }
 };
 
+// Approve a teacher
+const approveTeacher = (req, res) => {
+  try {
+    const { id } = req.params;
+    const users = readUsers();
+    
+    // Find teacher index
+    const teacherIndex = users.findIndex(u => u.id === id);
+    if (teacherIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Teacher not found'
+      });
+    }
+    
+    // Approve teacher
+    users[teacherIndex] = {
+      ...users[teacherIndex],
+      status: 'approved',
+      archived: false,
+      approvedAt: new Date().toISOString()
+    };
+    
+    const success = writeUsers(users);
+    
+    if (success) {
+      console.log(`Teacher ${users[teacherIndex].firstName} ${users[teacherIndex].lastName} approved successfully`);
+      res.json({
+        success: true,
+        message: 'Teacher approved successfully'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to approve teacher'
+      });
+    }
+  } catch (error) {
+    console.error('Error in approveTeacher:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error approving teacher'
+    });
+  }
+};
+
+// Decline a teacher
+const declineTeacher = (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const users = readUsers();
+    
+    // Find teacher index
+    const teacherIndex = users.findIndex(u => u.id === id);
+    if (teacherIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Teacher not found'
+      });
+    }
+    
+    // Decline teacher
+    users[teacherIndex] = {
+      ...users[teacherIndex],
+      status: 'declined',
+      archived: true,
+      declinedAt: new Date().toISOString(),
+      declineReason: reason || 'No reason provided'
+    };
+    
+    const success = writeUsers(users);
+    
+    if (success) {
+      console.log(`Teacher ${users[teacherIndex].firstName} ${users[teacherIndex].lastName} declined successfully`);
+      res.json({
+        success: true,
+        message: 'Teacher declined successfully'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to decline teacher'
+      });
+    }
+  } catch (error) {
+    console.error('Error in declineTeacher:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error declining teacher'
+    });
+  }
+};
+
+// Get declined teachers
+const getDeclinedTeachers = (req, res) => {
+  try {
+    const users = readUsers();
+    
+    // Filter for declined teachers
+    const declinedTeachers = users
+      .filter(u => 
+        (u.role === 'adviser' || u.role === 'teacher' || u.role === 'subject_teacher') &&
+        u.status === 'declined'
+      )
+      .map(u => ({
+        id: u.id,
+        firstName: u.firstName || u.first_name || '',
+        lastName: u.lastName || u.last_name || '',
+        fullName: `${u.firstName || u.first_name || ''} ${u.lastName || u.last_name || ''}`.trim(),
+        username: u.username,
+        email: u.email,
+        role: u.role || 'teacher',
+        gradeLevel: u.gradeLevel || u.grade_level,
+        section: u.section,
+        position: u.position,
+        department: u.department,
+        subjectsHandled: u.subjectsHandled || u.subjects,
+        subjects: u.subjects || [],
+        bio: u.bio || '',
+        status: u.status,
+        declinedAt: u.declinedAt,
+        declineReason: u.declineReason,
+        createdAt: u.createdAt
+      }));
+    
+    console.log(`getDeclinedTeachers: Found ${declinedTeachers.length} declined teachers`);
+    res.json({
+      success: true,
+      data: { teachers: declinedTeachers }
+    });
+  } catch (error) {
+    console.error('Error in getDeclinedTeachers:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching declined teachers'
+    });
+  }
+};
+
 module.exports = {
   getAllTeachers,
   getArchivedTeachers,
   getPendingTeachers,
   getAdvisers,
+  getDeclinedTeachers,
   archiveTeacher,
   restoreTeacher,
   deleteTeacher,
   permanentDeleteTeacher,
   createTeacher,
+  approveTeacher,
+  declineTeacher,
   updateTeacher
 };
