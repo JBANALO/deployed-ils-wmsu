@@ -8,7 +8,7 @@ export default function AdminAssignSubjectTeacher() {
   const [selectedClass, setSelectedClass] = useState(null);
   const [selectedTeacher, setSelectedTeacher] = useState("");
   const [selectedSubject, setSelectedSubject] = useState("");
-  const [selectedDay, setSelectedDay] = useState("Monday - Friday");
+  const [selectedDay, setSelectedDay] = useState("Monday");
   const [startTime, setStartTime] = useState("08:00");
   const [endTime, setEndTime] = useState("09:00");
   const [loading, setLoading] = useState(true);
@@ -260,7 +260,6 @@ export default function AdminAssignSubjectTeacher() {
                     onChange={(e) => setSelectedDay(e.target.value)}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                   >
-                    <option value="Monday - Friday">Monday - Friday</option>
                     <option value="Monday">Monday</option>
                     <option value="Tuesday">Tuesday</option>
                     <option value="Wednesday">Wednesday</option>
