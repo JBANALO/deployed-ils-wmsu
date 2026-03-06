@@ -44,7 +44,18 @@ useEffect(() => {
           };
           setData(mappedData);
         } else {
-          throw new Error('Invalid data structure');
+          console.log('No student data found, but API call was successful');
+          // Don't throw error, just set empty data to prevent login redirect
+          setData({
+            profile: {
+              fullName: 'Loading...',
+              gradeLevel: 'Loading...',
+              section: 'Loading...',
+              lrn: 'Loading...',
+              finalAverage: 'Loading...'
+            },
+            grades: []
+          });
         }
     } catch (err) {
       console.error('Fetch error:', err);
