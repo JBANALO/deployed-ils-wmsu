@@ -3,6 +3,8 @@ import { Download, Calendar, BookOpen } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import StudentTopbar from '@/layouts/student/StudentTopbar'; // ← Use @/ if you have alias, or correct path
 import { UserContext } from '@/context/UserContext'; // Import UserContext
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 const StudentPortal = () => {
   const [activeTab, setActiveTab] = useState('grades');
@@ -101,7 +103,133 @@ useEffect(() => {
 
   const { profile, grades = [] } = data;
 
-  // ← REST OF YOUR BEAUTIFUL UI (unchanged)
+  // Report card download function
+  const downloadReportCard = async () => {
+    toast.loading('Generating report card...', { id: 'reportCard' });
+    
+    try {
+      // Create a temporary div for the report card
+      const reportCardDiv = document.createElement('div');
+      reportCardDiv.style.position = 'absolute';
+      reportCardDiv.style.left = '-9999px';
+      reportCardDiv.style.width = '210mm';
+      reportCardDiv.style.padding = '20mm';
+      reportCardDiv.style.backgroundColor = 'white';
+      reportCardDiv.style.fontFamily = 'Arial, sans-serif';
+      
+      // Generate report card HTML
+      reportCardDiv.innerHTML = `
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h1 style="margin: 0; font-size: 24px; color: #7c2d12;">WMSU ILS - Elementary Department</h1>
+          <h2 style="margin: 5px 0; font-size: 20px; color: #333;">Report Card</h2>
+          <p style="margin: 5px 0; font-size: 14px; color: #666;">School Year 2024-2025</p>
+        </div>
+        
+        <div style="margin-bottom: 30px;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 5px; font-weight: bold; width: 30%;">Student Name:</td>
+              <td style="padding: 5px;">${profile.fullName}</td>
+              <td style="padding: 5px; font-weight: bold; width: 20%;">Grade Level:</td>
+              <td style="padding: 5px;">${profile.gradeLevel}</td>
+            </tr>
+            <tr>
+              <td style="padding: 5px; font-weight: bold;">LRN:</td>
+              <td style="padding: 5px;">${profile.lrn}</td>
+              <td style="padding: 5px; font-weight: bold;">Section:</td>
+              <td style="padding: 5px;">${profile.section}</td>
+            </tr>
+          </table>
+        </div>
+        
+        <div style="margin-bottom: 30px;">
+          <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #333;">Academic Performance</h3>
+          <table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">
+            <thead>
+              <tr style="background-color: #f8f9fa;">
+                <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Subject</th>
+                <th style="padding: 8px; border: 1px solid #ddd; text-align: center;">Q1</th>
+                <th style="padding: 8px; border: 1px solid #ddd; text-align: center;">Q2</th>
+                <th style="padding: 8px; border: 1px solid #ddd; text-align: center;">Q3</th>
+                <th style="padding: 8px; border: 1px solid #ddd; text-align: center;">Q4</th>
+                <th style="padding: 8px; border: 1px solid #ddd; text-align: center;">Average</th>
+                <th style="padding: 8px; border: 1px solid #ddd; text-align: center;">Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${grades.map(grade => `
+                <tr>
+                  <td style="padding: 8px; border: 1px solid #ddd;">${grade.subject}</td>
+                  <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${grade.q1 || '-'}</td>
+                  <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${grade.q2 || '-'}</td>
+                  <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${grade.q3 || '-'}</td>
+                  <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${grade.q4 || '-'}</td>
+                  <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${grade.average || 'N/A'}</td>
+                  <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${grade.remarks || 'Pending'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        
+        <div style="margin-top: 40px;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 5px; font-weight: bold; width: 30%;">Final Average:</td>
+              <td style="padding: 5px; font-size: 18px; font-weight: bold; color: #16a34a;">${profile.finalAverage || 'N/A'}</td>
+              <td style="padding: 5px; font-weight: bold; width: 20%;">Date Generated:</td>
+              <td style="padding: 5px;">${new Date().toLocaleDateString()}</td>
+            </tr>
+          </table>
+        </div>
+        
+        <div style="margin-top: 50px; text-align: center; font-size: 12px; color: #666;">
+          <p>This is a system-generated report card.</p>
+          <p>For official purposes, please contact the school administration.</p>
+        </div>
+      `;
+      
+      document.body.appendChild(reportCardDiv);
+      
+      // Convert to canvas and then to PDF
+      const canvas = await html2canvas(reportCardDiv, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      const imgWidth = 210;
+      const pageHeight = 297;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+      
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+      
+      // Download the PDF
+      pdf.save(`${profile.fullName.replace(/\s+/g, '_')}_Report_Card.pdf`);
+      
+      // Clean up
+      document.body.removeChild(reportCardDiv);
+      
+      toast.success('Report card downloaded successfully!', { id: 'reportCard' });
+    } catch (error) {
+      console.error('Error generating report card:', error);
+      toast.error('Failed to generate report card. Please try again.', { id: 'reportCard' });
+    }
+  };
+
   return (
     <>
       <StudentTopbar studentName={profile.fullName || 'Student'} gradeLevel={profile.gradeLevel || 'Grade'} />
@@ -145,8 +273,8 @@ useEffect(() => {
                       Final Average: <strong className="text-2xl text-green-600">{profile.finalAverage || 'N/A'}</strong>
                     </p>
                   </div>
-                  <button onClick={() => toast('Download feature coming soon!', { icon: '📥' })} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2">
-                    <Download className="w-5 h-5" /> Download
+                  <button onClick={downloadReportCard} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2">
+                    <Download className="w-5 h-5" /> Download Report Card
                   </button>
                 </div>
 
