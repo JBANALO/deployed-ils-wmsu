@@ -380,7 +380,6 @@ export default function AdminCreateTeacher() {
                 <option value="Grade 4">Grade 4</option>
                 <option value="Grade 5">Grade 5</option>
                 <option value="Grade 6">Grade 6</option>
-                <option value="MG">Multiple Grade Level (MG)</option>
               </select>
             </div>
             <div>
@@ -407,7 +406,6 @@ export default function AdminCreateTeacher() {
                     <option value="Honesty">Honesty</option>
                     <option value="Loyalty">Loyalty</option>
                     <option value="Industry">Industry</option>
-                    <option value="Responsibility">Responsibility</option>
                   </>
                 )}
               </select>
