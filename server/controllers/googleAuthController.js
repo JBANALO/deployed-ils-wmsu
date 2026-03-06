@@ -79,7 +79,7 @@ exports.googleCallback = async (req, res) => {
         }
       } else {
         // Reject non-@wmsu.edu.ph emails
-        return res.redirect(`${process.env.LOCAL_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173'}?error=email_domain_not_allowed`);
+        return res.redirect(`${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu.vercel.app'}?error=email_domain_not_allowed`);
       }
 
       // Create new user with Google data in the appropriate table
@@ -173,7 +173,7 @@ exports.googleCallback = async (req, res) => {
     );
   } catch (error) {
     console.error('Google OAuth error:', error);
-    res.redirect(`${process.env.LOCAL_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173'}?error=auth_failed`);
+    res.redirect(`${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu.vercel.app'}?error=auth_failed`);
   }
 };
 
