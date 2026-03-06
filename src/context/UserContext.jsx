@@ -6,7 +6,7 @@ export const UserProvider = ({ children }) => {
   const [adminUser, setAdminUser] = useState(null);
   const [profileImageFile, setProfileImageFile] = useState(null); // 
 
-  // Initialize from localStorage
+  // Initialize from localStorage and handle updates
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
     console.log('UserContext - storedUser from localStorage:', storedUser);
@@ -25,18 +25,43 @@ export const UserProvider = ({ children }) => {
 
     const handleStorage = (e) => {
       console.log('UserContext - storage event:', e.key, e.newValue);
-      if (e.key === "user" && e.newValue) {
-        try {
-          const parsedUser = JSON.parse(e.newValue);
-          console.log('UserContext - updating from storage event:', parsedUser);
-          setAdminUser(parsedUser);
-        } catch (error) {
-          console.error('UserContext - Error parsing storage event user:', error);
+      if (e.key === "user") {
+        if (e.newValue) {
+          try {
+            const parsedUser = JSON.parse(e.newValue);
+            console.log('UserContext - updating from storage event:', parsedUser);
+            setAdminUser(parsedUser);
+          } catch (error) {
+            console.error('UserContext - Error parsing storage event user:', error);
+          }
+        } else {
+          // User was cleared, set to null
+          setAdminUser(null);
         }
       }
     };
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  // Also check for user changes when window gains focus (tab switching)
+  useEffect(() => {
+    const handleFocus = () => {
+      const currentUser = localStorage.getItem("user");
+      if (currentUser) {
+        try {
+          const parsedUser = JSON.parse(currentUser);
+          setAdminUser(parsedUser);
+        } catch (error) {
+          console.error('UserContext - Error parsing user on focus:', error);
+        }
+      } else {
+        setAdminUser(null);
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
   // Update user helper
