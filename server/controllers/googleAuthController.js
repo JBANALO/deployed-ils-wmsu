@@ -63,7 +63,7 @@ exports.googleCallback = async (req, res) => {
       let role = 'student'; // Default role
       let targetTable = 'users';
       
-      // Determine role based on email domain and patterns
+      // Only accept @wmsu.edu.ph emails
       if (email.includes('@wmsu.edu.ph')) {
         // Check for admin patterns - you can customize these
         const adminPatterns = ['admin@', 'administrator@', 'info@', 'support@'];
@@ -77,6 +77,9 @@ exports.googleCallback = async (req, res) => {
           role = 'teacher';
           targetTable = 'teachers';
         }
+      } else {
+        // Reject non-@wmsu.edu.ph emails
+        return res.redirect(`${process.env.LOCAL_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173'}?error=email_domain_not_allowed`);
       }
 
       // Create new user with Google data in the appropriate table
@@ -91,10 +94,9 @@ exports.googleCallback = async (req, res) => {
       try {
         if (targetTable === 'users') {
           await query(
-            'INSERT INTO users (id, googleId, email, username, first_name, last_name, name, profile_pic, role, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO users (id, email, username, first_name, last_name, name, profile_pic, role, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
               userId,
-              googleId,
               email,
               username,
               firstName,
@@ -107,10 +109,9 @@ exports.googleCallback = async (req, res) => {
           );
         } else if (targetTable === 'teachers') {
           await query(
-            'INSERT INTO teachers (id, googleId, email, username, first_name, last_name, profile_pic, role, verification_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO teachers (id, email, username, first_name, last_name, profile_pic, role, verification_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             [
               userId,
-              googleId,
               email,
               username,
               firstName,
@@ -122,10 +123,9 @@ exports.googleCallback = async (req, res) => {
           );
         } else if (targetTable === 'students') {
           await query(
-            'INSERT INTO students (id, googleId, student_email, first_name, last_name, profile_pic, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO students (id, student_email, first_name, last_name, profile_pic, status) VALUES (?, ?, ?, ?, ?, ?)',
             [
               userId,
-              googleId,
               email,
               firstName,
               lastName,
