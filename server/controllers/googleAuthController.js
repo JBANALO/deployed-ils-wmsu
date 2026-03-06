@@ -18,6 +18,11 @@ exports.googleCallback = async (req, res) => {
     const name = displayName;
     const avatar = photos[0]?.value || null;
 
+    // Only allow @wmsu.edu.ph emails for Google OAuth
+    if (!email.includes('@wmsu.edu.ph')) {
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu.vercel.app'}?error=email_domain_not_allowed`);
+    }
+
     // Check if user exists by email in any table
     let users = await query('SELECT * FROM users WHERE email = ?', [email]);
     let user = null;
@@ -113,11 +118,12 @@ exports.googleCallback = async (req, res) => {
           );
         } else if (targetTable === 'teachers') {
           await query(
-            'INSERT INTO teachers (id, email, username, first_name, last_name, profile_pic, role, verification_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO teachers (id, email, username, password, first_name, last_name, profile_pic, role, verification_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
               userId,
               email,
               username,
+              'google_oauth_login', // Placeholder password for Google OAuth
               firstName,
               lastName,
               avatar,
