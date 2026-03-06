@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { Download, Calendar, BookOpen } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import StudentTopbar from '@/layouts/student/StudentTopbar'; // ← Use @/ if you have alias, or correct path
 import { UserContext } from '@/context/UserContext'; // Import UserContext
 
@@ -21,13 +22,12 @@ useEffect(() => {
     }
 
     try {
-      console.log('Fetching for studentId:', studentId);
+      toast.loading('Loading student data...', { id: 'studentData' });
       const baseURL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 
                (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
       const res = await fetch(`${baseURL}/students/portal?studentId=${studentId}`, { credentials: 'include' });
       if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
       const result = await res.json();
-        console.log('Data received:', result);
         
         // Map API response structure to frontend expectations
         if (result.status === 'success' && result.data?.student) {
@@ -43,8 +43,12 @@ useEffect(() => {
             grades: studentData.grades || []
           };
           setData(mappedData);
+          toast.success('Student data loaded successfully!', { id: 'studentData' });
         } else {
-          console.log('No student data found, but API call was successful');
+          toast('No student data found, but you are logged in correctly', { 
+            icon: 'ℹ️',
+            id: 'studentData' 
+          });
           // Don't throw error, just set empty data to prevent login redirect
           setData({
             profile: {
@@ -58,8 +62,7 @@ useEffect(() => {
           });
         }
     } catch (err) {
-      console.error('Fetch error:', err);
-      alert('No student data found. Please make sure you are logged in correctly.');
+      toast.error('No student data found. Please make sure you are logged in correctly.', { id: 'studentData' });
     } finally {
       setLoading(false);
     }
@@ -142,7 +145,7 @@ useEffect(() => {
                       Final Average: <strong className="text-2xl text-green-600">{profile.finalAverage || 'N/A'}</strong>
                     </p>
                   </div>
-                  <button onClick={() => alert('Download coming soon!')} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2">
+                  <button onClick={() => toast('Download feature coming soon!', { icon: '📥' })} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2">
                     <Download className="w-5 h-5" /> Download
                   </button>
                 </div>
