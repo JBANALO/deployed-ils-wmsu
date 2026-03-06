@@ -576,14 +576,26 @@ app.get('/api/admin/declined-students', async (req, res) => {
   }
 });
 
-// API routes
-app.use('/api/users', userRoutes);
+// ================= ROUTES =================
 app.use('/api/auth', authRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/classes', classRoutes);
-app.use('/api/teachers', teacherRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/grades', gradeRoutes);
+app.use('/api/teachers', teacherRoutes);
+app.use('/api/users', userRoutes);
+// ==========================================
+
+// Debug middleware to track all requests
+app.use((req, res, next) => {
+  console.log('🔍 API Request:', {
+    method: req.method,
+    url: req.url,
+    originalUrl: req.originalUrl,
+    path: req.path
+  });
+  next();
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -601,7 +613,7 @@ app.use((err, req, res, next) => {
       error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
     });
   }
-  next();
+  // Removed the next() call here
 });
 
 // Graceful shutdown handling

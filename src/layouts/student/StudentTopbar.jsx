@@ -8,7 +8,7 @@ import {
   ChevronDownIcon 
 } from "@heroicons/react/24/solid";
 
-export default function StudentTopbar({ studentName }) {
+export default function StudentTopbar({ studentName, gradeLevel }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -50,7 +50,7 @@ export default function StudentTopbar({ studentName }) {
             <UserCircleIcon className="w-10 h-10" />
             <div className="text-left">
               <p className="font-semibold text-sm">{studentName || "Student"}</p>
-              <p className="text-xs opacity-90">Grade 1</p>
+              <p className="text-xs opacity-90">{gradeLevel || "Grade"}</p>
             </div>
             <ChevronDownIcon className={`w-5 h-5 transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
           </button>
@@ -65,7 +65,7 @@ export default function StudentTopbar({ studentName }) {
               <div className="absolute right-0 mt-3 w-64 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden z-50 animate-fadeIn">
                 <div className="px-5 py-4 bg-gradient-to-r from-red-50 to-pink-50 border-b">
                   <p className="font-bold text-gray-800">{studentName || "Student"}</p>
-                  <p className="text-sm text-gray-600">Elementary Student</p>
+                  <p className="text-sm text-gray-600">{gradeLevel || "Student"} Student</p>
                 </div>
 
                 <ul className="text-gray-700">

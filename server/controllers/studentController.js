@@ -292,15 +292,34 @@ exports.getStudent = async (req, res) => {
     // Handle both query parameter (studentId) and URL parameter (id)
     const studentId = req.query.studentId || req.params.id;
     
+    console.log('🔍 getStudent called with:', {
+      query: req.query,
+      params: req.params,
+      studentId: studentId
+    });
+    
     if (!studentId) {
+      console.log('❌ No studentId provided');
       return res.status(400).json({ status: 'fail', message: 'Student ID is required' });
     }
     
+    console.log('🔍 Querying database for student ID:', studentId);
     const students = await query('SELECT * FROM students WHERE id = ?', [studentId]);
-    if (students.length === 0) return res.status(404).json({ status: 'fail', message: 'Student not found' });
-    res.status(200).json({ status: 'success', data: { student: formatStudent(students[0]) } });
+    console.log('🔍 Database result:', {
+      found: students.length,
+      student: students[0] || 'none'
+    });
+    
+    if (students.length === 0) {
+      console.log('❌ Student not found in database');
+      return res.status(404).json({ status: 'fail', message: 'Student not found' });
+    }
+    
+    const formattedStudent = formatStudent(students[0]);
+    console.log('✅ Student formatted successfully:', formattedStudent);
+    res.status(200).json({ status: 'success', data: { student: formattedStudent } });
   } catch (error) {
-    console.error('Error fetching student:', error);
+    console.error('❌ Error fetching student:', error);
     res.status(500).json({ status: 'fail', message: error.message });
   }
 };

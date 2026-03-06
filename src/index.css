@@ -21,3 +21,14 @@ body {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
+
+/* Hide scrollbars for all scrollable directions */
+.hide-scrollbar::-webkit-scrollbar {
+  width: 0px;
+  height: 0px;
+  background: transparent; /* optional */
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE & Edge */
+  scrollbar-width: none;     /* Firefox */
+}
