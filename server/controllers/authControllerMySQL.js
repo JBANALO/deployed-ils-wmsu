@@ -179,35 +179,24 @@ exports.login = async (req, res) => {
 
     const token = signToken(user.id);
 
-    // Handle different table structures
-    let userData;
-    if (user.first_name && user.last_name) {
-      // From users table (admin)
-      userData = {
-        id: user.id,
-        firstName: user.first_name || '',
-        lastName: user.last_name || '',
-        name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
-        username: user.username || '',
-        email: user.email,
-        phone: user.phone || '',
-        profileImage: user.profile_pic || '',
-        role: user.role || 'admin',
-      };
-    } else {
-      // From teachers table
-      userData = {
-        id: user.id,
-        firstName: user.first_name || '',
-        middleName: user.middle_name || '',
-        lastName: user.last_name || '',
-        name: `${user.first_name || ''} ${user.middle_name || ''} ${user.last_name || ''}`.trim(),
-        username: user.username || '',
-        email: user.email,
-        role: user.role || 'adviser',
-        verificationStatus: user.verification_status || 'pending'
-      };
-    }
+    // Handle different table column naming conventions (firstName vs first_name)
+    const firstName = user.firstName || user.first_name || '';
+    const middleName = user.middleName || user.middle_name || '';
+    const lastName = user.lastName || user.last_name || '';
+    
+    let userData = {
+      id: user.id,
+      firstName: firstName,
+      middleName: middleName,
+      lastName: lastName,
+      name: `${firstName} ${middleName} ${lastName}`.replace(/\s+/g, ' ').trim(),
+      username: user.username || '',
+      email: user.email,
+      phone: user.phone || '',
+      profileImage: user.profile_pic || '',
+      role: user.role || 'teacher',
+      verificationStatus: user.verification_status || user.verificationStatus || 'pending'
+    };
 
     res.status(200).json({
       status: 'success',
