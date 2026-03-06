@@ -190,7 +190,10 @@ export default function AdminTopbar() {
           <div className="relative">
             <button
               className="relative p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              onClick={() => { setShowNotifications(!showNotifications); setShowDropdown(false); }}
+              onClick={() => { 
+                setShowNotifications(!showNotifications); 
+                setShowDropdown(false); 
+              }}
               aria-label="Notifications"
             >
               <BellIcon className="w-5 h-5 md:w-6 md:h-6 text-red-800 cursor-pointer hover:scale-110 transition-all shrink-0" />
