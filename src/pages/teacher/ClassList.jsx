@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import ViewStudentModal from '@/components/modals/ViewStudentModal'
 import EditStudentModal from '@/components/modals/EditStudentModal'
 import DeleteRequestModal from '@/components/modals/DeleteRequestModal'
+import { API_BASE_URL } from '../../api/config';
 
 export default function ClassList() {
   const [search, setSearch] = useState("");
@@ -23,6 +24,7 @@ export default function ClassList() {
   const [statusOpen, setStatusOpen] = useState(false);
 
   const [students, setStudents] = useState([]);
+  const [assignedClasses, setAssignedClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -39,21 +41,88 @@ export default function ClassList() {
 
   useEffect(() => {
     fetchStudents();
+    
+    // Auto-refresh every 15 seconds
+    const interval = setInterval(() => {
+      fetchStudents();
+    }, 15000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   const fetchStudents = async () => {
     try {
       setLoading(true);
-      // Fetch students from the API using axios
+      
+      // Get current user from localStorage
+      let user = null;
+      const userStr = localStorage.getItem("user");
+      if (userStr) {
+        try {
+          user = JSON.parse(userStr);
+        } catch (e) {
+          console.error('Failed to parse user:', e);
+        }
+      }
+
+      if (!user?.id) {
+        console.error("No user found in localStorage");
+        setLoading(false);
+        return;
+      }
+
+      console.log('ClassList: Fetching for user:', user.id);
+
+      // Fetch adviser classes
+      let adviserClasses = [];
+      try {
+        const adviserResponse = await fetch(`${API_BASE_URL}/classes/adviser/${user.id}`);
+        if (adviserResponse.ok) {
+          const data = await adviserResponse.json();
+          adviserClasses = Array.isArray(data.data) ? data.data : [];
+        }
+      } catch (e) {
+        console.error('Error fetching adviser classes:', e);
+      }
+
+      // Fetch subject teacher classes
+      let subjectTeacherClasses = [];
+      try {
+        const stResponse = await fetch(`${API_BASE_URL}/classes/subject-teacher/${user.id}`);
+        if (stResponse.ok) {
+          const data = await stResponse.json();
+          subjectTeacherClasses = Array.isArray(data.data) ? data.data : [];
+        }
+      } catch (e) {
+        console.error('Error fetching subject teacher classes:', e);
+      }
+
+      // Combine and deduplicate classes
+      const combinedClasses = [...adviserClasses, ...subjectTeacherClasses];
+      const uniqueClasses = Array.from(new Map(combinedClasses.map(c => [c.id, c])).values());
+      setAssignedClasses(uniqueClasses);
+      
+      console.log('ClassList: Assigned classes:', uniqueClasses.map(c => `${c.grade}-${c.section}`));
+
+      // Fetch all students
       const response = await axios.get('/students');
-      const studentData = Array.isArray(response.data.data) 
+      const allStudents = Array.isArray(response.data.data) 
         ? response.data.data 
         : Array.isArray(response.data) 
         ? response.data 
         : [];
       
-      console.log('Students fetched:', studentData.length);
-      setStudents(studentData);
+      // Filter students to only show those in assigned classes
+      const normalize = str => (str || '').toString().trim().toLowerCase();
+      const filteredByClass = allStudents.filter(student => {
+        return uniqueClasses.some(c => 
+          normalize(c.grade) === normalize(student.gradeLevel) && 
+          normalize(c.section) === normalize(student.section)
+        );
+      });
+      
+      console.log('ClassList: Total students:', allStudents.length, '→ Filtered:', filteredByClass.length);
+      setStudents(filteredByClass);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching students:', error);
@@ -244,10 +313,9 @@ export default function ClassList() {
             className="w-full border border-gray-300 rounded-xl px-4 py-3 appearance-none"
           >
             <option>All Grades</option>
-            <option>Kindergarten</option>
-            <option>Grade 1</option>
-            <option>Grade 2</option>
-            <option>Grade 3</option>
+            {[...new Set(assignedClasses.map(c => c.grade))].sort().map(grade => (
+              <option key={grade}>{grade}</option>
+            ))}
           </select>
           <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center">
             <svg className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${gradeOpen ? 'rotate-180' : 'rotate-0'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -265,11 +333,9 @@ export default function ClassList() {
             className="w-full border border-gray-300 rounded-xl px-4 py-3 appearance-none"
           >
             <option>All Sections</option>
-            <option>Love</option>
-            <option>Humility</option>
-            <option>Kindness</option>
-            <option>Diligence</option>
-            <option>Wisdom</option>
+            {[...new Set(assignedClasses.map(c => c.section))].sort().map(section => (
+              <option key={section}>{section}</option>
+            ))}
           </select>
           <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center">
             <svg className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${sectionOpen ? 'rotate-180' : 'rotate-0'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
