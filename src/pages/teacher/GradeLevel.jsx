@@ -28,6 +28,13 @@ export default function GradeLevel() {
 
   useEffect(() => {
     fetchData();
+    
+    // Auto-refresh every 15 seconds to reflect admin changes immediately
+    const interval = setInterval(() => {
+      fetchData();
+    }, 15000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   const fetchData = async () => {
