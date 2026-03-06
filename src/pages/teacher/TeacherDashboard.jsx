@@ -18,14 +18,33 @@ export default function TeacherDashboard() {
 
   useEffect(() => {
     loadDashboardData();
+    
+    // Auto-refresh every 15 seconds to reflect admin changes immediately
+    const interval = setInterval(() => {
+      loadDashboardData();
+    }, 15000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   const loadDashboardData = async () => {
     try {
       setLoading(true);
+      
+      // Get current user from localStorage
+      let user = null;
+      const userStr = localStorage.getItem("user");
+      if (userStr) {
+        try {
+          user = JSON.parse(userStr);
+        } catch (e) {
+          console.error('Failed to parse user:', e);
+        }
+      }
 
-      // Fetch students
-      const studentsResponse = await axios.get('/students');
+      // Fetch students - filter by teacher ID if available to get only assigned students
+      const studentsUrl = user?.id ? `/students?teacherId=${user.id}` : '/students';
+      const studentsResponse = await axios.get(studentsUrl);
       const students = Array.isArray(studentsResponse.data.data) 
         ? studentsResponse.data.data 
         : Array.isArray(studentsResponse.data) 

@@ -82,6 +82,19 @@ const getTeacherVisibleClasses = async (req, res) => {
         console.log(`Found ${subjectTeacherClasses.length} classes as subject teacher`);
       }
 
+      // Fetch subject_teachers details for all visible classes
+      for (let i = 0; i < visibleClasses.length; i++) {
+        try {
+          const [stRows] = await pool.query(
+            `SELECT teacher_id, teacher_name, subject, day, start_time, end_time FROM subject_teachers WHERE class_id = ?`,
+            [visibleClasses[i].id]
+          );
+          visibleClasses[i].subject_teachers = stRows;
+        } catch (e) {
+          visibleClasses[i].subject_teachers = [];
+        }
+      }
+
       console.log(`Total visible classes for user ${userId}: ${visibleClasses.length}`);
       
       return res.json({ 
@@ -121,18 +134,39 @@ const getAllClasses = async (req, res) => {
     console.log('getAllClasses - attempting database connection');
 
     try {
-      // Try database first - query classes table
+      // Try database first - query classes table with subject_teachers
       const [rows] = await pool.query(
         `SELECT c.* FROM classes c ORDER BY c.grade, c.section`
       );
 
       console.log(`Database: Found ${rows.length} classes`);
       
-      // If classes table has data, return it
+      // If classes table has data, fetch subject_teachers for each class
       if (rows.length > 0) {
+        // Try to fetch subject_teachers
+        let subjectTeachersMap = {};
+        try {
+          const [stRows] = await pool.query(
+            `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time FROM subject_teachers`
+          );
+          stRows.forEach(st => {
+            if (!subjectTeachersMap[st.class_id]) {
+              subjectTeachersMap[st.class_id] = [];
+            }
+            subjectTeachersMap[st.class_id].push(st);
+          });
+        } catch (stError) {
+          console.log('Could not fetch subject_teachers:', stError.message);
+        }
+
+        const classesWithST = rows.map(cls => ({
+          ...cls,
+          subject_teachers: subjectTeachersMap[cls.id] || []
+        }));
+
         return res.json({ 
           success: true, 
-          data: rows
+          data: classesWithST
         });
       }
       // Otherwise fall through to generate from students table
@@ -326,7 +360,7 @@ const assignAdviserToClass = async (req, res) => {
     const gradeLevel = grade;
     const classSection = section;
 
-    console.log(`assignAdviserToClass - classId: ${classId}, adviser_id: ${adviser_id}, grade: ${gradeLevel}, section: ${classSection}`);
+    console.log(`assignAdviserToClass - classId: ${classId}, adviser_id: ${adviser_id}, adviser_name: ${adviser_name}, grade: ${gradeLevel}, section: ${classSection}`);
 
     if (!adviser_id || !gradeLevel || !classSection) {
       return res.status(400).json({ success: false, message: 'adviser_id, grade, and section are required' });
@@ -351,6 +385,17 @@ const assignAdviserToClass = async (req, res) => {
        ON DUPLICATE KEY UPDATE adviser_id = VALUES(adviser_id), adviser_name = VALUES(adviser_name)`,
       [gradeLevel, classSection, String(adviser_id), adviser_name || '']
     );
+
+    // ALSO update the classes table (critical for frontend display)
+    try {
+      await pool.query(
+        `UPDATE classes SET adviser_id = ?, adviser_name = ? WHERE grade = ? AND section = ?`,
+        [String(adviser_id), adviser_name || '', gradeLevel, classSection]
+      );
+      console.log('✅ Updated classes table');
+    } catch(e) { 
+      console.log('Could not update classes table:', e.message); 
+    }
 
     // Also try to update teachers table if adviser_id is an integer
     const numericId = parseInt(adviser_id);
@@ -384,9 +429,9 @@ const assignAdviserToClass = async (req, res) => {
 const unassignAdviserFromClass = async (req, res) => {
   try {
     const { classId } = req.params;
-    const { adviser_id } = req.body;
+    const { adviser_id, grade, section } = req.body;
 
-    console.log(`unassignAdviserFromClass - classId: ${classId}, adviser_id: ${adviser_id}`);
+    console.log(`unassignAdviserFromClass - classId: ${classId}, adviser_id: ${adviser_id}, grade: ${grade}, section: ${section}`);
 
     if (adviser_id) {
       // Remove from class_assignments
@@ -409,6 +454,25 @@ const unassignAdviserFromClass = async (req, res) => {
       } catch(e) { /* table may not exist */ }
     }
 
+    // ALSO clear from classes table (critical for frontend display)
+    try {
+      if (grade && section) {
+        await pool.query(
+          `UPDATE classes SET adviser_id = NULL, adviser_name = NULL WHERE grade = ? AND section = ?`,
+          [grade, section]
+        );
+      } else if (classId) {
+        // Parse classId to get grade and section
+        await pool.query(
+          `UPDATE classes SET adviser_id = NULL, adviser_name = NULL WHERE id = ?`,
+          [classId]
+        );
+      }
+      console.log('✅ Cleared adviser from classes table');
+    } catch(e) { 
+      console.log('Could not update classes table:', e.message); 
+    }
+
     return res.json({ success: true, message: 'Adviser unassigned successfully' });
 
   } catch (error) {
@@ -420,11 +484,131 @@ const unassignAdviserFromClass = async (req, res) => {
   }
 };
 
+/**
+ * Assign a subject teacher to a class
+ */
+const assignSubjectTeacher = async (req, res) => {
+  try {
+    const { classId } = req.params;
+    const { teacher_id, teacher_name, subject, day, start_time, end_time } = req.body;
+
+    console.log(`assignSubjectTeacher - classId: ${classId}, teacher_id: ${teacher_id}, subject: ${subject}`);
+
+    if (!teacher_id || !subject) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'teacher_id and subject are required' 
+      });
+    }
+
+    // Ensure subject_teachers table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS subject_teachers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        class_id VARCHAR(100) NOT NULL,
+        teacher_id VARCHAR(255) NOT NULL,
+        teacher_name VARCHAR(255),
+        subject VARCHAR(100) NOT NULL,
+        day VARCHAR(20) DEFAULT 'Monday',
+        start_time VARCHAR(10) DEFAULT '08:00',
+        end_time VARCHAR(10) DEFAULT '09:00',
+        assignedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_assignment (class_id, teacher_id, subject)
+      )
+    `);
+
+    // Check for time conflict
+    const [conflicts] = await pool.query(
+      `SELECT c.grade, c.section, st.subject, st.day, st.start_time, st.end_time
+       FROM subject_teachers st
+       JOIN classes c ON st.class_id = c.id
+       WHERE st.teacher_id = ? AND st.day = ? AND st.class_id != ?
+       AND NOT (st.end_time <= ? OR st.start_time >= ?)`,
+      [teacher_id, day || 'Monday', classId, start_time || '08:00', end_time || '09:00']
+    );
+
+    if (conflicts.length > 0) {
+      const conflict = conflicts[0];
+      return res.status(400).json({
+        success: false,
+        message: `Time conflict: Teacher already assigned to ${conflict.grade} - ${conflict.section} (${conflict.subject}) on ${conflict.day} from ${conflict.start_time} to ${conflict.end_time}`
+      });
+    }
+
+    // Check if already assigned
+    const [existing] = await pool.query(
+      `SELECT id FROM subject_teachers WHERE class_id = ? AND teacher_id = ? AND subject = ?`,
+      [classId, teacher_id, subject]
+    );
+
+    if (existing.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'This teacher is already assigned to this class for this subject'
+      });
+    }
+
+    // Insert new assignment
+    await pool.query(
+      `INSERT INTO subject_teachers (class_id, teacher_id, teacher_name, subject, day, start_time, end_time)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [classId, teacher_id, teacher_name || '', subject, day || 'Monday', start_time || '08:00', end_time || '09:00']
+    );
+
+    console.log('✅ Subject teacher assigned successfully');
+    
+    return res.json({
+      success: true,
+      message: 'Subject teacher assigned successfully',
+      data: { classId, teacher_id, teacher_name, subject, day, start_time, end_time }
+    });
+
+  } catch (error) {
+    console.error('Error in assignSubjectTeacher:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error assigning subject teacher: ' + error.message
+    });
+  }
+};
+
+/**
+ * Unassign a subject teacher from a class
+ */
+const unassignSubjectTeacher = async (req, res) => {
+  try {
+    const { classId, teacherId } = req.params;
+
+    console.log(`unassignSubjectTeacher - classId: ${classId}, teacherId: ${teacherId}`);
+
+    await pool.query(
+      `DELETE FROM subject_teachers WHERE class_id = ? AND teacher_id = ?`,
+      [classId, teacherId]
+    );
+
+    console.log('✅ Subject teacher unassigned successfully');
+    
+    return res.json({
+      success: true,
+      message: 'Subject teacher unassigned successfully'
+    });
+
+  } catch (error) {
+    console.error('Error in unassignSubjectTeacher:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error unassigning subject teacher: ' + error.message
+    });
+  }
+};
+
 module.exports = {
   getTeacherVisibleClasses,
   getAllClasses,
   getAdviserClasses,
   getSubjectTeacherClasses,
   assignAdviserToClass,
-  unassignAdviserFromClass
+  unassignAdviserFromClass,
+  assignSubjectTeacher,
+  unassignSubjectTeacher
 };
