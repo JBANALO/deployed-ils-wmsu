@@ -184,8 +184,7 @@ exports.login = async (req, res) => {
     // Generate JWT
     const token = signToken(user.id);
 
-<<<<<<< HEAD
-    // Build userData based on role
+// Build userData based on role
     let userData = {};
     if (user.student_email) {
       // Student (from MySQL)
@@ -216,26 +215,6 @@ exports.login = async (req, res) => {
         role: user.role || 'admin',
       };
     }
-=======
-    // Handle different table column naming conventions (firstName vs first_name)
-    const firstName = user.firstName || user.first_name || '';
-    const middleName = user.middleName || user.middle_name || '';
-    const lastName = user.lastName || user.last_name || '';
-    
-    let userData = {
-      id: user.id,
-      firstName: firstName,
-      middleName: middleName,
-      lastName: lastName,
-      name: `${firstName} ${middleName} ${lastName}`.replace(/\s+/g, ' ').trim(),
-      username: user.username || '',
-      email: user.email,
-      phone: user.phone || '',
-      profileImage: user.profile_pic || '',
-      role: user.role || 'teacher',
-      verificationStatus: user.verification_status || user.verificationStatus || 'pending'
-    };
->>>>>>> cdcfc42e300b155eb66adeb50be0eef2befbc76a
 
     res.status(200).json({ status: 'success', token, data: { user: userData } });
   } catch (error) {
