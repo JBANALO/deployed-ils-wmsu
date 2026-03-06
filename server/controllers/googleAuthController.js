@@ -87,9 +87,13 @@ exports.googleCallback = async (req, res) => {
       const firstName = displayName.split(' ')[0] || displayName;
       const lastName = displayName.split(' ').slice(1).join(' ') || '';
       
-      // Generate a proper UUID for the user ID
+      // Generate a proper UUID for the user ID and convert to timestamp for database
       const { v4: uuidv4 } = require('uuid');
-      const userId = uuidv4();
+      const uuidString = uuidv4();
+      
+      // Convert UUID to timestamp-based ID for database compatibility
+      const timestamp = Date.now();
+      const userId = Math.floor(timestamp / 1000); // Convert to integer-like timestamp
 
       try {
         if (targetTable === 'users') {
@@ -146,7 +150,7 @@ exports.googleCallback = async (req, res) => {
         user = users[0];
       } catch (insertError) {
         console.error('Error creating user:', insertError);
-        return res.redirect(`${process.env.LOCAL_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173'}?error=unable_to_create_account`);
+        return res.redirect(`${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu.vercel.app'}?error=unable_to_create_account`);
       }
     }
 
@@ -154,7 +158,7 @@ exports.googleCallback = async (req, res) => {
     const token = signToken(user.id);
 
     // Redirect to frontend with token
-    const frontendUrl = process.env.LOCAL_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUrl = process.env.FRONTEND_URL || 'https://deployed-ils-wmsu.vercel.app';
     res.redirect(
       `${frontendUrl}/auth/google-callback?token=${token}&user=${encodeURIComponent(
         JSON.stringify({
