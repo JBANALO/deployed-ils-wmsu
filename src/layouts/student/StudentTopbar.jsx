@@ -23,6 +23,14 @@ export default function StudentTopbar({ studentName, gradeLevel }) {
   };
 
   const handleLogout = () => {
+    // Clear all authentication data
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('lastAdminEmail');
+    localStorage.removeItem('lastTeacherEmail');
+    localStorage.removeItem('lastStudentEmail');
+    
+    // Navigate to login
     navigate("/login");
   };
 
