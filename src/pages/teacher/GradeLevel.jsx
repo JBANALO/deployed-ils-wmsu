@@ -28,6 +28,13 @@ export default function GradeLevel() {
 
   useEffect(() => {
     fetchData();
+    
+    // Auto-refresh every 15 seconds to reflect admin changes immediately
+    const interval = setInterval(() => {
+      fetchData();
+    }, 15000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   const fetchData = async () => {
@@ -202,6 +209,9 @@ export default function GradeLevel() {
   };
 
   const gradeLevels = getAssignedGradeLevels();
+  
+  // Debug: Log what grade levels will be rendered
+  console.log('🎯 RENDER - gradeLevels to display:', gradeLevels.length, gradeLevels.map(g => `${g.name} (${g.sections.join(', ')})`));
 
   // Handlers
   const handleView = (student) => { setSelectedStudent(student); setShowViewModal(true); };
