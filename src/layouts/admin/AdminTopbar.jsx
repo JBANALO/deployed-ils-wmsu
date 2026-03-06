@@ -23,7 +23,17 @@ export default function AdminTopbar() {
   const dropdownRef = useRef(null);
 
   // Navigation handlers
-  const handleLogout = () => navigate("/login");
+  const handleLogout = () => {
+    // Clear all authentication data
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('lastAdminEmail');
+    localStorage.removeItem('lastTeacherEmail');
+    localStorage.removeItem('lastStudentEmail');
+    
+    // Navigate to login
+    navigate("/login");
+  };
   const handleDashboard = () => navigate("/admin/admin-dashboard");
   const handleTeachers = () => navigate("/admin/admin-teachers");
   const handleStudents = () => navigate("/admin/admin-students");

@@ -20,7 +20,17 @@ export default function TeacherTopbar({ sidebarOpen }) {
     }
   }, []);
 
-  const handleLogout = () => navigate("/login");
+  const handleLogout = () => {
+    // Clear all authentication data
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('lastAdminEmail');
+    localStorage.removeItem('lastTeacherEmail');
+    localStorage.removeItem('lastStudentEmail');
+    
+    // Navigate to login
+    navigate("/login");
+  };
   const handleMainDashboard = () => navigate("/teacher/teacher-dashboard");
   const handleProfile = () => navigate("/teacher/teacher-profile");
   const handleGradesPortal = () => navigate("/edit-grades");
