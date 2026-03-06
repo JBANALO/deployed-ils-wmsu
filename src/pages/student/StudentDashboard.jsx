@@ -195,7 +195,17 @@ useEffect(() => {
       const canvas = await html2canvas(reportCardDiv, {
         scale: 2,
         useCORS: true,
-        allowTaint: true
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        onclone: (clonedDoc) => {
+          // Force override any problematic CSS
+          const clonedElement = clonedDoc.querySelector('div');
+          if (clonedElement) {
+            clonedElement.style.setProperty('color', '#333333', 'important');
+            clonedElement.style.setProperty('background-color', '#ffffff', 'important');
+          }
+        }
       });
       
       const imgData = canvas.toDataURL('image/png');
