@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { BellIcon, UserCircleIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
 
@@ -6,6 +6,7 @@ export default function TeacherTopbar({ sidebarOpen }) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [userName, setUserName] = useState("");
   const navigate = useNavigate();
+  const dropdownRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -19,6 +20,19 @@ export default function TeacherTopbar({ sidebarOpen }) {
       console.error("Failed to read user from localStorage:", error);
     }
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showDropdown && dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showDropdown]);
 
   const handleLogout = () => {
     // Clear all authentication data
@@ -65,7 +79,7 @@ export default function TeacherTopbar({ sidebarOpen }) {
           </button>
 
           {showDropdown && (
-            <div className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-md shadow-lg w-56 text-sm z-10 animate-fadeIn">
+            <div ref={dropdownRef} className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-md shadow-lg w-56 text-sm z-10 animate-fadeIn">
               <div className="px-4 py-2 border-b font-semibold">
                 {userName || "Loading..."}
               </div>

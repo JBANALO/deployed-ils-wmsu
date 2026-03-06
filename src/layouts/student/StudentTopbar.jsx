@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   UserCircleIcon, 
@@ -11,6 +11,21 @@ import {
 export default function StudentTopbar({ studentName, gradeLevel }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const navigate = useNavigate();
+  const dropdownRef = useRef(null);
+
+  // Click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownOpen && dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [dropdownOpen]);
 
   const handleStudentDashboard = () => {
     navigate("/student/student-dashboard");
@@ -64,37 +79,30 @@ export default function StudentTopbar({ studentName, gradeLevel }) {
           </button>
 
           {dropdownOpen && (
-            <>
-              <div 
-                className="fixed inset-0 z-40" 
-                onClick={() => setDropdownOpen(false)}
-              />
+            <div ref={dropdownRef} className="absolute right-0 mt-3 w-64 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden z-50 animate-fadeIn">
+              <div className="px-5 py-4 bg-gradient-to-r from-red-50 to-pink-50 border-b">
+                <p className="font-bold text-gray-800">{studentName || "Student"}</p>
+                <p className="text-sm text-gray-600">{gradeLevel || "Student"} Student</p>
+              </div>
 
-              <div className="absolute right-0 mt-3 w-64 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden z-50 animate-fadeIn">
-                <div className="px-5 py-4 bg-gradient-to-r from-red-50 to-pink-50 border-b">
-                  <p className="font-bold text-gray-800">{studentName || "Student"}</p>
-                  <p className="text-sm text-gray-600">{gradeLevel || "Student"} Student</p>
-                </div>
+              <ul className="text-gray-700">
+                <li
+                  onClick={handleStudentDashboard}
+                  className="flex items-center gap-3 px-5 py-4 hover:bg-gray-100 cursor-pointer transition"
+                >
+                  <HomeModernIcon className="w-5 h-5 text-blue-600" />
+                  <span className="font-medium">Portal</span>
+                </li>
 
-                <ul className="text-gray-700">
-                  <li
-                    onClick={handleStudentDashboard}
-                    className="flex items-center gap-3 px-5 py-4 hover:bg-gray-100 cursor-pointer transition"
-                  >
-                    <HomeModernIcon className="w-5 h-5 text-blue-600" />
-                    <span className="font-medium">Portal</span>
-                  </li>
+                <li
+                  onClick={handleCustomerService}
+                  className="flex items-center gap-3 px-5 py-4 hover:bg-gray-100 cursor-pointer transition"
+                >
+                  <LifebuoyIcon className="w-5 h-5 text-blue-600" />
+                  <span className="font-medium">Customer Service</span>
+                </li>
 
-                  <li
-                    onClick={handleCustomerService}
-                    className="flex items-center gap-3 px-5 py-4 hover:bg-gray-100 cursor-pointer transition"
-                  >
-                    <LifebuoyIcon className="w-5 h-5 text-blue-600" />
-                    <span className="font-medium">Customer Service</span>
-                  </li>
-
-                  <div className="border-gray-300 border-t" />
-                  
+                <div className="border-gray-300 border-t">
                   <li
                     onClick={handleLogout}
                     className="flex items-center gap-3 px-5 py-4 hover:bg-red-50 text-red-600 cursor-pointer font-medium transition"
@@ -102,9 +110,9 @@ export default function StudentTopbar({ studentName, gradeLevel }) {
                     <ArrowLeftStartOnRectangleIcon className="w-5 h-5" />
                     <span>Log Out</span>
                   </li>
-                </ul>
-              </div>
-            </>
+                </div>
+              </ul>
+            </div>
           )}
         </div>
       </div>

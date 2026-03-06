@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { Download, Calendar, BookOpen } from 'lucide-react';
+import { Download, Calendar, BookOpen, X, Printer } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import StudentTopbar from '@/layouts/student/StudentTopbar'; // ← Use @/ if you have alias, or correct path
 import { UserContext } from '@/context/UserContext'; // Import UserContext
@@ -10,68 +10,71 @@ const StudentPortal = () => {
   const [activeTab, setActiveTab] = useState('grades');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showReportCardModal, setShowReportCardModal] = useState(false);
   const { user } = useContext(UserContext); // Get logged-in user from context
 
   // Get studentId from localStorage user data (stored during login)
   const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
   const studentId = user?.id || storedUser.id || localStorage.getItem('studentId');
 
-useEffect(() => {
-  const fetchPortalData = async () => {
-    if (!studentId || studentId === 'null') {
-      setLoading(false);
-      return;
-    }
+  useEffect(() => {
+    const fetchPortalData = async () => {
+      if (!studentId || studentId === 'null') {
+        setLoading(false);
+        return;
+      }
 
-    try {
-      toast.loading('Loading student data...', { id: 'studentData' });
-      const baseURL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 
-               (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
-      const res = await fetch(`${baseURL}/students/portal?studentId=${studentId}`, { credentials: 'include' });
-      if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
-      const result = await res.json();
-        
-        // Map API response structure to frontend expectations
-        if (result.status === 'success' && result.data?.student) {
-          const studentData = result.data.student;
-          const mappedData = {
-            profile: {
-              fullName: studentData.fullName || `${studentData.firstName} ${studentData.lastName}`,
-              gradeLevel: studentData.gradeLevel,
-              section: studentData.section,
-              lrn: studentData.lrn,
-              finalAverage: studentData.average || 'N/A'
-            },
-            grades: studentData.grades || []
-          };
-          setData(mappedData);
-          toast.success('Student data loaded successfully!', { id: 'studentData' });
-        } else {
-          toast('No student data found, but you are logged in correctly', { 
-            icon: 'ℹ️',
-            id: 'studentData' 
-          });
-          // Don't throw error, just set empty data to prevent login redirect
-          setData({
-            profile: {
-              fullName: 'Loading...',
-              gradeLevel: 'Loading...',
-              section: 'Loading...',
-              lrn: 'Loading...',
-              finalAverage: 'Loading...'
-            },
-            grades: []
-          });
-        }
-    } catch (err) {
-      toast.error('No student data found. Please make sure you are logged in correctly.', { id: 'studentData' });
-    } finally {
-      setLoading(false);
-    }
-  };
+      try {
+        toast.loading('Loading student data...', { id: 'studentData' });
+        const baseURL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 
+                 (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
+        const res = await fetch(`${baseURL}/students/portal?studentId=${studentId}`, { credentials: 'include' });
+        if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
+        const result = await res.json();
+          
+          // Map API response structure to frontend expectations
+          if (result.status === 'success' && result.data?.student) {
+            const studentData = result.data.student;
+            const mappedData = {
+              profile: {
+                fullName: studentData.fullName || `${studentData.firstName} ${studentData.lastName}`,
+                gradeLevel: studentData.gradeLevel,
+                section: studentData.section,
+                lrn: studentData.lrn,
+                age: studentData.age || '',
+                sex: studentData.sex || '',
+                finalAverage: studentData.average || 'N/A'
+              },
+              grades: studentData.grades || []
+            };
+            setData(mappedData);
+            toast.success('Student data loaded successfully!', { id: 'studentData' });
+          } else {
+            toast('No student data found, but you are logged in correctly', { 
+              icon: 'ℹ️',
+              id: 'studentData' 
+            });
+            // Don't throw error, just set empty data to prevent login redirect
+            setData({
+              profile: {
+                fullName: 'Loading...',
+                gradeLevel: 'Loading...',
+                section: 'Loading...',
+                lrn: 'Loading...',
+                finalAverage: 'Loading...'
+              },
+              grades: []
+            });
+          }
+      } catch (err) {
+        toast.error('No student data found. Please make sure you are logged in correctly.', { id: 'studentData' });
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  fetchPortalData();
-}, [studentId]);
+    fetchPortalData();
+  }, [studentId]);
 
   // ← SHOW THIS WHILE LOADING
   if (loading) {
@@ -103,6 +106,11 @@ useEffect(() => {
 
   const { profile, grades = [] } = data;
 
+  // Report card preview function
+  const previewReportCard = () => {
+    setShowReportCardModal(true);
+  };
+
   // Report card download function
   const downloadReportCard = async () => {
     toast.loading('Generating report card...', { id: 'reportCard' });
@@ -117,75 +125,265 @@ useEffect(() => {
       reportCardDiv.style.backgroundColor = '#ffffff';
       reportCardDiv.style.fontFamily = 'Arial, sans-serif';
       
-      // Generate report card HTML
+      // Generate official WMSU report card HTML matching preview modal
       reportCardDiv.innerHTML = `
-        <div style="text-align: center; margin-bottom: 30px;">
-          <h1 style="margin: 0; font-size: 24px; color: #7c2d12;">WMSU ILS - Elementary Department</h1>
-          <h2 style="margin: 5px 0; font-size: 20px; color: #333333;">Report Card</h2>
-          <p style="margin: 5px 0; font-size: 14px; color: #666666;">School Year 2024-2025</p>
-        </div>
-        
-        <div style="margin-bottom: 30px;">
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-              <td style="padding: 5px; font-weight: bold; width: 30%;">Student Name:</td>
-              <td style="padding: 5px;">${profile.fullName}</td>
-              <td style="padding: 5px; font-weight: bold; width: 20%;">Grade Level:</td>
-              <td style="padding: 5px;">${profile.gradeLevel}</td>
-            </tr>
-            <tr>
-              <td style="padding: 5px; font-weight: bold;">LRN:</td>
-              <td style="padding: 5px;">${profile.lrn}</td>
-              <td style="padding: 5px; font-weight: bold;">Section:</td>
-              <td style="padding: 5px;">${profile.section}</td>
-            </tr>
-          </table>
-        </div>
-        
-        <div style="margin-bottom: 30px;">
-          <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #333333;">Academic Performance</h3>
-          <table style="width: 100%; border-collapse: collapse; border: 1px solid #dddddd;">
-            <thead>
-              <tr style="background-color: #f8f9fa;">
-                <th style="padding: 8px; border: 1px solid #dddddd; text-align: left;">Subject</th>
-                <th style="padding: 8px; border: 1px solid #dddddd; text-align: center;">Q1</th>
-                <th style="padding: 8px; border: 1px solid #dddddd; text-align: center;">Q2</th>
-                <th style="padding: 8px; border: 1px solid #dddddd; text-align: center;">Q3</th>
-                <th style="padding: 8px; border: 1px solid #dddddd; text-align: center;">Q4</th>
-                <th style="padding: 8px; border: 1px solid #dddddd; text-align: center;">Average</th>
-                <th style="padding: 8px; border: 1px solid #dddddd; text-align: center;">Remarks</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${grades.map(grade => `
+        <div style="padding: 20mm; font-family: Arial, sans-serif; color: #000000;">
+          <!-- Header Section -->
+          <div style="position: relative; padding-bottom: 16px; margin-bottom: 24px; text-align: center;">
+            <img
+              src="/wmsu-logo.jpg"
+              alt="WMSU Logo"
+              style="position: absolute; left: -58px; top: 16px; width: 100px; height: 100px; object-fit: contain;"
+              onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'100\\' height=\\'100\\' viewBox=\\'0 0 100 100\\'%3E%3Crect width=\\'100\\' height=\\'100\\' fill=\\'%23f0f0f0\\' stroke=\\'%23333\\' stroke-width=\\'2\\'/%3E%3Ctext x=\\'50\\' y=\\'40\\' text-anchor=\\'middle\\' font-family=\\'Arial\\' font-size=\\'12\\' fill=\\'%23333\\'%3EWMSU%3C/text%3E%3Ctext x=\\'50\\' y=\\'55\\' text-anchor=\\'middle\\' font-family=\\'Arial\\' font-size=\\'10\\' fill=\\'%23333\\'%3ELOGO%3C/text%3E%3C/svg%3E';"
+            />
+            
+            <div>
+              <h2 style="margin: 0; font-size: 20px; font-weight: bold;">
+                WESTERN MINDANAO STATE UNIVERSITY
+              </h2>
+              <p style="margin: 0; font-size: 14px; line-height: 1.2;">
+                College of Teacher Education <br />
+                Integrated Laboratory School <br />
+                <span style="font-weight: bold;">ELEMENTARY DEPARTMENT</span> <br />
+                Zamboanga City
+              </p>
+              <h3 style="margin: 8px 0 0 0; font-weight: bold;">PUPIL'S PROGRESS REPORT CARD</h3>
+              <div style="display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 14px; margin-right: 8px;">
+                  School Year 20
+                  <span style="display: inline-block; width: 24px; border-bottom: 1px solid #666; vertical-align: bottom; margin: 0 4px;"></span>
+                  - 20
+                  <span style="display: inline-block; width: 24px; border-bottom: 1px solid #666; vertical-align: bottom; margin: 0 4px;"></span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Student Information -->
+          <div style="margin-bottom: 24px; font-size: 14px; line-height: 1.5;">
+            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+              <span style="font-weight: bold; margin-right: 8px;">Name:</span>
+              <span style="text-decoration: underline; margin-left: 8px;">${profile.fullName}</span>
+            </div>
+
+            <div style="display: flex; flex-wrap; align-items: center; gap: 24px; margin-bottom: 8px;">
+              <div style="display: flex; align-items: center;">
+                <span style="font-weight: bold; margin-right: 8px;">Age:</span>
+                <span style="text-decoration: underline; margin-left: 8px;">${profile.age || ''}</span>
+              </div>
+              <div style="display: flex; align-items: center;">
+                <span style="font-weight: bold; margin-right: 8px;">Sex:</span>
+                <span style="text-decoration: underline; margin-left: 8px;">${profile.sex || ''}</span>
+              </div>
+              <div style="display: flex; align-items: center;">
+                <span style="font-weight: bold; margin-right: 8px;">Grade:</span>
+                <span style="text-decoration: underline; margin-left: 8px;">${profile.gradeLevel}</span>
+              </div>
+              <div style="display: flex; align-items: center; flex: 1; min-width: 180px;">
+                <span style="font-weight: bold; margin-right: 8px;">Section:</span>
+                <span style="text-decoration: underline; margin-left: 8px;">${profile.section}</span>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: center;">
+              <span style="font-weight: bold; margin-right: 8px;">LRN:</span>
+              <span style="text-decoration: underline; margin-left: 8px;">${profile.lrn}</span>
+            </div>
+          </div>
+
+          <!-- Message to Parents -->
+          <div style="width: 98%; margin: 0 auto; margin-top: -20px;">
+            <p style="font-size: 14px; margin-bottom: 16px; text-align: justify; line-height: 1.5;">
+              <span>Dear Parents,</span>
+              <span style="display: block; text-indent: 16px;">
+                This report card shows the ability and progress of your child has made in the different
+                learning areas as well as his/her core values.
+              </span>
+              <span style="display: block; text-indent: 16px;">
+                The school welcomes you should you desire to know more about your child's progress.
+              </span>
+            </p>
+          </div>
+
+          <!-- Learning Progress Header -->
+          <h4 style="font-weight: bold; text-align: center; margin-top: -8px; margin-bottom: 4px;">
+            REPORT ON LEARNING PROGRESS AND ACHIEVEMENT
+          </h4>
+
+          <!-- Grades Table -->
+          <div style="overflow-x-auto;">
+            <table style="width: 100%; border: 1px solid #333; font-size: 14px; text-align: center;">
+              <thead style="background-color: #f5f5f5;">
                 <tr>
-                  <td style="padding: 8px; border: 1px solid #dddddd;">${grade.subject}</td>
-                  <td style="padding: 8px; border: 1px solid #dddddd; text-align: center;">${grade.q1 || '-'}</td>
-                  <td style="padding: 8px; border: 1px solid #dddddd; text-align: center;">${grade.q2 || '-'}</td>
-                  <td style="padding: 8px; border: 1px solid #dddddd; text-align: center;">${grade.q3 || '-'}</td>
-                  <td style="padding: 8px; border: 1px solid #dddddd; text-align: center;">${grade.q4 || '-'}</td>
-                  <td style="padding: 8px; border: 1px solid #dddddd; text-align: center; font-weight: bold;">${grade.average || 'N/A'}</td>
-                  <td style="padding: 8px; border: 1px solid #dddddd; text-align: center;">${grade.remarks || 'Pending'}</td>
+                  <th rowspan="2" style="border: 1px solid #333; padding: 4px;">Learning Areas</th>
+                  <th colspan="4" style="border: 1px solid #333; padding: 4px;">Quarter</th>
+                  <th rowspan="2" style="border: 1px solid #333; padding: 4px;">Final Grade</th>
+                  <th rowspan="2" style="border: 1px solid #333; padding: 4px;">Remarks</th>
                 </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-        
-        <div style="margin-top: 40px;">
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-              <td style="padding: 5px; font-weight: bold; width: 30%;">Final Average:</td>
-              <td style="padding: 5px; font-size: 18px; font-weight: bold; color: #16a34a;">${profile.finalAverage || 'N/A'}</td>
-              <td style="padding: 5px; font-weight: bold; width: 20%;">Date Generated:</td>
-              <td style="padding: 5px;">${new Date().toLocaleDateString()}</td>
-            </tr>
-          </table>
-        </div>
-        
-        <div style="margin-top: 50px; text-align: center; font-size: 12px; color: #666666;">
-          <p>This is a system-generated report card.</p>
-          <p>For official purposes, please contact the school administration.</p>
+                <tr>
+                  <th style="border: 1px solid #333; padding: 4px;">1</th>
+                  <th style="border: 1px solid #333; padding: 4px;">2</th>
+                  <th style="border: 1px solid #333; padding: 4px;">3</th>
+                  <th style="border: 1px solid #333; padding: 4px;">4</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                ${grades.length > 0 ? grades.map((g, i) => `
+                  <tr>
+                    <td style="border: 1px solid #333; padding: 4px; text-align: left;">${g.subject}</td>
+                    <td style="border: 1px solid #333; padding: 4px;">${g.q1 || ''}</td>
+                    <td style="border: 1px solid #333; padding: 4px;">${g.q2 || ''}</td>
+                    <td style="border: 1px solid #333; padding: 4px;">${g.q3 || ''}</td>
+                    <td style="border: 1px solid #333; padding: 4px;">${g.q4 || ''}</td>
+                    <td style="border: 1px solid #333; padding: 4px; font-weight: bold;">${g.average || ''}</td>
+                    <td style="border: 1px solid #333; padding: 4px;">${g.remarks || ''}</td>
+                  </tr>
+                `).join('') : Array.from({ length: 10 }).map(() => `
+                  <tr>
+                    ${Array.from({ length: 7 }).map(() => '<td style="border: 1px solid #333; padding: 8px;">&nbsp;</td>').join('')}
+                  </tr>
+                `).join('')}
+
+                <tr style="background-color: #f5f5f5; font-weight: bold;">
+                  <td style="border: 1px solid #333; padding: 4px;"></td>
+                  <td colspan="4" style="border: 1px solid #333; padding: 4px; text-align: center;">General Average</td>
+                  <td style="border: 1px solid #333; padding: 4px;">
+                    ${grades.length > 0 ? computeGeneralAverage() : ''}
+                  </td>
+                  <td style="border: 1px solid #333; padding: 4px;">${grades.length > 0 ? 'Passed' : ''}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Remedial Classes Section -->
+          <div style="margin-top: 24px;">
+            <div style="overflow-x-auto;">
+              <table style="width: 100%; border: 1px solid #333; font-size: 14px; text-align: center;">
+                <thead style="background-color: #f5f5f5;">
+                  <tr>
+                    <th colspan="1" style="border: 1px solid #333; padding: 4px; text-align: center;">
+                      <span style="font-weight: bold;">Remedial Classes</span>
+                    </th>
+                    <th colspan="4" style="border: 1px solid #333; padding: 4px; text-align: center;">
+                      <div style="display: flex; justify-content: flex-start; align-items: center;">
+                        <span>Conducted from:</span>
+                        <span style="margin-left: 260px;">to:</span>
+                      </div>
+                    </th>
+                  </tr>
+                  <tr>
+                    <th style="border: 1px solid #333; padding: 4px;">Learning Areas</th>
+                    <th style="border: 1px solid #333; padding: 4px;">Final Rating</th>
+                    <th style="border: 1px solid #333; padding: 4px;">Remedial Class Mark</th>
+                    <th style="border: 1px solid #333; padding: 4px;">Recomputed Final Grade</th>
+                    <th style="border: 1px solid #333; padding: 4px;">Remarks</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  ${Array.from({ length: 3 }).map(() => `
+                    <tr>
+                      ${Array.from({ length: 5 }).map(() => '<td style="border: 1px solid #333; padding: 8px;">&nbsp;</td>').join('')}
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Signatures -->
+          <div style="margin-top: 48px; display: flex; justify-content: center; gap: 200px; text-align: center; font-size: 14px; width: 100%;">
+            <div style="flex: 1; max-width: 300px;">
+              <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">MA. NORA D. LAI, Ed.D, JD</p>
+              <p style="font-size: 12px; line-height: 1.2;">Principal</p>
+            </div>
+            <div style="flex: 1; max-width: 300px;">
+              <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">LEONEL D. FRANCISCO, Ph.D</p>
+              <p style="font-size: 12px; line-height: 1.2;">Teacher</p>
+            </div>
+          </div>
+
+          <hr style="border: 1px solid #333; margin-top: 60px; margin-bottom: 8px;" /> 
+
+          <!-- Attendance Section -->
+          <h2 style="font-size: 20px; font-weight: bold; text-align: center; margin-top: 48px; margin-bottom: 24px;">REPORT ON ATTENDANCE</h2>
+          <div style="overflow-x-auto;">
+            <table style="width: 100%; border: 1px solid #333; font-size: 14px; text-align: center; margin-bottom: 32px;">
+              <thead style="background-color: #f5f5f5;">
+                <tr>
+                  <th style="border: 1px solid #333; padding: 4px;"></th>
+                  ${months.map((month) => `<th style="border: 1px solid #333; padding: 4px;">${month}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style="border: 1px solid #333; padding: 4px; text-align: left;">No. of school days</td>
+                  ${months.map(() => '<td style="border: 1px solid #333; padding: 4px;"></td>').join('')}
+                </tr>
+                <tr>
+                  <td style="border: 1px solid #333; padding: 4px; text-align: left;">No. of days present</td>
+                  ${months.map(() => '<td style="border: 1px solid #333; padding: 4px;"></td>').join('')}
+                </tr>
+                <tr>
+                  <td style="border: 1px solid #333; padding: 4px; text-align: left;">No. of days absent</td>
+                  ${months.map(() => '<td style="border: 1px solid #333; padding: 4px;"></td>').join('')}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Parent Signatures -->
+          <div style="margin-top: 40px; margin-bottom: 60px; text-align: center;">
+            <h3 style="font-weight: bold; text-align: center; margin-bottom: 16px;">PARENT / GUARDIAN'S SIGNATURE</h3>
+            <div style="line-height: 1.5; font-size: 14px;">
+              <p>1<sup>st</sup> Quarter ____________________________________________</p>
+              <p>2<sup>nd</sup> Quarter ____________________________________________</p>
+              <p>3<sup>rd</sup> Quarter ____________________________________________</p>
+              <p>4<sup>th</sup> Quarter ____________________________________________</p>
+            </div>
+          </div>
+
+          <!-- Certificate of Transfer -->
+          <div style="margin-bottom: 40px;">
+            <h3 style="font-weight: bold; text-align: center; margin-top: 28px; margin-bottom: 16px;">Certificate of Transfer</h3>
+            <div style="font-size: 14px; line-height: 1.5;">
+              <p>Admitted in Grade ___________________________ Section ___________________</p>
+              <p>Eligible to Admission in Grade __________________________________________</p>
+              <p>Approved:</p>
+              <div style="margin-top: 32px; display: flex; justify-content: center; gap: 400px; text-align: center; font-size: 14px;">
+                <div>
+                  <p style="font-weight: bold; text-decoration: underline;">MA. NORA D. LAI, Ed.D, JD</p>
+                  <p>Principal</p>
+                </div>
+                <div>
+                  <p style="font-weight: bold; text-decoration: underline;">______________________</p>
+                  <p>Teacher</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cancellation Section -->
+          <div style="font-size: 14px;">
+            <h3 style="font-weight: bold; text-align: center; margin-bottom: 16px;">
+              Cancellation of Eligibility to Transfer
+            </h3>
+
+            <p>Admitted in: ___________________________</p>
+
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 8px;">
+              <p>Date: ___________________________</p>
+
+              <div style="text-align: center;">
+                <p style="font-weight: bold; text-decoration: underline; line-height: 1.2;">
+                  MA. NORA D. LAI, Ed.D, JD
+                </p>
+                <p style="line-height: 1.2;">Principal</p>
+              </div>
+            </div>
+          </div>
         </div>
       `;
       
@@ -198,13 +396,29 @@ useEffect(() => {
         allowTaint: true,
         backgroundColor: '#ffffff',
         logging: false,
+        ignoreElements: (element) => {
+          // Ignore any elements that might have problematic CSS
+          return element.tagName === 'STYLE' || element.tagName === 'LINK';
+        },
         onclone: (clonedDoc) => {
-          // Force override any problematic CSS
-          const clonedElement = clonedDoc.querySelector('div');
-          if (clonedElement) {
-            clonedElement.style.setProperty('color', '#333333', 'important');
-            clonedElement.style.setProperty('background-color', '#ffffff', 'important');
-          }
+          // Remove all stylesheets that might contain oklch
+          const styleElements = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
+          styleElements.forEach(el => el.remove());
+          
+          // Force override all CSS to use safe colors
+          const allElements = clonedDoc.querySelectorAll('*');
+          allElements.forEach(el => {
+            const computedStyle = window.getComputedStyle(el);
+            el.style.setProperty('color', '#333333', 'important');
+            el.style.setProperty('background-color', '#ffffff', 'important');
+            el.style.setProperty('border-color', '#dddddd', 'important');
+            el.style.setProperty('font-family', 'Arial, sans-serif', 'important');
+            
+            // Remove any CSS variables or custom properties
+            el.style.removeProperty('--tw-bg-opacity');
+            el.style.removeProperty('--tw-text-opacity');
+            el.style.removeProperty('--tw-border-opacity');
+          });
         }
       });
       
@@ -238,6 +452,439 @@ useEffect(() => {
       console.error('Error generating report card:', error);
       toast.error('Failed to generate report card. Please try again.', { id: 'reportCard' });
     }
+  };
+
+  // Helper function to compute general average
+  const computeGeneralAverage = () => {
+    if (grades.length === 0) return "";
+    const sum = grades.reduce((acc, cur) => acc + (parseFloat(cur.average) || 0), 0);
+    return (sum / grades.length).toFixed(2);
+  };
+
+  const months = [
+    "Aug", "Sept", "Oct", "Nov", "Dec",
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Total"
+  ];
+
+  // Print report card function
+  const handlePrintReportCard = () => {
+    // Create a new window for printing
+    const printWindow = window.open('', '_blank');
+    
+    // Generate the complete report card HTML
+    const reportCardHTML = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Report Card - ${profile.fullName}</title>
+          <style>
+            @page {
+              margin: 20mm;
+              size: A4;
+            }
+            
+            body {
+              font-family: Arial, sans-serif;
+              color: #000000;
+              background: #ffffff;
+              margin: 0;
+              padding: 20mm;
+              font-size: 14px;
+              line-height: 1.5;
+            }
+            
+            .no-print {
+              display: none !important;
+            }
+            
+            .report-card {
+              max-width: 100%;
+              margin: 0 auto;
+            }
+            
+            .header {
+              position: relative;
+              padding-bottom: 16px;
+              margin-bottom: 24px;
+              text-align: center;
+            }
+            
+            .logo {
+              position: absolute;
+              left: 0;
+              top: 16px;
+              width: 100px;
+              height: 100px;
+              object-fit: contain;
+            }
+            
+            .department-info {
+              margin: 0;
+              font-size: 14px;
+              line-height: 1.2;
+            }
+            
+            .report-title {
+              margin: 8px 0 0 0;
+              font-weight: bold;
+            }
+            
+            .school-year {
+              font-size: 14px;
+              margin-right: 8px;
+            }
+            
+            .underline {
+              text-decoration: underline;
+            }
+            
+            .student-info {
+              margin-bottom: 24px;
+            }
+            
+            .student-info-row {
+              display: flex;
+              align-items: center;
+              margin-bottom: 8px;
+            }
+            
+            .student-info-row span:first-child {
+              font-weight: bold;
+              margin-right: 8px;
+              min-width: 50px;
+            }
+            
+            .student-info-row span:last-child {
+              text-decoration: underline;
+              margin-left: 8px;
+            }
+            
+            .student-info-flex {
+              display: flex;
+              flex-wrap: wrap;
+              align-items: center;
+              gap: 24px;
+              margin-bottom: 8px;
+            }
+            
+            .student-info-flex > div {
+              display: flex;
+              align-items: center;
+            }
+            
+            .student-info-flex > div span:first-child {
+              font-weight: bold;
+              margin-right: 8px;
+            }
+            
+            .student-info-flex > div span:last-child {
+              text-decoration: underline;
+              margin-left: 8px;
+            }
+            
+            .message-to-parents {
+              width: 98%;
+              margin: 0 auto;
+              margin-top: -20px;
+              text-align: justify;
+              margin-bottom: 16px;
+            }
+            
+            .message-to-parents span {
+              display: block;
+              text-indent: 16px;
+            }
+            
+            .section-header {
+              font-weight: bold;
+              text-align: center;
+              margin-top: -8px;
+              margin-bottom: 4px;
+            }
+            
+            table {
+              width: 100%;
+              border: 1px solid #333;
+              text-align: center;
+              font-size: 14px;
+              margin-bottom: 24px;
+            }
+            
+            th, td {
+              border: 1px solid #333;
+              padding: 4px;
+            }
+            
+            thead {
+              background-color: #f5f5f5;
+            }
+            
+            .general-average {
+              background-color: #f5f5f5;
+              font-weight: bold;
+            }
+            
+            .signatures {
+              margin-top: 48px;
+              display: flex;
+              justify-content: center;
+              gap: 320px;
+              text-align: center;
+            }
+            
+            .signatures p:first-child {
+              font-weight: bold;
+              text-decoration: underline;
+            }
+            
+            hr {
+              border: 1px solid #333;
+              margin-top: 60px;
+              margin-bottom: 8px;
+            }
+            
+            @media print {
+              body {
+                margin: 0;
+                padding: 20mm;
+              }
+              
+              .page-break {
+                page-break-before: always;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="report-card">
+            <!-- Header Section -->
+            <div style="position: relative; padding-bottom: 16px; margin-bottom: 24px; text-align: center;">
+              <img
+                src="/wmsu-logo.jpg"
+                alt="WMSU Logo"
+                style="position: absolute; left: -58px; top: 16px; width: 100px; height: 100px; object-fit: contain;"
+                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+              />
+              <span style="position: absolute; left: -58px; top: 16px; width: 100px; height: 100px; background-color: #f0f0f0; display: none; align-items: center; justify-content: center; border: 2px solid #333;">
+                <span style="font-size: 12px; text-align: center;">WMSU<br>LOGO</span>
+              </span>
+              
+              <div>
+                <h2 style="margin: 0; font-size: 20px; font-weight: bold;">
+                  WESTERN MINDANAO STATE UNIVERSITY
+                </h2>
+                <p style="margin: 0; font-size: 14px; line-height: 1.2;">
+                  College of Teacher Education <br />
+                  Integrated Laboratory School <br />
+                  <span style="font-weight: bold;">ELEMENTARY DEPARTMENT</span> <br />
+                  Zamboanga City
+                </p>
+                <h3 style="margin: 8px 0 0 0; font-weight: bold;">PUPIL'S PROGRESS REPORT CARD</h3>
+                <div style="display: flex; align-items: center; justify-content: center;">
+                  <span style="font-size: 14px; margin-right: 8px;">
+                    School Year 20
+                    <span style="display: inline-block; width: 24px; border-bottom: 1px solid #666; vertical-align: bottom; margin: 0 4px;"></span>
+                    - 20
+                    <span style="display: inline-block; width: 24px; border-bottom: 1px solid #666; vertical-align: bottom; margin: 0 4px;"></span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Student Information -->
+            <div class="student-info">
+              <div class="student-info-row">
+                <span>Name:</span>
+                <span class="underline">${profile.fullName}</span>
+              </div>
+
+              <div class="student-info-flex">
+                <div>
+                  <span>Age:</span>
+                  <span class="underline">${profile.age || ''}</span>
+                </div>
+                <div>
+                  <span>Sex:</span>
+                  <span class="underline">${profile.sex || ''}</span>
+                </div>
+                <div>
+                  <span>Grade:</span>
+                  <span class="underline">${profile.gradeLevel}</span>
+                </div>
+                <div>
+                  <span>Section:</span>
+                  <span class="underline">${profile.section}</span>
+                </div>
+              </div>
+
+              <div class="student-info-row">
+                <span>LRN:</span>
+                <span class="underline">${profile.lrn}</span>
+              </div>
+            </div>
+
+            <!-- Message to Parents -->
+            <div class="message-to-parents">
+              <p>
+                <span>Dear Parents,</span>
+                <span>This report card shows the ability and progress of your child has made in the different learning areas as well as his/her core values.</span>
+                <span>The school welcomes you should you desire to know more about your child's progress.</span>
+              </p>
+            </div>
+
+            <!-- Learning Progress Header -->
+            <h4 class="section-header">REPORT ON LEARNING PROGRESS AND ACHIEVEMENT</h4>
+
+            <!-- Grades Table -->
+            <div style="overflow-x-auto;">
+              <table style="width: 100%; border: 1px solid #333; font-size: 14px; text-align: center;">
+                <thead style="background-color: #f5f5f5;">
+                  <tr>
+                    <th rowspan="2" style="border: 1px solid #333; padding: 4px;">Learning Areas</th>
+                    <th colspan="4" style="border: 1px solid #333; padding: 4px;">Quarter</th>
+                    <th rowspan="2" style="border: 1px solid #333; padding: 4px;">Final Grade</th>
+                    <th rowspan="2" style="border: 1px solid #333; padding: 4px;">Remarks</th>
+                  </tr>
+                  <tr>
+                    <th style="border: 1px solid #333; padding: 4px;">1</th>
+                    <th style="border: 1px solid #333; padding: 4px;">2</th>
+                    <th style="border: 1px solid #333; padding: 4px;">3</th>
+                    <th style="border: 1px solid #333; padding: 4px;">4</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  ${grades.length > 0 ? grades.map((g) => `
+                    <tr>
+                      <td style="border: 1px solid #333; padding: 4px; text-align: left;">${g.subject}</td>
+                      <td style="border: 1px solid #333; padding: 4px;">${g.q1 || ''}</td>
+                      <td style="border: 1px solid #333; padding: 4px;">${g.q2 || ''}</td>
+                      <td style="border: 1px solid #333; padding: 4px;">${g.q3 || ''}</td>
+                      <td style="border: 1px solid #333; padding: 4px;">${g.q4 || ''}</td>
+                      <td style="border: 1px solid #333; padding: 4px; font-weight: bold;">${g.average || ''}</td>
+                      <td style="border: 1px solid #333; padding: 4px;">${g.remarks || ''}</td>
+                    </tr>
+                  `).join('') : Array.from({ length: 10 }).map(() => `
+                    <tr>
+                      ${Array.from({ length: 7 }).map(() => '<td style="border: 1px solid #333; padding: 8px;">&nbsp;</td>').join('')}
+                    </tr>
+                  `).join('')}
+
+                  <tr style="background-color: #f5f5f5; font-weight: bold;">
+                    <td style="border: 1px solid #333; padding: 4px;"></td>
+                    <td colspan="4" style="border: 1px solid #333; padding: 4px; text-align: center;">General Average</td>
+                    <td style="border: 1px solid #333; padding: 4px;">
+                      ${grades.length > 0 ? computeGeneralAverage() : ''}
+                    </td>
+                    <td style="border: 1px solid #333; padding: 4px;">${grades.length > 0 ? 'Passed' : ''}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Remedial Classes Section -->
+            <div style="margin-top: 24px;">
+              <div style="overflow-x-auto;">
+                <table style="width: 100%; border: 1px solid #333; font-size: 14px; text-align: center;">
+                  <thead style="background-color: #f5f5f5;">
+                    <tr>
+                      <th colspan="1" style="border: 1px solid #333; padding: 4px; text-align: center;">
+                        <span style="font-weight: bold;">Remedial Classes</span>
+                      </th>
+                      <th colspan="4" style="border: 1px solid #333; padding: 4px; text-align: center;">
+                        <div style="display: flex; justify-content: flex-start; align-items: center;">
+                          <span>Conducted from:</span>
+                          <span style="margin-left: 260px;">to:</span>
+                        </div>
+                      </th>
+                    </tr>
+                    <tr>
+                      <th style="border: 1px solid #333; padding: 4px;">Learning Areas</th>
+                      <th style="border: 1px solid #333; padding: 4px;">Final Rating</th>
+                      <th style="border: 1px solid #333; padding: 4px;">Remedial Class Mark</th>
+                      <th style="border: 1px solid #333; padding: 4px;">Recomputed Final Grade</th>
+                      <th style="border: 1px solid #333; padding: 4px;">Remarks</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    ${Array.from({ length: 3 }).map(() => `
+                      <tr>
+                        ${Array.from({ length: 5 }).map(() => '<td style="border: 1px solid #333; padding: 8px;">&nbsp;</td>').join('')}
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Attendance Section -->
+            <h2 style="font-size: 20px; font-weight: bold; text-align: center; margin-top: 48px; margin-bottom: 24px;">REPORT ON ATTENDANCE</h2>
+            <div style="overflow-x-auto;">
+              <table style="width: 100%; border: 1px solid #333; font-size: 14px; text-align: center;">
+                <thead style="background-color: #f5f5f5;">
+                  <tr>
+                    <th style="border: 1px solid #333; padding: 4px;"></th>
+                    ${months.map((month) => `<th style="border: 1px solid #333; padding: 4px;">${month}</th>`).join('')}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style="border: 1px solid #333; padding: 4px; text-align: left;">No. of school days</td>
+                    ${months.map(() => '<td style="border: 1px solid #333; padding: 4px;">&nbsp;</td>').join('')}
+                  </tr>
+                  <tr>
+                    <td style="border: 1px solid #333; padding: 4px; text-align: left;">No. of days present</td>
+                    ${months.map(() => '<td style="border: 1px solid #333; padding: 4px;">&nbsp;</td>').join('')}
+                  </tr>
+                  <tr>
+                    <td style="border: 1px solid #333; padding: 4px; text-align: left;">No. of days absent</td>
+                    ${months.map(() => '<td style="border: 1px solid #333; padding: 4px;">&nbsp;</td>').join('')}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Signatures -->
+            <div style="margin-top: 48px; display: flex; justify-content: center; gap: 200px; text-align: center; font-size: 14px; width: 100%;">
+              <div style="flex: 1; max-width: 300px;">
+                <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">MA. NORA D. LAI, Ed.D, JD</p>
+                <p style="font-size: 12px; line-height: 1.2;">Principal</p>
+              </div>
+              <div style="flex: 1; max-width: 300px;">
+                <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">LEONEL D. FRANCISCO, Ph.D</p>
+                <p style="font-size: 12px; line-height: 1.2;">Teacher</p>
+              </div>
+            </div>
+
+            <hr style="border: 1px solid #333; margin-top: 60px; margin-bottom: 8px;" />
+
+            <!-- Parent Signatures -->
+            <div style="margin-top: 40px; margin-bottom: 60px; text-align: center;">
+              <h3 style="font-weight: bold; text-align: center; margin-bottom: 16px;">PARENT / GUARDIAN'S SIGNATURE</h3>
+              <div style="space-y: 12px; text-align: center;">
+                <p>1<sup>st</sup> Quarter ____________________________________________</p>
+                <p>2<sup>nd</sup> Quarter ____________________________________________</p>
+                <p>3<sup>rd</sup> Quarter ____________________________________________</p>
+                <p>4<sup>th</sup> Quarter ____________________________________________</p>
+              </div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+    
+    // Write the HTML to the new window
+    printWindow.document.write(reportCardHTML);
+    printWindow.document.close();
+    
+    // Wait for the content to load, then print
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 500);
+    };
   };
 
   return (
@@ -283,8 +930,8 @@ useEffect(() => {
                       Final Average: <strong className="text-2xl text-green-600">{profile.finalAverage || 'N/A'}</strong>
                     </p>
                   </div>
-                  <button onClick={downloadReportCard} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2">
-                    <Download className="w-5 h-5" /> Download Report Card
+                  <button onClick={() => previewReportCard()} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2">
+                    <Download className="w-5 h-5" /> Preview Report Card
                   </button>
                 </div>
 
@@ -336,6 +983,327 @@ useEffect(() => {
           </div>
         </div>
       </div>
+
+      {/* Report Card Preview Modal */}
+      {showReportCardModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-6xl w-full max-h-[90vh] overflow-auto">
+            {/* Modal Header */}
+            <div className="bg-[#8f0303] text-white px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+              <h1 className="text-lg font-semibold tracking-wide">
+                Pupil's Progress Report Card and Report on Attendance
+              </h1>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handlePrintReportCard}
+                  className="flex items-center gap-2 text-[#ffffff] font-semibold px-4 py-2.5 hover:bg-red-800 transition"
+                >
+                  <Printer className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={downloadReportCard}
+                  className="flex items-center gap-2 text-[#ffffff] font-semibold px-4 py-2.5 hover:bg-red-800 transition"
+                >
+                  <Download className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setShowReportCardModal(false)}
+                  className="flex items-center gap-2 text-[#ffffff] font-semibold px-4 py-2.5 hover:bg-red-800 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Report Card Content */}
+            <div className="p-6">
+              <div className="max-w-4xl mx-auto bg-white shadow-lg rounded-xl border p-8 scale-95 origin-top transform"
+                style={{
+                  transform: "scale(0.90)",
+                  transformOrigin: "top center",
+                  padding: "2cm",
+                  marginBottom: "-6cm",
+                }}
+              >
+                {/* Header Section */}
+                <div className="relative pb-4 mb-6 text-center">
+                  <img
+                    src="/wmsu-logo.jpg"
+                    alt="WMSU Logo"
+                    className="absolute left-12 top-4 w-25 h-25 object-contain"
+                    onError={(e) => {
+                      e.target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23f0f0f0' stroke='%23333' stroke-width='2'/%3E%3Ctext x='50' y='40' text-anchor='middle' font-family='Arial' font-size='12' fill='%23333'%3EWMSU%3C/text%3E%3Ctext x='50' y='55' text-anchor='middle' font-family='Arial' font-size='10' fill='%23333'%3ELOGO%3C/text%3E%3C/svg%3E";
+                    }}
+                  />
+
+                  <div>
+                    <h2 className="text-xl font-bold">
+                      WESTERN MINDANAO STATE UNIVERSITY
+                    </h2>
+                    <p className="text-sm leading-tight">
+                      College of Teacher Education <br />
+                      Integrated Laboratory School <br />
+                      <span className="font-bold">ELEMENTARY DEPARTMENT</span> <br />
+                      Zamboanga City
+                    </p>
+                    <h3 className="font-bold mt-2">PUPIL'S PROGRESS REPORT CARD</h3>
+                    <div className="flex items-center justify-center">
+                      <span className="text-sm mr-2">
+                        School Year 20
+                        <span className="inline-block w-6 border-b border-gray-400 align-bottom mx-1"></span>
+                        - 20
+                        <span className="inline-block w-6 border-b border-gray-400 align-bottom ml-1"></span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Student Information */}
+                <div className="mb-6 text-sm space-y-2">
+                  <div className="flex items-center">
+                    <span className="font-semibold mr-2">Name:</span>
+                    <span className="ml-2 underline decoration-gray-600">{profile.fullName}</span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                    <div className="flex items-center">
+                      <span className="font-semibold mr-2">Age:</span>
+                      <span className="ml-2 underline decoration-gray-600">{profile.age}</span>
+                    </div>
+                    <div className="flex items-center">
+                      <span className="font-semibold mr-2">Sex:</span>
+                      <span className="ml-2 underline decoration-gray-600">{profile.sex}</span>
+                    </div>
+                    <div className="flex items-center">
+                      <span className="font-semibold mr-2">Grade:</span>
+                      <span className="ml-2 underline decoration-gray-600">{profile.gradeLevel}</span>
+                    </div>
+                    <div className="flex items-center flex-1 min-w-[180px]">
+                      <span className="font-semibold mr-2">Section:</span>
+                      <span className="ml-2 underline decoration-gray-600">{profile.section}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center">
+                    <span className="font-semibold mr-2">LRN:</span>
+                    <span className="ml-2 underline decoration-gray-600">{profile.lrn}</span>
+                  </div>
+                </div>
+
+                {/* Message to Parents */}
+                <div className="w-[98%] mx-auto -mt-5">
+                  <p className="text-sm mb-4 text-justify leading-relaxed">
+                    <span>Dear Parents,</span>
+                    <span className="block indent-4">
+                      This report card shows the ability and progress of your child has made in the different
+                      learning areas as well as his/her core values.
+                    </span>
+                    <span className="block indent-4">
+                      The school welcomes you should you desire to know more about your child's progress.
+                    </span>
+                  </p>
+                </div>
+
+                {/* Learning Progress Header */}
+                <h4 className="font-bold text-center -mt-2 mb-1">
+                  REPORT ON LEARNING PROGRESS AND ACHIEVEMENT
+                </h4>
+
+                {/* Grades Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full border border-gray-300 text-sm text-center">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th rowSpan="2" className="border border-gray-300 px-2 py-1">Learning Areas</th>
+                        <th colSpan="4" className="border border-gray-300 px-2 py-1">Quarter</th>
+                        <th rowSpan="2" className="border border-gray-300 px-2 py-1">Final Grade</th>
+                        <th rowSpan="2" className="border border-gray-300 px-2 py-1">Remarks</th>
+                      </tr>
+                      <tr>
+                        <th className="border border-gray-300 px-2 py-1">1</th>
+                        <th className="border border-gray-300 px-2 py-1">2</th>
+                        <th className="border border-gray-300 px-2 py-1">3</th>
+                        <th className="border border-gray-300 px-2 py-1">4</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {grades.length > 0 ? (
+                        grades.map((g, i) => (
+                          <tr key={i}>
+                            <td className="border border-gray-300 px-2 py-1 text-left">{g.subject}</td>
+                            <td className="border border-gray-300 px-2 py-1">{g.q1 || ''}</td>
+                            <td className="border border-gray-300 px-2 py-1">{g.q2 || ''}</td>
+                            <td className="border border-gray-300 px-2 py-1">{g.q3 || ''}</td>
+                            <td className="border border-gray-300 px-2 py-1">{g.q4 || ''}</td>
+                            <td className="border border-gray-300 px-2 py-1 font-semibold">{g.average || ''}</td>
+                            <td className="border border-gray-300 px-2 py-1">{g.remarks || ''}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        Array.from({ length: 10 }).map((_, i) => (
+                          <tr key={i}>
+                            {Array.from({ length: 7 }).map((_, j) => (
+                              <td key={j} className="border border-gray-300 px-2 py-3">&nbsp;</td>
+                            ))}
+                          </tr>
+                        ))
+                      )}
+
+                      <tr className="bg-gray-100 font-semibold">
+                        <td className="border border-gray-300 px-2 py-1"></td>
+                        <td colSpan="4" className="border border-gray-300 px-2 py-1 text-center">General Average</td>
+                        <td className="border border-gray-300 px-2 py-1">
+                          {grades.length > 0 ? computeGeneralAverage() : ""}
+                        </td>
+                        <td className="border border-gray-300 px-2 py-1">{grades.length > 0 ? "Passed" : ""}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Remedial Classes Section */}
+                <div className="mt-6">
+                  <div className="overflow-x-auto">
+                    <table className="w-full border border-gray-300 text-sm text-center">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th colSpan="1" className="border border-gray-300 px-2 py-1 text-center">
+                            <span className="font-semibold">Remedial Classes</span>
+                          </th>
+                          <th colSpan="4" className="border border-gray-300 px-2 py-1 text-center">
+                            <div className="flex justify-start items-center">
+                              <span>Conducted from:</span>
+                              <span className="ml-65">to:</span>
+                            </div>
+                          </th>
+                        </tr>
+                        <tr>
+                          <th className="border border-gray-300 px-2 py-1">Learning Areas</th>
+                          <th className="border border-gray-300 px-2 py-1">Final Rating</th>
+                          <th className="border border-gray-300 px-2 py-1">Remedial Class Mark</th>
+                          <th className="border border-gray-300 px-2 py-1">Recomputed Final Grade</th>
+                          <th className="border border-gray-300 px-2 py-1">Remarks</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {Array.from({ length: 3 }).map((_, i) => (
+                          <tr key={i}>
+                            {Array.from({ length: 5 }).map((_, j) => (
+                              <td key={j} className="border border-gray-300 px-2 py-3">&nbsp;</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Signatures */}
+                <div className="mt-12 flex justify-center gap-80 text-center text-sm">
+                  <div>
+                    <p className="font-bold underline">MA. NORA D. LAI, Ed.D, JD</p>
+                    <p>Principal</p>
+                  </div>
+                  <div>
+                    <p className="font-bold underline">LEONEL D. FRANCISCO, Ph.D</p>
+                    <p>Teacher</p>
+                  </div>
+                </div>
+
+                <hr className="border-gray-900 mt-15 mb-2" /> 
+
+                {/* Attendance Section */}
+                <h2 className="text-xl font-bold text-center mt-12 mb-6">REPORT ON ATTENDANCE</h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full border border-gray-300 text-sm text-center mb-8">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="border border-gray-300 px-2 py-1"></th>
+                        {months.map((month, i) => (
+                          <th key={i} className="border border-gray-300 px-2 py-1">{month}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="border border-gray-300 px-2 py-1 text-left">No. of school days</td>
+                        {months.map((_, i) => (
+                          <td key={i} className="border border-gray-300 px-2 py-1"></td>
+                        ))}
+                      </tr>
+                      <tr>
+                        <td className="border border-gray-300 px-2 py-1 text-left">No. of days present</td>
+                        {months.map((_, i) => (
+                          <td key={i} className="border border-gray-300 px-2 py-1"></td>
+                        ))}
+                      </tr>
+                      <tr>
+                        <td className="border border-gray-300 px-2 py-1 text-left">No. of days absent</td>
+                        {months.map((_, i) => (
+                          <td key={i} className="border border-gray-300 px-2 py-1"></td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Parent Signatures */}
+                <div className="mt-10 mb-15 text-center justify-center">
+                  <h3 className="font-bold text-center mb-4">PARENT / GUARDIAN'S SIGNATURE</h3>
+                  <div className="space-y-3 text-sm text-center justify-center">
+                    <p>1<sup>st</sup> Quarter ____________________________________________</p>
+                    <p>2<sup>nd</sup> Quarter ____________________________________________</p>
+                    <p>3<sup>rd</sup> Quarter ____________________________________________</p>
+                    <p>4<sup>th</sup> Quarter ____________________________________________</p>
+                  </div>
+                </div>
+
+                {/* Certificate of Transfer */}
+                <div className="mb-10">
+                  <h3 className="font-bold text-center mt-7 mb-4">Certificate of Transfer</h3>
+                  <div className="text-sm space-y-2">
+                    <p>Admitted in Grade ___________________________ Section ___________________</p>
+                    <p>Eligible to Admission in Grade __________________________________________</p>
+                    <p>Approved:</p>
+                    <div className="mt-8 flex justify-center gap-100 text-center text-sm">
+                      <div>
+                        <p className="font-semibold underline">MA. NORA D. LAI, Ed.D, JD</p>
+                        <p>Principal</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold underline">______________________</p>
+                        <p>Teacher</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cancellation Section */}
+                <div className="text-sm">
+                  <h3 className="font-bold text-center mb-4">
+                    Cancellation of Eligibility to Transfer
+                  </h3>
+
+                  <p>Admitted in: ___________________________</p>
+
+                  <div className="flex justify-between items-end mt-2">
+                    <p>Date: ___________________________</p>
+
+                    <div className="text-center">
+                      <p className="font-semibold underline leading-tight">
+                        MA. NORA D. LAI, Ed.D, JD
+                      </p>
+                      <p className="leading-tight">Principal</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
