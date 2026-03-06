@@ -132,13 +132,6 @@ exports.login = async (req, res) => {
         'SELECT * FROM students WHERE LOWER(student_email) = LOWER(?)',
         [loginField]
       );
-
-      if (users.length === 0) {
-        users = await query(
-          'SELECT * FROM students WHERE LOWER(username) = LOWER(?)',
-          [loginField]
-        );
-      }
     }
 
     // 2️⃣ If not a student, check admin/teacher accounts in JSON file
