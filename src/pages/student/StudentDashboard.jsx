@@ -114,15 +114,15 @@ useEffect(() => {
       reportCardDiv.style.left = '-9999px';
       reportCardDiv.style.width = '210mm';
       reportCardDiv.style.padding = '20mm';
-      reportCardDiv.style.backgroundColor = 'white';
+      reportCardDiv.style.backgroundColor = '#ffffff';
       reportCardDiv.style.fontFamily = 'Arial, sans-serif';
       
       // Generate report card HTML
       reportCardDiv.innerHTML = `
         <div style="text-align: center; margin-bottom: 30px;">
           <h1 style="margin: 0; font-size: 24px; color: #7c2d12;">WMSU ILS - Elementary Department</h1>
-          <h2 style="margin: 5px 0; font-size: 20px; color: #333;">Report Card</h2>
-          <p style="margin: 5px 0; font-size: 14px; color: #666;">School Year 2024-2025</p>
+          <h2 style="margin: 5px 0; font-size: 20px; color: #333333;">Report Card</h2>
+          <p style="margin: 5px 0; font-size: 14px; color: #666666;">School Year 2024-2025</p>
         </div>
         
         <div style="margin-bottom: 30px;">
@@ -143,29 +143,29 @@ useEffect(() => {
         </div>
         
         <div style="margin-bottom: 30px;">
-          <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #333;">Academic Performance</h3>
-          <table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">
+          <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #333333;">Academic Performance</h3>
+          <table style="width: 100%; border-collapse: collapse; border: 1px solid #dddddd;">
             <thead>
               <tr style="background-color: #f8f9fa;">
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Subject</th>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: center;">Q1</th>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: center;">Q2</th>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: center;">Q3</th>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: center;">Q4</th>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: center;">Average</th>
-                <th style="padding: 8px; border: 1px solid #ddd; text-align: center;">Remarks</th>
+                <th style="padding: 8px; border: 1px solid #dddddd; text-align: left;">Subject</th>
+                <th style="padding: 8px; border: 1px solid #dddddd; text-align: center;">Q1</th>
+                <th style="padding: 8px; border: 1px solid #dddddd; text-align: center;">Q2</th>
+                <th style="padding: 8px; border: 1px solid #dddddd; text-align: center;">Q3</th>
+                <th style="padding: 8px; border: 1px solid #dddddd; text-align: center;">Q4</th>
+                <th style="padding: 8px; border: 1px solid #dddddd; text-align: center;">Average</th>
+                <th style="padding: 8px; border: 1px solid #dddddd; text-align: center;">Remarks</th>
               </tr>
             </thead>
             <tbody>
               ${grades.map(grade => `
                 <tr>
-                  <td style="padding: 8px; border: 1px solid #ddd;">${grade.subject}</td>
-                  <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${grade.q1 || '-'}</td>
-                  <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${grade.q2 || '-'}</td>
-                  <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${grade.q3 || '-'}</td>
-                  <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${grade.q4 || '-'}</td>
-                  <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${grade.average || 'N/A'}</td>
-                  <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${grade.remarks || 'Pending'}</td>
+                  <td style="padding: 8px; border: 1px solid #dddddd;">${grade.subject}</td>
+                  <td style="padding: 8px; border: 1px solid #dddddd; text-align: center;">${grade.q1 || '-'}</td>
+                  <td style="padding: 8px; border: 1px solid #dddddd; text-align: center;">${grade.q2 || '-'}</td>
+                  <td style="padding: 8px; border: 1px solid #dddddd; text-align: center;">${grade.q3 || '-'}</td>
+                  <td style="padding: 8px; border: 1px solid #dddddd; text-align: center;">${grade.q4 || '-'}</td>
+                  <td style="padding: 8px; border: 1px solid #dddddd; text-align: center; font-weight: bold;">${grade.average || 'N/A'}</td>
+                  <td style="padding: 8px; border: 1px solid #dddddd; text-align: center;">${grade.remarks || 'Pending'}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -183,7 +183,7 @@ useEffect(() => {
           </table>
         </div>
         
-        <div style="margin-top: 50px; text-align: center; font-size: 12px; color: #666;">
+        <div style="margin-top: 50px; text-align: center; font-size: 12px; color: #666666;">
           <p>This is a system-generated report card.</p>
           <p>For official purposes, please contact the school administration.</p>
         </div>
