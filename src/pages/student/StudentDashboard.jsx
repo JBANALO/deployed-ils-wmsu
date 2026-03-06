@@ -1,41 +1,61 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { Download, Calendar, BookOpen } from 'lucide-react';
 import StudentTopbar from '@/layouts/student/StudentTopbar'; // ← Use @/ if you have alias, or correct path
+import { UserContext } from '@/context/UserContext'; // Import UserContext
 
 const StudentPortal = () => {
   const [activeTab, setActiveTab] = useState('grades');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { user } = useContext(UserContext); // Get logged-in user from context
 
-  // ← FIXED: Was localStorage.getItem(1) → WRONG!
-  const studentId = localStorage.getItem('studentId') || '1'; // fallback to 1 for testing
+  // Get studentId from localStorage user data (stored during login)
+  const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+  const studentId = user?.id || storedUser.id || localStorage.getItem('studentId');
 
-  useEffect(() => {
-    const fetchPortalData = async () => {
-      if (!studentId || studentId === 'null') {
-        setLoading(false);
-        return;
-      }
+useEffect(() => {
+  const fetchPortalData = async () => {
+    if (!studentId || studentId === 'null') {
+      setLoading(false);
+      return;
+    }
 
-      try {
-        console.log('Fetching for studentId:', studentId); // ← DEBUG
-        const baseURL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 
-                 (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
-const res = await fetch(`${baseURL}/student/portal?studentId=${studentId}`);
-        if (!res.ok) throw new Error('Failed to fetch');
-        const result = await res.json();
-        console.log('Data received:', result); // ← DEBUG
-        setData(result);
-      } catch (err) {
-        console.error('Fetch error:', err);
-        alert('No student data found. Did you log in? Try setting localStorage.setItem("studentId", "1") in console.');
-      } finally {
-        setLoading(false);
-      }
-    };
+    try {
+      console.log('Fetching for studentId:', studentId);
+      const baseURL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 
+               (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
+      const res = await fetch(`${baseURL}/students/portal?studentId=${studentId}`, { credentials: 'include' });
+      if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
+      const result = await res.json();
+        console.log('Data received:', result);
+        
+        // Map API response structure to frontend expectations
+        if (result.status === 'success' && result.data?.student) {
+          const studentData = result.data.student;
+          const mappedData = {
+            profile: {
+              fullName: studentData.fullName || `${studentData.firstName} ${studentData.lastName}`,
+              gradeLevel: studentData.gradeLevel,
+              section: studentData.section,
+              lrn: studentData.lrn,
+              finalAverage: studentData.average || 'N/A'
+            },
+            grades: studentData.grades || []
+          };
+          setData(mappedData);
+        } else {
+          throw new Error('Invalid data structure');
+        }
+    } catch (err) {
+      console.error('Fetch error:', err);
+      alert('No student data found. Please make sure you are logged in correctly.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    fetchPortalData();
-  }, []);
+  fetchPortalData();
+}, [studentId]);
 
   // ← SHOW THIS WHILE LOADING
   if (loading) {
@@ -53,15 +73,12 @@ const res = await fetch(`${baseURL}/student/portal?studentId=${studentId}`);
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-6">
         <div className="text-center">
           <p className="text-2xl text-red-600 font-bold">No Student Data Found</p>
-          <p className="text-gray-600 mt-2">For testing, run this in browser console:</p>
-          <code className="bg-gray-800 text-white px-4 py-2 rounded text-sm block mt-3">
-            localStorage.setItem('studentId', '1')
-          </code>
+          <p className="text-gray-600 mt-2">Please make sure you are logged in correctly.</p>
           <button 
-            onClick={() => window.location.reload()} 
+            onClick={() => window.location.href = '/login'} 
             className="mt-4 bg-red-900 text-white px-6 py-3 rounded-lg hover:bg-red-800"
           >
-            Reload Page
+            Go to Login
           </button>
         </div>
       </div>
@@ -73,7 +90,7 @@ const res = await fetch(`${baseURL}/student/portal?studentId=${studentId}`);
   // ← REST OF YOUR BEAUTIFUL UI (unchanged)
   return (
     <>
-      <StudentTopbar studentName={profile.fullName || 'Student'} />
+      <StudentTopbar studentName={profile.fullName || 'Student'} gradeLevel={profile.gradeLevel || 'Grade'} />
 
       <div className="pt-20 min-h-screen bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 py-6">

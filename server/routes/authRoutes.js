@@ -7,6 +7,8 @@ const googleAuthController = require('../controllers/googleAuthController');
 
 const router = express.Router();
 
+console.log(' Auth routes loaded - authController:', typeof authController.login);
+
 // Configure multer for file uploads
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -23,8 +25,25 @@ const upload = multer({
   }
 });
 
+// Test route to verify auth controller
+router.get('/test', (req, res) => {
+  console.log(' Auth test route called');
+  res.json({ message: 'Auth routes working!' });
+});
+
 // Traditional login
-router.post('/login', authController.login);
+router.post('/login', async (req, res) => {
+  console.log(' Login route called with body:', req.body);
+  try {
+    await authController.login(req, res);
+  } catch (error) {
+    console.error(' Auth controller error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error during login'
+    });
+  }
+});
 
 // Google OAuth routes
 router.get(

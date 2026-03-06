@@ -1,9 +1,14 @@
 // server/controllers/authControllerMySQL.js
+console.log('🔍 Auth controller file loading...');
+
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { query } = require('../config/database');
+const { query, isDatabaseAvailable } = require('../config/database');
+const { readUsers } = require('../utils/fileStorage');
 const path = require('path');
 const fs = require('fs');
+
+console.log('🔍 Auth controller dependencies loaded successfully');
 
 // Sign JWT token
 const signToken = (id) => {
@@ -111,161 +116,93 @@ exports.restrictTo = (...roles) => {
 
 // Login user
 exports.login = async (req, res) => {
-  console.log('🚨 LOGIN ATTEMPT - authControllerMySQL.js login function called!');
   try {
     const { email, username, password } = req.body;
     const loginField = email || username;
-    console.log(`🔍 Login attempt: field="${loginField}", password_length=${password ? password.length : 'none'}`);
 
     if (!loginField || !password) {
-      return res.status(400).json({
-        status: 'fail',
-        message: 'Please provide email/username and password!'
-      });
+      return res.status(400).json({ status: 'fail', message: 'Please provide email/username and password!' });
     }
 
-    // Check if database is available first
-    let dbAvailable = false;
-    try {
-      await query('SELECT 1');
-      dbAvailable = true;
-      console.log('🔍 Database is available');
-    } catch (dbError) {
-      console.log('🔍 Database not available, using file storage only');
-      dbAvailable = false;
-    }
-
-    // Check users table (for admin accounts) - ONLY if database available
     let users = [];
-    if (dbAvailable) {
-      users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [loginField]);
-      console.log(`🔍 Checking users table for email: ${loginField}, found: ${users.length} users`);
-      
+
+    // 1️⃣ Always check students table first (MySQL)
+    if (isDatabaseAvailable()) {
+      users = await query(
+        'SELECT * FROM students WHERE LOWER(student_email) = LOWER(?)',
+        [loginField]
+      );
+
       if (users.length === 0) {
-        users = await query('SELECT * FROM users WHERE LOWER(username) = LOWER(?)', [loginField]);
-        console.log(`🔍 Checking users table for username: ${loginField}, found: ${users.length} users`);
+        users = await query(
+          'SELECT * FROM students WHERE LOWER(username) = LOWER(?)',
+          [loginField]
+        );
       }
     }
 
-    // If not found in users table, check JSON files first (for mobile compatibility)
+    // 2️⃣ If not a student, check admin/teacher accounts in JSON file
     if (users.length === 0) {
       try {
-        const { readUsers } = require('../utils/fileStorage');
-        const allUsers = readUsers();
-        
-        // Check for teacher accounts in users.json
-        const teacherUsers = allUsers.filter(u => 
-          (u.role === 'teacher' || u.role === 'adviser' || u.role === 'subject_teacher') &&
-          (u.email?.toLowerCase() === loginField.toLowerCase() || 
+        const allUsers = readUsers(); // teachers/admins stored here
+        users = allUsers.filter(u =>
+          (u.role === 'admin' || u.role === 'teacher' || u.role === 'adviser') &&
+          (u.email?.toLowerCase() === loginField.toLowerCase() ||
            u.username?.toLowerCase() === loginField.toLowerCase())
         );
-        
-        if (teacherUsers.length > 0) {
-          users = teacherUsers;
-          console.log(`🔍 Found ${teacherUsers.length} teacher(s) in users.json file for: ${loginField}`);
-        }
       } catch (fileError) {
         console.log('Error reading users.json file:', fileError.message);
       }
     }
 
-    // If not found in users table or JSON file, check teachers table - ONLY if database available
-    if (users.length === 0 && dbAvailable) {
-      users = await query('SELECT * FROM teachers WHERE LOWER(email) = LOWER(?)', [loginField]);
-      
+    // 3️⃣ If still not found, optionally check MySQL `users` or `teachers` tables
+    if (users.length === 0 && isDatabaseAvailable()) {
+      users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [loginField, loginField]);
       if (users.length === 0) {
-        users = await query('SELECT * FROM teachers WHERE LOWER(username) = LOWER(?)', [loginField]);
-      }
-    }
-
-    // If not found in users or teachers, check students table - ONLY if database available
-    if (users.length === 0) {
-      // Check students.json file first (for mobile compatibility)
-      try {
-        const { readUsers } = require('../utils/fileStorage');
-        const allUsers = readUsers();
-        
-        // Check for student accounts in users.json
-        const studentUsers = allUsers.filter(u => 
-          u.role === 'student' &&
-          (u.email?.toLowerCase() === loginField.toLowerCase() || 
-           u.username?.toLowerCase() === loginField.toLowerCase())
-        );
-        
-        if (studentUsers.length > 0) {
-          users = studentUsers;
-          console.log(`🔍 Found ${studentUsers.length} student(s) in users.json file for: ${loginField}`);
-        }
-      } catch (fileError) {
-        console.log('Error reading users.json file:', fileError.message);
-      }
-      
-      // If still not found, check students table in database - ONLY if database available
-      if (users.length === 0 && dbAvailable) {
-        users = await query('SELECT * FROM students WHERE LOWER(student_email) = LOWER(?)', [loginField]);
-        console.log(`🔍 Checking students table for email: ${loginField}, found: ${users.length} students`);
+        users = await query('SELECT * FROM teachers WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [loginField, loginField]);
       }
     }
 
     if (users.length === 0) {
-      return res.status(401).json({
-        status: 'fail',
-        message: 'Incorrect email or password',
-      });
+      return res.status(401).json({ status: 'fail', message: 'Incorrect email or password' });
     }
 
     const user = users[0];
-    console.log(`🔍 User found:`, {
-      id: user.id,
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      role: user.role
-    });
-    
-    // Handle password comparison for both database (bcrypt) and JSON file (plain text)
+
+    // Password comparison
     let passwordMatch = false;
     if (typeof user.password === 'string' && user.password.startsWith('$2')) {
-      // Database user with bcrypt hash
-      passwordMatch = await bcrypt.compare(password, user.password);
-      console.log(`🔍 Database password comparison: provided="${password}", stored_hash="${user.password}", match=${passwordMatch}`);
+      passwordMatch = await bcrypt.compare(password, user.password); // hashed password from DB
     } else {
-      // JSON file user with plain text password
-      passwordMatch = password === user.password;
-      console.log(`🔍 JSON file password comparison: provided="${password}", stored="${user.password}", match=${passwordMatch}`);
+      passwordMatch = password === user.password; // JSON file plain text
     }
 
     if (!passwordMatch) {
-      return res.status(401).json({
-        status: 'fail',
-        message: 'Incorrect email or password',
-      });
+      return res.status(401).json({ status: 'fail', message: 'Incorrect email or password' });
     }
 
-    // Skip approval check for login - allow all users to login regardless of approval status
-    // Approval system remains intact for admin dashboard functionality
-
+    // Generate JWT
     const token = signToken(user.id);
 
-    // Handle different table structures
-    let userData;
+    // Build userData based on role
+    let userData = {};
     if (user.student_email) {
-      // From students table (database)
+      // Student (from MySQL)
       userData = {
         id: user.id,
         firstName: user.first_name || '',
         lastName: user.last_name || '',
         name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
         username: user.username || '',
-        email: user.student_email, // Use student_email field
+        email: user.student_email,
         phone: user.phone || '',
         profileImage: user.profile_pic || '',
-        role: 'student', // Explicitly set role to student
+        role: 'student',
         gradeLevel: user.grade_level,
         section: user.section
       };
-    } else if ((user.first_name && user.last_name) || (user.firstName && user.lastName)) {
-      // From users table (admin) OR from JSON file (teachers/students)
+    } else {
+      // Admin or Teacher (from JSON or DB)
       userData = {
         id: user.id,
         firstName: user.first_name || user.firstName || '',
@@ -277,31 +214,12 @@ exports.login = async (req, res) => {
         profileImage: user.profile_pic || user.profileImage || '',
         role: user.role || 'admin',
       };
-    } else {
-      // From teachers table (database)
-      userData = {
-        id: user.id,
-        firstName: user.first_name || '',
-        middleName: user.middle_name || '',
-        lastName: user.last_name || '',
-        name: `${user.first_name || ''} ${user.middle_name || ''} ${user.last_name || ''}`.trim(),
-        username: user.username || '',
-        email: user.email,
-        role: user.role || 'adviser',
-        verificationStatus: user.verification_status || 'pending'
-      };
     }
 
-    res.status(200).json({
-      status: 'success',
-      token,
-      data: {
-        user: userData
-      },
-    });
+    res.status(200).json({ status: 'success', token, data: { user: userData } });
   } catch (error) {
     console.error('Error in login:', error);
-    res.status(400).json({ message: 'Error logging in', error: error.message });
+    res.status(500).json({ status: 'error', message: 'Error logging in', error: error.message });
   }
 };
 
@@ -408,7 +326,7 @@ exports.updateProfile = async (req, res) => {
       console.log('Query params:', queryParams);
 
       // Get updated user data
-      const updatedUsers = await query('SELECT * FROM users WHERE id = ?', [userId]);
+      const updatedUsers = await query('SELECT * FROM users WHERE id = ?', [req.user.id]);
       const updatedUser = updatedUsers[0];
 
       res.status(200).json({
@@ -433,10 +351,11 @@ exports.updateProfile = async (req, res) => {
         message: error.message,
       });
     }
-  } catch (error) {
-    res.status(400).json({
+  } catch (outerError) {
+    console.error('Outer error in updateProfile:', outerError);
+    res.status(500).json({
       status: 'error',
-      message: error.message,
+      message: 'Profile update failed'
     });
   }
 };
