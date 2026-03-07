@@ -577,9 +577,9 @@ app.get('/api/admin/declined-students', async (req, res) => {
 });
 
 // ================= ROUTES =================
+// DEPLOYED: 2026-03-07 - includes grades routes in studentRoutes.js
 app.use('/api/auth', authRoutes);
-app.use('/api/students', gradeRoutes); // grades under students - MUST be before studentRoutes
-app.use('/api/students', studentRoutes);
+app.use('/api/students', studentRoutes); // grades routes are now INSIDE studentRoutes.js
 app.use('/api/classes', classRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/grades', gradeRoutes);
