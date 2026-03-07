@@ -38,16 +38,16 @@ export default function AdminCreateTeacher() {
     }));
   };
 
-  // Subjects by grade level
+  // Subjects by grade level (Official DepEd format)
   const subjectsByGradeLevel = {
-    "Grade 1": ["GMRC", "Reading", "Mathematics", "Makabansa", "Language"],
-    "Grade 2": ["GMRC", "Filipino", "Makabansa", "Mathematics", "English"],
-    "Grade 3": ["GMRC", "Filipino", "Mathematics", "Makabansa", "English", "Science"],
-    "Grade 4": ["GMRC", "English", "ArPan", "Mathematics", "Filipino", "EPP", "Science", "MAPEH"],
-    "Grade 5": ["GMRC", "English", "ArPan", "Mathematics", "Filipino", "EPP", "Science", "MAPEH"],
-    "Grade 6": ["GMRC", "English", "ArPan", "Mathematics", "Filipino", "EPP", "Science", "MAPEH"],
-    "Multiple Grade Level (MG)": ["GMRC", "English", "ArPan", "Mathematics", "Filipino", "EPP", "Science", "MAPEH"],
-    "Kindergarten": [] // No specific subjects for kindergarten - will use text input
+    "Kindergarten": ["Filipino", "English", "Mathematics", "GMRC", "MAPEH"],
+    "Grade 1": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
+    "Grade 2": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
+    "Grade 3": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
+    "Grade 4": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
+    "Grade 5": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
+    "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
+    "Multiple Grade Level (MG)": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"]
   };
 
   // Sections by grade level
