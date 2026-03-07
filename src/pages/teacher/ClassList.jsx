@@ -114,14 +114,22 @@ export default function ClassList() {
       
       // Filter students to only show those in assigned classes
       const normalize = str => (str || '').toString().trim().toLowerCase();
+      
+      console.log('🔍 ClassList v2.0 - Filtering students...');
+      console.log('🔍 Unique classes:', uniqueClasses.map(c => `${c.grade}-${c.section}`));
+      console.log('🔍 All students count:', allStudents.length);
+      
       const filteredByClass = allStudents.filter(student => {
-        return uniqueClasses.some(c => 
+        const match = uniqueClasses.some(c => 
           normalize(c.grade) === normalize(student.gradeLevel) && 
           normalize(c.section) === normalize(student.section)
         );
+        return match;
       });
       
-      console.log('ClassList: Total students:', allStudents.length, '→ Filtered:', filteredByClass.length);
+      console.log('✅ ClassList: Total students:', allStudents.length, '→ Filtered:', filteredByClass.length);
+      console.log('✅ Filtered students:', filteredByClass.map(s => `${s.fullName} (${s.gradeLevel}-${s.section})`).slice(0, 5));
+      
       setStudents(filteredByClass);
       setLoading(false);
     } catch (error) {
@@ -251,6 +259,7 @@ export default function ClassList() {
       </div>
 
       {/* === PRESERVED: Stats Cards === */}
+      {/* v2.0 - Filter by assigned classes */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm flex flex-col justify-between">
           <div className="flex justify-between items-center">
