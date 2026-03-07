@@ -578,6 +578,7 @@ app.get('/api/admin/declined-students', async (req, res) => {
 
 // ================= ROUTES =================
 app.use('/api/auth', authRoutes);
+app.use('/api/students', gradeRoutes); // grades under students - MUST be before studentRoutes
 app.use('/api/students', studentRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/attendance', attendanceRoutes);
@@ -585,6 +586,16 @@ app.use('/api/grades', gradeRoutes);
 app.use('/api/teachers', teacherRoutes);
 app.use('/api/users', userRoutes);
 // ==========================================
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({ message: 'Student Management API Running!', version: '2.3', server: 'server/server.js', deployedAt: '2026-03-07' });
+});
+
+// Version check endpoint
+app.get('/api/version', (req, res) => {
+  res.json({ version: '2.3', server: 'server/server.js', hasGradesEndpoint: true, deployedAt: '2026-03-07' });
+});
 
 // Debug middleware to track all requests
 app.use((req, res, next) => {
