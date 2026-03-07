@@ -589,12 +589,12 @@ app.use('/api/users', userRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
-  res.json({ message: 'Student Management API Running!', version: '2.3', server: 'server/server.js', deployedAt: '2026-03-07' });
+  res.json({ message: 'Student Management API Running!', version: '3.0', server: 'server/server.js', deployedAt: '2026-03-07T14:00:00Z' });
 });
 
 // Version check endpoint
 app.get('/api/version', (req, res) => {
-  res.json({ version: '2.3', server: 'server/server.js', hasGradesEndpoint: true, deployedAt: '2026-03-07' });
+  res.json({ version: '3.0', server: 'server/server.js', hasGradesEndpoint: true, deployedAt: '2026-03-07T14:00:00Z' });
 });
 
 // Debug middleware to track all requests
