@@ -2,32 +2,45 @@
 const pool = require('../config/db');
 
 // Check if teacher/adviser can enter grades for this student and subject
-const canEnterGrade = (user, student, subject) => {
+const canEnterGrade = async (user, student, subject, pool) => {
   if (!user || !user.role) return false;
-  
-  // Adviser can enter grades for all subjects in their section
-  if (user.role === 'adviser' && user.sectionHandled === student.section) {
-    return true;
-  }
-  
-  // Subject teacher can only enter grades for their assigned subjects
-  if (user.role === 'subject_teacher') {
-    // Handle both array and comma-separated string formats
-    let subjects = [];
-    if (Array.isArray(user.subjectsHandled)) {
-      subjects = user.subjectsHandled;
-    } else if (typeof user.subjectsHandled === 'string') {
-      subjects = user.subjectsHandled.split(',').map(s => s.trim());
-    }
-    
-    if (subjects.length > 0 && subjects.includes(subject)) {
-      return true;
-    }
-  }
   
   // Admin can enter grades for anyone
   if (user.role === 'admin') {
     return true;
+  }
+  
+  // For teacher role, check if they are adviser or subject teacher for this class
+  if (user.role === 'teacher' || user.role === 'adviser' || user.role === 'subject_teacher') {
+    const studentGrade = student.grade_level || student.gradeLevel;
+    const studentSection = student.section;
+    
+    // Check if user is adviser for this class
+    const [adviserClasses] = await pool.query(
+      'SELECT * FROM classes WHERE adviser_id = ? AND grade_level = ? AND section = ?',
+      [user.id, studentGrade, studentSection]
+    );
+    
+    if (adviserClasses.length > 0) {
+      // Adviser can enter grades for all subjects
+      return true;
+    }
+    
+    // Check if user is subject teacher for this class and subject
+    const [subjectTeacherRecords] = await pool.query(
+      'SELECT * FROM subject_teachers WHERE teacher_id = ? AND class_id = ?',
+      [user.id, `${studentGrade.toLowerCase().replace(/\s+/g, '-')}-${studentSection.toLowerCase()}`]
+    );
+    
+    if (subjectTeacherRecords.length > 0) {
+      // Check if the subject is in their assigned subjects
+      for (const record of subjectTeacherRecords) {
+        const subjects = record.subjects ? record.subjects.split(',').map(s => s.trim()) : [];
+        if (subjects.includes(subject)) {
+          return true;
+        }
+      }
+    }
   }
   
   return false;
@@ -44,7 +57,8 @@ const updateGrades = async (req, res) => {
 
     // Check authorization for each subject
     for (const subject of Object.keys(grades)) {
-      if (!canEnterGrade(user, student, subject)) {
+      const canEdit = await canEnterGrade(user, student, subject, pool);
+      if (!canEdit) {
         return res.status(403).json({ 
           error: 'Unauthorized', 
           message: `You are not authorized to enter grades for ${subject}` 
