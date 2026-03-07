@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import api from "../../api/axiosConfig";
+import { API_BASE_URL } from "../../api/config";
 import GradesReportCard from "../../components/GradesReportCard";
 import {
   BookOpenIcon,
@@ -24,6 +25,7 @@ export default function EditGrades() {
   const [userRole, setUserRole] = useState(null);
   const [assignedSubjects, setAssignedSubjects] = useState([]);
   const [availableSubjects, setAvailableSubjects] = useState([]);
+  const [assignedClasses, setAssignedClasses] = useState([]);
   
   // Modal state
   const [showGradeModal, setShowGradeModal] = useState(false);
@@ -39,6 +41,9 @@ export default function EditGrades() {
     "Grade 1": ["Mathematics", "English", "Filipino", "Science", "Araling Panlipunan", "MAPEH"],
     "Grade 2": ["Mathematics", "English", "Filipino", "Science", "Araling Panlipunan", "MAPEH"],
     "Grade 3": ["Mathematics", "English", "Filipino", "Science", "Araling Panlipunan", "MAPEH"],
+    "Grade 4": ["Mathematics", "English", "Filipino", "Science", "Araling Panlipunan", "MAPEH", "EPP"],
+    "Grade 5": ["Mathematics", "English", "Filipino", "Science", "Araling Panlipunan", "MAPEH", "EPP"],
+    "Grade 6": ["Mathematics", "English", "Filipino", "Science", "Araling Panlipunan", "MAPEH", "EPP"],
   };
 
   useEffect(() => {
@@ -64,7 +69,8 @@ export default function EditGrades() {
   // Update available subjects based on user role and grade level
   useEffect(() => {
     const updateSubjects = async () => {
-      if (userRole === 'adviser') {
+      // For adviser role (or teacher with adviser assignment), show all subjects for grade
+      if (userRole === 'adviser' || (userRole === 'teacher' && assignedSubjects.length === 0)) {
         // Advisers can edit all subjects for their grade
         if (selectedGradeLevel === "All Grades") {
           const allSubjects = [...new Set(Object.values(subjectsByGrade).flat())];
@@ -82,9 +88,12 @@ export default function EditGrades() {
         } else {
           setAvailableSubjects(subjectsByGrade[selectedGradeLevel] || []);
         }
-      } else if (userRole === 'subject_teacher' && assignedSubjects.length > 0) {
+      } else if ((userRole === 'subject_teacher' || userRole === 'teacher') && assignedSubjects.length > 0) {
         // Subject teachers can only edit their assigned subjects
         setAvailableSubjects(assignedSubjects);
+      } else {
+        // Fallback: show all subjects for the selected grade
+        setAvailableSubjects(subjectsByGrade[selectedGradeLevel] || []);
       }
     };
     updateSubjects();
@@ -102,45 +111,80 @@ export default function EditGrades() {
         currentUserRole = user.role;
         userId = user.id;
         setUserRole(currentUserRole);
-        console.log('User role:', currentUserRole);
+        console.log('EditGrades - User role:', currentUserRole, 'User ID:', userId);
       }
 
-      // Fetch students using api
-      const response = await api.get('/students');
-      const studentData = response.data.data || response.data;
-      setStudents(Array.isArray(studentData) ? studentData : []);
-      console.log('Fetched students:', studentData);
+      if (!userId) {
+        console.error('No user ID found');
+        setLoading(false);
+        return;
+      }
 
-      // If subject teacher, fetch assigned subjects from classes
-      if (currentUserRole === 'subject_teacher' && userId) {
-        try {
-          const classesResponse = await api.get(`/classes/subject-teacher/${userId}`);
-          const classesData = classesResponse.data;
-          const classes = Array.isArray(classesData.data) ? classesData.data : [];
-          
-          // Extract all unique subjects from assigned classes
-          const subjects = [];
-          classes.forEach(cls => {
-            if (cls.subject_teachers && Array.isArray(cls.subject_teachers)) {
-              cls.subject_teachers.forEach(st => {
-                if (st.teacher_id === userId && st.subject && !subjects.includes(st.subject)) {
-                  subjects.push(st.subject);
-                }
-              });
+      // Fetch adviser classes
+      let adviserClasses = [];
+      try {
+        const adviserResponse = await fetch(`${API_BASE_URL}/classes/adviser/${userId}`);
+        if (adviserResponse.ok) {
+          const data = await adviserResponse.json();
+          adviserClasses = Array.isArray(data.data) ? data.data : [];
+        }
+      } catch (e) {
+        console.error('Error fetching adviser classes:', e);
+      }
+
+      // Fetch subject teacher classes
+      let subjectTeacherClasses = [];
+      try {
+        const stResponse = await fetch(`${API_BASE_URL}/classes/subject-teacher/${userId}`);
+        if (stResponse.ok) {
+          const data = await stResponse.json();
+          subjectTeacherClasses = Array.isArray(data.data) ? data.data : [];
+        }
+      } catch (e) {
+        console.error('Error fetching subject teacher classes:', e);
+      }
+
+      // Combine and deduplicate classes
+      const combinedClasses = [...adviserClasses, ...subjectTeacherClasses];
+      const uniqueClasses = Array.from(new Map(combinedClasses.map(c => [c.id, c])).values());
+      setAssignedClasses(uniqueClasses);
+      
+      console.log('EditGrades - Assigned classes:', uniqueClasses.map(c => `${c.grade}-${c.section}`));
+
+      // Extract subjects the teacher can edit
+      const subjects = [];
+      subjectTeacherClasses.forEach(cls => {
+        if (cls.subjects_teaching) {
+          cls.subjects_teaching.split(',').forEach(s => {
+            const trimmed = s.trim();
+            if (trimmed && !subjects.includes(trimmed)) {
+              subjects.push(trimmed);
             }
           });
-          
-          setAssignedSubjects(subjects);
-          console.log('Assigned subjects for subject teacher:', subjects);
-          
-          // Set first assigned subject as default
-          if (subjects.length > 0) {
-            setSelectedSubject(subjects[0]);
-          }
-        } catch (err) {
-          console.error('Error fetching classes:', err);
         }
+      });
+      setAssignedSubjects(subjects);
+      console.log('EditGrades - Assigned subjects:', subjects);
+      
+      if (subjects.length > 0) {
+        setSelectedSubject(subjects[0]);
       }
+
+      // Fetch all students
+      const response = await api.get('/students');
+      const allStudents = response.data.data || response.data;
+      
+      // Filter students to only show those in assigned classes
+      const normalize = str => (str || '').toString().trim().toLowerCase();
+      const filteredStudents = (Array.isArray(allStudents) ? allStudents : []).filter(student => {
+        return uniqueClasses.some(c => 
+          normalize(c.grade) === normalize(student.gradeLevel) && 
+          normalize(c.section) === normalize(student.section)
+        );
+      });
+      
+      console.log('EditGrades - Total students:', allStudents.length, '→ Filtered:', filteredStudents.length);
+      setStudents(filteredStudents);
 
       setLoading(false);
     } catch (error) {
