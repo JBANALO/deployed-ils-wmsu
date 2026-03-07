@@ -83,9 +83,10 @@ const updateGrades = async (req, res) => {
 
     await pool.query('UPDATE students SET average = ? WHERE id = ?', [average || 0, id]);
 
-    res.json({ message: `${quarter || 'Q1'} grades updated`, average });
+    res.json({ success: true, message: `${quarter || 'Q1'} grades updated`, average });
   } catch (err) {
-    res.status(500).json({ error: 'Failed', details: err.message });
+    console.error('Error saving grades:', err);
+    res.status(500).json({ success: false, error: 'Failed', message: err.message, details: err.message });
   }
 };
 
