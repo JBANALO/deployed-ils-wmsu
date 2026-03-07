@@ -152,12 +152,12 @@ app.use('/api/delete-requests', deleteRequestRoutes);
 app.use('/api/student', require('./routes/studentPortal'));
 
 app.get('/', (req, res) => {
-  res.json({ message: 'Student Management API Running!', version: '2.0', deployedAt: '2026-03-05' });
+  res.json({ message: 'Student Management API Running!', version: '2.5', deployedAt: '2026-03-07T12:00:00Z' });
 });
 
 // Version check - used to verify Railway has latest code
 app.get('/api/version', (req, res) => {
-  res.json({ version: '2.2', hasSubjectTeacherEndpoint: true, hasGradesEndpoint: true, deployedAt: '2026-03-07', nixpacksFixed: true });
+  res.json({ version: '2.5', hasSubjectTeacherEndpoint: true, hasGradesEndpoint: true, deployedAt: '2026-03-07T12:00:00Z', backend: 'backend/server/server.js' });
 });
 
 // Sync data and start server
