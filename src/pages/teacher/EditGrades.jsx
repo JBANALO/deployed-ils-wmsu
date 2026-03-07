@@ -35,15 +35,15 @@ export default function EditGrades() {
   const [lockReason, setLockReason] = useState("");
   const [showReportCard, setShowReportCard] = useState(false);
 
-  // Subjects by grade level
+  // Subjects by grade level (Based on DepEd Report Card)
   const subjectsByGrade = {
-    "Kindergarten": ["Reading", "Writing", "Math Readiness", "Arts", "Physical Education"],
-    "Grade 1": ["Mathematics", "English", "Filipino", "Science", "Araling Panlipunan", "MAPEH"],
-    "Grade 2": ["Mathematics", "English", "Filipino", "Science", "Araling Panlipunan", "MAPEH"],
-    "Grade 3": ["Mathematics", "English", "Filipino", "Science", "Araling Panlipunan", "MAPEH"],
-    "Grade 4": ["Mathematics", "English", "Filipino", "Science", "Araling Panlipunan", "MAPEH", "EPP"],
-    "Grade 5": ["Mathematics", "English", "Filipino", "Science", "Araling Panlipunan", "MAPEH", "EPP"],
-    "Grade 6": ["Mathematics", "English", "Filipino", "Science", "Araling Panlipunan", "MAPEH", "EPP"],
+    "Kindergarten": ["Filipino", "English", "Mathematics", "GMRC", "MAPEH"],
+    "Grade 1": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
+    "Grade 2": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
+    "Grade 3": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
+    "Grade 4": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
+    "Grade 5": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
+    "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
   };
 
   useEffect(() => {
