@@ -41,7 +41,7 @@ const canEnterGrade = async (user, student, subject) => {
     if (adviserClasses && adviserClasses.length > 0) return true;
     
     // Check if user is subject teacher for this class and subject
-    const classId = `${studentGrade.toLowerCase().replace(/\\s+/g, '-')}-${studentSection.toLowerCase()}`;
+    const classId = `${studentGrade.toLowerCase().replace(/\s+/g, '-')}-${studentSection.toLowerCase()}`;
     const subjectTeacherRecords = await query(
       'SELECT * FROM subject_teachers WHERE teacher_id = ? AND class_id = ?',
       [user.id, classId]
