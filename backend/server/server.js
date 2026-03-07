@@ -157,7 +157,7 @@ app.get('/', (req, res) => {
 
 // Version check - used to verify Railway has latest code
 app.get('/api/version', (req, res) => {
-  res.json({ version: '2.1', hasSubjectTeacherEndpoint: true, hasGradesEndpoint: true, deployedAt: '2026-03-07' });
+  res.json({ version: '2.2', hasSubjectTeacherEndpoint: true, hasGradesEndpoint: true, deployedAt: '2026-03-07', nixpacksFixed: true });
 });
 
 // Sync data and start server
