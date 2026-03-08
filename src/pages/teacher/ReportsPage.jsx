@@ -73,7 +73,48 @@ export default function ReportsPage() {
     try {
       setLoading(true);
 
-      // Fetch students
+      // Get user ID from localStorage
+      const userStr = localStorage.getItem("user");
+      let userId = null;
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        userId = user.id;
+      }
+
+      if (!userId) {
+        console.error('No user ID found');
+        setLoading(false);
+        return;
+      }
+
+      // Fetch adviser classes for this teacher
+      let adviserClasses = [];
+      try {
+        const adviserResponse = await axios.get(`/classes/adviser/${userId}`);
+        adviserClasses = Array.isArray(adviserResponse.data.data) ? adviserResponse.data.data : [];
+      } catch (e) {
+        console.error('Error fetching adviser classes:', e);
+      }
+
+      // Fetch subject teacher classes
+      let subjectTeacherClasses = [];
+      try {
+        const stResponse = await axios.get(`/classes/subject-teacher/${userId}`);
+        subjectTeacherClasses = Array.isArray(stResponse.data.data) ? stResponse.data.data : [];
+      } catch (e) {
+        console.error('Error fetching subject teacher classes:', e);
+      }
+
+      // Combine and deduplicate assigned classes
+      const combinedClasses = [...adviserClasses, ...subjectTeacherClasses];
+      const uniqueClasses = Array.from(new Map(combinedClasses.map(c => [c.id, c])).values());
+      
+      // Extract sections from assigned classes only
+      const assignedSections = uniqueClasses.map(c => `${c.grade} - ${c.section}`).filter(Boolean);
+      setSections([...new Set(assignedSections)].sort());
+      console.log('Assigned sections for reports:', assignedSections);
+
+      // Fetch all students
       const studentsResponse = await axios.get('/students');
       let studentsData = Array.isArray(studentsResponse.data.data) 
         ? studentsResponse.data.data 
@@ -81,11 +122,16 @@ export default function ReportsPage() {
         ? studentsResponse.data 
         : [];
 
-      // Extract unique sections
-      const uniqueSections = [...new Set(studentsData.map(s => `${s.gradeLevel} - ${s.section}`))].filter(Boolean);
-      setSections(uniqueSections.sort());
+      // Filter students to only those in assigned classes
+      const normalize = str => (str || '').toString().trim().toLowerCase();
+      studentsData = studentsData.filter(student => {
+        return uniqueClasses.some(c => 
+          normalize(c.grade) === normalize(student.gradeLevel) && 
+          normalize(c.section) === normalize(student.section)
+        );
+      });
 
-      // Filter by section if selected
+      // Further filter by selected section if one is chosen
       if (selectedSection) {
         studentsData = studentsData.filter(s => `${s.gradeLevel} - ${s.section}` === selectedSection);
       }
