@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, ActivityIndicator, RefreshControl } from 'react-native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useAttendance } from '../context/AttendanceContext';
 import { useAuth } from '../context/AuthProvider'; 
@@ -11,18 +11,36 @@ export default function LogScreen() {
   const [selectedPeriod, setSelectedPeriod] = useState('all'); 
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const { attendanceLog, getTodayStats, loadAttendanceLogs } = useAttendance();
   const { user } = useAuth();
+
+  // Check if selected date is a school day (not weekend)
+  const isSchoolDay = (date) => {
+    const day = date.getDay();
+    return day !== 0 && day !== 6; // Not Sunday (0) or Saturday (6)
+  };
 
   useFocusEffect(
     React.useCallback(() => {
       if (user) {
+        // Reset to today's date when screen is focused
+        setSelectedDate(new Date());
         loadStudents();
         loadAttendanceLogs();
         setRefreshKey(prev => prev + 1);
       }
     }, [user])
   );
+
+  // Pull-to-refresh handler
+  const onRefresh = async () => {
+    setRefreshing(true);
+    setSelectedDate(new Date()); // Reset to today
+    await Promise.all([loadStudents(), loadAttendanceLogs()]);
+    setRefreshKey(prev => prev + 1);
+    setRefreshing(false);
+  };
 
   const loadStudents = async () => {
     if (!user) return;
@@ -148,7 +166,12 @@ export default function LogScreen() {
   };
 
   const logsBySection = getLogsBySection();
-  const stats = getTodayStats();
+  // On weekends, show zero stats
+  const rawStats = getTodayStats();
+  const stats = isSchoolDay(selectedDate) ? rawStats : {
+    morning: { present: 0, late: 0, absent: 0 },
+    afternoon: { present: 0, late: 0, absent: 0 }
+  };
 
   const getStatusDisplay = (log) => {
     if (!log) return { text: 'Absent', color: '#f44336' };
@@ -261,8 +284,28 @@ export default function LogScreen() {
           </View>
         )}
 
-        <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 120 }} key={refreshKey}>
-          {loading ? (
+        <ScrollView 
+          style={styles.scrollView} 
+          contentContainerStyle={{ paddingBottom: 120 }} 
+          key={refreshKey}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#8B0000']}
+              tintColor="#8B0000"
+            />
+          }
+        >
+          {!isSchoolDay(selectedDate) ? (
+            <View style={styles.emptyContainer}>
+              <Icon name="calendar-remove-outline" size={64} color="#8B0000" />
+              <Text style={[styles.emptyText, { color: '#8B0000' }]}>No Class Today</Text>
+              <Text style={styles.emptySubText}>
+                It's {selectedDate.toLocaleDateString('en-US', { weekday: 'long' })}. Enjoy your weekend!
+              </Text>
+            </View>
+          ) : loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#8B0000" />
               <Text style={styles.loadingText}>Loading logs...</Text>

@@ -364,7 +364,12 @@ WMSU ILS - Elementary Department`;
     setPendingEmailData(null);
   };
 
-  const stats = getTodayStats();
+  // On weekends/no-school days, show zero stats
+  const rawStats = getTodayStats();
+  const stats = isSchoolDay() ? rawStats : {
+    morning: { present: 0, late: 0, absent: 0 },
+    afternoon: { present: 0, late: 0, absent: 0 }
+  };
   const sections = getStudentsBySection();
 
   useEffect(() => {
@@ -543,7 +548,16 @@ WMSU ILS - Elementary Department`;
           ) : (
             Object.keys(sections).sort().map((sectionName) => {
               const studentsList = sections[sectionName];
-              const attendance = getSectionAttendance(sectionName, studentsList);
+              const rawAttendance = getSectionAttendance(sectionName, studentsList);
+              // On no-school days, show zeros instead of counting unscanned as absent
+              const attendance = isSchoolDay() ? rawAttendance : {
+                ...rawAttendance,
+                stats: {
+                  ...rawAttendance.stats,
+                  morning: { present: 0, late: 0, absent: 0 },
+                  afternoon: { present: 0, late: 0, absent: 0 }
+                }
+              };
               
               return (
                 <TouchableOpacity 
@@ -561,26 +575,35 @@ WMSU ILS - Elementary Department`;
                     <Icon name="chevron-right" size={24} color="#8B0000" />
                   </View>
                   
-                  <View style={styles.sectionStats}>
-                    <View style={styles.periodStat}>
-                      <Text style={styles.periodStatLabel}>Morning</Text>
-                      <View style={styles.periodStatRight}>
-                        <Text style={styles.periodStatValue}>
-                          P:{attendance.stats.morning.present} L:{attendance.stats.morning.late} A:{attendance.stats.morning.absent}
-                        </Text>
-                        <Icon name="white-balance-sunny" size={18} color="#FFA500" />
+                  {isSchoolDay() ? (
+                    <View style={styles.sectionStats}>
+                      <View style={styles.periodStat}>
+                        <Text style={styles.periodStatLabel}>Morning</Text>
+                        <View style={styles.periodStatRight}>
+                          <Text style={styles.periodStatValue}>
+                            P:{attendance.stats.morning.present} L:{attendance.stats.morning.late} A:{attendance.stats.morning.absent}
+                          </Text>
+                          <Icon name="white-balance-sunny" size={18} color="#FFA500" />
+                        </View>
+                      </View>
+                      <View style={styles.periodStat}>
+                        <Text style={styles.periodStatLabel}>Afternoon</Text>
+                        <View style={styles.periodStatRight}>
+                          <Text style={styles.periodStatValue}>
+                            P:{attendance.stats.afternoon.present} L:{attendance.stats.afternoon.late} A:{attendance.stats.afternoon.absent}
+                          </Text>
+                          <Icon name="weather-sunset" size={18} color="#FF6B35" />
+                        </View>
                       </View>
                     </View>
-                    <View style={styles.periodStat}>
-                      <Text style={styles.periodStatLabel}>Afternoon</Text>
-                      <View style={styles.periodStatRight}>
-                        <Text style={styles.periodStatValue}>
-                          P:{attendance.stats.afternoon.present} L:{attendance.stats.afternoon.late} A:{attendance.stats.afternoon.absent}
-                        </Text>
-                        <Icon name="weather-sunset" size={18} color="#FF6B35" />
+                  ) : (
+                    <View style={styles.sectionStats}>
+                      <View style={[styles.periodStat, { justifyContent: 'center' }]}>
+                        <Icon name="calendar-remove" size={16} color="#8B0000" />
+                        <Text style={[styles.periodStatLabel, { color: '#8B0000', marginLeft: 8 }]}>No Class Today</Text>
                       </View>
                     </View>
-                  </View>
+                  )}
                 </TouchableOpacity>
               );
             })
