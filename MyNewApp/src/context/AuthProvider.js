@@ -131,12 +131,66 @@ export default function AuthProvider({ children }) {
     }
   };
 
+  // Refresh user data from storage (after profile update)
+  const refreshUserData = async () => {
+    try {
+      const storedUser = await storageManager.getItem('user');
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+      }
+    } catch (error) {
+      console.error('Error refreshing user data:', error);
+    }
+  };
+
+  // Update user in storage (called after profile update)
+  const updateUserInStorage = async (updatedData) => {
+    try {
+      const currentUser = user || {};
+      const newUserData = { ...currentUser, ...updatedData };
+      await storageManager.setItem('user', JSON.stringify(newUserData));
+      setUser(newUserData);
+    } catch (error) {
+      console.error('Error updating user in storage:', error);
+    }
+  };
+
+  // Change password
+  const changePassword = async (currentPassword, newPassword) => {
+    try {
+      // API call to change password
+      const response = await fetch('https://deployed-ils-wmsu-production.up.railway.app/api/auth/change-password', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user?.token}`,
+        },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok && result.status === 'success') {
+        return { success: true };
+      } else {
+        return { success: false, error: result.message || 'Failed to change password' };
+      }
+    } catch (error) {
+      console.error('Change password error:', error);
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  };
+
   const value = {
     user,
+    userData: user, // Alias for compatibility
     loading,
     login,
     logout,
     register,
+    refreshUserData,
+    updateUserInStorage,
+    changePassword,
   };
 
   return (
