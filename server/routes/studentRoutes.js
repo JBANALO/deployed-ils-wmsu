@@ -94,38 +94,26 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
       }
     }
 
-    // Update grades
+    // Update grades - grades table uses: student_id, subject, quarter, grade (one row per quarter)
     for (const [subject, gradeValue] of Object.entries(grades)) {
-      const quarterCol = quarter || 'q1';
+      const quarterName = quarter || 'Q1';  // e.g., "Q1", "Q2", etc.
       
-      const existingGrades = await query(
-        'SELECT id FROM grades WHERE student_id = ? AND subject = ?',
-        [id, subject]
+      const existingGrade = await query(
+        'SELECT id FROM grades WHERE student_id = ? AND subject = ? AND quarter = ?',
+        [id, subject, quarterName]
       );
 
-      if (existingGrades && existingGrades.length > 0) {
-        if (typeof gradeValue === 'object') {
-          const updates = [];
-          const values = [];
-          for (const [q, val] of Object.entries(gradeValue)) {
-            updates.push(`${q} = ?`);
-            values.push(val || 0);
-          }
-          values.push(id, subject);
-          await query(`UPDATE grades SET ${updates.join(', ')} WHERE student_id = ? AND subject = ?`, values);
-        } else {
-          await query(`UPDATE grades SET ${quarterCol} = ? WHERE student_id = ? AND subject = ?`, [gradeValue, id, subject]);
-        }
-      } else {
-        const newGrade = { q1: 0, q2: 0, q3: 0, q4: 0 };
-        if (typeof gradeValue === 'object') {
-          Object.assign(newGrade, gradeValue);
-        } else {
-          newGrade[quarterCol] = gradeValue;
-        }
+      if (existingGrade && existingGrade.length > 0) {
+        // Update existing grade
         await query(
-          'INSERT INTO grades (student_id, subject, q1, q2, q3, q4) VALUES (?, ?, ?, ?, ?, ?)',
-          [id, subject, newGrade.q1, newGrade.q2, newGrade.q3, newGrade.q4]
+          'UPDATE grades SET grade = ?, teacher_id = ?, updated_at = NOW() WHERE student_id = ? AND subject = ? AND quarter = ?',
+          [gradeValue, user.id, id, subject, quarterName]
+        );
+      } else {
+        // Insert new grade
+        await query(
+          'INSERT INTO grades (student_id, subject, quarter, grade, teacher_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
+          [id, subject, quarterName, gradeValue, user.id]
         );
       }
     }
@@ -145,11 +133,24 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
     const { id } = req.params;
     const grades = await query('SELECT * FROM grades WHERE student_id = ?', [id]);
 
+    // grades table: each row is one subject + quarter combo
+    // Need to restructure: { "Filipino": { q1: 90, q2: 85, ... }, "English": { q1: 88, ... } }
     const result = {};
     if (grades) {
       grades.forEach(r => {
-        result[r.subject] = { q1: r.q1, q2: r.q2, q3: r.q3, q4: r.q4, average: parseFloat(r.average || 0) };
+        if (!result[r.subject]) {
+          result[r.subject] = { q1: 0, q2: 0, q3: 0, q4: 0, average: 0 };
+        }
+        // Map quarter name to key (Q1 -> q1, etc.)
+        const quarterKey = r.quarter.toLowerCase();
+        result[r.subject][quarterKey] = parseFloat(r.grade) || 0;
       });
+      // Calculate averages
+      for (const subject of Object.keys(result)) {
+        const g = result[subject];
+        const vals = [g.q1, g.q2, g.q3, g.q4].filter(v => v > 0);
+        g.average = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+      }
     }
 
     res.json(result);
