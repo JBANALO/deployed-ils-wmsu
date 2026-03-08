@@ -1,16 +1,45 @@
 // server/utils/emailService.js
-const nodemailer = require('nodemailer');
+// Using SendGrid Web API - works on Railway (no SMTP port blocking)
 
-// Create transporter using Gmail
-// Note: You need to set up an App Password in Gmail settings
-// Go to Google Account > Security > 2-Step Verification > App passwords
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER || 'wmsuils.attendance@gmail.com',
-    pass: process.env.EMAIL_PASS || 'your-app-password-here' // Replace with actual app password
+const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+const FROM_EMAIL = process.env.EMAIL_FROM || 'wmsuils.attendance@gmail.com';
+const FROM_NAME = 'WMSU ILS Attendance';
+
+/**
+ * Send email via SendGrid Web API
+ */
+const sendViaSendGrid = async (to, subject, htmlContent, textContent) => {
+  if (!SENDGRID_API_KEY) {
+    console.error('📧 SENDGRID_API_KEY not configured');
+    return { success: false, error: 'SendGrid API key not configured' };
   }
-});
+
+  const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${SENDGRID_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: to }] }],
+      from: { email: FROM_EMAIL, name: FROM_NAME },
+      subject: subject,
+      content: [
+        { type: 'text/plain', value: textContent },
+        { type: 'text/html', value: htmlContent }
+      ]
+    })
+  });
+
+  if (response.ok || response.status === 202) {
+    console.log(`📧 Email sent successfully to ${to} via SendGrid`);
+    return { success: true, messageId: response.headers.get('x-message-id') || 'sent' };
+  } else {
+    const errorText = await response.text();
+    console.error(`📧 SendGrid error: ${response.status} - ${errorText}`);
+    return { success: false, error: `SendGrid error: ${response.status}` };
+  }
+};
 
 /**
  * Send attendance notification email to parent
@@ -204,18 +233,11 @@ ${teacherName || 'School Administration'}
 WMSU ILS - Elementary Department
   `;
 
-  const mailOptions = {
-    from: `"WMSU ILS Attendance" <${process.env.EMAIL_USER || 'wmsuils.attendance@gmail.com'}>`,
-    to: parentEmail,
-    subject: `Attendance Update: ${studentName} - ${statusText} (${periodText})`,
-    text: textContent,
-    html: htmlContent
-  };
+  const subject = `Attendance Update: ${studentName} - ${statusText} (${periodText})`;
 
   try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`📧 Email sent successfully to ${parentEmail}: ${info.messageId}`);
-    return { success: true, messageId: info.messageId };
+    const result = await sendViaSendGrid(parentEmail, subject, htmlContent, textContent);
+    return result;
   } catch (error) {
     console.error(`📧 Error sending email to ${parentEmail}:`, error.message);
     return { success: false, error: error.message };
