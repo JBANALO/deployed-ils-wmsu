@@ -33,9 +33,9 @@ const canEnterGrade = async (user, student, subject) => {
     const studentGrade = student.grade_level || student.gradeLevel;
     const studentSection = student.section;
     
-    // Check if user is adviser for this class
+    // Check if user is adviser for this class (classes table uses 'grade' not 'grade_level')
     const adviserClasses = await query(
-      'SELECT * FROM classes WHERE adviser_id = ? AND grade_level = ? AND section = ?',
+      'SELECT * FROM classes WHERE adviser_id = ? AND grade = ? AND section = ?',
       [user.id, studentGrade, studentSection]
     );
     if (adviserClasses && adviserClasses.length > 0) return true;
