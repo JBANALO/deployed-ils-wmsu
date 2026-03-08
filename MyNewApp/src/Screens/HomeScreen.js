@@ -376,7 +376,21 @@ WMSU ILS - Elementary Department`;
   };
 
   const handleNotificationPress = () => {
-    Alert.alert('Notifications', 'You have 3 new notifications');
+    const todayStats = getTodayStats();
+    const absentCount = todayStats.absent || 0;
+    const lateCount = todayStats.late || 0;
+    
+    let message = '';
+    if (absentCount === 0 && lateCount === 0) {
+      message = 'No new notifications today.';
+    } else {
+      const parts = [];
+      if (absentCount > 0) parts.push(`${absentCount} student${absentCount > 1 ? 's' : ''} marked absent`);
+      if (lateCount > 0) parts.push(`${lateCount} student${lateCount > 1 ? 's' : ''} marked late`);
+      message = parts.join('\n');
+    }
+    
+    Alert.alert('Today\'s Notifications', message);
   };
 
   const currentPeriod = getAttendancePeriod();
@@ -418,9 +432,11 @@ WMSU ILS - Elementary Department`;
           <View style={styles.headerRight}>
             <TouchableOpacity style={styles.notificationIcon} onPress={handleNotificationPress}>
               <Icon name="bell" size={24} color="#fff" />
-              <View style={styles.notificationBadge}>
-                <Text style={styles.badgeText}>3</Text>
-              </View>
+              {(stats.absent > 0 || stats.late > 0) && (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.badgeText}>{stats.absent + stats.late}</Text>
+                </View>
+              )}
             </TouchableOpacity>
             <Text style={styles.timeText}>
               {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
