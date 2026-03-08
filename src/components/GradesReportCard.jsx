@@ -4,6 +4,7 @@ import api from '../api/axiosConfig';
 export default function GradesReportCard({ students, quarter, gradeLevel, section, classId, onClose }) {
   const [classSubjects, setClassSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [studentsWithGrades, setStudentsWithGrades] = useState([]);
 
   const quarterLabels = {
     q1: 'FIRST QUARTER',
@@ -23,11 +24,41 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
     "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
   };
 
+  // Fetch grades for all students when component mounts
+  useEffect(() => {
+    const fetchGradesForStudents = async () => {
+      setLoading(true);
+      try {
+        const updatedStudents = await Promise.all(
+          students.map(async (student) => {
+            try {
+              const gradesResponse = await api.get(`/students/${student.id}/grades`);
+              return { ...student, grades: gradesResponse.data || {} };
+            } catch (error) {
+              console.error(`Error fetching grades for student ${student.id}:`, error);
+              return { ...student, grades: {} };
+            }
+          })
+        );
+        setStudentsWithGrades(updatedStudents);
+        console.log('Fetched grades for students:', updatedStudents);
+      } catch (error) {
+        console.error('Error fetching grades:', error);
+        setStudentsWithGrades(students);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (students && students.length > 0) {
+      fetchGradesForStudents();
+    }
+  }, [students]);
+
   // Fetch class subjects when component mounts
   useEffect(() => {
     const fetchClassSubjects = async () => {
       try {
-        setLoading(true);
         if (classId) {
           // If classId is provided, fetch subjects for that class
           const response = await api.get(`/classes/${classId}/subjects`);
@@ -44,8 +75,6 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
         console.error('Error fetching class subjects:', error);
         // Fallback to hardcoded subjects on error
         setClassSubjects(subjectsByGrade[gradeLevel] || []);
-      } finally {
-        setLoading(false);
       }
     };
 
@@ -89,7 +118,9 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
 
         {/* Report Cards */}
         <div className="p-8 print:p-0 bg-white" id="report-card">
-          {students.map((student, studentIndex) => {
+          {loading ? (
+            <div className="text-center py-8">Loading grades...</div>
+          ) : studentsWithGrades.map((student, studentIndex) => {
             const gradeObj = student.grades || {};
             // Use student's actual grade level
             const studentGradeLevel = student.gradeLevel || gradeLevel;
@@ -223,7 +254,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
                 </div>
 
                 {/* Page Break for Print */}
-                {studentIndex < students.length - 1 && (
+                {studentIndex < studentsWithGrades.length - 1 && (
                   <div className="page-break-after border-t-4 border-gray-300 mt-12 pt-8 print:page-break-after"></div>
                 )}
               </div>
