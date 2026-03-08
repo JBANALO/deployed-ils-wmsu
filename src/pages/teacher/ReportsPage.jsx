@@ -90,7 +90,37 @@ export default function ReportsPage() {
         studentsData = studentsData.filter(s => `${s.gradeLevel} - ${s.section}` === selectedSection);
       }
 
-      setStudents(studentsData);
+      // Fetch grades for each student and calculate averages
+      const studentsWithGrades = await Promise.all(
+        studentsData.map(async (student) => {
+          try {
+            const gradesResponse = await axios.get(`/students/${student.id}/grades`);
+            const grades = gradesResponse.data || {};
+            
+            // Calculate overall average from all subjects and quarters
+            let totalGrade = 0;
+            let gradeCount = 0;
+            
+            Object.values(grades).forEach(subjectGrades => {
+              ['q1', 'q2', 'q3', 'q4'].forEach(q => {
+                const gradeVal = parseFloat(subjectGrades[q]);
+                if (!isNaN(gradeVal) && gradeVal > 0) {
+                  totalGrade += gradeVal;
+                  gradeCount++;
+                }
+              });
+            });
+            
+            const calculatedAverage = gradeCount > 0 ? Math.round((totalGrade / gradeCount) * 100) / 100 : 0;
+            return { ...student, average: calculatedAverage, grades };
+          } catch (error) {
+            console.error(`Error fetching grades for student ${student.id}:`, error);
+            return { ...student, average: student.average || 0, grades: {} };
+          }
+        })
+      );
+
+      setStudents(studentsWithGrades);
 
       // Fetch attendance data
       const attendanceResponse = await axios.get('/attendance');
@@ -179,19 +209,22 @@ export default function ReportsPage() {
         totalDays: uniqueDays
       });
 
-      // Calculate subject averages
+      // Calculate subject averages from fetched grades
       const subjectAvgs = {};
-      studentsData.forEach(student => {
+      studentsWithGrades.forEach(student => {
         if (student.grades) {
           Object.entries(student.grades).forEach(([subject, grades]) => {
             if (!subjectAvgs[subject]) {
               subjectAvgs[subject] = { subject, total: 0, count: 0 };
             }
-            const q1 = grades.q1 || 0;
-            if (q1 > 0) {
-              subjectAvgs[subject].total += q1;
-              subjectAvgs[subject].count += 1;
-            }
+            // Include all quarters
+            ['q1', 'q2', 'q3', 'q4'].forEach(q => {
+              const gradeVal = parseFloat(grades[q]);
+              if (!isNaN(gradeVal) && gradeVal > 0) {
+                subjectAvgs[subject].total += gradeVal;
+                subjectAvgs[subject].count += 1;
+              }
+            });
           });
         }
       });
@@ -203,40 +236,45 @@ export default function ReportsPage() {
 
       setSubjectsData(finalSubjectData.slice(0, 5));
 
-      // Get top performing students
-      const topPerformers = students
+      // Get top performing students (use studentsWithGrades which has calculated averages)
+      const topPerformers = studentsWithGrades
         .filter(s => s.average && s.average > 0)
         .sort((a, b) => (b.average || 0) - (a.average || 0))
-        .slice(0, 3)
+        .slice(0, 5)
         .map((s, idx) => ({
           rank: idx + 1,
           name: `${s.lastName}, ${s.firstName}`,
-          avg: s.average || 0
+          avg: s.average || 0,
+          section: `${s.gradeLevel} - ${s.section}`
         }));
 
       setTopStudents(topPerformers);
 
       // Get lowest performing students
-      const lowestPerformers = students
+      const lowestPerformers = studentsWithGrades
         .filter(s => s.average && s.average > 0)
         .sort((a, b) => (a.average || 0) - (b.average || 0))
-        .slice(0, 3)
+        .slice(0, 5)
         .map((s, idx) => ({
           rank: idx + 1,
           name: `${s.lastName}, ${s.firstName}`,
-          avg: s.average || 0
+          avg: s.average || 0,
+          section: `${s.gradeLevel} - ${s.section}`
         }));
 
       setLowestStudents(lowestPerformers);
 
-      // Calculate statistics
-      const totalStudents = students.length;
+      // Calculate statistics using studentsWithGrades
+      const totalStudents = studentsWithGrades.length;
       const presentToday = allAttendance.filter(r => r.date === new Date().toISOString().split('T')[0] && r.status === 'Present').length;
       const lateToday = allAttendance.filter(r => r.date === new Date().toISOString().split('T')[0] && r.status === 'Late').length;
-      const classAverage = students.length > 0 
-        ? Math.round(students.reduce((sum, s) => sum + (s.average || 0), 0) / students.length * 10) / 10
+      
+      // Class average from students who have grades
+      const studentsWithAvg = studentsWithGrades.filter(s => s.average > 0);
+      const classAverage = studentsWithAvg.length > 0 
+        ? Math.round(studentsWithAvg.reduce((sum, s) => sum + s.average, 0) / studentsWithAvg.length * 10) / 10
         : 0;
-      const honorStudents = students.filter(s => (s.average || 0) >= 90).length;
+      const honorStudents = studentsWithGrades.filter(s => s.average >= 90).length;
 
       setStats({
         attendanceRate: totalStudents > 0 ? Math.round((presentToday / totalStudents) * 100 * 10) / 10 : 0,
@@ -461,18 +499,18 @@ export default function ReportsPage() {
             </div>
 
             <div className="p-6 h-[calc(100%-90px)] overflow-y-auto">
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {loading ? (
                   <p className="text-center text-gray-500">Loading top students...</p>
                 ) : topStudents.length === 0 ? (
-                  <p className="text-center text-gray-500">No students found</p>
+                  <p className="text-center text-gray-500">No students with grades found</p>
                 ) : (
                   topStudents.map((student) => (
                     <div
                       key={student.rank}
-                      className="flex items-center justify-between p-6 bg-gradient-to-r from-red-50 to-pink-50 rounded-2xl border border-red-200 hover:shadow-lg transition h-[80px]"
+                      className="flex items-center justify-between p-4 bg-gradient-to-r from-red-50 to-pink-50 rounded-2xl border border-red-200 hover:shadow-lg transition"
                     >
-                      <div className="flex items-center gap-6">
+                      <div className="flex items-center gap-4">
                         <div
                           className={`text-xl font-bold ${
                             student.rank === 1
@@ -485,8 +523,8 @@ export default function ReportsPage() {
                           #{student.rank}
                         </div>
                         <div>
-                          <p className="text-xl font-bold text-gray-900">{student.name}</p>
-                          <p className="text-base text-gray-600">General Average</p>
+                          <p className="text-lg font-bold text-gray-900">{student.name}</p>
+                          <p className="text-sm text-gray-600">{student.section}</p>
                         </div>
                       </div>
 
@@ -510,30 +548,30 @@ export default function ReportsPage() {
             </div>
 
             <div className="p-6 h-[calc(100%-90px)] overflow-y-auto">
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {loading ? (
                   <p className="text-center text-gray-500">Loading students...</p>
                 ) : lowestStudents.length === 0 ? (
-                  <p className="text-center text-gray-500">No students found</p>
+                  <p className="text-center text-gray-500">No students with grades found</p>
                 ) : (
                   lowestStudents.map((student) => (
                     <div
                       key={student.rank}
-                      className="flex items-center justify-between p-6 bg-gradient-to-r from-orange-50 to-yellow-50 rounded-2xl border border-orange-200 hover:shadow-lg transition h-[80px]"
+                      className="flex items-center justify-between p-4 bg-gradient-to-r from-orange-50 to-yellow-50 rounded-2xl border border-orange-200 hover:shadow-lg transition"
                     >
-                      <div className="flex items-center gap-6">
+                      <div className="flex items-center gap-4">
                         <div className="text-xl font-bold text-orange-600">
                           #{student.rank}
                         </div>
                         <div>
-                          <p className="text-xl font-bold text-gray-900">{student.name}</p>
-                          <p className="text-base text-gray-600">General Average</p>
+                          <p className="text-lg font-bold text-gray-900">{student.name}</p>
+                          <p className="text-sm text-gray-600">{student.section}</p>
                         </div>
                       </div>
 
                       <div className="text-right">
                         <p className="text-xl font-bold text-orange-700">{student.avg}</p>
-                        <p className="text-base font-semibold text-orange-800">Needs Improvement</p>
+                        <p className="text-sm font-semibold text-orange-800">Needs Improvement</p>
                       </div>
                     </div>
                   ))
