@@ -95,26 +95,51 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
     }
 
     // Update grades - grades table uses: student_id, subject, quarter, grade (one row per quarter)
+    // Frontend sends grades like: { "Filipino": { q1: 90 }, "English": { q1: 85, q2: 88 }, ... }
     for (const [subject, gradeValue] of Object.entries(grades)) {
-      const quarterName = quarter || 'Q1';  // e.g., "Q1", "Q2", etc.
-      
-      const existingGrade = await query(
-        'SELECT id FROM grades WHERE student_id = ? AND subject = ? AND quarter = ?',
-        [id, subject, quarterName]
-      );
+      // gradeValue is an object like { q1: 90 } or { q1: 90, q2: 85, ... }
+      if (typeof gradeValue === 'object') {
+        for (const [qKey, gValue] of Object.entries(gradeValue)) {
+          // qKey is like "q1", convert to "Q1" for storage
+          const quarterName = qKey.toUpperCase();
+          
+          const existingGrade = await query(
+            'SELECT id FROM grades WHERE student_id = ? AND subject = ? AND quarter = ?',
+            [id, subject, quarterName]
+          );
 
-      if (existingGrade && existingGrade.length > 0) {
-        // Update existing grade
-        await query(
-          'UPDATE grades SET grade = ?, teacher_id = ?, updated_at = NOW() WHERE student_id = ? AND subject = ? AND quarter = ?',
-          [gradeValue, user.id, id, subject, quarterName]
-        );
+          if (existingGrade && existingGrade.length > 0) {
+            await query(
+              'UPDATE grades SET grade = ?, teacher_id = ?, updated_at = NOW() WHERE student_id = ? AND subject = ? AND quarter = ?',
+              [gValue, user.id, id, subject, quarterName]
+            );
+          } else {
+            await query(
+              'INSERT INTO grades (student_id, subject, quarter, grade, teacher_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
+              [id, subject, quarterName, gValue, user.id]
+            );
+          }
+        }
       } else {
-        // Insert new grade
-        await query(
-          'INSERT INTO grades (student_id, subject, quarter, grade, teacher_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
-          [id, subject, quarterName, gradeValue, user.id]
+        // Fallback: single value with quarter from request body
+        const quarterName = (quarter || 'q1').toUpperCase();
+        
+        const existingGrade = await query(
+          'SELECT id FROM grades WHERE student_id = ? AND subject = ? AND quarter = ?',
+          [id, subject, quarterName]
         );
+
+        if (existingGrade && existingGrade.length > 0) {
+          await query(
+            'UPDATE grades SET grade = ?, teacher_id = ?, updated_at = NOW() WHERE student_id = ? AND subject = ? AND quarter = ?',
+            [gradeValue, user.id, id, subject, quarterName]
+          );
+        } else {
+          await query(
+            'INSERT INTO grades (student_id, subject, quarter, grade, teacher_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
+            [id, subject, quarterName, gradeValue, user.id]
+          );
+        }
       }
     }
 
