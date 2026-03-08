@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, StatusBar, Modal, ActivityIndicator, Linking, TextInput } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, StatusBar, Modal, ActivityIndicator, Linking, TextInput, RefreshControl } from 'react-native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useAttendance } from '../context/AttendanceContext';
 import { useAuth } from '../context/AuthProvider';
@@ -15,6 +15,8 @@ export default function HomeScreen() {
   const [emailModalVisible, setEmailModalVisible] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [pendingEmailData, setPendingEmailData] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const lastDateRef = useRef(new Date().toISOString().split('T')[0]);
   const { attendanceLog, getTodayStats, addManualAbsence, removeAbsence, getAttendancePeriod, recordAttendance, loadAttendanceLogs } = useAttendance();
   const { user, userData, loading: authLoading } = useAuth();
   
@@ -365,9 +367,35 @@ WMSU ILS - Elementary Department`;
   const sections = getStudentsBySection();
 
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+    const timer = setInterval(() => {
+      const now = new Date();
+      setCurrentTime(now);
+      
+      // Check if date changed (new day) - auto refresh data
+      const currentDate = now.toISOString().split('T')[0];
+      if (currentDate !== lastDateRef.current) {
+        console.log('New day detected, refreshing attendance data...');
+        lastDateRef.current = currentDate;
+        loadAttendanceLogs();
+        loadStudents();
+        setRefreshKey(prev => prev + 1);
+      }
+    }, 60000); // Check every minute
     return () => clearInterval(timer);
   }, []);
+
+  // Pull-to-refresh handler
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([loadStudents(), loadAttendanceLogs()]);
+      setRefreshKey(prev => prev + 1);
+    } catch (error) {
+      console.error('Refresh error:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const handleSectionPress = (sectionName, studentsList) => {
     const attendance = getSectionAttendance(sectionName, studentsList);
@@ -377,8 +405,9 @@ WMSU ILS - Elementary Department`;
 
   const handleNotificationPress = () => {
     const todayStats = getTodayStats();
-    const absentCount = todayStats.absent || 0;
-    const lateCount = todayStats.late || 0;
+    // Sum absent and late from both morning and afternoon sessions
+    const absentCount = (todayStats.morning?.absent || 0) + (todayStats.afternoon?.absent || 0);
+    const lateCount = (todayStats.morning?.late || 0) + (todayStats.afternoon?.late || 0);
     
     let message = '';
     if (absentCount === 0 && lateCount === 0) {
@@ -409,7 +438,18 @@ WMSU ILS - Elementary Department`;
   return (
     <>
       <StatusBar backgroundColor="#8B0000" barStyle="light-content" />
-      <ScrollView style={styles.container} key={refreshKey}>
+      <ScrollView 
+        style={styles.container} 
+        key={refreshKey}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#8B0000']}
+            tintColor="#8B0000"
+          />
+        }
+      >
         <View style={styles.welcomeCard}>
           <View style={{ flex: 1 }}>
             <Text style={styles.welcomeText}>Welcome, {teacher.name}!</Text>
@@ -432,9 +472,11 @@ WMSU ILS - Elementary Department`;
           <View style={styles.headerRight}>
             <TouchableOpacity style={styles.notificationIcon} onPress={handleNotificationPress}>
               <Icon name="bell" size={24} color="#fff" />
-              {(stats.absent > 0 || stats.late > 0) && (
+              {((stats.morning?.absent || 0) + (stats.afternoon?.absent || 0) + (stats.morning?.late || 0) + (stats.afternoon?.late || 0)) > 0 && (
                 <View style={styles.notificationBadge}>
-                  <Text style={styles.badgeText}>{stats.absent + stats.late}</Text>
+                  <Text style={styles.badgeText}>
+                    {(stats.morning?.absent || 0) + (stats.afternoon?.absent || 0) + (stats.morning?.late || 0) + (stats.afternoon?.late || 0)}
+                  </Text>
                 </View>
               )}
             </TouchableOpacity>
