@@ -211,7 +211,7 @@ export default function EditGrades() {
   };
 
   // Open grade modal for a student
-  const openGradeModal = (student) => {
+  const openGradeModal = async (student) => {
     setSelectedStudent(student);
     
     // Check if grades are locked (1 day has passed since last save)
@@ -257,21 +257,31 @@ export default function EditGrades() {
     // Update availableSubjects for this specific student
     setAvailableSubjects(editableSubjectsForClass);
     
+    // Fetch grades from API
+    let studentGrades = {};
+    try {
+      const gradesResponse = await api.get(`/students/${student.id}/grades`);
+      studentGrades = gradesResponse.data || {};
+      console.log('Fetched grades from API:', studentGrades);
+    } catch (error) {
+      console.error('Error fetching grades:', error);
+    }
+    
     // Initialize grade data - show all subjects but only editable ones will be enabled
     const allSubjects = subjectsByGrade[student.gradeLevel] || [];
     const initialGrades = {};
     
     allSubjects.forEach(subject => {
       initialGrades[subject] = {
-        q1: student.grades?.[subject]?.q1 || 0,
-        q2: student.grades?.[subject]?.q2 || 0,
-        q3: student.grades?.[subject]?.q3 || 0,
-        q4: student.grades?.[subject]?.q4 || 0,
+        q1: studentGrades[subject]?.q1 || 0,
+        q2: studentGrades[subject]?.q2 || 0,
+        q3: studentGrades[subject]?.q3 || 0,
+        q4: studentGrades[subject]?.q4 || 0,
       };
     });
     
     setGradeData(initialGrades);
-    console.log('Grade modal opened - editable subjects:', editableSubjectsForClass, 'all subjects:', Object.keys(initialGrades));
+    console.log('Grade modal opened - editable subjects:', editableSubjectsForClass, 'grades:', initialGrades);
     setShowGradeModal(true);
   };
 
