@@ -4,6 +4,7 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthProvider';
 import { useAttendance } from '../context/AttendanceContext';
+import { authAPI } from '../services/api';
 
 // Detect if running on web
 const isWeb = typeof window !== 'undefined';
@@ -18,7 +19,7 @@ if (!isWeb) {
 }
 
 export default function ProfileScreen({ navigation }) {
-  const { user, userData, logout, refreshUserData, changePassword } = useAuth();
+  const { user, userData, logout, refreshUserData, updateUserInStorage, changePassword } = useAuth();
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [photoModalVisible, setPhotoModalVisible] = useState(false);
   const [changePasswordModalVisible, setChangePasswordModalVisible] = useState(false);
@@ -79,27 +80,33 @@ export default function ProfileScreen({ navigation }) {
     }
 
     try {
-      const userRef = doc(db, 'users', user.uid);
-      const fullName = `${editForm.firstName} ${editForm.middleName ? editForm.middleName + ' ' : ''}${editForm.lastName}`;
-      
-      await updateDoc(userRef, {
+      // Use the API to update profile
+      const profileData = {
         firstName: editForm.firstName,
-        middleName: editForm.middleName,
         lastName: editForm.lastName,
-        fullName: fullName,
-        department: editForm.department,
-        employeeId: editForm.employeeId,
-        phone: editForm.phone,
-        subjects: editForm.subjects,
-      });
+        username: user.username || user.email?.split('@')[0] || '',
+        email: user.email,
+        phone: editForm.phone || '',
+      };
 
-      await refreshUserData();
+      const result = await authAPI.updateProfile(user.token, profileData);
 
-      Alert.alert('Success', 'Profile updated successfully');
-      setEditModalVisible(false);
+      if (result.status === 'success') {
+        // Update local user data with the response
+        const updatedUserData = result.data?.user || {};
+        await updateUserInStorage({
+          firstName: updatedUserData.firstName || editForm.firstName,
+          lastName: updatedUserData.lastName || editForm.lastName,
+          phone: updatedUserData.phone || editForm.phone,
+        });
+        Alert.alert('Success', 'Profile updated successfully');
+        setEditModalVisible(false);
+      } else {
+        throw new Error(result.message || 'Update failed');
+      }
     } catch (error) {
       console.error('Error updating profile:', error);
-      Alert.alert('Error', 'Failed to update profile. Please try again.');
+      Alert.alert('Error', error.message || 'Failed to update profile. Please try again.');
     }
   };
 
@@ -179,38 +186,9 @@ export default function ProfileScreen({ navigation }) {
     setUploading(true);
     
     try {
-      const filename = `profile_${user.uid}_${Date.now()}.jpg`;
-      
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      
-      const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/mynewapp-da23d.firebasestorage.app/o/profile_photos%2F${filename}?uploadType=media`;
-      
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'image/jpeg',
-        },
-        body: blob,
-      });
-      
-      if (uploadResponse.ok) {
-        const storageRef = ref(storage, `profile_photos/${filename}`);
-        const downloadURL = await getDownloadURL(storageRef);
-        
-        const userRef = doc(db, 'users', user.uid);
-        await updateDoc(userRef, {
-          photoURL: downloadURL,
-        });
-        
-        await refreshUserData();
-        
-        Alert.alert('Success', 'Profile photo updated');
-      } else {
-        const errorText = await uploadResponse.text();
-        console.error('Upload failed:', errorText);
-        throw new Error('Upload failed');
-      }
+      // For now, photo upload is not supported via mobile app
+      // Profile photos should be updated through the web admin
+      Alert.alert('Info', 'Profile photo can be updated through the web dashboard.');
     } catch (error) {
       console.error('Error:', error);
       Alert.alert('Error', error.message || 'Failed to upload photo');
@@ -220,33 +198,7 @@ export default function ProfileScreen({ navigation }) {
   };
 
   const removeProfilePhoto = async () => {
-    Alert.alert(
-      'Remove Photo',
-      'Are you sure you want to remove your profile photo?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const userRef = doc(db, 'users', user.uid);
-              await updateDoc(userRef, {
-                photoURL: null,
-              });
-
-              await refreshUserData();
-
-              Alert.alert('Success', 'Profile photo removed');
-              setPhotoModalVisible(false);
-            } catch (error) {
-              console.error('Error removing photo:', error);
-              Alert.alert('Error', 'Failed to remove photo');
-            }
-          },
-        },
-      ]
-    );
+    Alert.alert('Info', 'Profile photo can be managed through the web dashboard.');
   };
 
   return (

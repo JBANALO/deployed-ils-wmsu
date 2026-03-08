@@ -53,6 +53,31 @@ export const authAPI = {
     }
   },
 
+  // Update profile endpoint
+  updateProfile: async (token, profileData) => {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/auth/update-profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(profileData),
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.message || `Server error: ${response.status}`);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Update profile error:', error);
+      throw error;
+    }
+  },
+
   // Get adviser classes
   getAdviserClasses: async (userId) => {
     try {

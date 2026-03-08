@@ -352,3 +352,62 @@ exports.updateProfile = async (req, res) => {
     });
   }
 };
+
+// Change password
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user.id;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'Please provide current password and new password',
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'New password must be at least 6 characters',
+      });
+    }
+
+    // Get user from database
+    const users = await query('SELECT * FROM users WHERE id = ?', [userId]);
+    if (users.length === 0) {
+      return res.status(404).json({
+        status: 'fail',
+        message: 'User not found',
+      });
+    }
+
+    const user = users[0];
+
+    // Check if current password is correct
+    const isCurrentPasswordCorrect = await bcrypt.compare(currentPassword, user.password);
+    if (!isCurrentPasswordCorrect) {
+      return res.status(401).json({
+        status: 'fail',
+        message: 'Current password is incorrect',
+      });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    // Update password in database
+    await query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, userId]);
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Password changed successfully',
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to change password',
+    });
+  }
+};

@@ -68,4 +68,7 @@ router.get('/me', googleAuthController.getCurrentUser);
 // Update user profile (protected)
 router.put('/update-profile', authController.protect, upload.single('profileImage'), authController.updateProfile);
 
+// Change password (protected)
+router.put('/change-password', authController.protect, authController.changePassword);
+
 module.exports = router;
