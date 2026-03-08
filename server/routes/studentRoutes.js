@@ -6,8 +6,8 @@ const jwt = require('jsonwebtoken');
 
 const router = express.Router();
 
-// Middleware to verify user for grades
-const verifyUserForGrades = (req, res, next) => {
+// Middleware to verify user for grades - MUST fetch user from DB to get role
+const verifyUserForGrades = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -15,13 +15,25 @@ const verifyUserForGrades = (req, res, next) => {
     return res.status(401).json({ status: 'error', message: 'Access token required' });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-fallback', (err, user) => {
-    if (err) {
-      return res.status(403).json({ status: 'error', message: 'Invalid or expired token' });
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-fallback');
+    
+    // Fetch user from database to get role (check users table first, then teachers)
+    let users = await query('SELECT id, role FROM users WHERE id = ?', [decoded.id]);
+    
+    if (!users || users.length === 0) {
+      users = await query('SELECT id, role FROM teachers WHERE id = ?', [decoded.id]);
     }
-    req.user = user;
+    
+    if (!users || users.length === 0) {
+      return res.status(401).json({ status: 'error', message: 'User not found' });
+    }
+    
+    req.user = users[0];
     next();
-  });
+  } catch (err) {
+    return res.status(403).json({ status: 'error', message: 'Invalid or expired token' });
+  }
 };
 
 // Check if teacher can enter grades
