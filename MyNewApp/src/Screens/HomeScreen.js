@@ -3,9 +3,10 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, StatusBar,
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useAttendance } from '../context/AttendanceContext';
 import { useAuth } from '../context/AuthProvider';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 export default function HomeScreen() {
+  const navigation = useNavigation();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [selectedSection, setSelectedSection] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -404,22 +405,7 @@ WMSU ILS - Elementary Department`;
   };
 
   const handleNotificationPress = () => {
-    const todayStats = getTodayStats();
-    // Sum absent and late from both morning and afternoon sessions
-    const absentCount = (todayStats.morning?.absent || 0) + (todayStats.afternoon?.absent || 0);
-    const lateCount = (todayStats.morning?.late || 0) + (todayStats.afternoon?.late || 0);
-    
-    let message = '';
-    if (absentCount === 0 && lateCount === 0) {
-      message = 'No new notifications today.';
-    } else {
-      const parts = [];
-      if (absentCount > 0) parts.push(`${absentCount} student${absentCount > 1 ? 's' : ''} marked absent`);
-      if (lateCount > 0) parts.push(`${lateCount} student${lateCount > 1 ? 's' : ''} marked late`);
-      message = parts.join('\n');
-    }
-    
-    Alert.alert('Today\'s Notifications', message);
+    navigation.navigate('Notifications');
   };
 
   const currentPeriod = getAttendancePeriod();

@@ -14,6 +14,7 @@ import GenerateScreen from './Screens/GenerateScreen';
 import ScanQRScreen from './Screens/ScanQRScreen';
 import ProfileScreen from './Screens/ProfileScreen';
 import TermsScreen from './Screens/TermsScreen';
+import NotificationsScreen from './Screens/NotificationsScreen';
 import ConnectionTest from './components/ConnectionTest';
 
 // Detect if running on web
@@ -145,6 +146,11 @@ export default function App() {
               }}
             />
             <Stack.Screen name="Home" component={MainTabs} />
+            <Stack.Screen 
+              name="Notifications" 
+              component={NotificationsScreen}
+              options={{ headerShown: false }}
+            />
           </Stack.Navigator>
         </NavigationContainer>
       </AttendanceProvider>
