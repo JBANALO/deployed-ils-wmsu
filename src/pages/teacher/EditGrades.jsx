@@ -26,6 +26,8 @@ export default function EditGrades() {
   const [assignedSubjects, setAssignedSubjects] = useState([]);
   const [availableSubjects, setAvailableSubjects] = useState([]);
   const [assignedClasses, setAssignedClasses] = useState([]);
+  const [adviserClassIds, setAdviserClassIds] = useState([]); // Classes where user is adviser
+  const [subjectsByClass, setSubjectsByClass] = useState({}); // Map: classId -> [subjects]
   
   // Modal state
   const [showGradeModal, setShowGradeModal] = useState(false);
@@ -151,7 +153,22 @@ export default function EditGrades() {
       
       console.log('EditGrades - Assigned classes:', uniqueClasses.map(c => `${c.grade}-${c.section}`));
 
-      // Extract subjects the teacher can edit
+      // Track adviser class IDs for quick lookup
+      const adviserIds = adviserClasses.map(c => c.id);
+      setAdviserClassIds(adviserIds);
+      console.log('EditGrades - Adviser class IDs:', adviserIds);
+
+      // Build per-class subject map for subject teacher assignments
+      const classSubjectMap = {};
+      subjectTeacherClasses.forEach(cls => {
+        if (cls.subjects_teaching) {
+          classSubjectMap[cls.id] = cls.subjects_teaching.split(',').map(s => s.trim()).filter(s => s);
+        }
+      });
+      setSubjectsByClass(classSubjectMap);
+      console.log('EditGrades - Subjects by class:', classSubjectMap);
+
+      // Extract all subjects the teacher can edit (global list, for backward compatibility)
       const subjects = [];
       subjectTeacherClasses.forEach(cls => {
         if (cls.subjects_teaching) {
@@ -214,17 +231,37 @@ export default function EditGrades() {
       setLockReason("");
     }
     
-    // Initialize grade data structure
-    // For advisers: show all subjects; for subject teachers: show only assigned subjects
-    let subjects = subjectsByGrade[student.gradeLevel] || [];
-    if (userRole === 'subject_teacher' && availableSubjects.length > 0) {
-      // Only include subjects the teacher is assigned to
-      subjects = subjects.filter(s => availableSubjects.includes(s));
+    // Determine student's class ID
+    const studentClassId = `${(student.gradeLevel || '').toLowerCase().replace(/\s+/g, '-')}-${(student.section || '').toLowerCase().replace(/\s+/g, '-')}`;
+    console.log('Opening grades for student class:', studentClassId, 'Adviser classes:', adviserClassIds);
+    
+    // Check if user is adviser for this class
+    const isAdviserForClass = adviserClassIds.includes(studentClassId);
+    
+    // Determine which subjects can be edited for THIS class
+    let editableSubjectsForClass = [];
+    if (isAdviserForClass) {
+      // Adviser can edit ALL subjects for this grade
+      editableSubjectsForClass = subjectsByGrade[student.gradeLevel] || [];
+      console.log('User is adviser for this class - can edit all subjects:', editableSubjectsForClass);
+    } else if (subjectsByClass[studentClassId]) {
+      // Subject teacher - can only edit assigned subjects for this class
+      editableSubjectsForClass = subjectsByClass[studentClassId];
+      console.log('User is subject teacher for this class - can edit:', editableSubjectsForClass);
+    } else {
+      // Fallback - no access
+      console.log('User has no assignment for this class');
+      editableSubjectsForClass = [];
     }
     
+    // Update availableSubjects for this specific student
+    setAvailableSubjects(editableSubjectsForClass);
+    
+    // Initialize grade data - show all subjects but only editable ones will be enabled
+    const allSubjects = subjectsByGrade[student.gradeLevel] || [];
     const initialGrades = {};
     
-    subjects.forEach(subject => {
+    allSubjects.forEach(subject => {
       initialGrades[subject] = {
         q1: student.grades?.[subject]?.q1 || 0,
         q2: student.grades?.[subject]?.q2 || 0,
@@ -234,7 +271,7 @@ export default function EditGrades() {
     });
     
     setGradeData(initialGrades);
-    console.log('Grade modal opened - available subjects:', availableSubjects, 'initialized subjects:', Object.keys(initialGrades));
+    console.log('Grade modal opened - editable subjects:', editableSubjectsForClass, 'all subjects:', Object.keys(initialGrades));
     setShowGradeModal(true);
   };
 
@@ -257,8 +294,9 @@ export default function EditGrades() {
   const calculateFinalAverage = () => {
     let subjects = Object.keys(gradeData);
     
-    // Filter to available subjects for subject teachers
-    if (userRole === 'subject_teacher' && availableSubjects.length > 0) {
+    // Filter to available subjects for subject teachers (including teacher role with assigned subjects)
+    const isSubjectTeacherMode = (userRole === 'subject_teacher' || userRole === 'teacher') && availableSubjects.length > 0;
+    if (isSubjectTeacherMode) {
       subjects = subjects.filter(s => availableSubjects.includes(s));
     }
     
@@ -331,8 +369,9 @@ export default function EditGrades() {
       return;
     }
 
-    // Check for unauthorized subject edits (for subject teachers)
-    if (userRole === 'subject_teacher' && availableSubjects.length > 0) {
+    // Check for unauthorized subject edits (for subject teachers including teacher role with assigned subjects)
+    const isSubjectTeacherMode = (userRole === 'subject_teacher' || userRole === 'teacher') && availableSubjects.length > 0;
+    if (isSubjectTeacherMode) {
       const editedSubjects = Object.keys(gradeData).filter(subject => {
         const quarterData = gradeData[subject];
         if (selectedQuarter === "all") {
@@ -362,8 +401,9 @@ export default function EditGrades() {
     // Extract grades for the selected quarter(s)
     const quarterGrades = {};
     Object.keys(gradeData).forEach(subject => {
-      // For subject teachers, only include authorized subjects
-      if (userRole === 'subject_teacher' && availableSubjects.length > 0 && !availableSubjects.includes(subject)) {
+      // For subject teachers (including teacher role with assigned subjects), only include authorized subjects
+      const isSubjectTeacherMode = (userRole === 'subject_teacher' || userRole === 'teacher') && availableSubjects.length > 0;
+      if (isSubjectTeacherMode && !availableSubjects.includes(subject)) {
         return;
       }
       
@@ -697,7 +737,7 @@ export default function EditGrades() {
                     {Object.keys(gradeData)
                       .filter(subject => subject !== 'Total Q1')
                       .map((subject) => {
-                        const isUnauthorized = userRole === 'subject_teacher' && availableSubjects.length > 0 && !availableSubjects.includes(subject);
+                        const isUnauthorized = (userRole === 'subject_teacher' || userRole === 'teacher') && availableSubjects.length > 0 && !availableSubjects.includes(subject);
                         
                         return (
                           <tr key={subject} className={`${isUnauthorized ? 'bg-gray-50 opacity-60' : 'hover:bg-gray-50'}`}>
