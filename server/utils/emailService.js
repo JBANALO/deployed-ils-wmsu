@@ -1,43 +1,48 @@
 // server/utils/emailService.js
-// Using SendGrid Web API - works on Railway (no SMTP port blocking)
+// Using Brevo (Sendinblue) API - works on Railway (no SMTP port blocking)
 
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const FROM_EMAIL = process.env.EMAIL_FROM || 'wmsuils.attendance@gmail.com';
 const FROM_NAME = 'WMSU ILS Attendance';
 
 /**
- * Send email via SendGrid Web API
+ * Send email via Brevo (Sendinblue) API
  */
-const sendViaSendGrid = async (to, subject, htmlContent, textContent) => {
-  if (!SENDGRID_API_KEY) {
-    console.error('📧 SENDGRID_API_KEY not configured');
-    return { success: false, error: 'SendGrid API key not configured' };
+const sendViaBrevo = async (to, subject, htmlContent, textContent) => {
+  if (!BREVO_API_KEY) {
+    console.error('📧 BREVO_API_KEY not configured');
+    return { success: false, error: 'Brevo API key not configured' };
   }
 
-  const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${SENDGRID_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      personalizations: [{ to: [{ email: to }] }],
-      from: { email: FROM_EMAIL, name: FROM_NAME },
-      subject: subject,
-      content: [
-        { type: 'text/plain', value: textContent },
-        { type: 'text/html', value: htmlContent }
-      ]
-    })
-  });
+  try {
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': BREVO_API_KEY,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        sender: { name: FROM_NAME, email: FROM_EMAIL },
+        to: [{ email: to }],
+        subject: subject,
+        htmlContent: htmlContent,
+        textContent: textContent
+      })
+    });
 
-  if (response.ok || response.status === 202) {
-    console.log(`📧 Email sent successfully to ${to} via SendGrid`);
-    return { success: true, messageId: response.headers.get('x-message-id') || 'sent' };
-  } else {
-    const errorText = await response.text();
-    console.error(`📧 SendGrid error: ${response.status} - ${errorText}`);
-    return { success: false, error: `SendGrid error: ${response.status}` };
+    const result = await response.json();
+    
+    if (response.ok) {
+      console.log(`📧 Email sent successfully to ${to} via Brevo. MessageId: ${result.messageId}`);
+      return { success: true, messageId: result.messageId };
+    } else {
+      console.error(`📧 Brevo error: ${response.status} - ${JSON.stringify(result)}`);
+      return { success: false, error: result.message || `Brevo error: ${response.status}` };
+    }
+  } catch (error) {
+    console.error(`📧 Brevo fetch error: ${error.message}`);
+    return { success: false, error: error.message };
   }
 };
 
@@ -236,7 +241,7 @@ WMSU ILS - Elementary Department
   const subject = `Attendance Update: ${studentName} - ${statusText} (${periodText})`;
 
   try {
-    const result = await sendViaSendGrid(parentEmail, subject, htmlContent, textContent);
+    const result = await sendViaBrevo(parentEmail, subject, htmlContent, textContent);
     return result;
   } catch (error) {
     console.error(`📧 Error sending email to ${parentEmail}:`, error.message);
