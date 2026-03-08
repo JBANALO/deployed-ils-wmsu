@@ -21,15 +21,34 @@ export default function SF2AttendanceForm({
 
   useEffect(() => {
     if (attendanceData && students) {
-      // Format data for SF2 form
+      // Format data for SF2 form - group attendance by student and day
       const formatted = students.map(student => {
         const studentAttendance = attendanceData.filter(
-          a => a.studentId === student.id || a.studentLRN === student.lrn
+          a => a.studentId === student.id || a.studentId === student.lrn || a.studentLRN === student.lrn
         );
+        
+        // Build attendance by day object
+        const attendanceByDay = {};
+        studentAttendance.forEach(record => {
+          if (record.date) {
+            const day = parseInt(record.date.split('-')[2], 10); // Extract day from YYYY-MM-DD
+            attendanceByDay[day] = record.status?.toLowerCase() || '';
+          }
+        });
+        
+        // Count totals
+        const presentDays = studentAttendance.filter(r => r.status?.toLowerCase() === 'present').length;
+        const absentDays = studentAttendance.filter(r => r.status?.toLowerCase() === 'absent').length;
+        const lateDays = studentAttendance.filter(r => r.status?.toLowerCase() === 'late').length;
         
         return {
           ...student,
-          attendanceRecords: studentAttendance
+          attendanceRecords: studentAttendance,
+          attendanceByDay,
+          presentDays,
+          absentDays,
+          lateDays,
+          totalDays: presentDays + absentDays + lateDays
         };
       });
       setFormattedData(formatted);
@@ -628,17 +647,24 @@ const downloadAsPDF = async (element, filename = "February") => {
                       <td className="border border-gray-800 p-2 text-center text-xs">
                         {student.lrn || "___________"}
                       </td>
-                      {/* Attendance cells for each day */}
-                      {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => (
-                        <td key={`${idx}-${day}`} className="border border-gray-800 p-1 text-center">
-                          {/* Leave blank for manual entry or add logic here */}
-                        </td>
-                      ))}
-                      <td className="border border-gray-800 p-2 text-center">___</td>
-                      <td className="border border-gray-800 p-2 text-center">___</td>
-                      <td className="border border-gray-800 p-2 text-center">___</td>
-                      <td className="border border-gray-800 p-2 text-center">___</td>
-                      <td className="border border-gray-800 p-2 text-center">___</td>
+                      {/* Attendance cells for each day - P=Present, A=Absent, L=Late */}
+                      {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
+                        const status = student.attendanceByDay?.[day] || '';
+                        let mark = '';
+                        if (status === 'present') mark = 'P';
+                        else if (status === 'absent') mark = 'A';
+                        else if (status === 'late') mark = 'L';
+                        return (
+                          <td key={`${idx}-${day}`} className="border border-gray-800 p-1 text-center">
+                            {mark}
+                          </td>
+                        );
+                      })}
+                      <td className="border border-gray-800 p-2 text-center">{student.totalDays || 0}</td>
+                      <td className="border border-gray-800 p-2 text-center">{student.presentDays || 0}</td>
+                      <td className="border border-gray-800 p-2 text-center">0</td>
+                      <td className="border border-gray-800 p-2 text-center">{student.lateDays || 0}</td>
+                      <td className="border border-gray-800 p-2 text-center">{student.absentDays || 0}</td>
                     </tr>
                   ))}
                 </tbody>

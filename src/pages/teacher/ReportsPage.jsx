@@ -31,6 +31,7 @@ export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState("overview"); // overview, monthly
   const [attendanceData, setAttendanceData] = useState([]);
   const [monthlyAttendance, setMonthlyAttendance] = useState([]);
+  const [rawMonthAttendance, setRawMonthAttendance] = useState([]); // Raw attendance records for SF2
   const [subjectsData, setSubjectsData] = useState([]);
   const [topStudents, setTopStudents] = useState([]);
   const [lowestStudents, setLowestStudents] = useState([]);
@@ -170,11 +171,21 @@ export default function ReportsPage() {
 
       // Fetch attendance data
       const attendanceResponse = await axios.get('/attendance');
-      const allAttendance = Array.isArray(attendanceResponse.data.data) 
+      let allAttendance = Array.isArray(attendanceResponse.data.data) 
         ? attendanceResponse.data.data 
         : Array.isArray(attendanceResponse.data) 
         ? attendanceResponse.data 
         : [];
+
+      // Filter attendance to only students in assigned classes
+      allAttendance = allAttendance.filter(record => {
+        return uniqueClasses.some(c => 
+          normalize(c.grade) === normalize(record.gradeLevel) && 
+          normalize(c.section) === normalize(record.section)
+        );
+      });
+      
+      console.log('Filtered attendance records:', allAttendance.length);
 
       // Calculate weekly attendance (last 7 days)
       const today = new Date();
@@ -210,6 +221,9 @@ export default function ReportsPage() {
           r.gradeLevel === gradeLevel && r.section === section
         );
       }
+
+      // Store raw attendance data for SF2 form
+      setRawMonthAttendance(filteredMonthAttendance);
 
       // Group by student for monthly summary
       const studentMonthlyData = {};
@@ -746,7 +760,7 @@ export default function ReportsPage() {
       <SF2AttendanceForm
         isOpen={showSF2Modal}
         onClose={() => setShowSF2Modal(false)}
-        attendanceData={monthlyAttendance}
+        attendanceData={rawMonthAttendance}
         students={students}
         selectedMonth={selectedMonth}
         selectedYear={selectedYear}
