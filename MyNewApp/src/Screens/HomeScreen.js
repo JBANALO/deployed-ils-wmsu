@@ -458,7 +458,7 @@ WMSU ILS - Elementary Department`;
           <View style={styles.headerRight}>
             <TouchableOpacity style={styles.notificationIcon} onPress={handleNotificationPress}>
               <Icon name="bell" size={24} color="#fff" />
-              {((stats.morning?.absent || 0) + (stats.afternoon?.absent || 0) + (stats.morning?.late || 0) + (stats.afternoon?.late || 0)) > 0 && (
+              {isSchoolDay() && ((stats.morning?.absent || 0) + (stats.afternoon?.absent || 0) + (stats.morning?.late || 0) + (stats.afternoon?.late || 0)) > 0 && (
                 <View style={styles.notificationBadge}>
                   <Text style={styles.badgeText}>
                     {(stats.morning?.absent || 0) + (stats.afternoon?.absent || 0) + (stats.morning?.late || 0) + (stats.afternoon?.late || 0)}

@@ -61,6 +61,16 @@ export default function NotificationsScreen({ navigation }) {
     setRefreshing(false);
   };
 
+  // Check if it's a school day (not weekend or holiday)
+  const isSchoolDay = () => {
+    const now = new Date();
+    const day = now.getDay();
+    // Saturday = 6, Sunday = 0
+    if (day === 0 || day === 6) return false;
+    // Add holidays here if needed
+    return true;
+  };
+
   // Get today's date in YYYY-MM-DD format
   const getTodayDate = () => new Date().toISOString().split('T')[0];
 
@@ -130,7 +140,7 @@ export default function NotificationsScreen({ navigation }) {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Notifications</Text>
           <View style={styles.headerRight}>
-            {unreadCount > 0 && (
+            {isSchoolDay() && unreadCount > 0 && (
               <TouchableOpacity onPress={markAllAsRead} style={styles.markAllButton}>
                 <Icon name="check-all" size={20} color="#fff" />
                 <Text style={styles.markAllText}>Mark All Read</Text>
@@ -141,9 +151,9 @@ export default function NotificationsScreen({ navigation }) {
 
         {/* Date indicator */}
         <View style={styles.dateBar}>
-          <Icon name="calendar-today" size={16} color="#666" />
-          <Text style={styles.dateText}>
-            Today - {new Date().toLocaleDateString('en-US', { 
+          <Icon name={isSchoolDay() ? "calendar-today" : "calendar-remove"} size={16} color={isSchoolDay() ? "#666" : "#8B0000"} />
+          <Text style={[styles.dateText, !isSchoolDay() && { color: '#8B0000' }]}>
+            {isSchoolDay() ? 'Today' : 'No Class'} - {new Date().toLocaleDateString('en-US', { 
               weekday: 'long', 
               month: 'long', 
               day: 'numeric',
@@ -165,7 +175,15 @@ export default function NotificationsScreen({ navigation }) {
             />
           }
         >
-          {notifications.length === 0 ? (
+          {!isSchoolDay() ? (
+            <View style={styles.emptyState}>
+              <Icon name="calendar-remove-outline" size={64} color="#8B0000" />
+              <Text style={styles.emptyTitle}>No Class Today</Text>
+              <Text style={styles.emptySubtitle}>
+                It's {new Date().toLocaleDateString('en-US', { weekday: 'long' })}. Enjoy your weekend!
+              </Text>
+            </View>
+          ) : notifications.length === 0 ? (
             <View style={styles.emptyState}>
               <Icon name="bell-check-outline" size={64} color="#ccc" />
               <Text style={styles.emptyTitle}>No Notifications Today</Text>
