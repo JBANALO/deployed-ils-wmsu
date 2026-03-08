@@ -192,6 +192,8 @@ router.get('/declined', studentController.getDeclinedStudents);
 router.post('/regenerate-qr', studentController.regenerateQRCodes); // fix all QR codes to JSON format
 router.get('/portal', studentController.getStudent); // Alias for student portal dashboard
 router.get('/:id', studentController.getStudent);
+router.put('/:id', studentController.updateStudent); // Update student
+router.delete('/:id', studentController.deleteStudent); // Delete student
 
 // Protected routes (require authentication)
 router.post('/:id/approve', studentController.approveStudent);

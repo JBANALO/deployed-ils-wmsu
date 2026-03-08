@@ -514,3 +514,109 @@ exports.regenerateQRCodes = async (req, res) => {
     res.status(500).json({ status: 'fail', message: error.message });
   }
 };
+
+// -----------------------------
+// UPDATE STUDENT
+// -----------------------------
+exports.updateStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      lrn, firstName, middleName, lastName, age, sex,
+      gradeLevel, section,
+      parentFirstName, parentLastName, parentEmail, parentContact,
+      studentEmail, status
+    } = req.body;
+
+    console.log('updateStudent called with id:', id);
+    console.log('Update data:', req.body);
+
+    // Check if student exists
+    const existingStudents = await query('SELECT * FROM students WHERE id = ?', [id]);
+    if (!existingStudents || existingStudents.length === 0) {
+      return res.status(404).json({ status: 'fail', message: 'Student not found' });
+    }
+
+    // Build update query dynamically based on provided fields
+    const updates = [];
+    const params = [];
+
+    if (lrn !== undefined) { updates.push('lrn = ?'); params.push(lrn); }
+    if (firstName !== undefined) { updates.push('first_name = ?'); params.push(firstName); }
+    if (middleName !== undefined) { updates.push('middle_name = ?'); params.push(middleName); }
+    if (lastName !== undefined) { updates.push('last_name = ?'); params.push(lastName); }
+    if (age !== undefined) { updates.push('age = ?'); params.push(age); }
+    if (sex !== undefined) { updates.push('sex = ?'); params.push(sex); }
+    if (gradeLevel !== undefined) { updates.push('grade_level = ?'); params.push(gradeLevel); }
+    if (section !== undefined) { updates.push('section = ?'); params.push(section); }
+    if (parentFirstName !== undefined) { updates.push('parent_first_name = ?'); params.push(parentFirstName); }
+    if (parentLastName !== undefined) { updates.push('parent_last_name = ?'); params.push(parentLastName); }
+    if (parentEmail !== undefined) { updates.push('parent_email = ?'); params.push(parentEmail); }
+    if (parentContact !== undefined) { updates.push('parent_contact = ?'); params.push(parentContact); }
+    if (studentEmail !== undefined) { updates.push('student_email = ?'); params.push(studentEmail); }
+    if (status !== undefined) { updates.push('status = ?'); params.push(status); }
+
+    // Always update the updated_at timestamp
+    updates.push('updated_at = NOW()');
+
+    if (updates.length === 1) {
+      // Only updated_at, no real changes
+      return res.status(400).json({ status: 'fail', message: 'No fields to update' });
+    }
+
+    params.push(id);
+    const sql = `UPDATE students SET ${updates.join(', ')} WHERE id = ?`;
+    
+    console.log('Executing SQL:', sql);
+    console.log('With params:', params);
+
+    const result = await query(sql, params);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ status: 'fail', message: 'Student not found or no changes made' });
+    }
+
+    // Return updated student
+    const updatedStudents = await query('SELECT * FROM students WHERE id = ?', [id]);
+    res.json({
+      status: 'success',
+      message: 'Student updated successfully',
+      data: { student: formatStudent(updatedStudents[0]) }
+    });
+  } catch (error) {
+    console.error('Error updating student:', error);
+    res.status(500).json({ status: 'fail', message: error.message });
+  }
+};
+
+// -----------------------------
+// DELETE STUDENT
+// -----------------------------
+exports.deleteStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log('deleteStudent called with id:', id);
+
+    // Check if student exists
+    const existingStudents = await query('SELECT * FROM students WHERE id = ?', [id]);
+    if (!existingStudents || existingStudents.length === 0) {
+      return res.status(404).json({ status: 'fail', message: 'Student not found' });
+    }
+
+    // Delete the student
+    const result = await query('DELETE FROM students WHERE id = ?', [id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ status: 'fail', message: 'Student not found' });
+    }
+
+    res.json({
+      status: 'success',
+      message: 'Student deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting student:', error);
+    res.status(500).json({ status: 'fail', message: error.message });
+  }
+};
