@@ -49,8 +49,8 @@ const canEnterGrade = async (user, student, subject) => {
     
     if (subjectTeacherRecords.length > 0) {
       for (const record of subjectTeacherRecords) {
-        const subjects = record.subjects ? record.subjects.split(',').map(s => s.trim()) : [];
-        if (subjects.includes(subject)) return true;
+        // Each record has a single subject in 'subject' column (not 'subjects')
+        if (record.subject === subject) return true;
       }
     }
   }
