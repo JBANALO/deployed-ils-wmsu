@@ -39,12 +39,16 @@ router.post('/', async (req, res) => {
     let studentName = 'Unknown';
     let studentGradeLevel = 'N/A';
     let studentSection = 'N/A';
+    let parentEmail = null;
+    let studentLRN = studentId;
 
     if (student) {
       studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim();
       studentGradeLevel = student.grade_level || 'N/A';
       studentSection = student.section || 'N/A';
-      console.log(`Found student in students table: ${studentName}`);
+      parentEmail = student.parent_email || null;
+      studentLRN = student.lrn || studentId;
+      console.log(`Found student in students table: ${studentName}, Parent Email: ${parentEmail}`);
     } else {
       // Fallback: check users table
       const userRows = await query('SELECT * FROM users WHERE id = ? OR username = ?', [studentId, studentId]);
@@ -89,9 +93,32 @@ router.post('/', async (req, res) => {
       const updated = await query('SELECT * FROM attendance WHERE studentId = ? AND date = ? AND period = ?', [studentId, today, currentPeriod]);
       const rec = updated[0];
       console.log('Updated attendance record:', rec);
+
+      // Auto-send email on update too
+      let emailSent = false;
+      if (parentEmail) {
+        try {
+          const emailResult = await sendAttendanceEmail({
+            parentEmail,
+            studentName,
+            studentLRN,
+            gradeLevel: studentGradeLevel,
+            section: studentSection,
+            status: currentStatus,
+            period: currentPeriod,
+            time: currentTime,
+            teacherName: teacherName || 'School Administration'
+          });
+          emailSent = emailResult.success;
+        } catch (e) {
+          console.log('📧 Email error on update:', e.message);
+        }
+      }
+
       return res.json({
         success: true,
         message: 'Attendance updated successfully',
+        emailSent,
         data: {
           id: rec.id,
           studentId: rec.studentId,
@@ -142,9 +169,43 @@ router.post('/', async (req, res) => {
     
     console.log('Saved attendance record:', attendanceRecord);
 
+    // Automatically send email to parent if email exists
+    let emailSent = false;
+    let emailError = null;
+    if (parentEmail) {
+      try {
+        console.log(`📧 Auto-sending attendance email to parent: ${parentEmail}`);
+        const emailResult = await sendAttendanceEmail({
+          parentEmail,
+          studentName,
+          studentLRN,
+          gradeLevel: studentGradeLevel,
+          section: studentSection,
+          status: currentStatus,
+          period: currentPeriod,
+          time: currentTime,
+          teacherName: teacherName || 'School Administration'
+        });
+        emailSent = emailResult.success;
+        if (!emailResult.success) {
+          emailError = emailResult.error;
+          console.log(`📧 Email failed: ${emailError}`);
+        } else {
+          console.log(`📧 Email sent successfully to ${parentEmail}`);
+        }
+      } catch (emailErr) {
+        console.error('📧 Email error:', emailErr.message);
+        emailError = emailErr.message;
+      }
+    } else {
+      console.log('📧 No parent email found, skipping email notification');
+    }
+
     res.json({
       success: true,
       message: 'Attendance recorded successfully',
+      emailSent,
+      emailError,
       data: {
         id: attendanceRecord.id,
         studentId: attendanceRecord.studentId,
