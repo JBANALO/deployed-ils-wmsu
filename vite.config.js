@@ -6,6 +6,10 @@ export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory.
   const env = loadEnv(mode, process.cwd(), '')
   
+  // Use relative API path for production (served from same origin)
+  // Use full URL only for development
+  const apiUrl = env.VITE_API_URL || (mode === 'development' ? 'http://localhost:5000/api' : '/api');
+  
   return {
     plugins: [react()],
     resolve: {
@@ -15,7 +19,7 @@ export default defineConfig(({ mode }) => {
     },
     // Expose env variables to the client
     define: {
-      'import.meta.env.VITE_API_URL': JSON.stringify(env.VITE_API_URL || (mode === 'development' ? 'http://localhost:5000/api' : 'https://deployed-ils-wmsu-production.up.railway.app/api')),
+      'import.meta.env.VITE_API_URL': JSON.stringify(apiUrl),
     },
     server: {
       port: 5173,

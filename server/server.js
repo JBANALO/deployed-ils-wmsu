@@ -627,6 +627,27 @@ app.use((err, req, res, next) => {
   // Removed the next() call here
 });
 
+// ============================================
+// SERVE FRONTEND (Production)
+// ============================================
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.join(__dirname, '../dist');
+  
+  // Serve static files from the dist directory
+  app.use(express.static(distPath));
+  
+  // Handle SPA routing - serve index.html for all non-API routes
+  app.get('*', (req, res) => {
+    // Don't serve index.html for API routes
+    if (req.path.startsWith('/api')) {
+      return res.status(404).json({ error: 'API endpoint not found' });
+    }
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+  
+  console.log('📦 Serving frontend from:', distPath);
+}
+
 // Graceful shutdown handling
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully');
