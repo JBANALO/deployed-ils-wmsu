@@ -151,13 +151,31 @@ app.use('/api/students', studentRoutes);
 app.use('/api/delete-requests', deleteRequestRoutes);
 app.use('/api/student', require('./routes/studentPortal'));
 
-app.get('/', (req, res) => {
-  res.json({ message: 'Student Management API Running!', version: '2.5', deployedAt: '2026-03-07T12:00:00Z' });
-});
-
 // Version check - used to verify Railway has latest code
 app.get('/api/version', (req, res) => {
-  res.json({ version: '2.5', hasSubjectTeacherEndpoint: true, hasGradesEndpoint: true, deployedAt: '2026-03-07T12:00:00Z', backend: 'backend/server/server.js' });
+  res.json({ version: '2.6', hasSubjectTeacherEndpoint: true, hasGradesEndpoint: true, deployedAt: '2026-03-10T00:00:00Z', backend: 'backend/server/server.js', servesFrontend: true });
+});
+
+// ============================================
+// SERVE FRONTEND (Production)
+// ============================================
+const distPath = path.join(__dirname, '../../dist');
+
+// Serve static files from the dist directory
+app.use(express.static(distPath));
+
+// API health check root
+app.get('/api', (req, res) => {
+  res.json({ message: 'Student Management API Running!', version: '2.6', deployedAt: '2026-03-10T00:00:00Z' });
+});
+
+// Handle SPA routing - serve index.html for all non-API routes
+app.get('*', (req, res) => {
+  // Don't serve index.html for API routes
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
 // Sync data and start server
@@ -165,5 +183,6 @@ app.get('/api/version', (req, res) => {
   await syncStudentData();
   app.listen(PORT, () => {
     console.log(`🌐 Server running on http://localhost:${PORT}`);
+    console.log(`📦 Serving frontend from: ${distPath}`);
   });
 })();
