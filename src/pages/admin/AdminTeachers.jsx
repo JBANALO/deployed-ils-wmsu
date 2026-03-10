@@ -92,15 +92,6 @@ export default function AdminTeachers() {
     
     const bio = teacher.bio || '';
     
-    console.log('Processing teacher data:', {
-      teacherId: teacher.id,
-      gradeLevel,
-      section,
-      subjects,
-      bio,
-      originalData: teacher
-    });
-    
     // Handle kindergarten subjects from bio field
     if (gradeLevel === 'Kindergarten' && bio && bio.trim() !== '') {
       return {
@@ -327,15 +318,15 @@ export default function AdminTeachers() {
     }
     setSelectedAdvisers(newSelected);
 
-    // Update main selectAll state (both tables must be fully selected)
+    // Update table-level selectAllAdvisers state
     const advisers = filteredTeachers.filter(t => t.role === 'adviser');
-    const allAdvisersSelected = advisers.every(t => newSelected.has(t.id));
+    const allAdvisersSelected = advisers.length > 0 && advisers.every(t => newSelected.has(t.id));
+    setSelectAllAdvisers(allAdvisersSelected);
+
+    // Update main selectAll state (both tables must be fully selected)
     const subjectTeachers = filteredTeachers.filter(t => t.role === 'subject_teacher');
     const allSubjectTeachersSelected = subjectTeachers.every(t => selectedSubjectTeachers.has(t.id));
     setSelectAll(allAdvisersSelected && allSubjectTeachersSelected);
-    
-    // NOTE: Don't update selectAllAdvisers here to prevent individual 
-    // checkboxes from triggering the table's "Select All" checkbox
   };
 
   const handleSelectSubjectTeacher = (teacherId) => {
@@ -347,15 +338,15 @@ export default function AdminTeachers() {
     }
     setSelectedSubjectTeachers(newSelected);
 
+    // Update table-level selectAllSubjectTeachers state
+    const subjectTeachers = filteredTeachers.filter(t => t.role === 'subject_teacher');
+    const allSubjectTeachersSelected = subjectTeachers.length > 0 && subjectTeachers.every(t => newSelected.has(t.id));
+    setSelectAllSubjectTeachers(allSubjectTeachersSelected);
+
     // Update main selectAll state (both tables must be fully selected)
     const advisers = filteredTeachers.filter(t => t.role === 'adviser');
     const allAdvisersSelected = advisers.every(t => selectedAdvisers.has(t.id));
-    const subjectTeachers = filteredTeachers.filter(t => t.role === 'subject_teacher');
-    const allSubjectTeachersSelected = subjectTeachers.every(t => newSelected.has(t.id));
     setSelectAll(allAdvisersSelected && allSubjectTeachersSelected);
-    
-    // NOTE: Don't update selectAllSubjectTeachers here to prevent individual 
-    // checkboxes from triggering the table's "Select All" checkbox
   };
 
   // Keep the original handler for backward compatibility (updates all selections)
@@ -531,28 +522,115 @@ export default function AdminTeachers() {
     try {
       console.log('Getting credentials for teacher:', teacher.id);
       
-      // Determine the correct password based on account creation method
+      // Try to fetch credentials from API first
+      const response = await fetch(`${API_BASE_URL}/teachers/${teacher.id}/credentials`);
+      
+      if (response.ok) {
+        const credentialsData = await response.json();
+        console.log('Fetched credentials from API:', credentialsData);
+        setSelectedTeacher({
+          ...teacher,
+          ...credentialsData
+        });
+        setShowCredentialsModal(true);
+      } else {
+        // Fallback to determine password based on account creation method
+        let passwordToShow = teacher.plainPassword || teacher.password;
+        
+        // If no password from teacher data, determine based on account creation patterns
+        if (!passwordToShow) {
+          // Check if this looks like a bulk imported account
+          // Bulk imported accounts typically have:
+          // 1. Very simple usernames (usually just first name, no special characters)
+          // 2. WMSU email pattern
+          // 3. No stored plainPassword
+          // 4. No generated password pattern in data
+          
+          // More restrictive bulk import detection
+          // Only consider bulk import if username is extremely simple AND no email-based pattern
+          const isBulkImport = (
+            teacher.username && 
+            teacher.username.length <= 6 && // Very short usernames only
+            !teacher.plainPassword && // No stored generated password
+            (!teacher.password || teacher.password === 'Password123') && // Default password or no password
+            teacher.email && teacher.email.includes('@wmsu.edu.ph') &&
+            !teacher.email.match(/\d/) && // Email has no numbers (bulk imports usually don't)
+            teacher.username === teacher.firstName?.toLowerCase() // Username matches first name exactly
+          );
+          
+          if (isBulkImport) {
+            passwordToShow = 'Password123'; // Default for bulk imports
+            console.log('Detected bulk imported teacher:', teacher.username);
+          } else {
+            // For individually created accounts, try to determine the actual generated password
+            if (teacher.email && teacher.email.includes('@wmsu.edu.ph')) {
+              // This is the actual pattern used in AdminCreateTeacher (now predictable)
+              const emailPart = teacher.email.replace('@wmsu.edu.ph', '').slice(-4).padStart(4, '0');
+              // Use predictable pattern: WMSU{emailPart}0000
+              passwordToShow = `WMSU${emailPart}0000`;
+              console.log('Detected individually created teacher, exact password:', passwordToShow);
+            } else {
+              passwordToShow = 'Password123'; // Final fallback
+              console.log('Using fallback password for teacher:', teacher.username);
+            }
+          }
+        }
+        
+        // Merge credentials with teacher data
+        const teacherWithCredentials = {
+          ...teacher,
+          plainPassword: passwordToShow,
+          username: teacher.username,
+          email: teacher.email
+        };
+        
+        console.log('Teacher credentials determined:', teacherWithCredentials);
+        setSelectedTeacher(teacherWithCredentials);
+        setShowCredentialsModal(true);
+        
+        // Show appropriate message based on password accuracy
+        if (passwordToShow.includes('XXXX')) {
+          toast.info('Generated password pattern shown. Exact password may vary.', { duration: 4000 });
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error fetching teacher credentials:', error);
+      
+      // Fallback to determine password based on account creation method
       let passwordToShow = teacher.plainPassword || teacher.password;
       
       // If no password from teacher data, determine based on account creation patterns
       if (!passwordToShow) {
-        // Check if this looks like a bulk imported account
-        // Bulk imported accounts typically have simpler usernames and the default password
-        if (teacher.username && teacher.username.length <= 20 && !teacher.username.match(/\d{4,}/)) {
-          passwordToShow = 'WMSUILS123'; // Default for bulk imports
+        // More restrictive bulk import detection
+        // Only consider bulk import if username is extremely simple AND no email-based pattern
+        const isBulkImport = (
+          teacher.username && 
+          teacher.username.length <= 6 && // Very short usernames only
+          !teacher.plainPassword && // No stored generated password
+          (!teacher.password || teacher.password === 'Password123') && // Default password or no password
+          teacher.email && teacher.email.includes('@wmsu.edu.ph') &&
+          !teacher.email.match(/\d/) && // Email has no numbers (bulk imports usually don't)
+          teacher.username === teacher.firstName?.toLowerCase() // Username matches first name exactly
+        );
+        
+        if (isBulkImport) {
+          passwordToShow = 'Password123'; // Default for bulk imports
+          console.log('Error fallback - Detected bulk imported teacher:', teacher.username);
         } else {
-          // For individually created accounts, try to generate the password pattern
+          // For individually created accounts, try to determine the actual generated password
           if (teacher.email && teacher.email.includes('@wmsu.edu.ph')) {
             const emailPart = teacher.email.replace('@wmsu.edu.ph', '').slice(-4).padStart(4, '0');
-            // We can't generate the exact random part, so use a fallback
-            passwordToShow = `WMSU${emailPart}XXXX`; // XXXX indicates generated password
+            // Use predictable pattern: WMSU{emailPart}0000
+            passwordToShow = `WMSU${emailPart}0000`;
+            console.log('Error fallback - Detected individually created teacher, exact password:', passwordToShow);
           } else {
-            passwordToShow = 'WMSUILS123'; // Final fallback
+            passwordToShow = 'Password123'; // Final fallback
+            console.log('Error fallback - Using fallback password for teacher:', teacher.username);
           }
         }
       }
       
-      // Merge credentials with teacher data
       const teacherWithCredentials = {
         ...teacher,
         plainPassword: passwordToShow,
@@ -560,38 +638,14 @@ export default function AdminTeachers() {
         email: teacher.email
       };
       
-      console.log('Teacher credentials determined:', teacherWithCredentials);
       setSelectedTeacher(teacherWithCredentials);
       setShowCredentialsModal(true);
       
-      // Show appropriate message based on password accuracy
       if (passwordToShow.includes('XXXX')) {
-        toast.warning('Showing estimated password pattern. Exact password not available.');
-      } else {
-        toast.success('Credentials loaded successfully');
-      }
-    } catch (error) {
-      console.error('Error getting teacher credentials:', error);
-      
-      // Fallback logic when something goes wrong
-      let fallbackPassword = 'WMSUILS123'; // Default for bulk imports
-      
-      // Try to determine if this was individually created
-      if (teacher.email && teacher.email.includes('@wmsu.edu.ph')) {
-        const emailPart = teacher.email.replace('@wmsu.edu.ph', '').slice(-4).padStart(4, '0');
-        fallbackPassword = `WMSU${emailPart}XXXX`;
+        toast.info('Generated password pattern shown. Exact password may vary.', { duration: 4000 });
       }
       
-      const teacherWithCredentials = {
-        ...teacher,
-        plainPassword: fallbackPassword,
-        username: teacher.username,
-        email: teacher.email
-      };
-      
-      setSelectedTeacher(teacherWithCredentials);
-      setShowCredentialsModal(true);
-      toast.warning('Could not fetch credentials. Showing estimated password.');
+      toast.error('Failed to fetch credentials from server');
     } finally {
       setCredentialsLoading(false);
     }
@@ -696,7 +750,7 @@ export default function AdminTeachers() {
       </div>
 
       <p className="text-xs md:text-base text-gray-600 mb-4">
-        View, verify, edit, or remove teacher accounts. Assign subjects and classes.
+        View, verify, edit, or archive teacher accounts. 
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
@@ -722,7 +776,7 @@ export default function AdminTeachers() {
             <li>Search and filter teachers</li>
             <li>View teacher details</li>
             <li>Edit teacher information</li>
-            <li>Delete teacher accounts (single or bulk)</li>
+            <li>Archive and delete teacher accounts (single or bulk)</li>
             <li>Assign subjects for subject teachers</li>
           </ul>
         </div>
