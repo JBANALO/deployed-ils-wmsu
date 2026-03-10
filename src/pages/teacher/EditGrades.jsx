@@ -37,15 +37,15 @@ export default function EditGrades() {
   const [lockReason, setLockReason] = useState("");
   const [showReportCard, setShowReportCard] = useState(false);
 
-  // Subjects by grade level (Based on DepEd Report Card)
+  // Subjects by grade level (Based on DepEd Curriculum - must match AdminAssignSubjectTeacher)
   const subjectsByGrade = {
-    "Kindergarten": ["Filipino", "English", "Mathematics", "GMRC", "MAPEH"],
-    "Grade 1": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
-    "Grade 2": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
-    "Grade 3": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
-    "Grade 4": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
-    "Grade 5": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
-    "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
+    "Kindergarten": ["Filipino", "English", "Mathematics", "Values Education", "Music", "Arts", "Physical Education"],
+    "Grade 1": ["Filipino", "English", "Mathematics", "Science", "Social Studies", "Values Education", "Music", "Arts", "Physical Education", "Computer"],
+    "Grade 2": ["Filipino", "English", "Mathematics", "Science", "Social Studies", "Values Education", "Music", "Arts", "Physical Education", "Computer"],
+    "Grade 3": ["Filipino", "English", "Mathematics", "Science", "Social Studies", "Values Education", "Music", "Arts", "Physical Education", "Computer"],
+    "Grade 4": ["Filipino", "English", "Mathematics", "Science", "Social Studies", "Values Education", "Music", "Arts", "Physical Education", "Computer"],
+    "Grade 5": ["Filipino", "English", "Mathematics", "Science", "Social Studies", "Values Education", "Music", "Arts", "Physical Education", "Computer"],
+    "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Social Studies", "Values Education", "Music", "Arts", "Physical Education", "Computer"],
   };
 
   useEffect(() => {
@@ -374,6 +374,14 @@ export default function EditGrades() {
 
   // Save grades to backend
   const saveGrades = async () => {
+    // Check if token exists
+    const token = localStorage.getItem('token');
+    if (!token) {
+      alert("❌ Session expired. Please login again.");
+      window.location.href = '/login';
+      return;
+    }
+
     if (isGradeLocked) {
       alert("❌ These grades are locked and cannot be edited.");
       return;
