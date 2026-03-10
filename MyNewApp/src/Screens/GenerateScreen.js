@@ -28,8 +28,8 @@ export default function GenerateScreen() {
 
     setLoading(true);
     try {
-      // Load ALL students from backend API (teachers can see all students to generate QR)
-      const response = await fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/students`, {
+      // Load students assigned to this teacher (as adviser or subject teacher)
+      const response = await fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/students?teacherId=${user.id}`, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
           'Content-Type': 'application/json',
