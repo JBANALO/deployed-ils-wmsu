@@ -16,6 +16,7 @@ export default function AdminCreateK6() {
     firstName: '',
     middleName: '',
     lastName: '',
+    username: '', // Add username field
     age: '',
     sex: '',
     gradeLevel: '',
@@ -42,13 +43,25 @@ export default function AdminCreateK6() {
     const lrn = e.target.value;
     setFormData({ 
       ...formData, 
-      lrn: lrn,
-      wmsuEmail: lrn ? `${lrn}@wmsu.edu.ph` : ""
+      lrn: lrn
     });
   };
+  
+  // Update WMSU email and username when first or last name changes
+  React.useEffect(() => {
+    if (formData.firstName && formData.lastName) {
+      const firstName = formData.firstName.toLowerCase().replace(/\s+/g, '');
+      const lastName = formData.lastName.toLowerCase().replace(/\s+/g, '');
+      const wmsuEmail = `${firstName}.${lastName}@wmsu.edu.ph`;
+      const username = `${firstName}.${lastName}`; // Username without domain
+      setFormData(prev => ({ ...prev, wmsuEmail, username }));
+    }
+  }, [formData.firstName, formData.lastName]);
 
   const generatePassword = () => {
-    const password = `WMSU${formData.lrn.slice(-4)}${Math.floor(1000 + Math.random() * 9000)}`;
+    // Use predictable pattern: WMSU{last4LRN}0000 (consistent with teachers)
+    const last4LRN = formData.lrn ? formData.lrn.slice(-4).padStart(4, '0') : '0000';
+    const password = `WMSU${last4LRN}0000`;
     setFormData({ ...formData, password: password });
     setGeneratedPassword(password);
     setShowPassword(true);
@@ -148,7 +161,7 @@ const handleSubmit = async (e) => {
         {/* Profile Picture Upload */}
         <div className="flex flex-col items-center mb-8">
           <div className="relative">
-            <div className="w-32 h-32 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 p-1 shadow-xl">
+            <div className="w-32 h-32 rounded-full bg-linear-to-br from-blue-500 to-purple-600 p-1 shadow-xl">
               {profilePicPreview ? (
                 <img src={profilePicPreview} alt="Student" className="w-full h-full rounded-full object-cover border-4 border-white" />
               ) : (
@@ -327,14 +340,16 @@ const handleSubmit = async (e) => {
                     setFormData({...formData, parentEmail: '@gmail.com'});
                     // Position cursor at the beginning
                     setTimeout(() => {
-                      e.target.setSelectionRange(0, 0);
+                      // Note: setSelectionRange doesn't work on email inputs
+                      // This is a limitation of HTML5 email input type
                     }, 0);
                   } else {
                     // Position cursor before @gmail.com
                     const cursorPos = value.indexOf('@gmail.com');
                     if (cursorPos !== -1) {
                       setTimeout(() => {
-                        e.target.setSelectionRange(cursorPos, cursorPos);
+                        // Note: setSelectionRange doesn't work on email inputs
+                        // This is a limitation of HTML5 email input type
                       }, 0);
                     }
                   }
@@ -343,7 +358,8 @@ const handleSubmit = async (e) => {
                   const value = e.target.value;
                   const cursorPos = value.indexOf('@gmail.com');
                   if (cursorPos !== -1) {
-                    e.target.setSelectionRange(cursorPos, cursorPos);
+                    // Note: setSelectionRange doesn't work on email inputs
+                    // This is a limitation of HTML5 email input type
                   }
                 }}
                 className="w-full border p-3 rounded-lg" 
@@ -372,6 +388,19 @@ const handleSubmit = async (e) => {
         </div>
 
         <div>
+          <label className="block font-semibold mb-1">Username</label>
+          <input 
+            type="text" 
+            name="username" 
+            value={formData.username}
+            readOnly
+            className="w-full border p-3 rounded-lg bg-gray-100 text-gray-600" 
+            placeholder="Auto-generated based on name" 
+          />
+          <p className="text-xs text-gray-500 mt-1">Auto-generated based on first and last name</p>
+        </div>
+
+        <div>
           <label className="block font-semibold mb-1">WMSU Email</label>
           <input 
             type="email" 
@@ -381,7 +410,7 @@ const handleSubmit = async (e) => {
             className="w-full border p-3 rounded-lg bg-gray-100 text-gray-600" 
             placeholder="Auto-generated based on LRN" 
           />
-          <p className="text-xs text-gray-500 mt-1">Auto-generated based on LRN</p>
+          <p className="text-xs text-gray-500 mt-1">Auto-generated based on first and last name</p>
         </div>
 
         <div>

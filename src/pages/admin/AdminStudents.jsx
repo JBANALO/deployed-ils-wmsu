@@ -62,13 +62,18 @@ export default function AdminStudents() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [studentToDelete, setStudentToDelete] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [studentCredentials, setStudentCredentials] = useState(null);
   const [loadingCredentials, setLoadingCredentials] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSection, setSelectedSection] = useState('All');
-  const [selectedStudents, setSelectedStudents] = useState(new Set());
+  const [selectedK3Students, setSelectedK3Students] = useState(new Set());
+  const [selectedG4to6Students, setSelectedG4to6Students] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const [selectAllK3, setSelectAllK3] = useState(false);
+  const [selectAllG4to6, setSelectAllG4to6] = useState(false);
 
   // Fetch students from API
   useEffect(() => {
@@ -269,17 +274,27 @@ export default function AdminStudents() {
   };
 
   // DELETE STUDENT
-  const handleDelete = async (studentId) => {
-    if (!window.confirm('Are you sure you want to delete this student?')) return;
+  const handleDelete = (studentId) => {
+    const student = students.find(s => s.id === studentId);
+    if (student) {
+      setStudentToDelete(student);
+      setShowDeleteModal(true);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!studentToDelete) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/students/${studentId}`, {
+      const response = await fetch(`${API_BASE_URL}/students/${studentToDelete.id}`, {
         method: 'DELETE'
       });
 
       if (response.ok) {
         toast.success('Student deleted successfully!');
         fetchStudents(); // Refresh list
+        setShowDeleteModal(false);
+        setStudentToDelete(null);
       } else {
         toast.error('Failed to delete student: ' + response.statusText);
       }
@@ -287,6 +302,11 @@ export default function AdminStudents() {
       toast.error('Error deleting student: ' + error.message);
       toast.error('Failed to delete student');
     }
+  };
+
+  const cancelDelete = () => {
+    setShowDeleteModal(false);
+    setStudentToDelete(null);
   };
 
   // VIEW DETAILS
@@ -317,66 +337,208 @@ export default function AdminStudents() {
       if (response.ok) {
         const credentialsData = await response.json();
         setStudentCredentials(credentialsData);
+        setShowCredentialsModal(true);
       } else {
-        // Fallback to student data if credentials endpoint doesn't exist
+        // Determine the correct password based on account creation method
+        let passwordToShow = student.plainPassword || student.password;
+        
+        // If no password from student data, determine based on account creation patterns
+        if (!passwordToShow) {
+          // Check if this looks like a bulk imported account
+          // Bulk imported accounts typically have LRN-based usernames and the default password
+          if (student.username && student.username.includes('@wmsu.edu.ph') && student.lrn) {
+            passwordToShow = 'Password123'; // Default for bulk imports
+            console.log('Detected bulk imported student:', student.username);
+          } else {
+            // For individually created accounts, use AdminCreateK6 pattern
+            if (student.lrn) {
+              // Generate password using AdminCreateK6 pattern: WMSU{last4LRN}0000
+              const last4LRN = student.lrn.slice(-4).padStart(4, '0');
+              passwordToShow = `WMSU${last4LRN}0000`;
+              console.log('Detected individually created student, exact password:', passwordToShow);
+            } else {
+              passwordToShow = 'Password123'; // Final fallback
+              console.log('Using fallback password for student:', student.lrn);
+            }
+          }
+        }
+        
+        // Generate email from first and last name (like bulk import)
+        const firstName = student.firstName.toLowerCase().replace(/\s+/g, '');
+        const lastName = student.lastName.toLowerCase().replace(/\s+/g, '');
+        const generatedEmail = `${firstName}.${lastName}@wmsu.edu.ph`;
+        
         setStudentCredentials({
-          username: student.username || `${student.lrn}@wmsu.edu.ph`,
-          email: student.email || student.parentEmail || `${student.lrn}@wmsu.edu.ph`,
-          password: student.password || `Temp@${student.lrn}`
+          email: generatedEmail, // Use generated email from name
+          password: passwordToShow,
+          username: student.username || `${student.firstName}.${student.lastName}`.toLowerCase() || `${student.lrn}@wmsu.edu.ph` // Use generated username for individual, LRN for bulk
         });
+        setShowCredentialsModal(true);
       }
     } catch (error) {
       console.error('Error fetching credentials:', error);
-      // Fallback to student data
+      // Determine the correct password based on account creation method
+      let passwordToShow = student.plainPassword || student.password;
+      
+      // If no password from student data, determine based on account creation patterns
+      if (!passwordToShow) {
+        // Check if this looks like a bulk imported account
+        if (student.username && student.username.includes('@wmsu.edu.ph') && student.lrn) {
+          passwordToShow = 'Password123'; // Default for bulk imports
+          console.log('Error fallback - Detected bulk imported student:', student.username);
+        } else {
+          // For individually created accounts, use AdminCreateK6 pattern
+          if (student.lrn) {
+            // Generate password using AdminCreateK6 pattern: WMSU{last4LRN}0000
+            const last4LRN = student.lrn.slice(-4).padStart(4, '0');
+            passwordToShow = `WMSU${last4LRN}0000`;
+            console.log('Error fallback - Detected individually created student, exact password:', passwordToShow);
+          } else {
+            passwordToShow = 'Password123'; // Final fallback
+            console.log('Error fallback - Using fallback password for student:', student.lrn);
+          }
+        }
+      }
+      
+      // Generate email from first and last name (like bulk import)
+      const firstName = student.firstName.toLowerCase().replace(/\s+/g, '');
+      const lastName = student.lastName.toLowerCase().replace(/\s+/g, '');
+      const generatedEmail = `${firstName}.${lastName}@wmsu.edu.ph`;
+      
       setStudentCredentials({
-        username: student.username || `${student.lrn}@wmsu.edu.ph`,
-        email: student.email || student.parentEmail || `${student.lrn}@wmsu.edu.ph`,
-        password: student.password || `Temp@${student.lrn}`
+        email: generatedEmail, // Use generated email from name
+        password: passwordToShow,
+        username: student.username || `${student.firstName}.${student.lastName}`.toLowerCase() || `${student.lrn}@wmsu.edu.ph` // Use generated username for individual, LRN for bulk
       });
+      setShowCredentialsModal(true);
     } finally {
       setLoadingCredentials(false);
     }
-    
-    setShowCredentialsModal(true);
   };
 
-  // TOGGLE STUDENT SELECTION
-  const toggleStudentSelection = (studentId) => {
-    const newSelection = new Set(selectedStudents);
+  // TOGGLE K-3 STUDENT SELECTION
+  const toggleK3StudentSelection = (studentId) => {
+    const newSelection = new Set(selectedK3Students);
     if (newSelection.has(studentId)) {
       newSelection.delete(studentId);
     } else {
       newSelection.add(studentId);
     }
-    setSelectedStudents(newSelection);
+    setSelectedK3Students(newSelection);
+
+    // Update main selectAll state (both tables must be fully selected)
+    const allK3Selected = filteredK3Students.every(s => newSelection.has(s.id));
+    const allG4to6Selected = g4to6Students.every(s => selectedG4to6Students.has(s.id));
+    setSelectAll(allK3Selected && allG4to6Selected);
+    
+    // NOTE: Don't update selectAllK3 here to prevent individual 
+    // checkboxes from triggering table's "Select All" checkbox
   };
 
-  // TOGGLE SELECT ALL
+  // TOGGLE GRADE 4-6 STUDENT SELECTION
+  const toggleG4to6StudentSelection = (studentId) => {
+    const newSelection = new Set(selectedG4to6Students);
+    if (newSelection.has(studentId)) {
+      newSelection.delete(studentId);
+    } else {
+      newSelection.add(studentId);
+    }
+    setSelectedG4to6Students(newSelection);
+
+    // Update main selectAll state (both tables must be fully selected)
+    const allK3Selected = filteredK3Students.every(s => selectedK3Students.has(s.id));
+    const allG4to6Selected = g4to6Students.every(s => newSelection.has(s.id));
+    setSelectAll(allK3Selected && allG4to6Selected);
+    
+    // NOTE: Don't update selectAllG4to6 here to prevent individual 
+    // checkboxes from triggering table's "Select All" checkbox
+  };
+
+  // Keep original handler for backward compatibility
+  const toggleStudentSelection = (studentId) => {
+    const student = [...filteredK3Students, ...g4to6Students].find(s => s.id === studentId);
+    if (filteredK3Students.some(s => s.id === studentId)) {
+      toggleK3StudentSelection(studentId);
+    } else if (g4to6Students.some(s => s.id === studentId)) {
+      toggleG4to6StudentSelection(studentId);
+    }
+  };
+
   const toggleSelectAll = () => {
     if (selectAll) {
-      setSelectedStudents(new Set());
+      // Unselect all students from both tables
+      setSelectedK3Students(new Set());
+      setSelectedG4to6Students(new Set());
+      setSelectAllK3(false);
+      setSelectAllG4to6(false);
       setSelectAll(false);
     } else {
-      const allIds = new Set(filteredK3Students.map(s => s.id));
-      setSelectedStudents(allIds);
+      // Select all students from both tables
+      setSelectedK3Students(new Set(filteredK3Students.map(s => s.id)));
+      setSelectedG4to6Students(new Set(g4to6Students.map(s => s.id)));
+      setSelectAllK3(true);
+      setSelectAllG4to6(true);
       setSelectAll(true);
     }
   };
 
+  const toggleSelectAllK3 = (sectionStudentIds = null) => {
+    const idsToToggle = sectionStudentIds || filteredK3Students.map(s => s.id);
+    const allSelectedInScope = idsToToggle.every(id => selectedK3Students.has(id));
+
+    if (allSelectedInScope) {
+      // Unselect students within scope
+      setSelectedK3Students(prev => new Set([...prev].filter(id => !idsToToggle.includes(id))));
+      setSelectAllK3(false);
+    } else {
+      // Select students within scope
+      setSelectedK3Students(prev => new Set([...prev, ...idsToToggle]));
+      setSelectAllK3(true);
+    }
+    
+    // Update main selectAll state (both tables must be fully selected)
+    const allG4to6Selected = g4to6Students.length > 0 && g4to6Students.every(s => selectedG4to6Students.has(s.id));
+    const allK3Selected = filteredK3Students.length > 0 && filteredK3Students.every(s => selectedK3Students.has(s.id));
+    setSelectAll(allK3Selected && allG4to6Selected);
+  };
+
+  const toggleSelectAllG4to6 = (sectionStudentIds = null) => {
+    const idsToToggle = sectionStudentIds || g4to6Students.map(s => s.id);
+    const allSelectedInScope = idsToToggle.every(id => selectedG4to6Students.has(id));
+
+    if (allSelectedInScope) {
+      // Unselect students within scope
+      setSelectedG4to6Students(prev => new Set([...prev].filter(id => !idsToToggle.includes(id))));
+      setSelectAllG4to6(false);
+    } else {
+      // Select students within scope
+      setSelectedG4to6Students(prev => new Set([...prev, ...idsToToggle]));
+      setSelectAllG4to6(true);
+    }
+    
+    // Update main selectAll state (both tables must be fully selected)
+    const allK3Selected = filteredK3Students.length > 0 && filteredK3Students.every(s => selectedK3Students.has(s.id));
+    const allG4to6Selected = g4to6Students.length > 0 && g4to6Students.every(s => selectedG4to6Students.has(s.id));
+    setSelectAll(allK3Selected && allG4to6Selected);
+  };
+
   // BULK DELETE
   const handleBulkDelete = async () => {
-    if (selectedStudents.size === 0) {
+    // Combine all selected students from both tables
+    const allSelectedStudents = new Set([...selectedK3Students, ...selectedG4to6Students]);
+    
+    if (allSelectedStudents.size === 0) {
       toast.error('Please select students to delete');
       return;
     }
 
-    if (!window.confirm(`Are you sure you want to delete ${selectedStudents.size} student(s)? This action cannot be undone.`)) {
+    if (!window.confirm(`Are you sure you want to delete ${allSelectedStudents.size} student(s)? This action cannot be undone.`)) {
       return;
     }
 
     try {
       let successCount = 0;
-      for (const studentId of selectedStudents) {
+      for (const studentId of allSelectedStudents) {
         const response = await fetch(`${API_BASE_URL}/students/${studentId}`, {
           method: 'DELETE'
         });
@@ -385,7 +547,11 @@ export default function AdminStudents() {
         }
       }
       toast.success(`Successfully deleted ${successCount} student(s)`);
-      setSelectedStudents(new Set());
+      // Clear all selections
+      setSelectedK3Students(new Set());
+      setSelectedG4to6Students(new Set());
+      setSelectAllK3(false);
+      setSelectAllG4to6(false);
       setSelectAll(false);
       fetchStudents();
     } catch (error) {
@@ -426,7 +592,6 @@ export default function AdminStudents() {
         <h3 className="text-xl font-semibold text-red-800 mb-2">Student Actions</h3>
         <ul className="list-disc ml-5 text-gray-700 space-y-1">
           <li>Create accounts for Kinder–Grade 6</li>
-          <li>Verify Grade 4–6 student self-registration</li>
           <li>Edit student details</li>
           <li>Delete student accounts</li>
           <li>Regenerate or download QR codes</li>
@@ -457,24 +622,39 @@ export default function AdminStudents() {
           </h3>
           <div className="flex items-center gap-3">
             <div className="text-sm text-gray-600">
-              Total: {k3Students.length}
+              {[...selectedK3Students, ...selectedG4to6Students].size > 0 
+                ? `Selected: ${[...selectedK3Students, ...selectedG4to6Students].size} / ${filteredK3Students.length + g4to6Students.length}` 
+                : `Total: ${filteredK3Students.length + g4to6Students.length}`
+              }
             </div>
-            {selectedStudents.size > 0 ? (
+            {[...selectedK3Students, ...selectedG4to6Students].size > 0 ? (
               <button
                 onClick={handleBulkDelete}
                 className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 text-sm font-semibold"
               >
-                🗑️ Delete {selectedStudents.size} Selected
+                Delete {[...selectedK3Students, ...selectedG4to6Students].size} Selected
               </button>
-            ) : filteredK3Students.length > 0 && (
-              <button
-                onClick={() => {
-                  toggleSelectAll();
-                }}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold"
-              >
-                📋 Select All
-              </button>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => toggleSelectAllK3()}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold"
+                >
+                  {selectAllK3 ? 'Unselect All K-3' : 'Select All K-3'}
+                </button>
+                <button
+                  onClick={() => toggleSelectAllG4to6()}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm font-semibold"
+                >
+                  {selectAllG4to6 ? 'Unselect All G4 - 6' : 'Select All G4 - 6'}
+                </button>
+                <button
+                  onClick={toggleSelectAll}
+                  className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 text-sm font-semibold"
+                >
+                  {selectAll ? 'Unselect All' : 'Select All'}
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -513,8 +693,8 @@ export default function AdminStudents() {
           {/* Results Info */}
           {(searchQuery || selectedSection !== 'All') && (
             <div className="text-sm text-gray-600">
-              {searchQuery && <span>Searching for "{searchQuery}" • </span>}
-              {selectedSection !== 'All' && <span>Section: {selectedSection} • </span>}
+              {searchQuery && <span>Searching for "{searchQuery}" </span>}
+              {selectedSection !== 'All' && <span>Section: {selectedSection} </span>}
               <span className="font-semibold">{filteredK3Students.length} result{filteredK3Students.length !== 1 ? 's' : ''}</span>
             </div>
           )}
@@ -555,10 +735,10 @@ export default function AdminStudents() {
                         <th className="p-3 border text-center">
                           <input
                             type="checkbox"
-                            //checked={selectAll && sectionStudents.length > 0}
-                            //onChange={toggleSelectAll}
+                            checked={sectionStudents.length > 0 && sectionStudents.every(s => selectedK3Students.has(s.id))}
+                            onChange={() => toggleSelectAllK3(sectionStudents.map(s => s.id))}
                             className="w-4 h-4 cursor-pointer"
-                            title="Select students"
+                            title="Select {grade} - {section} students"
                           />
                         </th>
                         <th className="p-3 border">LRN</th>
@@ -575,8 +755,11 @@ export default function AdminStudents() {
                           <td className="p-3 border text-center">
                             <input
                               type="checkbox"
-                              checked={selectedStudents.has(student.id)}
-                              onChange={() => toggleStudentSelection(student.id)}
+                              checked={selectedK3Students.has(student.id)}
+                              onChange={() => {
+                                console.log('K-3 Individual checkbox clicked:', student.id, 'Currently selected:', selectedK3Students.has(student.id));
+                                toggleK3StudentSelection(student.id);
+                              }}
                               className="w-4 h-4 cursor-pointer"
                             />
                           </td>
@@ -590,43 +773,50 @@ export default function AdminStudents() {
                               {student.status}
                             </span>
                           </td>
-                          <td className="p-3 border">
-                            <button 
-                              onClick={() => handleViewQR(student)}
-                              className="p-2 bg-gray-700 text-white rounded-lg hover:bg-black flex items-center gap-1"
-                            >
-                              <QrCodeIcon className="w-5 h-5" /> View
-                            </button>
+                          <td className="p-3 border text-center">
+                            <div className="flex justify-center items-center">
+                              <button 
+                                onClick={() => handleViewQR(student)}
+                                className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center gap-1"
+                              >
+                                <QrCodeIcon className="w-5 h-5" /> View
+                              </button>
+                            </div>
                           </td>
-                          <td className="p-3 border flex gap-2">
-                            <button 
-                              onClick={() => handleView(student)}
-                              className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                              title="View Details"
-                            >
-                              <EyeIcon className="w-5 h-5" />
-                            </button>
-                            <button 
-                              onClick={() => handleViewCredentials(student)}
-                              className="p-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
-                              title="View Credentials"
-                            >
-                              <KeyIcon className="w-5 h-5" />
-                            </button>
-                            <button 
-                              onClick={() => handleEdit(student)}
-                              className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                              title="Edit Student"
-                            >
-                              <PencilSquareIcon className="w-5 h-5" />
-                            </button>
-                            <button 
-                              onClick={() => handleDelete(student.id)}
-                              className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                              title="Delete Student"
-                            >
-                              <TrashIcon className="w-5 h-5" />
-                            </button>
+                          <td className="p-3 border w-40">
+                            <div className="flex gap-2 justify-center items-center">
+                              <button 
+                                onClick={() => handleEdit(student)}
+                                className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                title="Edit Student"
+                              >
+                                <PencilSquareIcon className="w-5 h-5" />
+                              </button>
+
+                              <button
+                                onClick={() => handleDelete(student.id)}
+                                className="p-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+                                title="Delete Student"
+                              >
+                                <TrashIcon className="w-5 h-5" />
+                              </button>
+
+                              <button 
+                                onClick={() => handleView(student)}
+                                className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                                title="View Details"
+                              >
+                                <EyeIcon className="w-5 h-5" />
+                              </button>
+
+                              <button 
+                                onClick={() => handleViewCredentials(student)}
+                                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                title="View Credentials"
+                              >
+                                <KeyIcon className="w-5 h-5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -672,8 +862,10 @@ export default function AdminStudents() {
                           <th className="p-3 border text-center">
                             <input
                               type="checkbox"
+                              checked={sectionStudents.length > 0 && sectionStudents.every(s => selectedG4to6Students.has(s.id))}
+                              onChange={() => toggleSelectAllG4to6(sectionStudents.map(s => s.id))}
                               className="w-4 h-4 cursor-pointer"
-                              title="Select students"
+                              title="Select {grade} - {section} students"
                             />
                           </th>
                           <th className="p-3 border">LRN</th>
@@ -690,6 +882,11 @@ export default function AdminStudents() {
                             <td className="p-3 border text-center">
                               <input
                                 type="checkbox"
+                                checked={selectedG4to6Students.has(student.id)}
+                                onChange={() => {
+                                  console.log('G4-6 Individual checkbox clicked:', student.id, 'Currently selected:', selectedG4to6Students.has(student.id));
+                                  toggleG4to6StudentSelection(student.id);
+                                }}
                                 className="w-4 h-4 cursor-pointer"
                               />
                             </td>
@@ -703,43 +900,50 @@ export default function AdminStudents() {
                                 {student.status}
                               </span>
                             </td>
-                            <td className="p-3 border">
-                              <button 
-                                onClick={() => handleViewQR(student)}
-                                className="p-2 bg-gray-700 text-white rounded-lg hover:bg-black flex items-center gap-1"
-                              >
-                                <QrCodeIcon className="w-5 h-5" /> View
-                              </button>
+                            <td className="p-3 border text-center">
+                              <div className="flex justify-center items-center">
+                                <button 
+                                  onClick={() => handleViewQR(student)}
+                                  className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center gap-1"
+                                >
+                                  <QrCodeIcon className="w-5 h-5" /> View
+                                </button>
+                              </div>
                             </td>
-                            <td className="p-3 border flex gap-2">
-                              <button 
-                                onClick={() => handleView(student)}
-                                className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                                title="View Details"
-                              >
-                                <EyeIcon className="w-5 h-5" />
-                              </button>
-                              <button 
-                                onClick={() => handleViewCredentials(student)}
-                                className="p-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
-                                title="View Credentials"
-                              >
-                                <KeyIcon className="w-5 h-5" />
-                              </button>
-                              <button 
-                                onClick={() => handleEdit(student)}
-                                className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                                title="Edit Student"
-                              >
-                                <PencilSquareIcon className="w-5 h-5" />
-                              </button>
-                              <button 
-                                onClick={() => handleDelete(student.id)}
-                                className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                                title="Delete Student"
-                              >
-                                <TrashIcon className="w-5 h-5" />
-                              </button>
+                            <td className="p-3 border w-40">
+                              <div className="flex gap-2 justify-center items-center">
+                                <button 
+                                  onClick={() => handleEdit(student)}
+                                  className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                  title="Edit Student"
+                                >
+                                  <PencilSquareIcon className="w-5 h-5" />
+                                </button>
+
+                                <button
+                                  onClick={() => handleDelete(student.id)}
+                                  className="p-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+                                  title="Delete Student"
+                                >
+                                  <TrashIcon className="w-5 h-5" />
+                                </button>
+
+                                <button 
+                                  onClick={() => handleView(student)}
+                                  className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                                  title="View Details"
+                                >
+                                  <EyeIcon className="w-5 h-5" />
+                                </button>
+
+                                <button 
+                                  onClick={() => handleViewCredentials(student)}
+                                  className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                  title="View Credentials"
+                                >
+                                  <KeyIcon className="w-5 h-5" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -1096,22 +1300,25 @@ export default function AdminStudents() {
                   <p className="text-lg font-bold text-gray-900">{selectedStudent.fullName || `${selectedStudent.firstName} ${selectedStudent.lastName}`}</p>
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Username</label>
-                  <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
-                    <p className="text-lg font-mono text-gray-900 flex-1 mr-2">{studentCredentials?.username || 'N/A'}</p>
-                    <button
-                      onClick={() => {
-                        const username = studentCredentials?.username || '';
-                        navigator.clipboard.writeText(username);
-                        toast.success('Username copied to clipboard!');
-                      }}
-                      className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors"
-                    >
-                      Copy
-                    </button>
+                {/* Username - Only show for bulk imported students */}
+                {(selectedStudent.username && selectedStudent.username.includes('@wmsu.edu.ph')) || selectedStudent.lrn ? (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Username</label>
+                    <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
+                      <p className="text-lg font-mono text-gray-900 flex-1 mr-2">{studentCredentials?.username?.replace('@wmsu.edu.ph', '') || selectedStudent.lrn || 'N/A'}</p>
+                      <button
+                        onClick={() => {
+                          const username = studentCredentials?.username?.replace('@wmsu.edu.ph', '') || selectedStudent.lrn;
+                          navigator.clipboard.writeText(username);
+                          toast.success('Username copied to clipboard!');
+                        }}
+                        className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors"
+                      >
+                        Copy
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : null}
                 
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Email</label>
@@ -1164,6 +1371,68 @@ export default function AdminStudents() {
                 className="flex-1 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600 transition-colors"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {showDeleteModal && studentToDelete && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mr-4">
+                <TrashIcon className="w-6 h-6 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Delete Student</h3>
+                <p className="text-sm text-gray-600">This action cannot be undone</p>
+              </div>
+            </div>
+            
+            <div className="bg-gray-50 p-4 rounded-lg mb-6">
+              <p className="text-sm font-semibold text-gray-700 mb-2">Student Information:</p>
+              <div className="space-y-1">
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Name:</span> {studentToDelete.fullName || `${studentToDelete.firstName} ${studentToDelete.lastName}`}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">LRN:</span> {studentToDelete.lrn}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Grade:</span> {studentToDelete.gradeLevel}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Section:</span> {studentToDelete.section}
+                </p>
+              </div>
+            </div>
+            
+            <div className="bg-red-50 border border-red-200 p-3 rounded mb-6">
+              <p className="text-sm text-red-800">
+                <strong>⚠️ Warning:</strong> Deleting this student will permanently remove all their data including:
+              </p>
+              <ul className="text-xs text-red-700 mt-2 ml-4 list-disc">
+                <li>Student records and information</li>
+                <li>QR code access</li>
+                <li>Login credentials</li>
+                <li>Associated data</li>
+              </ul>
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={cancelDelete}
+                className="flex-1 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="flex-1 bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Delete Student
               </button>
             </div>
           </div>

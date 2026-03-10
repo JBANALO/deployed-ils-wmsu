@@ -60,9 +60,7 @@ export default function CreateAccount() {
       
       setSuccess(
         `Account created successfully!\n` +
-        `Your account has been automatically approved.\n` +
-        `You can now login with your credentials.\n` +
-        `Redirecting to login page... [${Date.now()}]`
+        `Redirecting to login page...`
       );
       
       // Redirect to login page

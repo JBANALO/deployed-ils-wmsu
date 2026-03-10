@@ -30,8 +30,8 @@ export default function AdminCreateTeacher() {
   const generatePassword = () => {
     // Extract the part before @wmsu.edu.ph from email (like students use LRN)
     const emailPart = formData.email.replace('@wmsu.edu.ph', '').slice(-4).padStart(4, '0');
-    const randomPart = Math.floor(1000 + Math.random() * 9000);
-    const password = `WMSU${emailPart}${randomPart}`;
+    // Remove random numbers for predictable passwords
+    const password = `WMSU${emailPart}0000`;
     setFormData(prev => ({ 
       ...prev, 
       password: password

@@ -4,9 +4,11 @@ import { BellIcon, UserCircleIcon, ChevronDownIcon } from "@heroicons/react/24/s
 
 export default function TeacherTopbar({ sidebarOpen }) {
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [userName, setUserName] = useState("");
   const navigate = useNavigate();
   const dropdownRef = useRef(null);
+  const notificationsRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -23,6 +25,21 @@ export default function TeacherTopbar({ sidebarOpen }) {
 
   useEffect(() => {
     const handleClickOutside = (event) => {
+      // Don't close if clicking on the buttons themselves
+      const target = event.target;
+      const isNotificationButton = target.closest('[aria-label="Notifications"]');
+      const isUserMenuButton = target.closest('[aria-label="User menu"]');
+      
+      if (isNotificationButton || isUserMenuButton) {
+        return;
+      }
+      
+      // Close notifications if clicking outside
+      if (showNotifications && notificationsRef.current && !notificationsRef.current.contains(event.target)) {
+        setShowNotifications(false);
+      }
+      
+      // Close user dropdown if clicking outside
       if (showDropdown && dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setShowDropdown(false);
       }
@@ -32,7 +49,7 @@ export default function TeacherTopbar({ sidebarOpen }) {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showDropdown]);
+  }, [showNotifications, showDropdown]);
 
   const handleLogout = () => {
     // Clear all authentication data
@@ -68,11 +85,39 @@ export default function TeacherTopbar({ sidebarOpen }) {
       </div>
 
       <div className="flex items-center gap-6 relative">
-        <BellIcon className="w-6 h-6 text-red-800 cursor-pointer hover:scale-110 transition-all" />
+        {/* Notification Bell */}
         <div className="relative">
           <button
-            className="flex items-center gap-2"
-            onClick={() => setShowDropdown(!showDropdown)}
+            className="relative p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            onClick={() => { 
+              setShowNotifications(!showNotifications); 
+              setShowDropdown(false); 
+            }}
+            aria-label="Notifications"
+          >
+            <BellIcon className="w-5 h-5 md:w-6 md:h-6 text-red-800 cursor-pointer hover:scale-110 transition-all shrink-0" />
+          </button>
+
+          {/* Notifications Dropdown */}
+          {showNotifications && (
+            <div ref={notificationsRef} className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-md shadow-lg w-80 max-h-96 overflow-hidden z-50">
+              <div className="px-4 py-3 border-b flex items-center justify-between bg-gray-50">
+                <h3 className="font-semibold text-gray-700">Notifications</h3>
+              </div>
+              
+              <div className="max-h-64 overflow-y-auto">
+                <div className="px-4 py-8 text-center">
+                  <p className="text-gray-500 text-sm">No notifications</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="relative">
+          <button
+            className="flex items-center gap-2 p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            onClick={() => { setShowDropdown(!showDropdown); setShowNotifications(false); }}
+            aria-label="User menu"
           >
             <UserCircleIcon className="w-8 h-8 text-red-800" />
             <ChevronDownIcon className={`w-4 h-4 text-red-800 transition-transform ${showDropdown ? "rotate-180" : ""}`} />
