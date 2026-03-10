@@ -540,7 +540,8 @@ export default function AdminTeachers() {
         console.log('Fetched credentials from API:', credentialsData);
         setSelectedTeacher({
           ...teacher,
-          ...credentialsData
+          ...credentialsData,
+          plainPassword: credentialsData.password // Map password to plainPassword for modal
         });
         setShowCredentialsModal(true);
       } else {
