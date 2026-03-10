@@ -8,6 +8,7 @@ export default function GenerateScreen() {
   const [name, setName] = useState('');
   const [studentId, setStudentId] = useState('');
   const [section, setSection] = useState('');
+  const [gradeLevel, setGradeLevel] = useState('');
   const [qrData, setQrData] = useState('');
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -27,8 +28,8 @@ export default function GenerateScreen() {
 
     setLoading(true);
     try {
-      // Load students from backend API
-      const response = await fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/students?teacherId=${user.id}`, {
+      // Load ALL students from backend API (teachers can see all students to generate QR)
+      const response = await fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/students`, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
           'Content-Type': 'application/json',
@@ -70,7 +71,7 @@ export default function GenerateScreen() {
 
 
   const handleAddStudent = async () => {
-    if (!name.trim() || !studentId.trim() || !section.trim()) {
+    if (!name.trim() || !studentId.trim() || !section.trim() || !gradeLevel.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
@@ -82,14 +83,27 @@ export default function GenerateScreen() {
 
     setLoading(true);
     try {
+      // Parse name into firstName and lastName
+      const nameParts = name.trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || nameParts[0] || '';
+
       const studentData = {
-        name: name.trim(),
-        studentId: studentId.trim(),
+        lrn: studentId.trim(), // Server expects 'lrn' not 'studentId'
+        firstName: firstName,
+        lastName: lastName,
+        name: name.trim(), // Keep for display
+        gradeLevel: gradeLevel.trim(),
         section: section.trim(),
+        sex: 'Not Specified',
+        age: 0,
         teacherId: user.id, 
-        teacherName: user.name, // ✅ For reference
+        teacherName: user.name,
+        status: 'approved', // Auto-approve when added by teacher
         createdAt: new Date().toISOString(),
       };
+
+      console.log('Adding student with data:', studentData);
 
       // Add student via backend API
       const response = await fetch('https://deployed-ils-wmsu-production.up.railway.app/api/students', {
@@ -110,6 +124,7 @@ export default function GenerateScreen() {
         setName('');
         setStudentId('');
         setSection('');
+        setGradeLevel('');
         
         // Reload students list
         loadStudents();
@@ -244,7 +259,17 @@ export default function GenerateScreen() {
             style={styles.input}
             value={studentId}
             onChangeText={setStudentId}
-            placeholder="e.g., LRN_2024001"
+            placeholder="e.g., 260303020001"
+            placeholderTextColor="#999"
+            keyboardType="numeric"
+          />
+
+          <Text style={styles.label}>Grade Level</Text>
+          <TextInput
+            style={styles.input}
+            value={gradeLevel}
+            onChangeText={setGradeLevel}
+            placeholder="e.g., Grade 1, Kindergarten"
             placeholderTextColor="#999"
           />
 
@@ -253,7 +278,7 @@ export default function GenerateScreen() {
             style={styles.input}
             value={section}
             onChangeText={setSection}
-            placeholder="e.g., Grade 4A"
+            placeholder="e.g., Diligence, Excellence"
             placeholderTextColor="#999"
           />
 

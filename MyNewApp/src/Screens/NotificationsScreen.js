@@ -48,7 +48,7 @@ export default function NotificationsScreen({ navigation }) {
   const loadStudents = async () => {
     if (!user) return;
     try {
-      const response = await fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/students?teacherId=${user.id}`, {
+      const response = await fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/students`, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
           'Content-Type': 'application/json',
