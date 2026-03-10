@@ -13,7 +13,8 @@ router.get('/portal', async (req, res) => {
     if (!studentId) return res.status(401).json({ error: 'Unauthorized' });
 
     const [[student]] = await pool.query(`
-      SELECT id, lrn, full_name AS fullName, grade_level AS gradeLevel, section, average, qr_code AS qrCode
+      SELECT id, lrn, first_name AS firstName, last_name AS lastName, full_name AS fullName, 
+             grade_level AS gradeLevel, section, age, sex, average, qr_code AS qrCode
       FROM students WHERE id = ?
     `, [studentId]);
 
@@ -22,39 +23,44 @@ router.get('/portal', async (req, res) => {
     // Get grades
     const [grades] = await pool.query(`
       SELECT subject, q1, q2, q3, q4, 
-             ROUND((q1 + q2 + q3 + q4)/4, 2) AS average
+             ROUND((COALESCE(q1,0) + COALESCE(q2,0) + COALESCE(q3,0) + COALESCE(q4,0))/4, 2) AS average
       FROM grades WHERE student_id = ?
     `, [studentId]);
 
-    // You can add attendance & schedule later
-    // For now, mock them or create tables
-
+    // Send response with proper structure
     res.json({
-      profile: {
-        fullName: student.fullName,
-        lrn: student.lrn,
-        gradeLevel: student.gradeLevel,
-        section: student.section,
-        finalAverage: student.average || 0
-      },
-      grades: grades.map(g => ({
-        subject: g.subject,
-        q1: g.q1,
-        q2: g.q2,
-        q3: g.q3,
-        q4: g.q4,
-        average: g.average,
-        remarks: g.average >= 90 ? 'Outstanding' :
-                g.average >= 85 ? 'Very Satisfactory' :
-                g.average >= 80 ? 'Satisfactory' :
-                g.average >= 75 ? 'Fairly Satisfactory' : 'Did Not Meet Expectations'
-      })),
-      // attendance: [...],  // add later
-      // schedule: [...]     // add later
+      status: 'success',
+      data: {
+        student: {
+          id: student.id,
+          lrn: student.lrn,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          fullName: student.fullName || `${student.firstName} ${student.lastName}`,
+          gradeLevel: student.gradeLevel,
+          section: student.section,
+          age: student.age,
+          sex: student.sex,
+          average: student.average || 0,
+          qrCode: student.qrCode,
+          grades: grades.map(g => ({
+            subject: g.subject,
+            q1: g.q1 || 0,
+            q2: g.q2 || 0,
+            q3: g.q3 || 0,
+            q4: g.q4 || 0,
+            average: g.average || 0,
+            remarks: g.average >= 90 ? 'Outstanding' :
+                    g.average >= 85 ? 'Very Satisfactory' :
+                    g.average >= 80 ? 'Satisfactory' :
+                    g.average >= 75 ? 'Fairly Satisfactory' : 'Did Not Meet Expectations'
+          }))
+        }
+      }
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to load portal' });
+    console.error('Error loading student portal:', err);
+    res.status(500).json({ status: 'error', error: 'Failed to load portal' });
   }
 });
 
