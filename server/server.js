@@ -587,9 +587,13 @@ app.use('/api/teachers', teacherRoutes);
 app.use('/api/users', userRoutes);
 // ==========================================
 
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({ message: 'Student Management API Running!', version: '3.5', server: 'server/server.js', deployedAt: '2026-03-08T11:00:00Z' });
+// Root endpoint - only used if no dist folder
+app.get('/', (req, res, next) => {
+  const distPath = path.join(__dirname, '../dist');
+  if (require('fs').existsSync(distPath)) {
+    return next(); // let the frontend serve it
+  }
+  res.json({ message: 'Student Management API Running!', version: '3.5', server: 'server/server.js' });
 });
 
 // Version check endpoint
