@@ -3,10 +3,11 @@ const express = require('express');
 const studentController = require('../controllers/studentController');
 const { query } = require('../config/database');
 const jwt = require('jsonwebtoken');
+const { readUsers } = require('../utils/fileStorage');
 
 const router = express.Router();
 
-// Middleware to verify user for grades - MUST fetch user from DB to get role
+// Middleware to verify user for grades - checks DB and JSON file
 const verifyUserForGrades = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -18,8 +19,9 @@ const verifyUserForGrades = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-fallback');
     
-    // JWT token has userId, not id
+    // JWT token has id field
     const userId = decoded.userId || decoded.id;
+    console.log('verifyUserForGrades - Looking for user with ID:', userId);
     
     // Fetch user from database to get role (check users table first, then teachers)
     let users = await query('SELECT id, role FROM users WHERE id = ?', [userId]);
@@ -28,13 +30,30 @@ const verifyUserForGrades = async (req, res, next) => {
       users = await query('SELECT id, role FROM teachers WHERE id = ?', [userId]);
     }
     
+    // If not found in DB, check JSON file (where teachers/advisers may be stored)
     if (!users || users.length === 0) {
+      try {
+        const jsonUsers = readUsers();
+        const jsonUser = jsonUsers.find(u => u.id === userId);
+        if (jsonUser) {
+          console.log('verifyUserForGrades - Found user in JSON file:', jsonUser.firstName, jsonUser.lastName, jsonUser.role);
+          users = [{ id: jsonUser.id, role: jsonUser.role }];
+        }
+      } catch (jsonError) {
+        console.log('verifyUserForGrades - Error reading JSON file:', jsonError.message);
+      }
+    }
+    
+    if (!users || users.length === 0) {
+      console.log('verifyUserForGrades - User not found in any storage for ID:', userId);
       return res.status(401).json({ status: 'error', message: 'User not found' });
     }
     
+    console.log('verifyUserForGrades - User found:', users[0]);
     req.user = users[0];
     next();
   } catch (err) {
+    console.log('verifyUserForGrades - Token verification error:', err.message);
     return res.status(403).json({ status: 'error', message: 'Invalid or expired token' });
   }
 };
