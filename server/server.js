@@ -628,24 +628,26 @@ app.use((err, req, res, next) => {
 });
 
 // ============================================
-// SERVE FRONTEND (Production)
+// SERVE FRONTEND
 // ============================================
-if (process.env.NODE_ENV === 'production') {
-  const distPath = path.join(__dirname, '../dist');
-  
+const distPath = path.join(__dirname, '../dist');
+const fs2 = require('fs');
+
+if (fs2.existsSync(distPath)) {
   // Serve static files from the dist directory
   app.use(express.static(distPath));
   
   // Handle SPA routing - serve index.html for all non-API routes
   app.get('*', (req, res) => {
-    // Don't serve index.html for API routes
-    if (req.path.startsWith('/api')) {
-      return res.status(404).json({ error: 'API endpoint not found' });
+    if (req.path.startsWith('/api') || req.path.startsWith('/public')) {
+      return res.status(404).json({ error: 'Endpoint not found' });
     }
     res.sendFile(path.join(distPath, 'index.html'));
   });
   
   console.log('📦 Serving frontend from:', distPath);
+} else {
+  console.log('⚠️  No dist folder found - frontend not served');
 }
 
 // Graceful shutdown handling
