@@ -49,15 +49,15 @@ export default function AdminTeachers() {
   const [editFormData, setEditFormData] = useState({});
   const [credentialsLoading, setCredentialsLoading] = useState(false);
 
-  // Subjects by grade level (Official DepEd format)
+  // Subjects by grade level (Official DepEd K-12 Curriculum)
   const subjectsByGradeLevel = {
-    "Kindergarten": ["Filipino", "English", "Mathematics", "GMRC", "MAPEH"],
-    "Grade 1": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
-    "Grade 2": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
-    "Grade 3": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
-    "Grade 4": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
-    "Grade 5": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
-    "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"]
+    "Kindergarten": ["Mother Tongue", "Filipino", "English", "Mathematics", "Edukasyon sa Pagpapakatao (EsP)", "Music", "Arts", "Physical Education", "Health"],
+    "Grade 1": ["Mother Tongue", "Filipino", "English", "Mathematics", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "Music", "Arts", "Physical Education", "Health"],
+    "Grade 2": ["Mother Tongue", "Filipino", "English", "Mathematics", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "Music", "Arts", "Physical Education", "Health"],
+    "Grade 3": ["Mother Tongue", "Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "Music", "Arts", "Physical Education", "Health"],
+    "Grade 4": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "EPP", "Music", "Arts", "Physical Education", "Health"],
+    "Grade 5": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "EPP", "Music", "Arts", "Physical Education", "Health"],
+    "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "EPP", "Music", "Arts", "Physical Education", "Health"]
   };
 
   // Handle select all subjects
