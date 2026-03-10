@@ -104,8 +104,19 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
     }
     const student = students[0];
 
-    // Check authorization for each subject
-    for (const subject of Object.keys(grades)) {
+    // Filter out subjects that don't have any actual grades (skip 0, null, undefined)
+    const subjectsWithGrades = Object.entries(grades).filter(([subject, gradeValue]) => {
+      if (typeof gradeValue === 'object') {
+        // Check if any quarter has a non-zero grade
+        return Object.values(gradeValue).some(v => v && v > 0);
+      }
+      return gradeValue && gradeValue > 0;
+    }).map(([subject]) => subject);
+    
+    console.log('Subjects with actual grades:', subjectsWithGrades);
+
+    // Check authorization only for subjects that have actual grades
+    for (const subject of subjectsWithGrades) {
       const canEdit = await canEnterGrade(user, student, subject);
       if (!canEdit) {
         return res.status(403).json({ 
@@ -118,10 +129,14 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
 
     // Update grades - grades table uses: student_id, subject, quarter, grade (one row per quarter)
     // Frontend sends grades like: { "Filipino": { q1: 90 }, "English": { q1: 85, q2: 88 }, ... }
+    // Only process subjects that have actual grades
     for (const [subject, gradeValue] of Object.entries(grades)) {
       // gradeValue is an object like { q1: 90 } or { q1: 90, q2: 85, ... }
       if (typeof gradeValue === 'object') {
         for (const [qKey, gValue] of Object.entries(gradeValue)) {
+          // Skip empty/zero grades
+          if (!gValue || gValue <= 0) continue;
+          
           // qKey is like "q1", convert to "Q1" for storage
           const quarterName = qKey.toUpperCase();
           
@@ -143,6 +158,9 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
           }
         }
       } else {
+        // Skip empty/zero grades
+        if (!gradeValue || gradeValue <= 0) continue;
+        
         // Fallback: single value with quarter from request body
         const quarterName = (quarter || 'q1').toUpperCase();
         
