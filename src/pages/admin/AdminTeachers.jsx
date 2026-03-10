@@ -103,8 +103,18 @@ export default function AdminTeachers() {
     
     // Check if grade_level contains subject names (common subjects)
     const commonSubjects = ['filipino', 'english', 'mathematics', 'science', 'makabansa', 'gmrc', 'mapeh', 'araling panlipunan', 'edukasyon sa pagpapakatao', 'arpan'];
+  
+    // Guard against undefined gradeLevel
+    if (!gradeLevel) {
+      return {
+        actualGradeLevel: section || 'N/A',
+        actualSection: '-',
+        actualSubjects: []
+      };
+    }
+  
     const gradeLevelLower = gradeLevel.toLowerCase();
-    
+  
     // If grade_level contains a subject, it's likely the actual subject
     if (commonSubjects.some(subject => gradeLevelLower.includes(subject))) {
       // Swap the data: grade_level becomes subject, section becomes grade_level
@@ -530,7 +540,8 @@ export default function AdminTeachers() {
         console.log('Fetched credentials from API:', credentialsData);
         setSelectedTeacher({
           ...teacher,
-          ...credentialsData
+          ...credentialsData,
+          plainPassword: credentialsData.password // Map password to plainPassword for modal
         });
         setShowCredentialsModal(true);
       } else {
@@ -555,7 +566,7 @@ export default function AdminTeachers() {
             (!teacher.password || teacher.password === 'Password123') && // Default password or no password
             teacher.email && teacher.email.includes('@wmsu.edu.ph') &&
             !teacher.email.match(/\d/) && // Email has no numbers (bulk imports usually don't)
-            teacher.username === teacher.firstName?.toLowerCase() // Username matches first name exactly
+            teacher.firstName && teacher.username === teacher.firstName.toLowerCase() // Username matches first name exactly
           );
           
           if (isBulkImport) {
@@ -589,7 +600,7 @@ export default function AdminTeachers() {
         setShowCredentialsModal(true);
         
         // Show appropriate message based on password accuracy
-        if (passwordToShow.includes('XXXX')) {
+        if (passwordToShow && passwordToShow.includes('XXXX')) {
           toast.info('Generated password pattern shown. Exact password may vary.', { duration: 4000 });
         }
       }
@@ -611,7 +622,7 @@ export default function AdminTeachers() {
           (!teacher.password || teacher.password === 'Password123') && // Default password or no password
           teacher.email && teacher.email.includes('@wmsu.edu.ph') &&
           !teacher.email.match(/\d/) && // Email has no numbers (bulk imports usually don't)
-          teacher.username === teacher.firstName?.toLowerCase() // Username matches first name exactly
+          teacher.firstName && teacher.username === teacher.firstName.toLowerCase() // Username matches first name exactly
         );
         
         if (isBulkImport) {
@@ -641,7 +652,7 @@ export default function AdminTeachers() {
       setSelectedTeacher(teacherWithCredentials);
       setShowCredentialsModal(true);
       
-      if (passwordToShow.includes('XXXX')) {
+      if (passwordToShow && passwordToShow.includes('XXXX')) {
         toast.info('Generated password pattern shown. Exact password may vary.', { duration: 4000 });
       }
       
@@ -1509,7 +1520,7 @@ export default function AdminTeachers() {
                   <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
                     <div className="flex-1">
                       <p className="text-lg font-mono text-gray-900">{selectedTeacher.plainPassword}</p>
-                      {selectedTeacher.plainPassword.includes('XXXX') && (
+                      {selectedTeacher.plainPassword && selectedTeacher.plainPassword.includes('XXXX') && (
                         <p className="text-xs text-amber-600 mt-1">⚠️ Estimated password pattern</p>
                       )}
                     </div>
