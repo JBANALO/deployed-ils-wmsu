@@ -70,6 +70,28 @@ router.post('/login', async (req, res) => {
       }
 
       [users] = await pool.query(query, params);
+      
+      // If no user found in users table, check students table
+      if (users.length === 0) {
+        console.log('User not in users table, checking students table...');
+        let studentQuery = 'SELECT *, "student" as role FROM students WHERE ';
+        let studentParams = [];
+        
+        if (normalizedEmail) {
+          // Check both student_email and wmsu_email columns
+          studentQuery += '(LOWER(student_email) = ? OR LOWER(wmsu_email) = ?)';
+          studentParams.push(normalizedEmail, normalizedEmail);
+        } else {
+          studentQuery += 'LOWER(username) = ?';
+          studentParams.push(normalizedUsername);
+        }
+        
+        const [students] = await pool.query(studentQuery, studentParams);
+        if (students.length > 0) {
+          console.log('✅ Student found in students table');
+          users = students;
+        }
+      }
     } catch (dbError) {
       console.log('Database query failed, using fallback data:', dbError.message);
       usesFallback = true;
@@ -140,9 +162,23 @@ router.post('/login', async (req, res) => {
     
     console.log('✅ Login validation passed');
 
+    // Check if this is a student (has student_email or wmsu_email)
+    const isStudent = user.role === 'student' || user.student_email || user.wmsu_email;
     
     // Return user data (don't return password)
-    const userData = {
+    const userData = isStudent ? {
+      id: user.id,
+      email: user.student_email || user.wmsu_email || user.email,
+      username: user.username || '',
+      lrn: user.lrn || '',
+      firstName: user.first_name || user.firstName || '',
+      lastName: user.last_name || user.lastName || '',
+      fullName: user.full_name || `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+      role: 'student',
+      gradeLevel: user.grade_level || '',
+      section: user.section || '',
+      profilePic: user.profile_pic || null
+    } : {
       id: user.id,
       email: user.email,
       username: user.username,

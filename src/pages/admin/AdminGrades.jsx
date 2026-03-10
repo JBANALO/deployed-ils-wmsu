@@ -87,7 +87,7 @@ export default function AdminGrades() {
   // Fetch grades for a specific student
   const fetchStudentGrades = async (student) => {
     try {
-      const response = await axios.get(`/grades/${student.id}/grades`);
+      const response = await axios.get(`/students/${student.id}/grades`);
       return response.data || {};
     } catch (error) {
       console.error('Error fetching student grades:', error);
@@ -136,7 +136,7 @@ export default function AdminGrades() {
         ? gradeValues.reduce((a, b) => a + parseFloat(b), 0) / gradeValues.length 
         : 0;
 
-      const response = await axios.put(`/grades/${selectedStudent.id}/grades`, {
+      const response = await axios.put(`/students/${selectedStudent.id}/grades`, {
         grades: editGrades,
         quarter: selectedQuarter,
         average: average.toFixed(2)
