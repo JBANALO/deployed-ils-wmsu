@@ -15,18 +15,25 @@ export default function AdminAssignSubjectTeacher() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState(""); // "success" or "error"
 
-  const subjects = [
-    "English",
-    "Mathematics",
-    "Science",
-    "Filipino",
-    "Social Studies",
-    "Physical Education",
-    "Music",
-    "Arts",
-    "Computer",
-    "Values Education"
-  ];
+  // Subjects by grade level (Official DepEd K-12 Curriculum)
+  const subjectsByGrade = {
+    "Kindergarten": ["Mother Tongue", "Filipino", "English", "Mathematics", "Edukasyon sa Pagpapakatao (EsP)", "Music", "Arts", "Physical Education", "Health"],
+    "Grade 1": ["Mother Tongue", "Filipino", "English", "Mathematics", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "Music", "Arts", "Physical Education", "Health"],
+    "Grade 2": ["Mother Tongue", "Filipino", "English", "Mathematics", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "Music", "Arts", "Physical Education", "Health"],
+    "Grade 3": ["Mother Tongue", "Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "Music", "Arts", "Physical Education", "Health"],
+    "Grade 4": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "EPP", "Music", "Arts", "Physical Education", "Health"],
+    "Grade 5": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "EPP", "Music", "Arts", "Physical Education", "Health"],
+    "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "EPP", "Music", "Arts", "Physical Education", "Health"],
+  };
+
+  // Get subjects for selected class grade level
+  const getSubjectsForClass = () => {
+    if (!selectedClass) return [];
+    const grade = selectedClass.grade || '';
+    return subjectsByGrade[grade] || Object.values(subjectsByGrade).flat().filter((v, i, a) => a.indexOf(v) === i);
+  };
+
+  const subjects = getSubjectsForClass();
 
   useEffect(() => {
     fetchData();
