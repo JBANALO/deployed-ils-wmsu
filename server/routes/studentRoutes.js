@@ -60,9 +60,12 @@ const verifyUserForGrades = async (req, res, next) => {
 
 // Check if teacher can enter grades
 const canEnterGrade = async (user, student, subject) => {
+  console.log('canEnterGrade check:', { userId: user?.id, userRole: user?.role, subject });
+  
   if (!user || !user.role) return false;
   if (user.role === 'admin') return true;
   
+  // Allow adviser, teacher, or subject_teacher roles
   if (user.role === 'teacher' || user.role === 'adviser' || user.role === 'subject_teacher') {
     const studentGrade = student.grade_level || student.gradeLevel;
     const studentSection = student.section;
@@ -72,22 +75,28 @@ const canEnterGrade = async (user, student, subject) => {
       'SELECT * FROM classes WHERE adviser_id = ? AND grade = ? AND section = ?',
       [user.id, studentGrade, studentSection]
     );
+    console.log('Adviser check:', { userId: user.id, studentGrade, studentSection, found: adviserClasses?.length });
     if (adviserClasses && adviserClasses.length > 0) return true;
     
     // Check if user is subject teacher for this class and subject
     const classId = `${studentGrade.toLowerCase().replace(/\s+/g, '-')}-${studentSection.toLowerCase()}`;
+    console.log('Subject teacher check - classId:', classId, 'subject:', subject);
+    
     const subjectTeacherRecords = await query(
       'SELECT * FROM subject_teachers WHERE teacher_id = ? AND class_id = ?',
       [user.id, classId]
     );
+    console.log('Subject teacher records:', subjectTeacherRecords);
     
     if (subjectTeacherRecords && subjectTeacherRecords.length > 0) {
       for (const record of subjectTeacherRecords) {
         // Each record has a single subject in 'subject' column (not 'subjects')
+        console.log('Comparing:', record.subject, 'vs', subject);
         if (record.subject === subject) return true;
       }
     }
   }
+  console.log('canEnterGrade - Not authorized');
   return false;
 };
 

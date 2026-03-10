@@ -267,11 +267,14 @@ export default function EditGrades() {
       console.error('Error fetching grades:', error);
     }
     
-    // Initialize grade data - show all subjects but only editable ones will be enabled
+    // Initialize grade data - for subject teachers, only show assigned subjects
     const allSubjects = subjectsByGrade[student.gradeLevel] || [];
     const initialGrades = {};
     
-    allSubjects.forEach(subject => {
+    // Determine which subjects to show
+    const subjectsToShow = isAdviserForClass ? allSubjects : editableSubjectsForClass;
+    
+    subjectsToShow.forEach(subject => {
       initialGrades[subject] = {
         q1: studentGrades[subject]?.q1 || 0,
         q2: studentGrades[subject]?.q2 || 0,
@@ -281,7 +284,7 @@ export default function EditGrades() {
     });
     
     setGradeData(initialGrades);
-    console.log('Grade modal opened - editable subjects:', editableSubjectsForClass, 'grades:', initialGrades);
+    console.log('Grade modal opened - showing subjects:', subjectsToShow, 'editable:', editableSubjectsForClass, 'grades:', initialGrades);
     setShowGradeModal(true);
   };
 
@@ -755,13 +758,13 @@ export default function EditGrades() {
                     {Object.keys(gradeData)
                       .filter(subject => subject !== 'Total Q1')
                       .map((subject) => {
-                        const isUnauthorized = (userRole === 'subject_teacher' || userRole === 'teacher') && availableSubjects.length > 0 && !availableSubjects.includes(subject);
+                        // Subject teachers can only edit their assigned subjects (but now we only show those anyway)
+                        const canEdit = availableSubjects.includes(subject);
                         
                         return (
-                          <tr key={subject} className={`${isUnauthorized ? 'bg-gray-50 opacity-60' : 'hover:bg-gray-50'}`}>
+                          <tr key={subject} className="hover:bg-gray-50">
                             <td className="px-4 py-3 font-medium text-gray-900 border">
                               {subject}
-                              {isUnauthorized && <span className="text-xs text-gray-500 ml-2">(Not assigned)</span>}
                             </td>
                             <td className="px-4 py-3 border">
                               <div className="flex items-center justify-center gap-1">
@@ -772,11 +775,11 @@ export default function EditGrades() {
                                   placeholder="-"
                                   value={gradeData[subject]?.q1 || ''}
                                   onChange={(e) => handleGradeChange(subject, 'q1', e.target.value)}
-                                  disabled={isGradeLocked || isUnauthorized}
-                                  className={`w-16 text-center border border-gray-300 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 ${isGradeLocked || isUnauthorized ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                                  title={isUnauthorized ? 'You do not have permission to edit this subject' : ''}
+                                  disabled={isGradeLocked || !canEdit}
+                                  className={`w-16 text-center border border-gray-300 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 ${isGradeLocked || !canEdit ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                  title={!canEdit ? 'You do not have permission to edit this subject' : ''}
                                 />
-                                {!isGradeLocked && !isUnauthorized && gradeData[subject]?.q1 !== '' && gradeData[subject]?.q1 !== 0 && (
+                                {!isGradeLocked && canEdit && gradeData[subject]?.q1 !== '' && gradeData[subject]?.q1 !== 0 && (
                                   <button
                                     type="button"
                                     onClick={() => handleGradeChange(subject, 'q1', '')}
