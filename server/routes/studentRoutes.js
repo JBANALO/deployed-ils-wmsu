@@ -195,6 +195,78 @@ router.get('/:id', studentController.getStudent);
 router.put('/:id', studentController.updateStudent); // Update student
 router.delete('/:id', studentController.deleteStudent); // Delete student
 
+/**
+ * Get student credentials (email, password)
+ */
+router.get('/:id/credentials', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get student details including password from database
+    const [student] = await query(
+      `SELECT id, lrn, password, 
+       first_name as firstName, last_name as lastName, grade_level as gradeLevel, section,
+       parent_email as parentEmail, student_email as studentEmail
+       FROM students 
+       WHERE id = ?`,
+      [id]
+    );
+
+    if (!student || student.length === 0) {
+      console.log(`Student not found with id: ${id}`);
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    const studentData = student[0];
+    
+    console.log('Student data from database:', studentData);
+    
+    // Check if required fields exist
+    if (!studentData || !studentData.firstName || !studentData.lastName) {
+      console.log(`Student missing required fields:`, studentData);
+      return res.status(400).json({ error: 'Student data incomplete' });
+    }
+    
+    // Generate email from first and last name (like bulk import)
+    const firstName = studentData.firstName.toLowerCase().replace(/\s+/g, '');
+    const lastName = studentData.lastName.toLowerCase().replace(/\s+/g, '');
+    const generatedEmail = `${firstName}.${lastName}@wmsu.edu.ph`;
+    
+    // Determine which password to use
+    let passwordToShow;
+    
+    if (studentData.password) {
+      // Use stored password field
+      passwordToShow = studentData.password;
+      console.log(`Using stored password for student: ${studentData.lrn}`);
+    } else {
+      // Generate password using AdminCreateK6 pattern: WMSU{last4LRN}0000
+      const last4LRN = studentData.lrn ? studentData.lrn.slice(-4).padStart(4, '0') : '0000';
+      passwordToShow = `WMSU${last4LRN}0000`;
+      console.log(`Generated password for student: ${studentData.lrn}, password: ${passwordToShow}`);
+    }
+
+    const credentials = {
+      id: studentData.id,
+      email: generatedEmail, // Use generated email from name
+      password: passwordToShow,
+      firstName: studentData.firstName,
+      lastName: studentData.lastName,
+      lrn: studentData.lrn,
+      gradeLevel: studentData.gradeLevel,
+      section: studentData.section,
+      username: `${studentData.firstName}.${studentData.lastName}`.toLowerCase() || `${studentData.lrn}@wmsu.edu.ph` // Use generated username for individual, LRN for bulk
+    };
+
+    console.log(`Returning credentials for student: ${studentData.lrn}`);
+    res.json(credentials);
+    
+  } catch (err) {
+    console.error('Error fetching student credentials:', err);
+    res.status(500).json({ error: 'Failed to fetch student credentials' });
+  }
+});
+
 // Protected routes (require authentication)
 router.post('/:id/approve', studentController.approveStudent);
 router.post('/:id/decline', studentController.declineStudent);

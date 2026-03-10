@@ -16,28 +16,37 @@ export default function StudentTopbar({ studentName, gradeLevel }) {
   // Click outside to close dropdown
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (dropdownOpen && dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target) && !event.target.closest('button')) {
         setDropdownOpen(false);
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
+    if (dropdownOpen) {
+      document.addEventListener('click', handleClickOutside);
+    }
+    
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('click', handleClickOutside);
     };
   }, [dropdownOpen]);
 
-  const handleStudentDashboard = () => {
+  const handleStudentDashboard = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     navigate("/student/student-dashboard");
     setDropdownOpen(false);
   };
 
-  const handleCustomerService = () => {
+  const handleCustomerService = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     navigate("/student/customer-service-page");
     setDropdownOpen(false);
   };
 
-  const handleLogout = () => {
+  const handleLogout = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     // Clear all authentication data
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -47,6 +56,10 @@ export default function StudentTopbar({ studentName, gradeLevel }) {
     
     // Navigate to login
     navigate("/login");
+  };
+
+  const toggleDropdown = () => {
+    setDropdownOpen(!dropdownOpen);
   };
 
   return (
@@ -67,7 +80,7 @@ export default function StudentTopbar({ studentName, gradeLevel }) {
       <div className="flex items-center gap-6">
         <div className="relative">
           <button
-            onClick={() => setDropdownOpen(!dropdownOpen)}
+            onClick={toggleDropdown}
             className="flex items-center gap-3 hover:bg-red-800 px-4 py-2 rounded-xl transition-all duration-200"
           >
             <UserCircleIcon className="w-10 h-10" />

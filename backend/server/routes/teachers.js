@@ -128,4 +128,68 @@ router.get('/advisers', async (req, res) => {
   }
 });
 
+/**
+ * Get teacher credentials (username, email, password)
+ */
+router.get('/:id/credentials', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get teacher details including password from database
+    const [teacher] = await pool.query(
+      `SELECT id, username, email, password, plain_password as plainPassword, 
+       first_name as firstName, last_name as lastName, role
+       FROM users 
+       WHERE id = ? AND role IN ('teacher', 'adviser', 'subject_teacher')`,
+      [id]
+    );
+
+    if (!teacher || teacher.length === 0) {
+      return res.status(404).json({ error: 'Teacher not found' });
+    }
+
+    const teacherData = teacher[0];
+    
+    // Determine which password to use
+    let passwordToShow;
+    
+    if (teacherData.plainPassword) {
+      // Use stored plain password (for individually created accounts)
+      passwordToShow = teacherData.plainPassword;
+      console.log(`Using stored plain password for teacher: ${teacherData.username}`);
+    } else if (teacherData.password) {
+      // Use regular password field (for bulk imports)
+      passwordToShow = teacherData.password;
+      console.log(`Using regular password for teacher: ${teacherData.username}`);
+    } else {
+      // Fallback to generated pattern if no password stored
+      if (teacherData.email && teacherData.email.includes('@wmsu.edu.ph')) {
+        const emailPart = teacherData.email.replace('@wmsu.edu.ph', '').slice(-4).padStart(4, '0');
+        passwordToShow = `WMSU${emailPart}XXXX`;
+        console.log(`Generated password pattern for teacher: ${teacherData.username}, pattern: ${passwordToShow}`);
+      } else {
+        passwordToShow = 'Password123';
+        console.log(`Using default password for teacher: ${teacherData.username}`);
+      }
+    }
+
+    const credentials = {
+      id: teacherData.id,
+      username: teacherData.username || `${teacherData.firstName.toLowerCase()}${teacherData.lastName.toLowerCase()}@wmsu.edu.ph`,
+      email: teacherData.email,
+      password: passwordToShow,
+      firstName: teacherData.firstName,
+      lastName: teacherData.lastName,
+      role: teacherData.role
+    };
+
+    console.log(`Returning credentials for teacher: ${teacherData.username}`);
+    res.json(credentials);
+    
+  } catch (err) {
+    console.error('Error fetching teacher credentials:', err);
+    res.status(500).json({ error: 'Failed to fetch teacher credentials' });
+  }
+});
+
 module.exports = router;
