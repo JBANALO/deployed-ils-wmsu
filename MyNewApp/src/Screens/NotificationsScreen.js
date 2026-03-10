@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -6,29 +6,80 @@ import {
   ScrollView, 
   TouchableOpacity, 
   StatusBar,
-  RefreshControl 
+  RefreshControl,
+  ActivityIndicator
 } from 'react-native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useAttendance } from '../context/AttendanceContext';
 import { useAuth } from '../context/AuthProvider';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function NotificationsScreen({ navigation }) {
-  const { attendanceLog, loadAttendanceLogs, getTodayStats } = useAttendance();
+  const { attendanceLog, loadAttendanceLogs } = useAttendance();
   const { user } = useAuth();
   const [readNotifications, setReadNotifications] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  // Reload data when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      if (user) {
+        loadAllData();
+      }
+    }, [user])
+  );
 
   // Load read notifications from storage
   useEffect(() => {
     loadReadNotifications();
   }, []);
 
+  // Load all data
+  const loadAllData = async () => {
+    setLoading(true);
+    await Promise.all([loadStudents(), loadAttendanceLogs()]);
+    setLoading(false);
+  };
+
+  // Load students from API
+  const loadStudents = async () => {
+    if (!user) return;
+    try {
+      const response = await fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/students?teacherId=${user.id}`, {
+        headers: {
+          'Authorization': `Bearer ${user.token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const result = await response.json();
+      let rawStudents = [];
+      if (result.success || result.status === 'success') {
+        rawStudents = result.data || result.students || [];
+      } else if (Array.isArray(result)) {
+        rawStudents = result;
+      }
+      const studentsList = rawStudents.map(student => ({
+        ...student,
+        name: student.name || student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown Student',
+        studentId: student.studentId || student.lrn || student.id,
+      }));
+      setStudents(studentsList);
+    } catch (error) {
+      console.error('Error loading students:', error);
+    }
+  };
+
   const loadReadNotifications = async () => {
     try {
-      const stored = await AsyncStorage.getItem('readNotifications');
+      const today = getTodayDate();
+      const stored = await AsyncStorage.getItem(`readNotifications_${today}`);
       if (stored) {
         setReadNotifications(JSON.parse(stored));
+      } else {
+        setReadNotifications([]);
       }
     } catch (error) {
       console.error('Error loading read notifications:', error);
@@ -37,9 +88,10 @@ export default function NotificationsScreen({ navigation }) {
 
   const markAsRead = async (notificationId) => {
     try {
+      const today = getTodayDate();
       const updated = [...readNotifications, notificationId];
       setReadNotifications(updated);
-      await AsyncStorage.setItem('readNotifications', JSON.stringify(updated));
+      await AsyncStorage.setItem(`readNotifications_${today}`, JSON.stringify(updated));
     } catch (error) {
       console.error('Error marking as read:', error);
     }
@@ -47,9 +99,10 @@ export default function NotificationsScreen({ navigation }) {
 
   const markAllAsRead = async () => {
     try {
+      const today = getTodayDate();
       const allIds = getTodayNotifications().map(n => n.id);
       setReadNotifications(allIds);
-      await AsyncStorage.setItem('readNotifications', JSON.stringify(allIds));
+      await AsyncStorage.setItem(`readNotifications_${today}`, JSON.stringify(allIds));
     } catch (error) {
       console.error('Error marking all as read:', error);
     }
@@ -57,7 +110,8 @@ export default function NotificationsScreen({ navigation }) {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadAttendanceLogs();
+    await loadAllData();
+    await loadReadNotifications();
     setRefreshing(false);
   };
 
@@ -67,17 +121,27 @@ export default function NotificationsScreen({ navigation }) {
     const day = now.getDay();
     // Saturday = 6, Sunday = 0
     if (day === 0 || day === 6) return false;
-    // Add holidays here if needed
     return true;
   };
 
   // Get today's date in YYYY-MM-DD format
   const getTodayDate = () => new Date().toISOString().split('T')[0];
 
+  // Get current period based on hour
+  const getCurrentPeriod = () => {
+    const now = new Date();
+    const hour = now.getHours();
+    if (hour < 12) return 'morning';
+    return 'afternoon';
+  };
+
   // Get notifications for today (absent and late students)
   const getTodayNotifications = () => {
     const today = getTodayDate();
     const notifications = [];
+    const nowHour = new Date().getHours();
+    const morningCutoffPassed = nowHour >= 10;   // 10:00 AM
+    const afternoonCutoffPassed = nowHour >= 14;  // 2:00 PM
 
     // Filter today's attendance records
     const todayLogs = attendanceLog.filter(log => {
@@ -91,15 +155,15 @@ export default function NotificationsScreen({ navigation }) {
       return logDate === today;
     });
 
-    // Group by status
+    // Add late students from attendance log
     todayLogs.forEach(log => {
-      if (log.status === 'absent' || log.status === 'late') {
+      if (log.status === 'late' || log.status === 'Late') {
         const notificationId = `${log.studentId || log.student_id}_${log.period}_${today}`;
         notifications.push({
           id: notificationId,
           studentName: log.studentName || log.student_name || 'Unknown Student',
           studentLRN: log.studentLRN || log.student_lrn || log.lrn || '',
-          status: log.status,
+          status: 'late',
           period: log.period || 'N/A',
           time: log.time || log.timestamp || '',
           gradeLevel: log.gradeLevel || log.grade_level || '',
@@ -109,10 +173,60 @@ export default function NotificationsScreen({ navigation }) {
       }
     });
 
-    // Sort: unread first, then by time (newest first)
+    // Calculate absent students - students who have NO attendance record for the period
+    students.forEach(student => {
+      const studentId = student.studentId || student.lrn || student.id;
+      
+      // Check morning period
+      if (morningCutoffPassed) {
+        const hasMorningRecord = todayLogs.some(log => 
+          (log.studentId === studentId || log.student_id === studentId) && 
+          log.period === 'morning'
+        );
+        if (!hasMorningRecord) {
+          const notificationId = `${studentId}_morning_${today}_absent`;
+          notifications.push({
+            id: notificationId,
+            studentName: student.name || student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown',
+            studentLRN: student.lrn || student.studentId || '',
+            status: 'absent',
+            period: 'morning',
+            time: '',
+            gradeLevel: student.gradeLevel || student.grade_level || '',
+            section: student.section || '',
+            isRead: readNotifications.includes(notificationId)
+          });
+        }
+      }
+
+      // Check afternoon period
+      if (afternoonCutoffPassed) {
+        const hasAfternoonRecord = todayLogs.some(log => 
+          (log.studentId === studentId || log.student_id === studentId) && 
+          log.period === 'afternoon'
+        );
+        if (!hasAfternoonRecord) {
+          const notificationId = `${studentId}_afternoon_${today}_absent`;
+          notifications.push({
+            id: notificationId,
+            studentName: student.name || student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown',
+            studentLRN: student.lrn || student.studentId || '',
+            status: 'absent',
+            period: 'afternoon',
+            time: '',
+            gradeLevel: student.gradeLevel || student.grade_level || '',
+            section: student.section || '',
+            isRead: readNotifications.includes(notificationId)
+          });
+        }
+      }
+    });
+
+    // Sort: unread first, then by status (absent before late), then by name
     return notifications.sort((a, b) => {
       if (a.isRead !== b.isRead) return a.isRead ? 1 : -1;
-      return new Date(b.time) - new Date(a.time);
+      if (a.status !== b.status) return a.status === 'absent' ? -1 : 1;
+      return a.studentName.localeCompare(b.studentName);
     });
   };
 
@@ -163,6 +277,12 @@ export default function NotificationsScreen({ navigation }) {
         </View>
 
         {/* Notifications List */}
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#8B0000" />
+            <Text style={styles.loadingText}>Loading notifications...</Text>
+          </View>
+        ) : (
         <ScrollView 
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
@@ -186,9 +306,13 @@ export default function NotificationsScreen({ navigation }) {
           ) : notifications.length === 0 ? (
             <View style={styles.emptyState}>
               <Icon name="bell-check-outline" size={64} color="#ccc" />
-              <Text style={styles.emptyTitle}>No Notifications Today</Text>
+              <Text style={styles.emptyTitle}>No Notifications Yet</Text>
               <Text style={styles.emptySubtitle}>
-                All students are present! Great job!
+                {new Date().getHours() < 10 
+                  ? 'Absent notifications will appear after 10:00 AM (morning cutoff)'
+                  : new Date().getHours() < 14
+                    ? 'Morning attendance complete! Afternoon absents will appear after 2:00 PM'
+                    : 'All students are present! Great job!'}
               </Text>
             </View>
           ) : (
@@ -302,6 +426,7 @@ export default function NotificationsScreen({ navigation }) {
             </>
           )}
         </ScrollView>
+        )}
       </View>
     </>
   );
@@ -382,6 +507,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   summaryCard: {
     backgroundColor: '#fff',
@@ -525,5 +652,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#999',
     marginLeft: 'auto',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#666',
   },
 });
