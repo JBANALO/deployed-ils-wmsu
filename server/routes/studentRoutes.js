@@ -18,11 +18,14 @@ const verifyUserForGrades = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-fallback');
     
+    // JWT token has userId, not id
+    const userId = decoded.userId || decoded.id;
+    
     // Fetch user from database to get role (check users table first, then teachers)
-    let users = await query('SELECT id, role FROM users WHERE id = ?', [decoded.id]);
+    let users = await query('SELECT id, role FROM users WHERE id = ?', [userId]);
     
     if (!users || users.length === 0) {
-      users = await query('SELECT id, role FROM teachers WHERE id = ?', [decoded.id]);
+      users = await query('SELECT id, role FROM teachers WHERE id = ?', [userId]);
     }
     
     if (!users || users.length === 0) {
