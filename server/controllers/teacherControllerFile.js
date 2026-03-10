@@ -414,9 +414,10 @@ const createTeacher = (req, res) => {
         }
       });
     } else {
+      console.error('Failed to write users to file');
       res.status(500).json({
         success: false,
-        message: 'Failed to create teacher'
+        message: 'Failed to save teacher data'
       });
     }
   } catch (error) {

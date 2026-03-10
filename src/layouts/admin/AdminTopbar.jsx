@@ -130,6 +130,15 @@ export default function AdminTopbar() {
   // Click outside to close dropdowns
   useEffect(() => {
     const handleClickOutside = (event) => {
+      // Don't close if clicking on the buttons themselves
+      const target = event.target;
+      const isNotificationButton = target.closest('[aria-label="Notifications"]');
+      const isUserMenuButton = target.closest('[aria-label="User menu"]');
+      
+      if (isNotificationButton || isUserMenuButton) {
+        return;
+      }
+      
       // Close notifications if clicking outside
       if (showNotifications && notificationsRef.current && !notificationsRef.current.contains(event.target)) {
         setShowNotifications(false);
@@ -240,7 +249,7 @@ export default function AdminTopbar() {
                         }}
                       >
                         <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0 mt-1">
+                          <div className="shrink-0 mt-1">
                             {notification.type === 'account_approval' && (
                               <UserPlusIcon className="w-4 h-4 text-blue-600" />
                             )}
@@ -266,7 +275,7 @@ export default function AdminTopbar() {
                             </p>
                           </div>
                           {!notification.read && (
-                            <div className="w-2 h-2 bg-blue-600 rounded-full flex-shrink-0 mt-2"></div>
+                            <div className="w-2 h-2 bg-blue-600 rounded-full shrink-0 mt-2"></div>
                           )}
                         </div>
                       </div>
