@@ -145,28 +145,28 @@ export default function LoginPage() {
       className="flex items-center justify-center min-h-screen bg-cover bg-center font-montserrat"
       style={{ backgroundImage: "url('/wmsu-bg-se.png')" }}
     >
-      <div className="relative bg-white/95 p-8 rounded-2xl shadow-xl w-[420px] text-center border border-gray-200">
+      <div className="relative bg-white/95 p-8 rounded-2xl shadow-xl w-[420px] max-w-[90vw] text-center border border-gray-200">
         <img
           src="/wmsu-logo.jpg"
           alt="WMSU Logo"
-          className="mx-auto mb-3 w-25 h-25"
+          className="mx-auto mb-2 w-25 h-25"
         />
 
-        <h2 className="text-sm text-red-800 font-bold mb-6 leading-snug">
+        <h2 className="text-sm text-red-800 font-bold mb-4 leading-snug">
           WMSU ILS-Elementary Department:
           <br />
           Automated Grades Portal and Students Attendance using QR Code
         </h2>
 
         {error && (
-          <div className="text-red-600 text-sm font-medium mb-4 bg-red-50 px-4 py-3 rounded-md border border-red-200 whitespace-pre-line">
+          <div className="text-red-600 text-sm font-medium mb-2 bg-red-50 px-2 py-1 rounded-md border border-red-200 whitespace-pre-line">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4 text-left">
           <div>
-            <label className="text-sm font-medium text-gray-700">Email or Username</label>
+            <label className="text-sm font-medium text-gray-700">Email</label>
             <input
               type="text"
               className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 transition"
@@ -217,7 +217,7 @@ export default function LoginPage() {
         </div>
 
         {/* Google Sign-In Button */}
-        <div className="flex justify-center mb-6">
+        <div className="flex justify-center mb-2">
           <GoogleLogin
             clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.GOOGLE_CLIENT_ID || "878904993699-d6g63nckj41um96h4kul8vv34pd4b6b1.apps.googleusercontent.com"}
             onSuccess={handleGoogleSuccess}
