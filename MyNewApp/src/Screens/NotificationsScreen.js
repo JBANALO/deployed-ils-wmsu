@@ -44,11 +44,11 @@ export default function NotificationsScreen({ navigation }) {
     setLoading(false);
   };
 
-  // Load students from API
+  // Load students from API (only assigned to this teacher)
   const loadStudents = async () => {
     if (!user) return;
     try {
-      const response = await fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/students`, {
+      const response = await fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/students?teacherId=${user.id}`, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
           'Content-Type': 'application/json',
