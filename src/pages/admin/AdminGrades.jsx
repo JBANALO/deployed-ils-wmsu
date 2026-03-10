@@ -163,59 +163,19 @@ export default function AdminGrades() {
     setEditGrades(prev => ({ ...prev, [subject]: numValue }));
   };
 
-        name: s.fullName || `${s.firstName} ${s.lastName}`,
-
-        subject: 'General Average',
-
-        grade: s.average
-
-      }));
-
-      setRecentUpdates(updates);
-
-
-
-      setLoading(false);
-
-    } catch (error) {
-
-      console.error('Error loading grades:', error);
-
-      setLoading(false);
-
-    }
-
-  };
-
-
-
   // Filter students
-
   const filteredStudents = students.filter(student => {
-
     const matchesSearch = !searchQuery || 
-
       student.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-
       student.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-
       student.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-
       student.lrn?.includes(searchQuery);
 
-
-
     const matchesSection = selectedSection === 'All' || 
-
       `${student.gradeLevel} - ${student.section}` === selectedSection;
 
-
-
     return matchesSearch && matchesSection;
-
   });
-
-
 
   return (
 
