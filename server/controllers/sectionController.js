@@ -188,7 +188,7 @@ const getSectionStats = async (req, res) => {
       SELECT s.id, s.name, s.description, s.is_archived,
              COUNT(c.id) as class_count
       FROM sections s
-      LEFT JOIN classes c ON c.section = s.name
+      LEFT JOIN classes c ON c.section = s.name COLLATE utf8mb4_general_ci
       WHERE s.is_archived = FALSE
       GROUP BY s.id, s.name, s.description, s.is_archived
       ORDER BY s.name
