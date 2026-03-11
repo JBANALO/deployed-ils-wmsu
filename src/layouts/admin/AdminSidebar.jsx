@@ -10,6 +10,7 @@ import {
   BuildingLibraryIcon,
   ClockIcon,
   UserPlusIcon,
+  CalendarDaysIcon,
 } from "@heroicons/react/24/solid";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -28,6 +29,7 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
     { name: "Assign Adviser", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/assign-adviser" },
     { name: "Assign Subject Teacher", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/assign-subject-teacher" },
     { name: "Attendance", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, path: "/admin/admin-attendance" },
+    { name: "School Year", icon: <CalendarDaysIcon className="w-6 h-6" />, path: "/admin/school-year" },
   ];
 
   return (

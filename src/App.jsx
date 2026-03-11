@@ -37,6 +37,7 @@ import AdminAssignSubjectTeacher from "./pages/admin/AdminAssignSubjectTeacher.j
 import AdminAttendance from "./pages/admin/AdminAttendance";
 import AdminCreateTeacher from "./pages/admin/AdminCreateTeacher.jsx";
 import AdminSettings from "./pages/admin/AdminSettings.jsx";
+import AdminSchoolYear from "./pages/admin/AdminSchoolYear.jsx";
 import CreateAccount from "./pages/admin/CreateAccount";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
@@ -132,6 +133,7 @@ function App() {
                 <Route path="/admin/admin-attendance" element={<AdminAttendance />} />
                 <Route path="/admin/create-teacher" element={<AdminCreateTeacher />} />
                 <Route path="/admin/settings" element={<AdminSettings />} />
+                <Route path="/admin/school-year" element={<AdminSchoolYear />} />
               </Route>
             </Route>
 

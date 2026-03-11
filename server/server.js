@@ -93,6 +93,7 @@ const classRoutes = require('./routes/classRoutesWithRoleFilter');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const gradeRoutes = require('./routes/grades');
 const teacherRoutes = require('./routes/teacherRoutes');
+const schoolYearRoutes = require('./routes/schoolYearRoutes');
 
 const app = express();
 
@@ -585,6 +586,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/grades', gradeRoutes);
 app.use('/api/teachers', teacherRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/school-years', schoolYearRoutes);
 // ==========================================
 
 // Root endpoint - only used if no dist folder
