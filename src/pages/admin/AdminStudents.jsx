@@ -1300,37 +1300,18 @@ export default function AdminStudents() {
                   <p className="text-lg font-bold text-gray-900">{selectedStudent.fullName || `${selectedStudent.firstName} ${selectedStudent.lastName}`}</p>
                 </div>
                 
-                {/* Username - Only show for bulk imported students */}
-                {(selectedStudent.username && selectedStudent.username.includes('@wmsu.edu.ph')) || selectedStudent.lrn ? (
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Username</label>
-                    <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
-                      <p className="text-lg font-mono text-gray-900 flex-1 mr-2">{studentCredentials?.username?.replace('@wmsu.edu.ph', '') || selectedStudent.lrn || 'N/A'}</p>
-                      <button
-                        onClick={() => {
-                          const username = studentCredentials?.username?.replace('@wmsu.edu.ph', '') || selectedStudent.lrn;
-                          navigator.clipboard.writeText(username);
-                          toast.success('Username copied to clipboard!');
-                        }}
-                        className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors"
-                      >
-                        Copy
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-                
+                {/* LRN - Primary login identifier */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Email</label>
-                  <div className="flex items-center justify-between bg-white p-3 rounded border border-gray-300">
-                    <p className="text-sm font-mono text-gray-900 break-all flex-1 mr-2">{studentCredentials?.email || 'N/A'}</p>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">LRN (Use this to login)</label>
+                  <div className="flex items-center justify-between bg-white p-3 rounded border-2 border-green-500">
+                    <p className="text-lg font-mono font-bold text-green-700 flex-1 mr-2">{selectedStudent.lrn || studentCredentials?.lrn || 'N/A'}</p>
                     <button
                       onClick={() => {
-                        const email = studentCredentials?.email || '';
-                        navigator.clipboard.writeText(email);
-                        toast.success('Email copied to clipboard!');
+                        const lrn = selectedStudent.lrn || studentCredentials?.lrn;
+                        navigator.clipboard.writeText(lrn);
+                        toast.success('LRN copied to clipboard!');
                       }}
-                      className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors"
+                      className="text-sm bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600 transition-colors"
                     >
                       Copy
                     </button>
@@ -1354,7 +1335,15 @@ export default function AdminStudents() {
                   </div>
                 </div>
                 
-                <div className="bg-yellow-100 border border-yellow-400 p-3 rounded mt-4">
+                <div className="bg-green-100 border border-green-400 p-3 rounded mt-4">
+                  <p className="text-sm text-green-800">
+                    <strong>📝 How to Login:</strong><br/>
+                    Username: <span className="font-mono font-bold">{selectedStudent.lrn}</span><br/>
+                    Password: <span className="font-mono font-bold">{studentCredentials?.password || 'Loading...'}</span>
+                  </p>
+                </div>
+                
+                <div className="bg-yellow-100 border border-yellow-400 p-3 rounded">
                   <p className="text-xs text-yellow-800">
                     <strong>⚠️ Security Note:</strong> These credentials should be shared securely with the student's parents/guardians. Keep them confidential.
                   </p>

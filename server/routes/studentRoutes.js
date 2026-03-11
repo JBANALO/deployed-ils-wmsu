@@ -276,11 +276,6 @@ router.get('/:id/credentials', async (req, res) => {
       return res.status(400).json({ error: 'Student data incomplete' });
     }
     
-    // Generate email from first and last name (like bulk import)
-    const firstName = studentData.firstName.toLowerCase().replace(/\s+/g, '');
-    const lastName = studentData.lastName.toLowerCase().replace(/\s+/g, '');
-    const generatedEmail = `${firstName}.${lastName}@wmsu.edu.ph`;
-    
     // Determine which password to use
     let passwordToShow;
     
@@ -297,14 +292,14 @@ router.get('/:id/credentials', async (req, res) => {
 
     const credentials = {
       id: studentData.id,
-      email: generatedEmail, // Use generated email from name
+      lrn: studentData.lrn,
+      email: studentData.studentEmail || `${studentData.lrn}@wmsu.edu.ph`, // Use LRN-based email
       password: passwordToShow,
       firstName: studentData.firstName,
       lastName: studentData.lastName,
-      lrn: studentData.lrn,
       gradeLevel: studentData.gradeLevel,
       section: studentData.section,
-      username: `${studentData.firstName}.${studentData.lastName}`.toLowerCase() || `${studentData.lrn}@wmsu.edu.ph` // Use generated username for individual, LRN for bulk
+      username: studentData.lrn // Use LRN as username for login
     };
 
     console.log(`Returning credentials for student: ${studentData.lrn}`);
