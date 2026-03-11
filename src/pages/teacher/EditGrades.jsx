@@ -36,7 +36,25 @@ export default function EditGrades() {
   const [isGradeLocked, setIsGradeLocked] = useState(false);
   const [lockReason, setLockReason] = useState("");
   const [showReportCard, setShowReportCard] = useState(false);
-  const [reportCardStudent, setReportCardStudent] = useState(null); // null = all students
+  const [reportCardStudent, setReportCardStudent] = useState(null); // null = all students, array = selected students
+  const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
+
+  const toggleStudentSelection = (id) => {
+    setSelectedStudentIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedStudentIds.size === filteredStudents.length && filteredStudents.length > 0) {
+      setSelectedStudentIds(new Set());
+    } else {
+      setSelectedStudentIds(new Set(filteredStudents.map(s => s.id)));
+    }
+  };
 
   // Subjects by grade level — loaded dynamically from DB, fallback below
   const [subjectsByGrade, setSubjectsByGrade] = useState({
@@ -212,7 +230,7 @@ export default function EditGrades() {
         await Promise.all(uniqueGrades.map(async (grade) => {
           try {
             const resp = await api.get(`/subjects/grade/${encodeURIComponent(grade)}`);
-            const names = (resp.data || []).map(s => s.name).filter(Boolean);
+            const names = (resp.data?.data || []).map(s => s.name).filter(Boolean);
             if (names.length > 0) gradeSubjectMap[grade] = names;
           } catch (e) {
             console.warn('Could not fetch subjects for grade:', grade);
@@ -654,20 +672,45 @@ export default function EditGrades() {
             </h3>
             <p className="text-sm text-gray-600 mt-1">Click on any student's name to edit their grades</p>
           </div>
-          <button
-            onClick={() => { setReportCardStudent(null); setShowReportCard(true); }}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-            title="Export report cards for all visible students"
-          >
-            <img src="/export-icon.svg" alt="Export" className="w-5 h-5" />
-            Export All
-          </button>
+          <div className="flex gap-2 items-center">
+            {selectedStudentIds.size > 0 && (
+              <button
+                onClick={() => {
+                  const selected = filteredStudents.filter(s => selectedStudentIds.has(s.id));
+                  setReportCardStudent(selected);
+                  setShowReportCard(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                title={`Print report cards for ${selectedStudentIds.size} selected student(s)`}
+              >
+                <PrinterIcon className="w-5 h-5" />
+                Print Selected ({selectedStudentIds.size})
+              </button>
+            )}
+            <button
+              onClick={() => { setReportCardStudent(null); setShowReportCard(true); }}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              title="Export report cards for all visible students"
+            >
+              <img src="/export-icon.svg" alt="Export" className="w-5 h-5" />
+              Export All
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto scrollbar-hide">
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                <th className="px-6 py-4">
+                  <input
+                    type="checkbox"
+                    checked={filteredStudents.length > 0 && selectedStudentIds.size === filteredStudents.length}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 cursor-pointer rounded"
+                    title="Select all visible students"
+                  />
+                </th>
                 <th className="px-6 py-4">Rank</th>
                 <th className="px-6 py-4">LRN</th>
                 <th className="px-6 py-4">Student Name</th>
@@ -678,13 +721,13 @@ export default function EditGrades() {
             <tbody className="divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="8" className="px-6 py-8 text-center text-gray-500">
                     Loading students...
                   </td>
                 </tr>
               ) : filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="8" className="px-6 py-8 text-center text-gray-500">
                     No students found
                   </td>
                 </tr>
@@ -692,7 +735,15 @@ export default function EditGrades() {
                 filteredStudents
                   .sort((a, b) => (b.average || 0) - (a.average || 0))
                   .map((student, index) => (
-                    <tr key={student.id} className="hover:bg-gray-50 transition">
+                    <tr key={student.id} className={`hover:bg-gray-50 transition ${selectedStudentIds.has(student.id) ? 'bg-blue-50' : ''}`}>
+                      <td className="px-6 py-5">
+                        <input
+                          type="checkbox"
+                          checked={selectedStudentIds.has(student.id)}
+                          onChange={() => toggleStudentSelection(student.id)}
+                          className="w-4 h-4 cursor-pointer rounded"
+                        />
+                      </td>
                       <td className="px-6 py-5 text-sm font-medium text-gray-900">
                         {index + 1}
                       </td>
@@ -884,16 +935,32 @@ export default function EditGrades() {
       {/* Report Card Modal */}
       {showReportCard && (
         <GradesReportCard 
-          students={reportCardStudent ? [reportCardStudent] : filteredStudents}
+          students={
+            Array.isArray(reportCardStudent)
+              ? reportCardStudent
+              : (reportCardStudent ? [reportCardStudent] : filteredStudents)
+          }
           quarter={selectedQuarter}
-          gradeLevel={reportCardStudent ? reportCardStudent.gradeLevel : (selectedGradeLevel === "All Grades" ? "All Grades" : selectedGradeLevel)}
-          section={reportCardStudent ? reportCardStudent.section : selectedSection}
+          gradeLevel={
+            Array.isArray(reportCardStudent)
+              ? (reportCardStudent[0]?.gradeLevel || selectedGradeLevel)
+              : (reportCardStudent ? reportCardStudent.gradeLevel : (selectedGradeLevel === "All Grades" ? "All Grades" : selectedGradeLevel))
+          }
+          section={
+            Array.isArray(reportCardStudent)
+              ? (reportCardStudent[0]?.section || selectedSection)
+              : (reportCardStudent ? reportCardStudent.section : selectedSection)
+          }
           classId={
-            reportCardStudent
-              ? `${(reportCardStudent.gradeLevel || '').toLowerCase().replace(/\s+/g, '-')}-${(reportCardStudent.section || '').toLowerCase().replace(/\s+/g, '-')}`
-              : (selectedGradeLevel !== "All Grades" && selectedSection !== "All Sections"
-                ? `${selectedGradeLevel.toLowerCase().replace(/\s+/g, '-')}-${selectedSection.toLowerCase().replace(/\s+/g, '-')}`
+            Array.isArray(reportCardStudent)
+              ? (reportCardStudent[0]
+                ? `${(reportCardStudent[0].gradeLevel || '').toLowerCase().replace(/\s+/g, '-')}-${(reportCardStudent[0].section || '').toLowerCase().replace(/\s+/g, '-')}`
                 : null)
+              : (reportCardStudent
+                ? `${(reportCardStudent.gradeLevel || '').toLowerCase().replace(/\s+/g, '-')}-${(reportCardStudent.section || '').toLowerCase().replace(/\s+/g, '-')}`
+                : (selectedGradeLevel !== "All Grades" && selectedSection !== "All Sections"
+                  ? `${selectedGradeLevel.toLowerCase().replace(/\s+/g, '-')}-${selectedSection.toLowerCase().replace(/\s+/g, '-')}`
+                  : null))
           }
           onClose={() => { setShowReportCard(false); setReportCardStudent(null); }}
         />

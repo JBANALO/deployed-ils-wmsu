@@ -40,6 +40,7 @@ function formatStudent(s) {
     profilePic: s.profile_pic,
     qrCode: qrCodeUrl,
     status: s.status,
+    average: s.average || null,
     declineReason: s.decline_reason || undefined,
     createdAt: s.created_at,
     updatedAt: s.updated_at,
