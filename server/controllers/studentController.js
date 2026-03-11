@@ -40,7 +40,7 @@ function formatStudent(s) {
     profilePic: s.profile_pic,
     qrCode: qrCodeUrl,
     status: s.status,
-    average: s.average || null,
+    average: s.live_average != null ? Number(s.live_average) : (s.average ? Number(s.average) : null),
     declineReason: s.decline_reason || undefined,
     createdAt: s.created_at,
     updatedAt: s.updated_at,
@@ -308,7 +308,7 @@ exports.getStudents = async (req, res) => {
         const params = assignedClasses.flatMap(c => [c.gradeLevel, c.section]);
         
         const filteredStudents = await query(
-          `SELECT * FROM students WHERE (${conditions}) ORDER BY grade_level, section, last_name ASC`,
+          `SELECT s.*, (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.grade > 0) AS live_average FROM students s WHERE (${conditions}) ORDER BY s.grade_level, s.section, s.last_name ASC`,
           params
         );
         console.log(`[getStudents] Returning ${filteredStudents.length} students from ${assignedClasses.length} assigned class(es)`);
@@ -321,7 +321,7 @@ exports.getStudents = async (req, res) => {
     }
 
     // No teacherId — return all students (admin/web use)
-    const allDbStudents = await query('SELECT * FROM students ORDER BY created_at DESC');
+    const allDbStudents = await query('SELECT s.*, (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.grade > 0) AS live_average FROM students s ORDER BY s.created_at DESC');
     const formattedStudents = allDbStudents.map(formatStudent);
     res.status(200).json({ status: 'success', data: formattedStudents });
   } catch (error) {
