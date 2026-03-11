@@ -126,12 +126,13 @@ exports.login = async (req, res) => {
 
     let users = [];
 
-    // 1️⃣ Always check students table first (MySQL)
+    // 1️⃣ Always check students table first (MySQL) - check by email OR LRN
     if (isDatabaseAvailable()) {
       users = await query(
-        'SELECT * FROM students WHERE LOWER(student_email) = LOWER(?)',
-        [loginField]
+        'SELECT * FROM students WHERE LOWER(student_email) = LOWER(?) OR lrn = ?',
+        [loginField, loginField]
       );
+      console.log('Student login check - loginField:', loginField, 'found:', users.length);
     }
 
     // 2️⃣ If not a student, check admin/teacher accounts in JSON file
@@ -174,21 +175,32 @@ exports.login = async (req, res) => {
       return res.status(401).json({ status: 'fail', message: 'Incorrect email or password' });
     }
 
+    // Check student status - only approved students can login
+    if (user.lrn && user.status && user.status !== 'approved' && user.status !== 'Active') {
+      console.log('Student login blocked - status:', user.status);
+      return res.status(401).json({ 
+        status: 'fail', 
+        message: `Your account is ${user.status}. Please contact admin for approval.` 
+      });
+    }
+
     // Generate JWT
     const token = signToken(user.id);
 
-// Build userData based on role
+// Build userData based on role - check if user is from students table (has lrn)
     let userData = {};
-    if (user.student_email) {
-      // Student (from MySQL)
+    if (user.lrn) {
+      // Student (from MySQL students table)
+      console.log('Student login successful:', user.lrn, user.first_name, user.last_name);
       userData = {
         id: user.id,
+        lrn: user.lrn,
         firstName: user.first_name || '',
         lastName: user.last_name || '',
         name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
-        username: user.username || '',
-        email: user.student_email,
-        phone: user.phone || '',
+        username: user.username || user.lrn,
+        email: user.student_email || `${user.lrn}@student.wmsu.edu.ph`,
+        phone: user.parent_contact || '',
         profileImage: user.profile_pic || '',
         role: 'student',
         gradeLevel: user.grade_level,
