@@ -142,30 +142,49 @@ const getAllStudents = async (req, res) => {
     const { gradeLevel, section, status } = req.query;
 
     // Build query to fetch from database
+    // Compute average live from grades table so it reflects actual saved grades
+    // Falls back to students.average column if no grades rows exist
     let query = `
-      SELECT id, lrn, first_name, middle_name, last_name, age, sex,
-             grade_level, section, parent_contact, student_email, status, attendance, average,
-             profile_pic, qr_code, created_at, updated_at
-      FROM students
+      SELECT s.id, s.lrn, s.first_name, s.middle_name, s.last_name, s.age, s.sex,
+             s.grade_level, s.section, s.parent_contact, s.student_email, s.status,
+             s.attendance, s.profile_pic, s.qr_code, s.created_at, s.updated_at,
+             COALESCE(
+               (
+                 SELECT ROUND(AVG(subject_avg), 2)
+                 FROM (
+                   SELECT student_id,
+                          (COALESCE(NULLIF(q1,0),0) + COALESCE(NULLIF(q2,0),0) +
+                           COALESCE(NULLIF(q3,0),0) + COALESCE(NULLIF(q4,0),0)) /
+                          GREATEST(
+                            (q1>0) + (q2>0) + (q3>0) + (q4>0), 1
+                          ) AS subject_avg
+                   FROM grades
+                   WHERE student_id = s.id
+                     AND (q1 > 0 OR q2 > 0 OR q3 > 0 OR q4 > 0)
+                 ) sub
+               ),
+               IF(s.average > 0, s.average, NULL)
+             ) AS average
+      FROM students s
       WHERE 1=1
     `;
     const params = [];
 
     // Add filters
     if (gradeLevel) {
-      query += ` AND grade_level = ?`;
+      query += ` AND s.grade_level = ?`;
       params.push(gradeLevel);
     }
     if (section) {
-      query += ` AND section = ?`;
+      query += ` AND s.section = ?`;
       params.push(section);
     }
     if (status) {
-      query += ` AND status = ?`;
+      query += ` AND s.status = ?`;
       params.push(status);
     }
 
-    query += ` ORDER BY first_name, last_name ASC`;
+    query += ` ORDER BY s.first_name, s.last_name ASC`;
 
     const [students] = await pool.query(query, params);
 
