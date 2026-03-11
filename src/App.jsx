@@ -38,6 +38,8 @@ import AdminAttendance from "./pages/admin/AdminAttendance";
 import AdminCreateTeacher from "./pages/admin/AdminCreateTeacher.jsx";
 import AdminSettings from "./pages/admin/AdminSettings.jsx";
 import AdminSchoolYear from "./pages/admin/AdminSchoolYear.jsx";
+import AdminSubjects from "./pages/admin/AdminSubjects.jsx";
+import AdminSections from "./pages/admin/AdminSections.jsx";
 import CreateAccount from "./pages/admin/CreateAccount";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
@@ -134,6 +136,8 @@ function App() {
                 <Route path="/admin/create-teacher" element={<AdminCreateTeacher />} />
                 <Route path="/admin/settings" element={<AdminSettings />} />
                 <Route path="/admin/school-year" element={<AdminSchoolYear />} />
+                <Route path="/admin/subjects" element={<AdminSubjects />} />
+                <Route path="/admin/sections" element={<AdminSections />} />
               </Route>
             </Route>
 
