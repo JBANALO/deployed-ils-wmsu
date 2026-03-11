@@ -195,12 +195,12 @@ exports.getStudentsByGrade = async (req, res) => {
     const rows = await query(`
       SELECT 
         CASE
-          WHEN gradeLevel LIKE '%1%' AND gradeLevel NOT LIKE '%11%' THEN 'Grade 1'
-          WHEN gradeLevel LIKE '%2%' AND gradeLevel NOT LIKE '%12%' THEN 'Grade 2'
-          WHEN gradeLevel LIKE '%3%' THEN 'Grade 3'
-          WHEN gradeLevel LIKE '%4%' THEN 'Grade 4'
-          WHEN gradeLevel LIKE '%5%' THEN 'Grade 5'
-          WHEN gradeLevel LIKE '%6%' THEN 'Grade 6'
+          WHEN grade_level LIKE '%1%' AND grade_level NOT LIKE '%11%' THEN 'Grade 1'
+          WHEN grade_level LIKE '%2%' AND grade_level NOT LIKE '%12%' THEN 'Grade 2'
+          WHEN grade_level LIKE '%3%' THEN 'Grade 3'
+          WHEN grade_level LIKE '%4%' THEN 'Grade 4'
+          WHEN grade_level LIKE '%5%' THEN 'Grade 5'
+          WHEN grade_level LIKE '%6%' THEN 'Grade 6'
           ELSE 'Other'
         END AS grade,
         COUNT(*) as count
@@ -228,13 +228,13 @@ exports.promoteStudents = async (req, res) => {
 
     // Get all students grouped by grade level
     const [students] = await connection.query(`
-      SELECT id, firstName, lastName, gradeLevel, section 
+      SELECT id, first_name, last_name, grade_level, section 
       FROM students 
-      ORDER BY gradeLevel, section
+      ORDER BY grade_level, section
     `);
 
     for (const student of students) {
-      const currentGrade = student.gradeLevel || '';
+      const currentGrade = student.grade_level || '';
       let newGrade = '';
       let isGraduate = false;
 
@@ -256,20 +256,20 @@ exports.promoteStudents = async (req, res) => {
       if (isGraduate) {
         graduates.push({
           id: student.id,
-          name: `${student.firstName || ''} ${student.lastName || ''}`.trim(),
+          name: `${student.first_name || ''} ${student.last_name || ''}`.trim(),
           fromGrade: currentGrade
         });
       } else if (newGrade) {
         promotions.push({
           id: student.id,
-          name: `${student.firstName || ''} ${student.lastName || ''}`.trim(),
+          name: `${student.first_name || ''} ${student.last_name || ''}`.trim(),
           fromGrade: currentGrade,
           toGrade: newGrade
         });
 
         // Update student grade
         await connection.query(
-          'UPDATE students SET gradeLevel = ? WHERE id = ?',
+          'UPDATE students SET grade_level = ? WHERE id = ?',
           [newGrade, student.id]
         );
       }
@@ -301,16 +301,16 @@ exports.getPromotionPreview = async (req, res) => {
   try {
     const rows = await query(`
       SELECT 
-        gradeLevel,
+        grade_level,
         COUNT(*) as count
       FROM students
-      GROUP BY gradeLevel
-      ORDER BY gradeLevel
+      GROUP BY grade_level
+      ORDER BY grade_level
     `);
 
     // Process into promotion preview format
     const preview = rows.map(row => {
-      const grade = row.gradeLevel || '';
+      const grade = row.grade_level || '';
       let toGrade = '';
       let isGraduating = false;
 
