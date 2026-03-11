@@ -17,7 +17,7 @@ const canEnterGrade = async (user, student, subject, pool) => {
     
     // Check if user is adviser for this class
     const [adviserClasses] = await pool.query(
-      'SELECT * FROM classes WHERE adviser_id = ? AND grade_level = ? AND section = ?',
+      'SELECT * FROM classes WHERE adviser_id = ? AND grade = ? AND section = ?',
       [user.id, studentGrade, studentSection]
     );
     
@@ -33,10 +33,9 @@ const canEnterGrade = async (user, student, subject, pool) => {
     );
     
     if (subjectTeacherRecords.length > 0) {
-      // Check if the subject is in their assigned subjects
+      // subject_teachers has one row per subject; column is 'subject' (singular)
       for (const record of subjectTeacherRecords) {
-        const subjects = record.subjects ? record.subjects.split(',').map(s => s.trim()) : [];
-        if (subjects.includes(subject)) {
+        if (record.subject && record.subject.trim() === subject) {
           return true;
         }
       }
