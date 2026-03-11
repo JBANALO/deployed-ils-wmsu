@@ -48,11 +48,16 @@ pool.getConnection()
     dbAvailable = false;
   });
 
-// Query helper
+// Query helper - don't check dbAvailable, let the pool handle connection
 async function query(sql, params) {
-  if (!dbAvailable) throw new Error('Database not available');
-  const [rows] = await pool.execute(sql, params);
-  return rows;
+  try {
+    const [rows] = await pool.execute(sql, params);
+    dbAvailable = true; // Mark as available on successful query
+    return rows;
+  } catch (error) {
+    console.error('Database query error:', error.message);
+    throw error;
+  }
 }
 
 // Export
