@@ -195,12 +195,13 @@ exports.getStudentsByGrade = async (req, res) => {
     const rows = await query(`
       SELECT 
         CASE
-          WHEN grade_level LIKE '%1%' AND grade_level NOT LIKE '%11%' THEN 'Grade 1'
-          WHEN grade_level LIKE '%2%' AND grade_level NOT LIKE '%12%' THEN 'Grade 2'
-          WHEN grade_level LIKE '%3%' THEN 'Grade 3'
-          WHEN grade_level LIKE '%4%' THEN 'Grade 4'
-          WHEN grade_level LIKE '%5%' THEN 'Grade 5'
-          WHEN grade_level LIKE '%6%' THEN 'Grade 6'
+          WHEN grade_level = 'Kindergarten' THEN 'Kinder'
+          WHEN grade_level = 'Grade 1' THEN 'Grade 1'
+          WHEN grade_level = 'Grade 2' THEN 'Grade 2'
+          WHEN grade_level = 'Grade 3' THEN 'Grade 3'
+          WHEN grade_level = 'Grade 4' THEN 'Grade 4'
+          WHEN grade_level = 'Grade 5' THEN 'Grade 5'
+          WHEN grade_level = 'Grade 6' THEN 'Grade 6'
           ELSE 'Other'
         END AS grade,
         COUNT(*) as count
@@ -215,77 +216,86 @@ exports.getStudentsByGrade = async (req, res) => {
   }
 };
 
+// Grade progression map
+const GRADE_PROGRESSION = {
+  'Kindergarten': 'Grade 1',
+  'Grade 1':      'Grade 2',
+  'Grade 2':      'Grade 3',
+  'Grade 3':      'Grade 4',
+  'Grade 4':      'Grade 5',
+  'Grade 5':      'Grade 6',
+  'Grade 6':      'Graduate'
+};
+const PASSING_GRADE = 75;
+
+// Helper — get a student's average grade across all subjects
+async function getStudentAverage(conn, studentId) {
+  const [rows] = await conn.query(
+    'SELECT AVG(grade) as avg FROM grades WHERE student_id = ? AND grade > 0',
+    [studentId]
+  );
+  return rows[0]?.avg ?? null;
+}
+
 // Promote students to next grade
 exports.promoteStudents = async (req, res) => {
   let connection;
-  
+
   try {
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
     const promotions = [];
-    const graduates = [];
+    const graduates  = [];
+    const retained   = [];
 
-    // Get all students grouped by grade level
-    const [students] = await connection.query(`
-      SELECT id, first_name, last_name, grade_level, section 
-      FROM students 
-      ORDER BY grade_level, section
-    `);
+    const [students] = await connection.query(
+      'SELECT id, first_name, last_name, grade_level FROM students ORDER BY grade_level'
+    );
 
     for (const student of students) {
       const currentGrade = student.grade_level || '';
-      let newGrade = '';
-      let isGraduate = false;
+      const nextGrade    = GRADE_PROGRESSION[currentGrade];
+      const studentName  = `${student.first_name || ''} ${student.last_name || ''}`.trim();
 
-      // Determine next grade
-      if (currentGrade.includes('1') && !currentGrade.includes('11')) {
-        newGrade = currentGrade.replace(/1/, '2');
-      } else if (currentGrade.includes('2') && !currentGrade.includes('12')) {
-        newGrade = currentGrade.replace(/2/, '3');
-      } else if (currentGrade.includes('3')) {
-        newGrade = currentGrade.replace(/3/, '4');
-      } else if (currentGrade.includes('4')) {
-        newGrade = currentGrade.replace(/4/, '5');
-      } else if (currentGrade.includes('5')) {
-        newGrade = currentGrade.replace(/5/, '6');
-      } else if (currentGrade.includes('6')) {
-        isGraduate = true;
+      if (!nextGrade) continue; // unknown grade level — skip
+
+      // Calculate average from grades table
+      const [avgRows] = await connection.query(
+        'SELECT AVG(grade) as avg FROM grades WHERE student_id = ? AND grade > 0',
+        [student.id]
+      );
+      const avg = parseFloat(avgRows[0]?.avg ?? 0);
+      const passed = avg >= PASSING_GRADE;
+
+      if (!passed) {
+        // Retain student
+        retained.push({ id: student.id, name: studentName, grade: currentGrade, avg: avg.toFixed(2) });
+        continue;
       }
 
-      if (isGraduate) {
-        graduates.push({
-          id: student.id,
-          name: `${student.first_name || ''} ${student.last_name || ''}`.trim(),
-          fromGrade: currentGrade
-        });
-      } else if (newGrade) {
-        promotions.push({
-          id: student.id,
-          name: `${student.first_name || ''} ${student.last_name || ''}`.trim(),
-          fromGrade: currentGrade,
-          toGrade: newGrade
-        });
-
-        // Update student grade
+      if (nextGrade === 'Graduate') {
+        // Mark as graduated — remove from active students or flag
+        await connection.query(
+          "UPDATE students SET grade_level = 'Graduate', status = 'graduated' WHERE id = ?",
+          [student.id]
+        );
+        graduates.push({ id: student.id, name: studentName, fromGrade: currentGrade, avg: avg.toFixed(2) });
+      } else {
         await connection.query(
           'UPDATE students SET grade_level = ? WHERE id = ?',
-          [newGrade, student.id]
+          [nextGrade, student.id]
         );
+        promotions.push({ id: student.id, name: studentName, fromGrade: currentGrade, toGrade: nextGrade, avg: avg.toFixed(2) });
       }
     }
 
     await connection.commit();
 
-    res.json({ 
-      success: true, 
-      message: `Promoted ${promotions.length} students. ${graduates.length} students graduated.`,
-      data: {
-        promotions,
-        graduates,
-        totalPromoted: promotions.length,
-        totalGraduated: graduates.length
-      }
+    res.json({
+      success: true,
+      message: `Promoted ${promotions.length} students. ${graduates.length} graduated. ${retained.length} retained.`,
+      data: { promotions, graduates, retained, totalPromoted: promotions.length, totalGraduated: graduates.length, totalRetained: retained.length }
     });
   } catch (error) {
     if (connection) await connection.rollback();
@@ -299,43 +309,45 @@ exports.promoteStudents = async (req, res) => {
 // Get promotion preview (without actually promoting)
 exports.getPromotionPreview = async (req, res) => {
   try {
-    const rows = await query(`
-      SELECT 
-        grade_level,
-        COUNT(*) as count
-      FROM students
-      GROUP BY grade_level
-      ORDER BY grade_level
-    `);
+    // For each grade level, count how many students will pass (avg >= 75) vs be retained
+    const gradeOrder = ['Kindergarten','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6'];
 
-    // Process into promotion preview format
-    const preview = rows.map(row => {
-      const grade = row.grade_level || '';
-      let toGrade = '';
-      let isGraduating = false;
+    const preview = [];
+    for (const grade of gradeOrder) {
+      const nextGrade    = GRADE_PROGRESSION[grade];
+      const isGraduating = nextGrade === 'Graduate';
 
-      if (grade.includes('1') && !grade.includes('11')) {
-        toGrade = 'Grade 2';
-      } else if (grade.includes('2') && !grade.includes('12')) {
-        toGrade = 'Grade 3';
-      } else if (grade.includes('3')) {
-        toGrade = 'Grade 4';
-      } else if (grade.includes('4')) {
-        toGrade = 'Grade 5';
-      } else if (grade.includes('5')) {
-        toGrade = 'Grade 6';
-      } else if (grade.includes('6')) {
-        isGraduating = true;
-        toGrade = 'Graduate 🎉';
-      }
+      // Students in this grade
+      const [total] = await query(
+        'SELECT COUNT(*) as cnt FROM students WHERE grade_level = ?', [grade]
+      );
+      const totalCount = total[0]?.cnt ?? 0;
+      if (totalCount === 0) continue;
 
-      return {
+      // Students with avg >= 75 (will be promoted)
+      const [passing] = await query(`
+        SELECT COUNT(DISTINCT s.id) as cnt
+        FROM students s
+        JOIN (
+          SELECT student_id, AVG(grade) as avg_grade
+          FROM grades WHERE grade > 0
+          GROUP BY student_id
+          HAVING AVG(grade) >= ?
+        ) g ON g.student_id = s.id
+        WHERE s.grade_level = ?`, [PASSING_GRADE, grade]
+      );
+      const willPromote = passing[0]?.cnt ?? 0;
+      const willRetain  = totalCount - willPromote;
+
+      preview.push({
         fromGrade: grade,
-        toGrade,
-        count: row.count,
+        toGrade: isGraduating ? 'Graduate 🎓' : nextGrade,
+        total: totalCount,
+        willPromote,
+        willRetain,
         isGraduating
-      };
-    });
+      });
+    }
 
     res.json({ success: true, data: preview });
   } catch (error) {
