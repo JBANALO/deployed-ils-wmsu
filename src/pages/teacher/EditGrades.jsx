@@ -280,18 +280,31 @@ export default function EditGrades() {
     // Check if user is adviser for this class
     const isAdviserForClass = adviserClassIds.includes(studentClassId);
     
+    // --- Fetch subjects for this grade directly from DB (always fresh) ---
+    let dbSubjectsForGrade = [];
+    try {
+      // grade_levels column stores just the number e.g. '3', not 'Grade 3'
+      const gradeKey = (student.gradeLevel || '').replace(/^Grade\s+/i, '').trim();
+      const subjResp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`);
+      dbSubjectsForGrade = (subjResp.data?.data || []).map(s => s.name).filter(Boolean);
+      console.log('DB subjects for', student.gradeLevel, ':', dbSubjectsForGrade);
+    } catch (e) {
+      console.warn('Could not fetch subjects from DB, using fallback:', e.message);
+    }
+    // Fall back to hardcoded list only if DB returned nothing
+    const gradeSubjectList = dbSubjectsForGrade.length > 0
+      ? dbSubjectsForGrade
+      : (subjectsByGrade[student.gradeLevel] || []);
+
     // Determine which subjects can be edited for THIS class
     let editableSubjectsForClass = [];
     if (isAdviserForClass) {
-      // Adviser can edit ALL subjects for this grade
-      editableSubjectsForClass = subjectsByGrade[student.gradeLevel] || [];
+      editableSubjectsForClass = gradeSubjectList;
       console.log('User is adviser for this class - can edit all subjects:', editableSubjectsForClass);
     } else if (subjectsByClass[studentClassId]) {
-      // Subject teacher - can only edit assigned subjects for this class
       editableSubjectsForClass = subjectsByClass[studentClassId];
       console.log('User is subject teacher for this class - can edit:', editableSubjectsForClass);
     } else {
-      // Fallback - no access
       console.log('User has no assignment for this class');
       editableSubjectsForClass = [];
     }
@@ -309,13 +322,8 @@ export default function EditGrades() {
       console.error('Error fetching grades:', error);
     }
     
-    // Initialize grade data - for subject teachers, only show assigned subjects
-    const allSubjects = subjectsByGrade[student.gradeLevel] || [];
+    const subjectsToShow = isAdviserForClass ? gradeSubjectList : editableSubjectsForClass;
     const initialGrades = {};
-    
-    // Determine which subjects to show
-    const subjectsToShow = isAdviserForClass ? allSubjects : editableSubjectsForClass;
-    
     subjectsToShow.forEach(subject => {
       initialGrades[subject] = {
         q1: studentGrades[subject]?.q1 || 0,
@@ -326,7 +334,7 @@ export default function EditGrades() {
     });
     
     setGradeData(initialGrades);
-    console.log('Grade modal opened - showing subjects:', subjectsToShow, 'editable:', editableSubjectsForClass, 'grades:', initialGrades);
+    console.log('Grade modal opened - showing subjects:', subjectsToShow, 'grades:', initialGrades);
     setShowGradeModal(true);
   };
 
