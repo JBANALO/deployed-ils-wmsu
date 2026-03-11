@@ -75,9 +75,15 @@ export default function AdminStudents() {
   const [selectAllK3, setSelectAllK3] = useState(false);
   const [selectAllG4to6, setSelectAllG4to6] = useState(false);
 
+  const [sections, setSections] = useState([]);
+
   // Fetch students from API
   useEffect(() => {
     fetchStudents();
+    fetch(`${API_BASE_URL}/sections`)
+      .then(r => r.json())
+      .then(data => setSections(data?.data || []))
+      .catch(() => {});
   }, []);
 
   const fetchStudents = async () => {
@@ -1095,12 +1101,16 @@ export default function AdminStudents() {
               </div>
               <div>
                 <label className="block font-semibold mb-1">Section</label>
-                <input
-                  type="text"
-                  value={editFormData.section}
+                <select
+                  value={editFormData.section || ''}
                   onChange={(e) => setEditFormData({...editFormData, section: e.target.value})}
                   className="w-full border p-2 rounded-lg"
-                />
+                >
+                  <option value="">Select Section</option>
+                  {sections.map(s => (
+                    <option key={s.id} value={s.name}>{s.name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block font-semibold mb-1">Sex</label>
