@@ -27,13 +27,14 @@ import {
 
 // Color palette for grade levels
 const GRADE_COLORS = {
+  'Kinder':  '#ec4899',
   'Grade 1': '#ef4444',
   'Grade 2': '#f97316',
   'Grade 3': '#eab308',
   'Grade 4': '#22c55e',
   'Grade 5': '#3b82f6',
   'Grade 6': '#8b5cf6',
-  'Other': '#6b7280'
+  'Other':   '#6b7280'
 };
 
 export default function AdminSchoolYear() {
@@ -165,13 +166,12 @@ export default function AdminSchoolYear() {
       const data = response.data?.data;
       toast.success(
         <div>
-          <strong>Promotion Complete!</strong>
-          <br />
-          {data?.totalPromoted || 0} students promoted
-          <br />
-          {data?.totalGraduated || 0} students graduated 🎉
+          <strong>Promotion Complete! 🎓</strong>
+          <br />✅ {data?.totalPromoted || 0} students promoted
+          <br />🎓 {data?.totalGraduated || 0} students graduated
+          <br />🔄 {data?.totalRetained || 0} students retained (avg &lt;75)
         </div>,
-        { autoClose: 5000 }
+        { autoClose: 6000 }
       );
       setShowPromoteModal(false);
       loadData();
@@ -399,27 +399,42 @@ export default function AdminSchoolYear() {
           </button>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {promotionPreview.map((item, index) => (
-            <div
-              key={index}
-              className={`p-4 rounded-lg text-center ${
-                item.isGraduating 
-                  ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 border-2 border-yellow-400'
-                  : 'bg-gray-50 border border-gray-200'
-              }`}
-            >
-              <p className="text-sm text-gray-500 mb-1">{item.fromGrade}</p>
-              <p className="text-2xl font-bold text-gray-800">{item.count}</p>
-              <div className="flex items-center justify-center gap-1 mt-2">
-                <span className="text-xs text-gray-400">→</span>
-                <span className={`text-sm font-medium ${item.isGraduating ? 'text-yellow-700' : 'text-green-600'}`}>
-                  {item.toGrade}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
+        {promotionPreview.length === 0 ? (
+          <p className="text-gray-400 text-center py-6">No student data available</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Current Grade</th>
+                  <th className="text-center py-2 px-3 text-gray-500 font-medium">Total</th>
+                  <th className="text-center py-2 px-3 text-green-600 font-medium">↑ Promote (avg ≥75)</th>
+                  <th className="text-center py-2 px-3 text-orange-500 font-medium">↺ Retain (avg &lt;75)</th>
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Promoted To</th>
+                </tr>
+              </thead>
+              <tbody>
+                {promotionPreview.map((item, index) => (
+                  <tr key={index} className={`border-b border-gray-100 ${
+                    item.isGraduating ? 'bg-yellow-50' : 'hover:bg-gray-50'
+                  }`}>
+                    <td className="py-3 px-3 font-medium text-gray-800">{item.fromGrade}</td>
+                    <td className="py-3 px-3 text-center font-bold text-gray-700">{item.total}</td>
+                    <td className="py-3 px-3 text-center">
+                      <span className="bg-green-100 text-green-700 font-semibold px-2 py-1 rounded-full">{item.willPromote}</span>
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <span className="bg-orange-100 text-orange-700 font-semibold px-2 py-1 rounded-full">{item.willRetain}</span>
+                    </td>
+                    <td className={`py-3 px-3 font-medium ${
+                      item.isGraduating ? 'text-yellow-600' : 'text-green-600'
+                    }`}>{item.toGrade}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Add School Year Modal */}
@@ -605,33 +620,60 @@ export default function AdminSchoolYear() {
 
       {/* Promote Students Confirmation Modal */}
       {showPromoteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg shadow-xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="bg-red-100 p-3 rounded-full">
-                <AcademicCapIcon className="w-6 h-6 text-red-600" />
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-xl shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-red-100 p-3 rounded-full">
+                  <AcademicCapIcon className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold">Promote Students</h3>
+                  <p className="text-sm text-gray-500">Based on average grade per student</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-lg font-semibold">Promote All Students?</h3>
-                <p className="text-sm text-gray-500">This will update all student grade levels</p>
-              </div>
+              <button onClick={() => setShowPromoteModal(false)} className="text-gray-400 hover:text-gray-600">
+                <XMarkIcon className="w-6 h-6" />
+              </button>
             </div>
-            
+
+            {/* Passing grade rule */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-800">
+              <strong>Promotion Rule:</strong> Students with an average grade of <strong>75 or above</strong> will be promoted to the next grade level. Below 75 will be retained.
+            </div>
+
+            {/* Breakdown table */}
             <div className="bg-gray-50 rounded-lg p-4 mb-4">
-              <p className="text-sm font-medium text-gray-700 mb-2">Promotion Summary:</p>
-              <ul className="space-y-1">
-                {promotionPreview.map((item, index) => (
-                  <li key={index} className="text-sm text-gray-600 flex justify-between">
-                    <span>{item.fromGrade} → {item.toGrade}</span>
-                    <span className="font-medium">{item.count} students</span>
-                  </li>
-                ))}
-              </ul>
+              <p className="text-sm font-semibold text-gray-700 mb-3">Grade-by-Grade Breakdown:</p>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200">
+                    <th className="text-left py-1 text-gray-500 font-medium">Grade</th>
+                    <th className="text-center py-1 text-green-600 font-medium">↑ Promote</th>
+                    <th className="text-center py-1 text-orange-500 font-medium">↺ Retain</th>
+                    <th className="text-left py-1 text-gray-500 font-medium">Moving To</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {promotionPreview.map((item, i) => (
+                    <tr key={i} className={`border-b border-gray-100 ${ item.isGraduating ? 'bg-yellow-50' : '' }`}>
+                      <td className="py-2 font-medium text-gray-800">{item.fromGrade}</td>
+                      <td className="py-2 text-center">
+                        <span className="bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">{item.willPromote ?? item.count}</span>
+                      </td>
+                      <td className="py-2 text-center">
+                        <span className="bg-orange-100 text-orange-700 font-bold px-2 py-0.5 rounded-full">{item.willRetain ?? 0}</span>
+                      </td>
+                      <td className={`py-2 font-medium ${ item.isGraduating ? 'text-yellow-600' : 'text-green-600' }`}>{item.toGrade}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
 
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
               <p className="text-sm text-yellow-800">
-                <strong>Note:</strong> Grade 6 students will be marked as graduates and will no longer appear in the student list.
+                <strong>⚠️ Warning:</strong> This action <strong>cannot be undone</strong>. Grade 6 students who pass will be marked as <strong>Graduated 🎓</strong>. Kindergarten students who pass will move to <strong>Grade 1</strong>.
               </p>
             </div>
 
@@ -647,7 +689,7 @@ export default function AdminSchoolYear() {
                 disabled={isSubmitting}
                 className="flex-1 px-4 py-2 bg-red-800 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50"
               >
-                {isSubmitting ? 'Promoting...' : 'Confirm Promotion'}
+                {isSubmitting ? 'Promoting...' : 'Confirm Promote Students'}
               </button>
             </div>
           </div>
