@@ -36,9 +36,10 @@ export default function EditGrades() {
   const [isGradeLocked, setIsGradeLocked] = useState(false);
   const [lockReason, setLockReason] = useState("");
   const [showReportCard, setShowReportCard] = useState(false);
+  const [reportCardStudent, setReportCardStudent] = useState(null); // null = all students
 
-  // Subjects by grade level (Based on Official DepEd K-12 Curriculum)
-  const subjectsByGrade = {
+  // Subjects by grade level — loaded dynamically from DB, fallback below
+  const [subjectsByGrade, setSubjectsByGrade] = useState({
     "Kindergarten": ["Mother Tongue", "Filipino", "English", "Mathematics", "Edukasyon sa Pagpapakatao (EsP)", "Music", "Arts", "Physical Education", "Health"],
     "Grade 1": ["Mother Tongue", "Filipino", "English", "Mathematics", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "Music", "Arts", "Physical Education", "Health"],
     "Grade 2": ["Mother Tongue", "Filipino", "English", "Mathematics", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "Music", "Arts", "Physical Education", "Health"],
@@ -46,7 +47,7 @@ export default function EditGrades() {
     "Grade 4": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "EPP", "Music", "Arts", "Physical Education", "Health"],
     "Grade 5": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "EPP", "Music", "Arts", "Physical Education", "Health"],
     "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "EPP", "Music", "Arts", "Physical Education", "Health"],
-  };
+  });
 
   useEffect(() => {
     fetchStudents();
@@ -203,6 +204,26 @@ export default function EditGrades() {
       
       console.log('EditGrades - Total students:', allStudents.length, '→ Filtered:', filteredStudents.length);
       setStudents(filteredStudents);
+
+      // Fetch subjects for each assigned grade level from DB (replaces hard-coded list)
+      const uniqueGrades = [...new Set(uniqueClasses.map(c => c.grade).filter(Boolean))];
+      if (uniqueGrades.length > 0) {
+        const gradeSubjectMap = {};
+        await Promise.all(uniqueGrades.map(async (grade) => {
+          try {
+            const resp = await api.get(`/subjects/grade/${encodeURIComponent(grade)}`);
+            const names = (resp.data || []).map(s => s.name).filter(Boolean);
+            if (names.length > 0) gradeSubjectMap[grade] = names;
+          } catch (e) {
+            console.warn('Could not fetch subjects for grade:', grade);
+          }
+        }));
+        // Merge with fallback (DB results override for matching grades)
+        if (Object.keys(gradeSubjectMap).length > 0) {
+          setSubjectsByGrade(prev => ({ ...prev, ...gradeSubjectMap }));
+          console.log('EditGrades - Loaded subjects from DB:', gradeSubjectMap);
+        }
+      }
 
       setLoading(false);
     } catch (error) {
@@ -634,12 +655,12 @@ export default function EditGrades() {
             <p className="text-sm text-gray-600 mt-1">Click on any student's name to edit their grades</p>
           </div>
           <button
-            onClick={() => setShowReportCard(true)}
+            onClick={() => { setReportCardStudent(null); setShowReportCard(true); }}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-            title="Export grades as report card"
+            title="Export report cards for all visible students"
           >
             <img src="/export-icon.svg" alt="Export" className="w-5 h-5" />
-            Export Report
+            Export All
           </button>
         </div>
 
@@ -652,8 +673,7 @@ export default function EditGrades() {
                 <th className="px-6 py-4">Student Name</th>
                 <th className="px-6 py-4">Grade & Section</th>
                 <th className="px-6 py-4 text-center">Final Average</th>
-                <th className="px-6 py-4">Remarks</th>
-              </tr>
+                <th className="px-6 py-4">Remarks</th>                <th className="px-6 py-4 text-center">Report Card</th>              </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {loading ? (
@@ -702,6 +722,16 @@ export default function EditGrades() {
                         }`}>
                           {student.average ? getRemarks(student.average) : "Not graded"}
                         </span>
+                      </td>
+                      <td className="px-6 py-5 text-center">
+                        <button
+                          onClick={() => { setReportCardStudent(student); setShowReportCard(true); }}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition"
+                          title="Print report card for this student"
+                        >
+                          <PrinterIcon className="w-3.5 h-3.5" />
+                          Print
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -854,15 +884,18 @@ export default function EditGrades() {
       {/* Report Card Modal */}
       {showReportCard && (
         <GradesReportCard 
-          students={filteredStudents}
+          students={reportCardStudent ? [reportCardStudent] : filteredStudents}
           quarter={selectedQuarter}
-          gradeLevel={selectedGradeLevel === "All Grades" ? "All Grades" : selectedGradeLevel}
-          section={selectedSection}
-          classId={selectedGradeLevel !== "All Grades" && selectedSection !== "All Sections" 
-            ? `${selectedGradeLevel.toLowerCase().replace(/\s+/g, '-')}-${selectedSection.toLowerCase().replace(/\s+/g, '-')}`
-            : null
+          gradeLevel={reportCardStudent ? reportCardStudent.gradeLevel : (selectedGradeLevel === "All Grades" ? "All Grades" : selectedGradeLevel)}
+          section={reportCardStudent ? reportCardStudent.section : selectedSection}
+          classId={
+            reportCardStudent
+              ? `${(reportCardStudent.gradeLevel || '').toLowerCase().replace(/\s+/g, '-')}-${(reportCardStudent.section || '').toLowerCase().replace(/\s+/g, '-')}`
+              : (selectedGradeLevel !== "All Grades" && selectedSection !== "All Sections"
+                ? `${selectedGradeLevel.toLowerCase().replace(/\s+/g, '-')}-${selectedSection.toLowerCase().replace(/\s+/g, '-')}`
+                : null)
           }
-          onClose={() => setShowReportCard(false)}
+          onClose={() => { setShowReportCard(false); setReportCardStudent(null); }}
         />
       )}
     </div>
