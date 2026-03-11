@@ -60,20 +60,32 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
     const fetchClassSubjects = async () => {
       try {
         if (classId) {
-          // If classId is provided, fetch subjects for that class
+          // Fetch subjects assigned to this specific class
           const response = await api.get(`/classes/${classId}/subjects`);
-          setClassSubjects(response.data.subjects || []);
-        } else if (gradeLevel && gradeLevel !== 'All Grades') {
-          // Fallback to hardcoded subjects if no classId
+          const classSpecificSubjects = response.data.subjects || [];
+          if (classSpecificSubjects.length > 0) {
+            setClassSubjects(classSpecificSubjects);
+            return;
+          }
+        }
+        // Fetch subjects for this grade level from the admin Subjects table
+        if (gradeLevel && gradeLevel !== 'All Grades') {
+          const resp = await api.get(`/subjects/grade/${encodeURIComponent(gradeLevel)}`);
+          const names = (resp.data || []).map(s => s.name).filter(Boolean);
+          if (names.length > 0) {
+            setClassSubjects(names);
+            return;
+          }
+        }
+        // Last fallback: hardcoded list
+        if (gradeLevel && gradeLevel !== 'All Grades') {
           setClassSubjects(subjectsByGrade[gradeLevel] || []);
         } else {
-          // Use all subjects from all grades
           const allSubjects = [...new Set(Object.values(subjectsByGrade).flat())];
           setClassSubjects(allSubjects);
         }
       } catch (error) {
         console.error('Error fetching class subjects:', error);
-        // Fallback to hardcoded subjects on error
         setClassSubjects(subjectsByGrade[gradeLevel] || []);
       }
     };
@@ -99,13 +111,17 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
       <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto">
         {/* Header with buttons */}
         <div className="sticky top-0 bg-gray-50 border-b p-4 flex justify-between items-center">
-          <h2 className="text-xl font-bold">DepED Report Cards (Per Student)</h2>
+          <h2 className="text-xl font-bold">
+            {students.length === 1
+              ? `Report Card — ${students[0].fullName || students[0].firstName}`
+              : `DepED Report Cards (${students.length} students)`}
+          </h2>
           <div className="flex gap-2">
             <button
               onClick={handlePrint}
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
             >
-              🖨️ Print All
+              🖨️ {students.length === 1 ? 'Print' : 'Print All'}
             </button>
             <button
               onClick={onClose}
