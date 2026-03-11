@@ -64,7 +64,7 @@ export default function AdminSchoolYear() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [syRes, activeRes, gradeRes, previewRes, archivedRes] = await Promise.all([
+      const [syRes, activeRes, gradeRes, previewRes, archivedRes] = await Promise.allSettled([
         axios.get('/school-years'),
         axios.get('/school-years/active'),
         axios.get('/school-years/students-by-grade'),
@@ -72,11 +72,16 @@ export default function AdminSchoolYear() {
         axios.get('/school-years/archived')
       ]);
 
-      setSchoolYears(syRes.data?.data || []);
-      setActiveSchoolYear(activeRes.data?.data || null);
-      setStudentsByGrade(gradeRes.data?.data || []);
-      setPromotionPreview(previewRes.data?.data || []);
-      setArchivedSchoolYears(archivedRes.data?.data || []);
+      if (syRes.status === 'fulfilled') setSchoolYears(syRes.value.data?.data || []);
+      if (activeRes.status === 'fulfilled') setActiveSchoolYear(activeRes.value.data?.data || null);
+      if (gradeRes.status === 'fulfilled') setStudentsByGrade(gradeRes.value.data?.data || []);
+      if (previewRes.status === 'fulfilled') setPromotionPreview(previewRes.value.data?.data || []);
+      if (archivedRes.status === 'fulfilled') setArchivedSchoolYears(archivedRes.value.data?.data || []);
+
+      const failed = [syRes, activeRes, gradeRes, previewRes, archivedRes].filter(r => r.status === 'rejected');
+      if (failed.length > 0) {
+        console.error('Some school year data failed to load:', failed.map(f => f.reason?.message));
+      }
     } catch (error) {
       console.error('Error loading data:', error);
       toast.error('Failed to load school year data');

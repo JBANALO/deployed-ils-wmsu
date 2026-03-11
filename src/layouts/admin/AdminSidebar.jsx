@@ -38,7 +38,7 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
 
   return (
     <aside
-      className={`fixed top-0 left-0 h-full bg-[#8f0303] text-white flex flex-col justify-between transition-[width] duration-500 ease-in-out z-30 ${
+      className={`fixed top-0 left-0 h-full bg-[#8f0303] text-white flex flex-col transition-[width] duration-500 ease-in-out z-30 ${
         sidebarOpen ? "w-64" : "w-20"
       }`}
     >
@@ -51,7 +51,7 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
         </button>
       </div>
 
-      <nav className="flex flex-col mt-2 space-y-1 flex-1">
+      <nav className="flex flex-col mt-2 space-y-1 flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#b91c1c transparent' }}>
         {menuItems.map((item) => (
           <div
             key={item.name}
