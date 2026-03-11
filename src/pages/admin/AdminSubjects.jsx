@@ -7,15 +7,37 @@ import {
   ArrowPathIcon,
   TrashIcon,
   MagnifyingGlassIcon,
-  XMarkIcon
+  XMarkIcon,
+  AcademicCapIcon
 } from "@heroicons/react/24/solid";
 import { toast } from 'react-toastify';
 import axios from "../../api/axiosConfig";
+
+const GRADE_TABS = [
+  { key: 'all', label: 'All Grades' },
+  { key: '1', label: 'Grade 1' },
+  { key: '2', label: 'Grade 2' },
+  { key: '3', label: 'Grade 3' },
+  { key: '4', label: 'Grade 4' },
+  { key: '5', label: 'Grade 5' },
+  { key: '6', label: 'Grade 6' },
+];
+
+const GRADE_COLORS = {
+  '1': { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200' },
+  '2': { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-200' },
+  '3': { bg: 'bg-yellow-100', text: 'text-yellow-700', border: 'border-yellow-200' },
+  '4': { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200' },
+  '5': { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200' },
+  '6': { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200' },
+  '4,5,6': { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200' },
+};
 
 export default function AdminSubjects() {
   const [subjects, setSubjects] = useState([]);
   const [archivedSubjects, setArchivedSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -25,7 +47,8 @@ export default function AdminSubjects() {
   const [selectedSubject, setSelectedSubject] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
-    description: ''
+    description: '',
+    grade_levels: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -57,7 +80,7 @@ export default function AdminSubjects() {
       await axios.post('/subjects', formData);
       toast.success('Subject created successfully!');
       setShowAddModal(false);
-      setFormData({ name: '', description: '' });
+      setFormData({ name: '', description: '', grade_levels: '' });
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to create subject');
@@ -74,7 +97,7 @@ export default function AdminSubjects() {
       toast.success('Subject updated successfully!');
       setShowEditModal(false);
       setSelectedSubject(null);
-      setFormData({ name: '', description: '' });
+      setFormData({ name: '', description: '', grade_levels: '' });
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update subject');
@@ -127,7 +150,8 @@ export default function AdminSubjects() {
     setSelectedSubject(subject);
     setFormData({
       name: subject.name,
-      description: subject.description || ''
+      description: subject.description || '',
+      grade_levels: subject.grade_levels || ''
     });
     setShowEditModal(true);
   };
@@ -142,16 +166,54 @@ export default function AdminSubjects() {
     setShowDeleteModal(true);
   };
 
-  // Filter subjects based on search
-  const filteredSubjects = subjects.filter(subject =>
-    subject.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (subject.description && subject.description.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const openAddModal = () => {
+    setFormData({ 
+      name: '', 
+      description: '', 
+      grade_levels: activeTab === 'all' ? '' : activeTab 
+    });
+    setShowAddModal(true);
+  };
+
+  // Filter subjects based on tab and search
+  const filteredSubjects = subjects.filter(subject => {
+    const matchesSearch = subject.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (subject.description && subject.description.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    if (activeTab === 'all') {
+      return matchesSearch;
+    }
+    
+    const grades = (subject.grade_levels || '').split(',');
+    return matchesSearch && grades.includes(activeTab);
+  });
+
+  // Group subjects by grade for display
+  const getGradeLabel = (gradeLevels) => {
+    if (!gradeLevels) return 'All Grades';
+    const grades = gradeLevels.split(',');
+    if (grades.length === 1) return `Grade ${grades[0]}`;
+    if (grades.length === 3 && grades.includes('4') && grades.includes('5') && grades.includes('6')) {
+      return 'Grade 4-6';
+    }
+    return `Grade ${grades.join(', ')}`;
+  };
+
+  const getGradeStyle = (gradeLevels) => {
+    if (!gradeLevels) return GRADE_COLORS['1'];
+    return GRADE_COLORS[gradeLevels] || GRADE_COLORS[gradeLevels.split(',')[0]] || GRADE_COLORS['1'];
+  };
+
+  // Count subjects per grade
+  const getSubjectCountByGrade = (grade) => {
+    if (grade === 'all') return subjects.length;
+    return subjects.filter(s => (s.grade_levels || '').split(',').includes(grade)).length;
+  };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-800"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-800"></div>
       </div>
     );
   }
@@ -169,12 +231,12 @@ export default function AdminSubjects() {
               <p className="text-sm text-blue-100">Subject Management</p>
               <h2 className="text-3xl font-bold">{subjects.length} Subjects</h2>
               <p className="text-sm text-blue-100 mt-1">
-                {archivedSubjects.length} archived subjects
+                Organized by Grade Level (K-6 DepEd Curriculum)
               </p>
             </div>
           </div>
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={openAddModal}
             className="flex items-center gap-2 bg-white text-blue-800 px-4 py-2 rounded-lg font-semibold hover:bg-blue-50 transition"
           >
             <PlusIcon className="w-5 h-5" />
@@ -183,8 +245,32 @@ export default function AdminSubjects() {
         </div>
       </div>
 
-      {/* Search and Filter */}
+      {/* Grade Level Tabs */}
       <div className="bg-white rounded-xl shadow-md p-4">
+        <div className="flex flex-wrap gap-2 mb-4">
+          {GRADE_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-4 py-2 rounded-lg font-medium transition ${
+                activeTab === tab.key
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {tab.label}
+              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+                activeTab === tab.key
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-600'
+              }`}>
+                {getSubjectCountByGrade(tab.key)}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Search and Filter */}
         <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
           <div className="relative flex-1 w-full sm:max-w-md">
             <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
@@ -211,46 +297,52 @@ export default function AdminSubjects() {
         {filteredSubjects.length === 0 ? (
           <div className="col-span-full text-center py-12 text-gray-500">
             <BookOpenIcon className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-            <p className="text-lg">No subjects found</p>
+            <p className="text-lg">No subjects found for {activeTab === 'all' ? 'any grade' : `Grade ${activeTab}`}</p>
             <p className="text-sm">Click "Add Subject" to create one</p>
           </div>
         ) : (
-          filteredSubjects.map((subject) => (
-            <div
-              key={subject.id}
-              className="bg-white rounded-xl shadow-md p-5 hover:shadow-lg transition border border-gray-100"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="bg-blue-100 p-2 rounded-lg">
-                    <BookOpenIcon className="w-6 h-6 text-blue-800" />
+          filteredSubjects.map((subject) => {
+            const style = getGradeStyle(subject.grade_levels);
+            return (
+              <div
+                key={subject.id}
+                className={`bg-white rounded-xl shadow-md p-5 hover:shadow-lg transition border-l-4 ${style.border}`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`${style.bg} p-2 rounded-lg`}>
+                      <BookOpenIcon className={`w-6 h-6 ${style.text}`} />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-800">{subject.name}</h4>
+                      {subject.description && (
+                        <p className="text-sm text-gray-500 mt-1">{subject.description}</p>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-semibold text-gray-800">{subject.name}</h4>
-                    {subject.description && (
-                      <p className="text-sm text-gray-500 mt-1">{subject.description}</p>
-                    )}
-                  </div>
+                  <span className={`${style.bg} ${style.text} px-2 py-1 rounded-full text-xs font-medium`}>
+                    {getGradeLabel(subject.grade_levels)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100">
+                  <button
+                    onClick={() => openEditModal(subject)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                  >
+                    <PencilSquareIcon className="w-4 h-4" />
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => openArchiveModal(subject)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-amber-600 hover:bg-amber-50 rounded-lg transition"
+                  >
+                    <ArchiveBoxIcon className="w-4 h-4" />
+                    Archive
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100">
-                <button
-                  onClick={() => openEditModal(subject)}
-                  className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                >
-                  <PencilSquareIcon className="w-4 h-4" />
-                  Edit
-                </button>
-                <button
-                  onClick={() => openArchiveModal(subject)}
-                  className="flex items-center gap-1 px-3 py-1.5 text-sm text-amber-600 hover:bg-amber-50 rounded-lg transition"
-                >
-                  <ArchiveBoxIcon className="w-4 h-4" />
-                  Archive
-                </button>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
@@ -270,9 +362,7 @@ export default function AdminSubjects() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="font-medium text-gray-600">{subject.name}</h4>
-                    {subject.description && (
-                      <p className="text-sm text-gray-400">{subject.description}</p>
-                    )}
+                    <p className="text-xs text-gray-400">{getGradeLabel(subject.grade_levels)}</p>
                   </div>
                   <div className="flex items-center gap-1">
                     <button
@@ -336,6 +426,28 @@ export default function AdminSubjects() {
                   placeholder="Optional description"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Grade Levels *
+                </label>
+                <select
+                  value={formData.grade_levels}
+                  onChange={(e) => setFormData({ ...formData, grade_levels: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Grade Level(s)</option>
+                  <option value="1">Grade 1 Only</option>
+                  <option value="2">Grade 2 Only</option>
+                  <option value="3">Grade 3 Only</option>
+                  <option value="4">Grade 4 Only</option>
+                  <option value="5">Grade 5 Only</option>
+                  <option value="6">Grade 6 Only</option>
+                  <option value="4,5,6">Grade 4-6 (Upper Elementary)</option>
+                  <option value="1,2,3">Grade 1-3 (Lower Elementary)</option>
+                  <option value="1,2,3,4,5,6">All Grades (1-6)</option>
+                </select>
+              </div>
               <div className="flex justify-end gap-3 pt-4">
                 <button
                   type="button"
@@ -393,6 +505,28 @@ export default function AdminSubjects() {
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Grade Levels *
+                </label>
+                <select
+                  value={formData.grade_levels}
+                  onChange={(e) => setFormData({ ...formData, grade_levels: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Grade Level(s)</option>
+                  <option value="1">Grade 1 Only</option>
+                  <option value="2">Grade 2 Only</option>
+                  <option value="3">Grade 3 Only</option>
+                  <option value="4">Grade 4 Only</option>
+                  <option value="5">Grade 5 Only</option>
+                  <option value="6">Grade 6 Only</option>
+                  <option value="4,5,6">Grade 4-6 (Upper Elementary)</option>
+                  <option value="1,2,3">Grade 1-3 (Lower Elementary)</option>
+                  <option value="1,2,3,4,5,6">All Grades (1-6)</option>
+                </select>
               </div>
               <div className="flex justify-end gap-3 pt-4">
                 <button

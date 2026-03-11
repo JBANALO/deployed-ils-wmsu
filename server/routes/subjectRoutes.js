@@ -6,6 +6,9 @@ const subjectController = require('../controllers/subjectController');
 // GET all subjects (active only)
 router.get('/', subjectController.getAllSubjects);
 
+// GET subjects by grade level
+router.get('/grade/:grade', subjectController.getSubjectsByGrade);
+
 // GET all subjects including archived
 router.get('/all', subjectController.getAllSubjectsWithArchived);
 
