@@ -217,7 +217,7 @@ export default function LoginPage() {
         </div>
 
         {/* Google Sign-In Button */}
-        <div className="flex justify-center mb-2">
+        <div className="flex justify-center mb-4">
           <GoogleLogin
             clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.GOOGLE_CLIENT_ID || "878904993699-d6g63nckj41um96h4kul8vv34pd4b6b1.apps.googleusercontent.com"}
             onSuccess={handleGoogleSuccess}
@@ -226,6 +226,21 @@ export default function LoginPage() {
             theme="outline"
             size="large"
           />
+        </div>
+
+        {/* Mobile App Download Link */}
+        <div className="border-t border-gray-200 pt-4">
+          <a
+            href="https://expo.dev/artifacts/eas/6ZP23yJc7TnEKEDLkKRRgn.apk"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 text-red-800 hover:text-red-600 font-medium text-sm transition"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            Download Mobile App (APK)
+          </a>
         </div>
       </div>
     </div>
