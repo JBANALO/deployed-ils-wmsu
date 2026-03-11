@@ -38,6 +38,14 @@ export default function AdminCreateTeacher() {
     }));
   };
 
+  const [sections, setSections] = useState([]);
+  const [allSubjects, setAllSubjects] = useState([]);
+
+  useEffect(() => {
+    api.get('/sections').then(r => setSections(r.data?.data || [])).catch(() => {});
+    api.get('/subjects').then(r => setAllSubjects(r.data?.data || [])).catch(() => {});
+  }, []);
+
   // Subjects by grade level (Official DepEd format)
   const subjectsByGradeLevel = {
     "Kindergarten": ["Filipino", "English", "Mathematics", "GMRC", "MAPEH"],
@@ -50,7 +58,7 @@ export default function AdminCreateTeacher() {
     "Multiple Grade Level (MG)": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"]
   };
 
-  // Sections by grade level
+  // Sections by grade level (legacy - kept for fallback)
   const sectionsByGradeLevel = {
     "Kindergarten": ["Love"],
     "Grade 1": ["Humility"],
@@ -391,27 +399,13 @@ export default function AdminCreateTeacher() {
                 className="mt-1 w-full p-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-800"
               >
                 <option value="">Select Section</option>
-                {formData.gradeLevel && sectionsByGradeLevel[formData.gradeLevel] ? (
-                  sectionsByGradeLevel[formData.gradeLevel].map((section) => (
-                    <option key={section} value={section}>
-                      {section}
-                    </option>
-                  ))
-                ) : (
-                  <>
-                    <option value="Prudence">Prudence</option>
-                    <option value="Generosity">Generosity</option>
-                    <option value="Courage">Courage</option>
-                    <option value="Justice">Justice</option>
-                    <option value="Honesty">Honesty</option>
-                    <option value="Loyalty">Loyalty</option>
-                    <option value="Industry">Industry</option>
-                  </>
-                )}
+                {(sections.length > 0 ? sections : []).map((s) => (
+                  <option key={s.id} value={s.name}>{s.name}</option>
+                ))}
               </select>
               {formData.gradeLevel && (
                 <p className="text-xs text-gray-500 mt-1">
-                  Sections for {formData.gradeLevel}: {sectionsByGradeLevel[formData.gradeLevel]?.join(", ") || "No specific sections"}
+                  Available sections: {sections.map(s => s.name).join(", ") || "No sections added yet"}
                 </p>
               )}
             </div>

@@ -1,4 +1,4 @@
- import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { UserCircleIcon } from "@heroicons/react/24/outline";
 import QRCode from 'qrcode';
 import { API_BASE_URL } from "../../api/config";
@@ -8,6 +8,14 @@ import { useNavigate } from 'react-router-dom';
 export default function AdminCreateK6() {
   const navigate = useNavigate();
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [sections, setSections] = useState([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/sections`)
+      .then(r => r.json())
+      .then(data => setSections(data?.data || []))
+      .catch(() => {});
+  }, []);
   const [createdStudentEmail, setCreatedStudentEmail] = useState('');
   const [createdStudentPassword, setCreatedStudentPassword] = useState('');
   const [redirectTimer, setRedirectTimer] = useState(null);
@@ -286,14 +294,9 @@ const handleSubmit = async (e) => {
           <div><label className="block font-semibold mb-1">Section</label>
             <select name="section" value={formData.section} onChange={handleChange} className="w-full border p-3 rounded-lg" required>
               <option value="">Select Section</option>
-              {formData.gradeLevel === "Kindergarten" && <option value="Love">Love</option>}
-              {formData.gradeLevel === "Grade 1" && <option value="Humility">Humility</option>}
-              {formData.gradeLevel === "Grade 2" && <option value="Kindness">Kindness</option>}
-              {formData.gradeLevel === "Grade 3" && <> <option value="Diligence">Diligence</option> <option value="Wisdom">Wisdom</option> </>}
-              {formData.gradeLevel === "Grade 4" && <> <option value="Prudence">Prudence</option> <option value="Generosity">Generosity</option> </>}
-              {formData.gradeLevel === "Grade 5" && <> <option value="Courage">Courage</option> <option value="Justice">Justice</option> </>}
-              {formData.gradeLevel === "Grade 6" && <> <option value="Honesty">Honesty</option> <option value="Loyalty">Loyalty</option> <option value="Industry">Industry</option></>}
-              {formData.gradeLevel === "MG" && <option value="Responsibility">Responsibility</option>}
+              {sections.map(s => (
+                <option key={s.id} value={s.name}>{s.name}</option>
+              ))}
             </select>
           </div>
         </div>
