@@ -359,6 +359,7 @@ exports.getStudent = async (req, res) => {
     
     const student = students[0];
     const formattedStudent = formatStudent(student);
+    const studentLRN = student.lrn; // LRN is used as studentId in attendance table
     
     // ======== FETCH GRADES ========
     const gradesRaw = await query(
@@ -390,13 +391,14 @@ exports.getStudent = async (req, res) => {
     });
     
     // ======== FETCH ATTENDANCE ========
+    // Mobile app uses LRN as studentId, so we search by both LRN and student ID
     const attendanceRaw = await query(
       `SELECT date, status, time, period 
        FROM attendance 
-       WHERE studentId = ? 
+       WHERE studentId = ? OR studentId = ?
        ORDER BY date DESC 
        LIMIT 100`,
-      [studentId]
+      [studentLRN, studentId]
     );
     
     // Group attendance by month for report card format
