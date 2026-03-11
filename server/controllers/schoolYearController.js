@@ -1,9 +1,9 @@
-const db = require('../config/db');
+const { query, pool } = require('../config/database');
 
 // Get all school years (non-archived)
 exports.getAllSchoolYears = async (req, res) => {
   try {
-    const [rows] = await db.query(
+    const rows = await query(
       'SELECT * FROM school_years WHERE is_archived = 0 ORDER BY start_date DESC'
     );
     res.json({ success: true, data: rows });
@@ -16,7 +16,7 @@ exports.getAllSchoolYears = async (req, res) => {
 // Get active school year
 exports.getActiveSchoolYear = async (req, res) => {
   try {
-    const [rows] = await db.query(
+    const rows = await query(
       'SELECT * FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1'
     );
     if (rows.length === 0) {
@@ -32,7 +32,7 @@ exports.getActiveSchoolYear = async (req, res) => {
 // Get archived school years
 exports.getArchivedSchoolYears = async (req, res) => {
   try {
-    const [rows] = await db.query(
+    const rows = await query(
       'SELECT * FROM school_years WHERE is_archived = 1 ORDER BY start_date DESC'
     );
     res.json({ success: true, data: rows });
@@ -57,10 +57,10 @@ exports.createSchoolYear = async (req, res) => {
 
     // If setting as active, deactivate others first
     if (is_active) {
-      await db.query('UPDATE school_years SET is_active = 0');
+      await query('UPDATE school_years SET is_active = 0');
     }
 
-    const [result] = await db.query(
+    const result = await query(
       'INSERT INTO school_years (label, start_date, end_date, is_active) VALUES (?, ?, ?, ?)',
       [label, start_date, end_date, is_active ? 1 : 0]
     );
@@ -87,10 +87,10 @@ exports.updateSchoolYear = async (req, res) => {
 
     // If setting as active, deactivate others first
     if (is_active) {
-      await db.query('UPDATE school_years SET is_active = 0 WHERE id != ?', [id]);
+      await query('UPDATE school_years SET is_active = 0 WHERE id != ?', [id]);
     }
 
-    const [result] = await db.query(
+    const result = await query(
       'UPDATE school_years SET label = ?, start_date = ?, end_date = ?, is_active = ?, updated_at = NOW() WHERE id = ?',
       [label, start_date, end_date, is_active ? 1 : 0, id]
     );
@@ -115,10 +115,10 @@ exports.setActiveSchoolYear = async (req, res) => {
     const { id } = req.params;
 
     // Deactivate all school years first
-    await db.query('UPDATE school_years SET is_active = 0');
+    await query('UPDATE school_years SET is_active = 0');
 
     // Activate the selected one
-    const [result] = await db.query(
+    const result = await query(
       'UPDATE school_years SET is_active = 1, updated_at = NOW() WHERE id = ? AND is_archived = 0',
       [id]
     );
@@ -140,7 +140,7 @@ exports.archiveSchoolYear = async (req, res) => {
     const { id } = req.params;
 
     // Check if it's the active school year
-    const [activeCheck] = await db.query(
+    const activeCheck = await query(
       'SELECT is_active FROM school_years WHERE id = ?',
       [id]
     );
@@ -152,7 +152,7 @@ exports.archiveSchoolYear = async (req, res) => {
       });
     }
 
-    const [result] = await db.query(
+    const result = await query(
       'UPDATE school_years SET is_archived = 1, is_active = 0, updated_at = NOW() WHERE id = ?',
       [id]
     );
@@ -173,7 +173,7 @@ exports.restoreSchoolYear = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const [result] = await db.query(
+    const result = await query(
       'UPDATE school_years SET is_archived = 0, updated_at = NOW() WHERE id = ?',
       [id]
     );
@@ -192,15 +192,15 @@ exports.restoreSchoolYear = async (req, res) => {
 // Get student count by grade level (for chart)
 exports.getStudentsByGrade = async (req, res) => {
   try {
-    const [rows] = await db.query(`
+    const rows = await query(`
       SELECT 
         CASE
-          WHEN gradeLevel LIKE '%1%' OR gradeLevel LIKE 'Grade 1%' THEN 'Grade 1'
-          WHEN gradeLevel LIKE '%2%' OR gradeLevel LIKE 'Grade 2%' THEN 'Grade 2'
-          WHEN gradeLevel LIKE '%3%' OR gradeLevel LIKE 'Grade 3%' THEN 'Grade 3'
-          WHEN gradeLevel LIKE '%4%' OR gradeLevel LIKE 'Grade 4%' THEN 'Grade 4'
-          WHEN gradeLevel LIKE '%5%' OR gradeLevel LIKE 'Grade 5%' THEN 'Grade 5'
-          WHEN gradeLevel LIKE '%6%' OR gradeLevel LIKE 'Grade 6%' THEN 'Grade 6'
+          WHEN gradeLevel LIKE '%1%' AND gradeLevel NOT LIKE '%11%' THEN 'Grade 1'
+          WHEN gradeLevel LIKE '%2%' AND gradeLevel NOT LIKE '%12%' THEN 'Grade 2'
+          WHEN gradeLevel LIKE '%3%' THEN 'Grade 3'
+          WHEN gradeLevel LIKE '%4%' THEN 'Grade 4'
+          WHEN gradeLevel LIKE '%5%' THEN 'Grade 5'
+          WHEN gradeLevel LIKE '%6%' THEN 'Grade 6'
           ELSE 'Other'
         END AS grade,
         COUNT(*) as count
@@ -217,9 +217,10 @@ exports.getStudentsByGrade = async (req, res) => {
 
 // Promote students to next grade
 exports.promoteStudents = async (req, res) => {
-  const connection = await db.getConnection();
+  let connection;
   
   try {
+    connection = await pool.getConnection();
     await connection.beginTransaction();
 
     const promotions = [];
@@ -233,7 +234,7 @@ exports.promoteStudents = async (req, res) => {
     `);
 
     for (const student of students) {
-      const currentGrade = student.gradeLevel;
+      const currentGrade = student.gradeLevel || '';
       let newGrade = '';
       let isGraduate = false;
 
@@ -255,20 +256,20 @@ exports.promoteStudents = async (req, res) => {
       if (isGraduate) {
         graduates.push({
           id: student.id,
-          name: `${student.firstName} ${student.lastName}`,
+          name: `${student.firstName || ''} ${student.lastName || ''}`.trim(),
           fromGrade: currentGrade
         });
       } else if (newGrade) {
         promotions.push({
           id: student.id,
-          name: `${student.firstName} ${student.lastName}`,
+          name: `${student.firstName || ''} ${student.lastName || ''}`.trim(),
           fromGrade: currentGrade,
           toGrade: newGrade
         });
 
         // Update student grade
         await connection.query(
-          'UPDATE students SET gradeLevel = ?, updated_at = NOW() WHERE id = ?',
+          'UPDATE students SET gradeLevel = ? WHERE id = ?',
           [newGrade, student.id]
         );
       }
@@ -287,18 +288,18 @@ exports.promoteStudents = async (req, res) => {
       }
     });
   } catch (error) {
-    await connection.rollback();
+    if (connection) await connection.rollback();
     console.error('Error promoting students:', error);
     res.status(500).json({ success: false, message: 'Failed to promote students' });
   } finally {
-    connection.release();
+    if (connection) connection.release();
   }
 };
 
 // Get promotion preview (without actually promoting)
 exports.getPromotionPreview = async (req, res) => {
   try {
-    const [rows] = await db.query(`
+    const rows = await query(`
       SELECT 
         gradeLevel,
         COUNT(*) as count
@@ -309,7 +310,7 @@ exports.getPromotionPreview = async (req, res) => {
 
     // Process into promotion preview format
     const preview = rows.map(row => {
-      const grade = row.gradeLevel;
+      const grade = row.gradeLevel || '';
       let toGrade = '';
       let isGraduating = false;
 
@@ -349,7 +350,7 @@ exports.deleteSchoolYear = async (req, res) => {
     const { id } = req.params;
 
     // Check if it's the active school year
-    const [activeCheck] = await db.query(
+    const activeCheck = await query(
       'SELECT is_active FROM school_years WHERE id = ?',
       [id]
     );
@@ -361,7 +362,7 @@ exports.deleteSchoolYear = async (req, res) => {
       });
     }
 
-    const [result] = await db.query('DELETE FROM school_years WHERE id = ?', [id]);
+    const result = await query('DELETE FROM school_years WHERE id = ?', [id]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ success: false, message: 'School year not found' });
