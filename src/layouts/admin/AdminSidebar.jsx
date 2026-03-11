@@ -11,6 +11,8 @@ import {
   ClockIcon,
   UserPlusIcon,
   CalendarDaysIcon,
+  BookOpenIcon,
+  RectangleGroupIcon,
 } from "@heroicons/react/24/solid";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -26,6 +28,8 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
     { name: "Students", icon: <AcademicCapIcon className="w-6 h-6" />, path: "/admin/admin-students" },
     { name: "Grades", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, path: "/admin/admin-grades" },
     { name: "Classes", icon: <BuildingLibraryIcon className="w-6 h-6" />, path: "/admin/admin-classes" },
+    { name: "Subjects", icon: <BookOpenIcon className="w-6 h-6" />, path: "/admin/subjects" },
+    { name: "Sections", icon: <RectangleGroupIcon className="w-6 h-6" />, path: "/admin/sections" },
     { name: "Assign Adviser", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/assign-adviser" },
     { name: "Assign Subject Teacher", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/assign-subject-teacher" },
     { name: "Attendance", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, path: "/admin/admin-attendance" },
