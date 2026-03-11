@@ -128,17 +128,21 @@ export default function LogScreen() {
         };
       }
 
+      // Normalize studentId comparison (convert to string for comparison)
+      const studentIdStr = String(student.studentId || student.lrn || student.id || '');
+      
       const morningLog = logs.find(log => 
-        log.studentId === student.studentId && log.period === 'morning'
+        String(log.studentId) === studentIdStr && (log.period || '').toLowerCase() === 'morning'
       );
       const afternoonLog = logs.find(log => 
-        log.studentId === student.studentId && log.period === 'afternoon'
+        String(log.studentId) === studentIdStr && (log.period || '').toLowerCase() === 'afternoon'
       );
 
       if (selectedPeriod === 'all' || selectedPeriod === 'morning') {
         if (morningLog) {
-          if (morningLog.status === 'present') grouped[section].morning.present++;
-          else if (morningLog.status === 'late') grouped[section].morning.late++;
+          const status = (morningLog.status || '').toLowerCase();
+          if (status === 'present') grouped[section].morning.present++;
+          else if (status === 'late') grouped[section].morning.late++;
           else grouped[section].morning.absent++;
         } else {
           grouped[section].morning.absent++;
@@ -147,8 +151,9 @@ export default function LogScreen() {
 
       if (selectedPeriod === 'all' || selectedPeriod === 'afternoon') {
         if (afternoonLog) {
-          if (afternoonLog.status === 'present') grouped[section].afternoon.present++;
-          else if (afternoonLog.status === 'late') grouped[section].afternoon.late++;
+          const status = (afternoonLog.status || '').toLowerCase();
+          if (status === 'present') grouped[section].afternoon.present++;
+          else if (status === 'late') grouped[section].afternoon.late++;
           else grouped[section].afternoon.absent++;
         } else {
           grouped[section].afternoon.absent++;
@@ -176,7 +181,8 @@ export default function LogScreen() {
   const getStatusDisplay = (log) => {
     if (!log) return { text: 'Absent', color: '#f44336' };
     
-    switch (log.status) {
+    const status = (log.status || '').toLowerCase();
+    switch (status) {
       case 'present':
         return { text: 'Present', color: '#4caf50' };
       case 'late':
