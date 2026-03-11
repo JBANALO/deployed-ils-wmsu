@@ -229,9 +229,11 @@ export default function EditGrades() {
         const gradeSubjectMap = {};
         await Promise.all(uniqueGrades.map(async (grade) => {
           try {
-            const resp = await api.get(`/subjects/grade/${encodeURIComponent(grade)}`);
+            // grade_levels in DB stores just the number (e.g. '3' not 'Grade 3')
+            const gradeKey = grade.replace(/^Grade\s+/i, '').trim();
+            const resp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`);
             const names = (resp.data?.data || []).map(s => s.name).filter(Boolean);
-            if (names.length > 0) gradeSubjectMap[grade] = names;
+            if (names.length > 0) gradeSubjectMap[grade] = names; // keep 'Grade 3' as map key
           } catch (e) {
             console.warn('Could not fetch subjects for grade:', grade);
           }

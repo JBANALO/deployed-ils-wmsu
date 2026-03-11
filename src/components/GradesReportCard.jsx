@@ -70,7 +70,9 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
         }
         // Fetch subjects for this grade level from the admin Subjects table
         if (gradeLevel && gradeLevel !== 'All Grades') {
-          const resp = await api.get(`/subjects/grade/${encodeURIComponent(gradeLevel)}`);
+          // grade_levels in DB stores just the number (e.g. '3' not 'Grade 3')
+          const gradeKey = (gradeLevel || '').replace(/^Grade\s+/i, '').trim();
+          const resp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`);
           const names = (resp.data?.data || []).map(s => s.name).filter(Boolean);
           if (names.length > 0) {
             setClassSubjects(names);
