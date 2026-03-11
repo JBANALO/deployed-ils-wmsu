@@ -159,10 +159,12 @@ export default function EditGrades() {
       console.log('EditGrades - Adviser class IDs:', adviserIds);
 
       // Build per-class subject map for subject teacher assignments
+      // cls.subjects is an array returned by the API (from GROUP_CONCAT in the query)
       const classSubjectMap = {};
       subjectTeacherClasses.forEach(cls => {
-        if (cls.subjects_teaching) {
-          classSubjectMap[cls.id] = cls.subjects_teaching.split(',').map(s => s.trim()).filter(s => s);
+        const clsSubjects = Array.isArray(cls.subjects) ? cls.subjects : (cls.subjects ? cls.subjects.split(',') : []);
+        if (clsSubjects.length > 0) {
+          classSubjectMap[cls.id] = clsSubjects.map(s => s.trim()).filter(s => s);
         }
       });
       setSubjectsByClass(classSubjectMap);
@@ -171,14 +173,13 @@ export default function EditGrades() {
       // Extract all subjects the teacher can edit (global list, for backward compatibility)
       const subjects = [];
       subjectTeacherClasses.forEach(cls => {
-        if (cls.subjects_teaching) {
-          cls.subjects_teaching.split(',').forEach(s => {
-            const trimmed = s.trim();
-            if (trimmed && !subjects.includes(trimmed)) {
-              subjects.push(trimmed);
-            }
-          });
-        }
+        const clsSubjects = Array.isArray(cls.subjects) ? cls.subjects : (cls.subjects ? cls.subjects.split(',') : []);
+        clsSubjects.forEach(s => {
+          const trimmed = s.trim();
+          if (trimmed && !subjects.includes(trimmed)) {
+            subjects.push(trimmed);
+          }
+        });
       });
       setAssignedSubjects(subjects);
       console.log('EditGrades - Assigned subjects:', subjects);
@@ -316,20 +317,28 @@ export default function EditGrades() {
     if (subjects.length === 0) return 0;
     
     let total = 0;
+    let count = 0;
     if (selectedQuarter === "all") {
-      // Average of all quarters for all subjects
+      // Average of all quarters for all subjects (skip ungraded subjects)
       subjects.forEach(subject => {
-        const subAvg = calculateSubjectAverage(subject);
-        total += parseFloat(subAvg) || 0;
+        const subAvg = parseFloat(calculateSubjectAverage(subject)) || 0;
+        if (subAvg > 0) {
+          total += subAvg;
+          count++;
+        }
       });
     } else {
-      // Only selected quarter
+      // Only selected quarter — only count subjects where a grade has been entered
       subjects.forEach(subject => {
-        total += gradeData[subject][selectedQuarter] || 0;
+        const gradeVal = parseFloat(gradeData[subject][selectedQuarter]) || 0;
+        if (gradeVal > 0) {
+          total += gradeVal;
+          count++;
+        }
       });
     }
     
-    return (total / subjects.length).toFixed(2);
+    return count > 0 ? (total / count).toFixed(2) : 0;
   };
 
   // Get remarks based on average
@@ -436,10 +445,8 @@ export default function EditGrades() {
           q4: gradeData[subject].q4 || 0,
         };
       } else {
-        // FIXED: Store as object with quarter key
-        quarterGrades[subject] = {
-          [selectedQuarter]: gradeData[subject][selectedQuarter] || 0
-        };
+        // Send a plain number so the backend can store it directly in the quarter column
+        quarterGrades[subject] = gradeData[subject][selectedQuarter] || 0;
       }
     });
 

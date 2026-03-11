@@ -66,10 +66,11 @@ const updateGrades = async (req, res) => {
       }
     }
 
-    // Update only the specified quarter
+    // Update grades for each subject
+    const isAllQuarters = quarter === 'all';
     for (const [subject, gradeValue] of Object.entries(grades)) {
-      const quarterCol = quarter || 'q1'; // Default to q1 if not specified
-      
+      const quarterCol = isAllQuarters ? 'q1' : (quarter || 'q1');
+
       // Check if grade record exists
       const [[existingGrade]] = await pool.query(
         'SELECT id FROM grades WHERE student_id = ? AND subject = ?',
@@ -77,16 +78,31 @@ const updateGrades = async (req, res) => {
       );
 
       if (existingGrade) {
-        // Update only the specified quarter
-        await pool.query(
-          `UPDATE grades SET ${quarterCol} = ? WHERE student_id = ? AND subject = ?`,
-          [gradeValue, id, subject]
-        );
+        if (isAllQuarters && typeof gradeValue === 'object') {
+          // Update all four quarters at once
+          await pool.query(
+            `UPDATE grades SET q1 = ?, q2 = ?, q3 = ?, q4 = ? WHERE student_id = ? AND subject = ?`,
+            [gradeValue.q1 || 0, gradeValue.q2 || 0, gradeValue.q3 || 0, gradeValue.q4 || 0, id, subject]
+          );
+        } else {
+          // Update only the specified quarter (gradeValue is a number)
+          await pool.query(
+            `UPDATE grades SET ${quarterCol} = ? WHERE student_id = ? AND subject = ?`,
+            [gradeValue, id, subject]
+          );
+        }
       } else {
         // Insert new grade record
         const newGrade = { q1: 0, q2: 0, q3: 0, q4: 0 };
-        newGrade[quarterCol] = gradeValue;
-        
+        if (isAllQuarters && typeof gradeValue === 'object') {
+          newGrade.q1 = gradeValue.q1 || 0;
+          newGrade.q2 = gradeValue.q2 || 0;
+          newGrade.q3 = gradeValue.q3 || 0;
+          newGrade.q4 = gradeValue.q4 || 0;
+        } else {
+          newGrade[quarterCol] = gradeValue;
+        }
+
         await pool.query(
           `INSERT INTO grades (student_id, subject, q1, q2, q3, q4)
            VALUES (?, ?, ?, ?, ?, ?)`,
