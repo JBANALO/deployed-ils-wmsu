@@ -6,7 +6,8 @@ import {
   ClipboardDocumentListIcon,
   ChartBarIcon,
   ClockIcon,
-  ArrowDownTrayIcon
+  ArrowDownTrayIcon,
+  CalendarDaysIcon
 } from "@heroicons/react/24/solid";
 import { toast } from 'react-toastify';
 import axios from "../../api/axiosConfig";
@@ -45,6 +46,7 @@ export default function AdminDashboard() {
   const [adminUser, setAdminUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showSF2Modal, setShowSF2Modal] = useState(false);
+  const [activeSchoolYear, setActiveSchoolYear] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -292,6 +294,18 @@ const loadDashboardStats = async () => {
       }
     }
 
+    // =========================
+    // FETCH ACTIVE SCHOOL YEAR
+    // =========================
+    try {
+      const schoolYearRes = await axios.get('/school-years/active');
+      if (schoolYearRes.data?.data) {
+        setActiveSchoolYear(schoolYearRes.data.data);
+      }
+    } catch (err) {
+      console.error('Error fetching active school year:', err);
+    }
+
     setLoading(false);
 
   } catch (error) {
@@ -486,6 +500,21 @@ const loadDashboardStats = async () => {
 
   return (
     <div className="space-y-4 md:space-y-8">
+      {/* Active School Year Banner */}
+      {activeSchoolYear && (
+        <div className="bg-gradient-to-r from-red-800 to-red-600 rounded-xl p-4 text-white shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 p-2 rounded-full">
+              <CalendarDaysIcon className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-xs text-red-100">Active School Year</p>
+              <p className="text-xl font-bold">{activeSchoolYear.label}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-lg shadow p-3 md:p-5 border border-gray-300 border-b-red-800 border-b-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 md:gap-4 mb-4">
           <Cog6ToothIcon className="w-12 md:w-20 h-12 md:h-20 text-red-800 transition-transform duration-300 hover:scale-105 flex-shrink-0" />
