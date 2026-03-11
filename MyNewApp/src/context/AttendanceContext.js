@@ -217,14 +217,16 @@ export function AttendanceProvider({ children }) {
     };
 
     todayLogs.forEach(log => {
-      const period = log.period || getAttendancePeriod();
+      const period = (log.period || getAttendancePeriod() || '').toLowerCase();
+      const status = (log.status || '').toLowerCase();
+      
       if (period === 'morning') {
-        if (log.status === 'present') stats.morning.present++;
-        else if (log.status === 'late') stats.morning.late++;
+        if (status === 'present') stats.morning.present++;
+        else if (status === 'late') stats.morning.late++;
         else stats.morning.absent++;
       } else if (period === 'afternoon') {
-        if (log.status === 'present') stats.afternoon.present++;
-        else if (log.status === 'late') stats.afternoon.late++;
+        if (status === 'present') stats.afternoon.present++;
+        else if (status === 'late') stats.afternoon.late++;
         else stats.afternoon.absent++;
       }
     });

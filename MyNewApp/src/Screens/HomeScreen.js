@@ -164,9 +164,10 @@ export default function HomeScreen() {
       console.log('📧 Checking morning absents...');
       
       for (const student of students) {
+        const studentIdStr = String(student.studentId || student.lrn || student.id || '');
         const hasMorningRecord = todayLogs.some(log => 
-          (log.studentId === student.studentId || log.student_id === student.studentId) && 
-          log.period === 'morning'
+          (String(log.studentId) === studentIdStr || String(log.student_id) === studentIdStr) && 
+          (log.period || '').toLowerCase() === 'morning'
         );
         if (!hasMorningRecord) {
           await sendAbsentEmailViaAPI(student, 'morning');
@@ -180,9 +181,10 @@ export default function HomeScreen() {
       console.log('📧 Checking afternoon absents...');
       
       for (const student of students) {
+        const studentIdStr = String(student.studentId || student.lrn || student.id || '');
         const hasAfternoonRecord = todayLogs.some(log => 
-          (log.studentId === student.studentId || log.student_id === student.studentId) && 
-          log.period === 'afternoon'
+          (String(log.studentId) === studentIdStr || String(log.student_id) === studentIdStr) && 
+          (log.period || '').toLowerCase() === 'afternoon'
         );
         if (!hasAfternoonRecord) {
           await sendAbsentEmailViaAPI(student, 'afternoon');
@@ -284,11 +286,14 @@ export default function HomeScreen() {
     });
     
     const studentsWithAttendance = studentsList.map(student => {
+      // Normalize studentId comparison (convert to string)
+      const studentIdStr = String(student.studentId || student.lrn || student.id || '');
+      
       const morningLog = todayLogs.find(log => 
-        log.studentId === student.studentId && log.period === 'morning'
+        String(log.studentId) === studentIdStr && (log.period || '').toLowerCase() === 'morning'
       );
       const afternoonLog = todayLogs.find(log => 
-        log.studentId === student.studentId && log.period === 'afternoon'
+        String(log.studentId) === studentIdStr && (log.period || '').toLowerCase() === 'afternoon'
       );
       
       return {
