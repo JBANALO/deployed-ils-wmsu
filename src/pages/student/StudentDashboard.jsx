@@ -43,9 +43,13 @@ const StudentPortal = () => {
                 lrn: studentData.lrn,
                 age: studentData.age || '',
                 sex: studentData.sex || '',
-                finalAverage: studentData.average || 'N/A'
+                finalAverage: studentData.average || 'N/A',
+                adviserName: studentData.adviserName || ''
               },
-              grades: studentData.grades || []
+              grades: studentData.grades || [],
+              attendance: studentData.attendance || [],
+              attendanceSummary: studentData.attendanceSummary || {},
+              schedule: studentData.schedule || []
             };
             setData(mappedData);
             toast.success('Student data loaded successfully!', { id: 'studentData' });
@@ -63,7 +67,10 @@ const StudentPortal = () => {
                 lrn: 'Loading...',
                 finalAverage: 'Loading...'
               },
-              grades: []
+              grades: [],
+              attendance: [],
+              attendanceSummary: {},
+              schedule: []
             });
           }
       } catch (err) {
@@ -976,6 +983,169 @@ const StudentPortal = () => {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ATTENDANCE TAB */}
+            {activeTab === 'attendance' && (
+              <div>
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h3 className="text-2xl font-bold text-gray-800">My Attendance</h3>
+                    <p className="text-sm text-gray-600">
+                      View your attendance records throughout the school year
+                    </p>
+                  </div>
+                </div>
+
+                {/* Attendance Summary by Month */}
+                {data.attendanceSummary && Object.keys(data.attendanceSummary).some(m => 
+                  data.attendanceSummary[m].present > 0 || data.attendanceSummary[m].absent > 0
+                ) ? (
+                  <div className="overflow-x-auto mb-8">
+                    <table className="w-full border border-gray-300 text-sm text-center">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="border border-gray-300 px-3 py-2"></th>
+                          {months.map((month, i) => (
+                            <th key={i} className="border border-gray-300 px-2 py-2 text-xs">{month}</th>
+                          ))}
+                          <th className="border border-gray-300 px-3 py-2 font-bold">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="border border-gray-300 px-3 py-2 text-left font-medium">Days Present</td>
+                          {months.map((month, i) => (
+                            <td key={i} className="border border-gray-300 px-2 py-2 text-green-600 font-medium">
+                              {data.attendanceSummary[month]?.present || '-'}
+                            </td>
+                          ))}
+                          <td className="border border-gray-300 px-3 py-2 font-bold text-green-700">
+                            {months.reduce((sum, m) => sum + (data.attendanceSummary[m]?.present || 0), 0)}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="border border-gray-300 px-3 py-2 text-left font-medium">Days Absent</td>
+                          {months.map((month, i) => (
+                            <td key={i} className="border border-gray-300 px-2 py-2 text-red-600 font-medium">
+                              {data.attendanceSummary[month]?.absent || '-'}
+                            </td>
+                          ))}
+                          <td className="border border-gray-300 px-3 py-2 font-bold text-red-700">
+                            {months.reduce((sum, m) => sum + (data.attendanceSummary[m]?.absent || 0), 0)}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="border border-gray-300 px-3 py-2 text-left font-medium">Days Late</td>
+                          {months.map((month, i) => (
+                            <td key={i} className="border border-gray-300 px-2 py-2 text-yellow-600 font-medium">
+                              {data.attendanceSummary[month]?.late || '-'}
+                            </td>
+                          ))}
+                          <td className="border border-gray-300 px-3 py-2 font-bold text-yellow-700">
+                            {months.reduce((sum, m) => sum + (data.attendanceSummary[m]?.late || 0), 0)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {/* Recent Attendance Records */}
+                <h4 className="text-lg font-semibold text-gray-700 mb-4">Recent Attendance Records</h4>
+                {data.attendance && data.attendance.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-6 py-3 text-left">Date</th>
+                          <th className="px-6 py-3 text-center">Time</th>
+                          <th className="px-6 py-3 text-center">Period</th>
+                          <th className="px-6 py-3 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.attendance.slice(0, 20).map((att, i) => (
+                          <tr key={i} className="border-b hover:bg-gray-50">
+                            <td className="px-6 py-4 font-medium">
+                              {new Date(att.date).toLocaleDateString('en-US', { 
+                                weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' 
+                              })}
+                            </td>
+                            <td className="px-6 py-4 text-center">{att.time || '-'}</td>
+                            <td className="px-6 py-4 text-center">{att.period || '-'}</td>
+                            <td className="px-6 py-4 text-center">
+                              <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                                att.status?.toLowerCase() === 'present' ? 'bg-green-100 text-green-800' :
+                                att.status?.toLowerCase() === 'late' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-red-100 text-red-800'
+                              }`}>
+                                {att.status || 'Unknown'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-16 text-gray-500">
+                    <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                    <p className="text-lg">No attendance records yet.</p>
+                    <p className="text-sm">Your attendance will appear here once recorded by your teacher.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SCHEDULE TAB */}
+            {activeTab === 'schedule' && (
+              <div>
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h3 className="text-2xl font-bold text-gray-800">My Class Schedule</h3>
+                    <p className="text-sm text-gray-600">
+                      {profile.gradeLevel} - {profile.section}
+                      {profile.adviserName && <span className="ml-2">| Adviser: <strong>{profile.adviserName}</strong></span>}
+                    </p>
+                  </div>
+                </div>
+
+                {data.schedule && data.schedule.length > 0 ? (
+                  <div className="grid gap-4">
+                    {/* Group by day */}
+                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => {
+                      const daySchedule = data.schedule.filter(s => s.day === day);
+                      if (daySchedule.length === 0) return null;
+                      
+                      return (
+                        <div key={day} className="border rounded-lg overflow-hidden">
+                          <div className="bg-red-900 text-white px-4 py-2 font-semibold">{day}</div>
+                          <div className="divide-y">
+                            {daySchedule.map((item, i) => (
+                              <div key={i} className="flex items-center px-4 py-3 hover:bg-gray-50">
+                                <div className="w-24 text-sm text-gray-600 font-medium">
+                                  {item.start_time} - {item.end_time}
+                                </div>
+                                <div className="flex-1">
+                                  <p className="font-semibold text-gray-800">{item.subject}</p>
+                                  <p className="text-sm text-gray-500">{item.teacher_name}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-16 text-gray-500">
+                    <BookOpen className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                    <p className="text-lg">No schedule available yet.</p>
+                    <p className="text-sm">Your class schedule will appear here once set by the administrator.</p>
                   </div>
                 )}
               </div>

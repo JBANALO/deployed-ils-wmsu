@@ -357,8 +357,109 @@ exports.getStudent = async (req, res) => {
       return res.status(404).json({ status: 'fail', message: 'Student not found' });
     }
     
-    const formattedStudent = formatStudent(students[0]);
-    console.log('✅ Student formatted successfully:', formattedStudent);
+    const student = students[0];
+    const formattedStudent = formatStudent(student);
+    
+    // ======== FETCH GRADES ========
+    const gradesRaw = await query(
+      'SELECT subject, quarter, grade FROM grades WHERE student_id = ? ORDER BY subject, quarter',
+      [studentId]
+    );
+    
+    // Group grades by subject with quarters
+    const gradesMap = {};
+    for (const g of gradesRaw) {
+      if (!gradesMap[g.subject]) {
+        gradesMap[g.subject] = { subject: g.subject, q1: null, q2: null, q3: null, q4: null };
+      }
+      const qKey = g.quarter.toLowerCase(); // Q1 -> q1
+      if (qKey === 'q1') gradesMap[g.subject].q1 = parseFloat(g.grade);
+      if (qKey === 'q2') gradesMap[g.subject].q2 = parseFloat(g.grade);
+      if (qKey === 'q3') gradesMap[g.subject].q3 = parseFloat(g.grade);
+      if (qKey === 'q4') gradesMap[g.subject].q4 = parseFloat(g.grade);
+    }
+    
+    // Calculate averages and remarks
+    const grades = Object.values(gradesMap).map(g => {
+      const quarterGrades = [g.q1, g.q2, g.q3, g.q4].filter(x => x !== null && x > 0);
+      const average = quarterGrades.length > 0 
+        ? (quarterGrades.reduce((a, b) => a + b, 0) / quarterGrades.length).toFixed(2)
+        : null;
+      const remarks = average ? (parseFloat(average) >= 75 ? 'Passed' : 'Failed') : 'Pending';
+      return { ...g, average, remarks };
+    });
+    
+    // ======== FETCH ATTENDANCE ========
+    const attendanceRaw = await query(
+      `SELECT date, status, time, period 
+       FROM attendance 
+       WHERE studentId = ? 
+       ORDER BY date DESC 
+       LIMIT 100`,
+      [studentId]
+    );
+    
+    // Group attendance by month for report card format
+    const months = ['Aug', 'Sept', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+    const attendanceSummary = {};
+    months.forEach(m => {
+      attendanceSummary[m] = { present: 0, absent: 0, late: 0 };
+    });
+    
+    for (const att of attendanceRaw) {
+      const date = new Date(att.date);
+      const monthIndex = date.getMonth();
+      // Map month to school year (Aug=0 in school year counting)
+      const monthName = months[monthIndex >= 7 ? monthIndex - 7 : monthIndex + 5] || null;
+      if (monthName && attendanceSummary[monthName]) {
+        const status = (att.status || '').toLowerCase();
+        if (status === 'present') attendanceSummary[monthName].present++;
+        else if (status === 'absent') attendanceSummary[monthName].absent++;
+        else if (status === 'late') attendanceSummary[monthName].late++;
+      }
+    }
+    
+    // ======== FETCH SCHEDULE (from subject_teachers) ========
+    const gradeLevel = student.grade_level;
+    const section = student.section;
+    const classId = `${gradeLevel.toLowerCase().replace(/\s+/g, '-')}-${section.toLowerCase()}`;
+    
+    const scheduleRaw = await query(
+      `SELECT subject, teacher_name, day, start_time, end_time 
+       FROM subject_teachers 
+       WHERE class_id = ? 
+       ORDER BY 
+         FIELD(day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'),
+         start_time`,
+      [classId]
+    );
+    
+    // Also get adviser info for the class
+    const classInfo = await query(
+      'SELECT adviser_name FROM classes WHERE id = ?',
+      [classId]
+    );
+    const adviserName = classInfo.length > 0 ? classInfo[0].adviser_name : null;
+    
+    // Calculate overall average for profile
+    const allAverages = grades.map(g => parseFloat(g.average)).filter(x => x > 0);
+    const overallAverage = allAverages.length > 0 
+      ? (allAverages.reduce((a, b) => a + b, 0) / allAverages.length).toFixed(2)
+      : 'N/A';
+    
+    formattedStudent.average = overallAverage;
+    formattedStudent.grades = grades;
+    formattedStudent.attendance = attendanceRaw;
+    formattedStudent.attendanceSummary = attendanceSummary;
+    formattedStudent.schedule = scheduleRaw;
+    formattedStudent.adviserName = adviserName;
+    
+    console.log('✅ Student portal data loaded:', {
+      gradesCount: grades.length,
+      attendanceCount: attendanceRaw.length,
+      scheduleCount: scheduleRaw.length
+    });
+    
     res.status(200).json({ status: 'success', data: { student: formattedStudent } });
   } catch (error) {
     console.error('❌ Error fetching student:', error);
