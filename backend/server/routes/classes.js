@@ -203,13 +203,34 @@ router.get('/adviser/:userId', async (req, res) => {
 
     // Fallback: if no results by adviser_id, look up the user's name and search by adviser_name.
     // This handles mismatched IDs (e.g. duplicate accounts, old vs new UUID).
+    // The users table uses camelCase columns (firstName, lastName).
     if (classes.length === 0) {
-      const [[userRow]] = await pool.query(
-        'SELECT first_name, last_name FROM users WHERE id = ?',
-        [userId]
-      );
-      if (userRow && userRow.first_name && userRow.last_name) {
-        console.log(`adviser/:userId — no ID match for ${userId}, trying name fallback (${userRow.first_name} ${userRow.last_name})`);
+      let firstName = null, lastName = null;
+      try {
+        const [[userRow]] = await pool.query(
+          'SELECT firstName, lastName FROM users WHERE id = ?',
+          [userId]
+        );
+        if (userRow) {
+          firstName = userRow.firstName;
+          lastName = userRow.lastName;
+        }
+      } catch (e) {
+        // Column names might vary — try snake_case as well
+        try {
+          const [[userRow2]] = await pool.query(
+            'SELECT first_name, last_name FROM users WHERE id = ?',
+            [userId]
+          );
+          if (userRow2) {
+            firstName = userRow2.first_name;
+            lastName = userRow2.last_name;
+          }
+        } catch (e2) { /* give up on user lookup */ }
+      }
+
+      if (firstName && lastName) {
+        console.log(`adviser/:userId — no ID match for ${userId}, trying name fallback (${firstName} ${lastName})`);
         [classes] = await pool.query(`
           SELECT c.*, 
                  GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects,
@@ -219,8 +240,10 @@ router.get('/adviser/:userId', async (req, res) => {
           WHERE c.adviser_name LIKE ? AND c.adviser_name LIKE ?
           GROUP BY c.id
           ORDER BY c.grade, c.section
-        `, [`%${userRow.first_name}%`, `%${userRow.last_name}%`]);
+        `, [`%${firstName}%`, `%${lastName}%`]);
         console.log(`Name fallback found ${classes.length} class(es)`);
+      } else {
+        console.log(`adviser/:userId — no ID match and user lookup returned no name for ${userId}`);
       }
     }
 
@@ -236,7 +259,7 @@ router.get('/subject-teacher/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     
-    const [classes] = await pool.query(`
+    let [classes] = await pool.query(`
       SELECT DISTINCT c.*, 
              GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects,
              GROUP_CONCAT(DISTINCT CONCAT_WS(':', st.teacher_id, st.teacher_name, st.subject) SEPARATOR '|') as subject_teachers_list
@@ -246,6 +269,35 @@ router.get('/subject-teacher/:userId', async (req, res) => {
       GROUP BY c.id
       ORDER BY c.grade, c.section
     `, [userId]);
+
+    // Fallback: if no results by teacher_id, look up user's name and search by teacher_name
+    if (classes.length === 0) {
+      let firstName = null, lastName = null;
+      try {
+        const [[userRow]] = await pool.query('SELECT firstName, lastName FROM users WHERE id = ?', [userId]);
+        if (userRow) { firstName = userRow.firstName; lastName = userRow.lastName; }
+      } catch (e) {
+        try {
+          const [[userRow2]] = await pool.query('SELECT first_name, last_name FROM users WHERE id = ?', [userId]);
+          if (userRow2) { firstName = userRow2.first_name; lastName = userRow2.last_name; }
+        } catch (e2) { /* give up */ }
+      }
+
+      if (firstName && lastName) {
+        console.log(`subject-teacher/:userId — no ID match for ${userId}, trying name fallback (${firstName} ${lastName})`);
+        [classes] = await pool.query(`
+          SELECT DISTINCT c.*, 
+                 GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects,
+                 GROUP_CONCAT(DISTINCT CONCAT_WS(':', st.teacher_id, st.teacher_name, st.subject) SEPARATOR '|') as subject_teachers_list
+          FROM classes c
+          INNER JOIN subject_teachers st ON c.id = st.class_id
+          WHERE st.teacher_name LIKE ? AND st.teacher_name LIKE ?
+          GROUP BY c.id
+          ORDER BY c.grade, c.section
+        `, [`%${firstName}%`, `%${lastName}%`]);
+        console.log(`Subject teacher name fallback found ${classes.length} class(es)`);
+      }
+    }
     
     res.json({ data: mapClassRows(classes) });
   } catch (err) {
