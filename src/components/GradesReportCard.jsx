@@ -33,7 +33,14 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
           students.map(async (student) => {
             try {
               const gradesResponse = await api.get(`/students/${student.id}/grades`);
-              return { ...student, grades: gradesResponse.data || {} };
+              // Normalize keys: strip " (Grade X)" suffix so "Math (Grade 3)" → "Math"
+              const raw = gradesResponse.data || {};
+              const normalized = {};
+              for (const [k, v] of Object.entries(raw)) {
+                const cleanKey = k.replace(/\s*\(Grade\s+\d+\)/i, '').trim();
+                normalized[cleanKey] = v;
+              }
+              return { ...student, grades: normalized };
             } catch (error) {
               console.error(`Error fetching grades for student ${student.id}:`, error);
               return { ...student, grades: {} };
@@ -142,7 +149,25 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
             const gradeObj = student.grades || {};
             // Use student's actual grade level
             const studentGradeLevel = student.gradeLevel || gradeLevel;
-            const studentSubjects = subjectsByGrade[studentGradeLevel] || subjectsByGrade["Grade 1"] || [];
+            // Prefer subjects that actually have grade data; fall back to class/grade subject list
+            const gradeKeys = Object.keys(gradeObj).filter(k => {
+              const g = gradeObj[k];
+              return g && (g.q1 || g.q2 || g.q3 || g.q4);
+            });
+            const studentSubjects = gradeKeys.length > 0
+              ? gradeKeys
+              : (subjects.length > 0 ? subjects : (subjectsByGrade[studentGradeLevel] || subjectsByGrade["Grade 1"] || []));
+            // Helper: find grade data for a subject name (handles minor name differences)
+            const findGrade = (subjectName) => {
+              if (gradeObj[subjectName]) return gradeObj[subjectName];
+              const lower = subjectName.toLowerCase();
+              const matchedKey = Object.keys(gradeObj).find(k =>
+                k.toLowerCase() === lower ||
+                k.toLowerCase().startsWith(lower) ||
+                lower.startsWith(k.toLowerCase())
+              );
+              return matchedKey ? gradeObj[matchedKey] : null;
+            };
             
             return (
               <div key={student.id} className="mb-12 page-break">
@@ -198,11 +223,11 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
                     </thead>
                     <tbody>
                       {studentSubjects.map((subject, idx) => {
-                        // ALWAYS show grades that exist in database
-                        const q1Val = gradeObj[subject]?.q1 || '';
-                        const q2Val = gradeObj[subject]?.q2 || '';
-                        const q3Val = gradeObj[subject]?.q3 || '';
-                        const q4Val = gradeObj[subject]?.q4 || '';
+                        const gradeData = findGrade(subject);
+                        const q1Val = gradeData?.q1 || '';
+                        const q2Val = gradeData?.q2 || '';
+                        const q3Val = gradeData?.q3 || '';
+                        const q4Val = gradeData?.q4 || '';
                         
                         // Calculate final rating from all available quarters
                         const allGrades = [q1Val, q2Val, q3Val, q4Val]
