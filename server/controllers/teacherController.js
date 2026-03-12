@@ -49,9 +49,9 @@ exports.createTeacher = async (req, res) => {
       return res.status(400).json({ message: 'Please provide all required fields' });
     }
 
-    // Only allow adviser and subject_teacher roles
-    if (!['adviser', 'subject_teacher'].includes(role)) {
-      return res.status(400).json({ message: 'Invalid role. Only adviser and subject_teacher accounts can be created.' });
+    // Only allow valid teacher roles
+    if (!['adviser', 'subject_teacher', 'teacher'].includes(role)) {
+      return res.status(400).json({ message: 'Invalid role. Only teacher, adviser, and subject_teacher accounts can be created.' });
     }
 
     // Check if teacher already exists
