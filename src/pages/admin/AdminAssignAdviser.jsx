@@ -21,10 +21,29 @@ export default function AdminAssignAdviser() {
   const [startTime, setStartTime] = useState("08:00");
   const [endTime, setEndTime] = useState("09:00");
   const [classSubjects, setClassSubjects] = useState([]); // subjects for selected class (from admin DB)
+  // Adviser-tab subject checklist
+  const [adviserSubjects, setAdviserSubjects] = useState([]); // available subjects for selected class grade
+  const [selectedAdviserSubjects, setSelectedAdviserSubjects] = useState([]); // checked subjects
 
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Fetch subjects when class is selected in Assign Adviser tab
+  useEffect(() => {
+    if (!selectedClass) { setAdviserSubjects([]); setSelectedAdviserSubjects([]); return; }
+    const fetchAdviserSubjects = async () => {
+      try {
+        const gradeKey = (selectedClass.grade || '').replace(/^Grade\s+/i, '').trim();
+        const resp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`);
+        const names = (resp.data?.data || []).map(s => s.name).filter(Boolean);
+        setAdviserSubjects(names);
+      } catch (e) {
+        setAdviserSubjects([]);
+      }
+    };
+    fetchAdviserSubjects();
+  }, [selectedClass]);
 
   const fetchData = async () => {
     try {
@@ -158,10 +177,27 @@ export default function AdminAssignAdviser() {
       toast.info('Assignment response received');
 
       if (response.ok) {
-        setMessage(`Successfully assigned ${adviserName} to ${selectedClass.grade} - ${selectedClass.section}`);
+        // Also assign selected subjects to subject_teachers with the adviser as teacher
+        for (const subject of selectedAdviserSubjects) {
+          try {
+            await api.put(`/classes/${classId}/assign-subject-teacher`, {
+              teacher_id: adviser.id,
+              teacher_name: adviserName,
+              subject,
+              day: "Monday",
+              start_time: "08:00",
+              end_time: "09:00"
+            });
+          } catch (subjectErr) {
+            console.warn(`Could not assign subject ${subject}:`, subjectErr.message);
+          }
+        }
+        setMessage(`Successfully assigned ${adviserName} to ${selectedClass.grade} - ${selectedClass.section}${selectedAdviserSubjects.length > 0 ? ` with ${selectedAdviserSubjects.length} subject(s)` : ''}`);
         setMessageType("success");
         setSelectedClass(null);
         setSelectedAdviser("");
+        setSelectedAdviserSubjects([]);
+        setAdviserSubjects([]);
         
         // Refetch data to get updated adviser assignments from database
         await fetchData();
@@ -340,11 +376,44 @@ export default function AdminAssignAdviser() {
                   </select>
                 </div>
               </div>
+              {/* Subjects checklist — shows after class is chosen */}
+              {adviserSubjects.length > 0 && (
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Subjects this Adviser will teach <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 border border-gray-200 rounded-md bg-gray-50">
+                    {adviserSubjects.map(sub => (
+                      <label key={sub} className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 hover:text-gray-900">
+                        <input
+                          type="checkbox"
+                          checked={selectedAdviserSubjects.includes(sub)}
+                          onChange={(e) => {
+                            setSelectedAdviserSubjects(prev =>
+                              e.target.checked ? [...prev, sub] : prev.filter(s => s !== sub)
+                            );
+                          }}
+                          className="accent-red-600 w-4 h-4"
+                        />
+                        {sub}
+                      </label>
+                    ))}
+                  </div>
+                  {selectedAdviserSubjects.length > 0 && (
+                    <p className="text-xs text-green-700 mt-1">{selectedAdviserSubjects.length} subject(s) selected</p>
+                  )}
+                </div>
+              )}
+              {selectedClass && adviserSubjects.length === 0 && (
+                <div className="md:col-span-2 text-xs text-amber-600 italic">
+                  No subjects configured for this grade. Add them in Subjects first.
+                </div>
+              )}
               <button
                 onClick={handleAssignAdviser}
-                className="w-full bg-red-600 text-white font-semibold py-3 rounded-md hover:bg-red-700 transition"
+                className="w-full bg-red-600 text-white font-semibold py-3 rounded-md hover:bg-red-700 transition md:col-span-2"
               >
-                Assign Adviser
+                Assign Adviser{selectedAdviserSubjects.length > 0 ? ` + ${selectedAdviserSubjects.length} Subject(s)` : ''}
               </button>
             </>
           ) : (
