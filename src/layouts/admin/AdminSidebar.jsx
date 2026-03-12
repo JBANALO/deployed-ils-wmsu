@@ -31,7 +31,6 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
     { name: "Subjects", icon: <BookOpenIcon className="w-6 h-6" />, path: "/admin/subjects" },
     { name: "Sections", icon: <RectangleGroupIcon className="w-6 h-6" />, path: "/admin/sections" },
     { name: "Assign Adviser", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/assign-adviser" },
-    { name: "Assign Subject Teacher", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/assign-subject-teacher" },
     { name: "Attendance", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, path: "/admin/admin-attendance" },
     { name: "School Year", icon: <CalendarDaysIcon className="w-6 h-6" />, path: "/admin/school-year" },
   ];
