@@ -18,6 +18,7 @@ import {
   DocumentArrowDownIcon,
   PrinterIcon,
   TableCellsIcon,
+  EnvelopeIcon,
 } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
 import SF2AttendanceForm from "../../components/SF2AttendanceForm";
@@ -50,6 +51,16 @@ export default function ReportsPage() {
     totalDays: 0
   });
   const [loading, setLoading] = useState(true);
+  const [topLimit, setTopLimit] = useState(5);
+  const [lowestLimit, setLowestLimit] = useState(5);
+  const [gradesSubTab, setGradesSubTab] = useState('overall');
+  const [selectedSubjectForRanking, setSelectedSubjectForRanking] = useState('');
+  const [selectedQuarterForView, setSelectedQuarterForView] = useState('q1');
+  const [isAdviser, setIsAdviser] = useState(false);
+  const [teacherName, setTeacherName] = useState('');
+  const [sendingEmailFor, setSendingEmailFor] = useState(null);
+  const [emailResults, setEmailResults] = useState({});
+  const [allSubjects, setAllSubjects] = useState([]);
 
   const months = [
     { value: 1, label: "January" },
@@ -80,6 +91,9 @@ export default function ReportsPage() {
       if (userStr) {
         const user = JSON.parse(userStr);
         userId = user.id;
+        const fn = user.firstName || user.first_name || '';
+        const ln = user.lastName || user.last_name || '';
+        setTeacherName(`${fn} ${ln}`.trim());
       }
 
       if (!userId) {
@@ -96,6 +110,7 @@ export default function ReportsPage() {
       } catch (e) {
         console.error('Error fetching adviser classes:', e);
       }
+      setIsAdviser(adviserClasses.length > 0);
 
       // Fetch subject teacher classes
       let subjectTeacherClasses = [];
@@ -296,16 +311,23 @@ export default function ReportsPage() {
 
       setSubjectsData(finalSubjectData.slice(0, 5));
 
+      // Compute all unique subjects for the Grades tab
+      const subjectSet = new Set();
+      studentsWithGrades.forEach(s => { if (s.grades) Object.keys(s.grades).forEach(sub => subjectSet.add(sub)); });
+      setAllSubjects([...subjectSet].sort());
+      setSelectedSubjectForRanking(prev => prev || ([...subjectSet][0] || ''));
+
       // Get top performing students (use studentsWithGrades which has calculated averages)
       const topPerformers = studentsWithGrades
         .filter(s => s.average && s.average > 0)
         .sort((a, b) => (b.average || 0) - (a.average || 0))
-        .slice(0, 5)
         .map((s, idx) => ({
           rank: idx + 1,
+          id: s.id,
           name: `${s.lastName}, ${s.firstName}`,
           avg: s.average || 0,
-          section: `${s.gradeLevel} - ${s.section}`
+          section: `${s.gradeLevel} - ${s.section}`,
+          parentEmail: s.parentEmail,
         }));
 
       setTopStudents(topPerformers);
@@ -314,12 +336,13 @@ export default function ReportsPage() {
       const lowestPerformers = studentsWithGrades
         .filter(s => s.average && s.average > 0)
         .sort((a, b) => (a.average || 0) - (b.average || 0))
-        .slice(0, 5)
         .map((s, idx) => ({
           rank: idx + 1,
+          id: s.id,
           name: `${s.lastName}, ${s.firstName}`,
           avg: s.average || 0,
-          section: `${s.gradeLevel} - ${s.section}`
+          section: `${s.gradeLevel} - ${s.section}`,
+          parentEmail: s.parentEmail,
         }));
 
       setLowestStudents(lowestPerformers);
@@ -378,6 +401,19 @@ export default function ReportsPage() {
     window.print();
   };
 
+  const sendGradeEmail = async (student) => {
+    setSendingEmailFor(student.id);
+    try {
+      const response = await axios.post(`/students/${student.id}/send-grade-report`, { teacherName });
+      const ok = response.data?.success;
+      setEmailResults(prev => ({ ...prev, [student.id]: { success: ok, msg: ok ? '\u2705 Email sent!' : (response.data?.error || 'Failed') } }));
+    } catch (err) {
+      const msg = err.response?.data?.error || err.message;
+      setEmailResults(prev => ({ ...prev, [student.id]: { success: false, msg: '\u274C ' + msg } }));
+    }
+    setSendingEmailFor(null);
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow p-6 border border-gray-300 border-b-red-800 border-b-4 flex items-center justify-between print:hidden">
@@ -409,6 +445,16 @@ export default function ReportsPage() {
             }`}
           >
             📅 Monthly Attendance
+          </button>
+          <button
+            onClick={() => setActiveTab("grades")}
+            className={`px-6 py-3 rounded-xl font-semibold text-base transition-all ${
+              activeTab === "grades"
+                ? "bg-red-800 text-white shadow-lg"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+            }`}
+          >
+            📋 Grades
           </button>
         </div>
       </div>
@@ -550,22 +596,32 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200 h-[400px] w-full">
-            <div className="bg-gradient-to-r from-red-800 to-red-900 text-white px-6 py-5 text-center">
-              <h3 className="text-2xl font-bold flex items-center justify-center gap-4">
+          <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200 w-full">
+            <div className="bg-gradient-to-r from-red-800 to-red-900 text-white px-6 py-5 flex items-center justify-between">
+              <h3 className="text-2xl font-bold flex items-center gap-4">
                 <TrophyIcon className="w-6 h-6" />
                 Top Performing Students
               </h3>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-red-200">Show:</span>
+                <select value={topLimit} onChange={e => setTopLimit(e.target.value === 'all' ? 9999 : Number(e.target.value))}
+                  className="px-2 py-1 rounded bg-red-700 text-white text-sm border border-red-500 focus:outline-none">
+                  <option value={3}>Top 3</option>
+                  <option value={5}>Top 5</option>
+                  <option value={10}>Top 10</option>
+                  <option value="all">All</option>
+                </select>
+              </div>
             </div>
 
-            <div className="p-6 h-[calc(100%-90px)] overflow-y-auto">
+            <div className="p-6 max-h-[400px] overflow-y-auto">
               <div className="space-y-4">
                 {loading ? (
                   <p className="text-center text-gray-500">Loading top students...</p>
                 ) : topStudents.length === 0 ? (
                   <p className="text-center text-gray-500">No students with grades found</p>
                 ) : (
-                  topStudents.map((student) => (
+                  topStudents.slice(0, topLimit).map((student) => (
                     <div
                       key={student.rank}
                       className="flex items-center justify-between p-4 bg-gradient-to-r from-red-50 to-pink-50 rounded-2xl border border-red-200 hover:shadow-lg transition"
@@ -599,40 +655,63 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200 h-[400px] w-full">
-            <div className="bg-gradient-to-r from-orange-600 to-orange-700 text-white px-6 py-5 text-center">
-              <h3 className="text-2xl font-bold flex items-center justify-center gap-4">
+          <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200 w-full">
+            <div className="bg-gradient-to-r from-orange-600 to-orange-700 text-white px-6 py-5 flex items-center justify-between">
+              <h3 className="text-2xl font-bold flex items-center gap-4">
                 <TrophyIcon className="w-6 h-6" />
                 Lowest Performing Students
               </h3>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-orange-200">Show:</span>
+                <select value={lowestLimit} onChange={e => setLowestLimit(e.target.value === 'all' ? 9999 : Number(e.target.value))}
+                  className="px-2 py-1 rounded bg-orange-700 text-white text-sm border border-orange-500 focus:outline-none">
+                  <option value={3}>Bottom 3</option>
+                  <option value={5}>Bottom 5</option>
+                  <option value={10}>Bottom 10</option>
+                  <option value="all">All</option>
+                </select>
+              </div>
             </div>
-
-            <div className="p-6 h-[calc(100%-90px)] overflow-y-auto">
+            <div className="p-6 max-h-[400px] overflow-y-auto">
               <div className="space-y-4">
                 {loading ? (
                   <p className="text-center text-gray-500">Loading students...</p>
                 ) : lowestStudents.length === 0 ? (
                   <p className="text-center text-gray-500">No students with grades found</p>
                 ) : (
-                  lowestStudents.map((student) => (
-                    <div
-                      key={student.rank}
-                      className="flex items-center justify-between p-4 bg-gradient-to-r from-orange-50 to-yellow-50 rounded-2xl border border-orange-200 hover:shadow-lg transition"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="text-xl font-bold text-orange-600">
-                          #{student.rank}
+                  lowestStudents.slice(0, lowestLimit).map((student) => (
+                    <div key={student.rank} className="p-4 bg-gradient-to-r from-orange-50 to-yellow-50 rounded-2xl border border-orange-200 hover:shadow-lg transition">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="text-xl font-bold text-orange-600">#{student.rank}</div>
+                          <div>
+                            <p className="text-lg font-bold text-gray-900">{student.name}</p>
+                            <p className="text-sm text-gray-600">{student.section}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-lg font-bold text-gray-900">{student.name}</p>
-                          <p className="text-sm text-gray-600">{student.section}</p>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <p className="text-xl font-bold text-orange-700">{student.avg}</p>
+                            <p className="text-sm font-semibold text-orange-800">Needs Improvement</p>
+                          </div>
+                          {isAdviser && (
+                            <button
+                              onClick={() => sendGradeEmail(student)}
+                              disabled={sendingEmailFor === student.id}
+                              className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
+                              title={student.parentEmail ? `Send grade report to ${student.parentEmail}` : 'No parent email on file'}
+                            >
+                              <EnvelopeIcon className="w-4 h-4" />
+                              {sendingEmailFor === student.id ? 'Sending...' : 'Email Parent'}
+                            </button>
+                          )}
                         </div>
                       </div>
-
-                      <div className="text-right">
-                        <p className="text-xl font-bold text-orange-700">{student.avg}</p>
-                        <p className="text-sm font-semibold text-orange-800">Needs Improvement</p>
-                      </div>
+                      {emailResults[student.id] && (
+                        <p className={`mt-2 text-xs font-medium ${emailResults[student.id].success ? 'text-green-700' : 'text-red-600'}`}>
+                          {emailResults[student.id].msg}
+                        </p>
+                      )}
                     </div>
                   ))
                 )}
@@ -753,6 +832,206 @@ export default function ReportsPage() {
               </p>
             </div>
           </div>
+        </>
+      )}
+
+      {/* GRADES TAB */}
+      {activeTab === "grades" && (
+        <>
+          {/* Sub-tabs */}
+          <div className="bg-white rounded-2xl shadow-lg p-4 border border-gray-200 flex gap-2 flex-wrap">
+            {[
+              { key: 'overall', label: '🏆 Overall Average Ranking' },
+              { key: 'per-subject', label: '📚 Per Subject Ranking' },
+              { key: 'by-quarter', label: '📅 By Quarter' },
+            ].map(tab => (
+              <button key={tab.key} onClick={() => setGradesSubTab(tab.key)}
+                className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
+                  gradesSubTab === tab.key ? 'bg-red-800 text-white shadow' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Overall Average Ranking */}
+          {gradesSubTab === 'overall' && (
+            <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
+              <div className="bg-gradient-to-r from-red-800 to-red-900 text-white px-6 py-5">
+                <h3 className="text-xl font-bold">🏆 Overall Average Ranking</h3>
+                <p className="text-red-200 text-sm mt-1">{selectedSection || 'All Sections'} — all graded students</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left">Rank</th>
+                      <th className="px-4 py-4 text-left">Student Name</th>
+                      <th className="px-4 py-4 text-left">Grade &amp; Section</th>
+                      {allSubjects.map(s => <th key={s} className="px-3 py-4 text-center whitespace-nowrap">{s}</th>)}
+                      <th className="px-4 py-4 text-center bg-gray-100">Overall Avg</th>
+                      <th className="px-4 py-4 text-center bg-gray-100">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {loading ? (
+                      <tr><td colSpan={4 + allSubjects.length} className="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
+                    ) : [...students].filter(s => s.average > 0).sort((a, b) => (b.average || 0) - (a.average || 0)).map((student, idx) => (
+                      <tr key={student.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-4 py-3 font-bold text-gray-700">#{idx + 1}</td>
+                        <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">{student.lastName}, {student.firstName}</td>
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{student.gradeLevel} - {student.section}</td>
+                        {allSubjects.map(subj => {
+                          const g = student.grades?.[subj];
+                          const vals = g ? [g.q1, g.q2, g.q3, g.q4].filter(v => v > 0) : [];
+                          const avg = vals.length > 0 ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '—';
+                          return <td key={subj} className="px-3 py-3 text-center text-gray-700">{avg}</td>;
+                        })}
+                        <td className="px-4 py-3 text-center font-bold text-gray-900">{student.average?.toFixed(2) || '—'}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            (student.average || 0) >= 90 ? 'bg-green-100 text-green-800' :
+                            (student.average || 0) >= 85 ? 'bg-blue-100 text-blue-800' :
+                            (student.average || 0) >= 75 ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {(student.average || 0) >= 90 ? 'High Honors' : (student.average || 0) >= 85 ? 'With Honors' : (student.average || 0) >= 75 ? 'Passed' : 'Needs Improvement'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Per Subject Ranking */}
+          {gradesSubTab === 'per-subject' && (
+            <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
+              <div className="bg-gradient-to-r from-blue-700 to-blue-800 text-white px-6 py-5 flex flex-wrap items-center gap-4">
+                <h3 className="text-xl font-bold">📚 Per Subject Ranking</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-blue-200">Subject:</span>
+                  <select value={selectedSubjectForRanking} onChange={e => setSelectedSubjectForRanking(e.target.value)}
+                    className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm border border-blue-400 focus:outline-none">
+                    {allSubjects.length === 0 && <option value="">No grades yet</option>}
+                    {allSubjects.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-blue-200">Quarter:</span>
+                  <select value={selectedQuarterForView} onChange={e => setSelectedQuarterForView(e.target.value)}
+                    className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm border border-blue-400 focus:outline-none">
+                    <option value="q1">Quarter 1</option>
+                    <option value="q2">Quarter 2</option>
+                    <option value="q3">Quarter 3</option>
+                    <option value="q4">Quarter 4</option>
+                    <option value="all">All Quarters (Avg)</option>
+                  </select>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left">Rank</th>
+                      <th className="px-4 py-4 text-left">Student Name</th>
+                      <th className="px-4 py-4 text-left">Grade &amp; Section</th>
+                      <th className="px-4 py-4 text-center">Q1</th>
+                      <th className="px-4 py-4 text-center">Q2</th>
+                      <th className="px-4 py-4 text-center">Q3</th>
+                      <th className="px-4 py-4 text-center">Q4</th>
+                      <th className="px-4 py-4 text-center bg-blue-50">{selectedQuarterForView === 'all' ? 'Subject Avg' : selectedQuarterForView.toUpperCase()}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {(() => {
+                      if (!selectedSubjectForRanking) return <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">Select a subject above</td></tr>;
+                      const getGrade = (s) => {
+                        const g = s.grades?.[selectedSubjectForRanking];
+                        if (!g) return 0;
+                        if (selectedQuarterForView === 'all') {
+                          const vals = [g.q1, g.q2, g.q3, g.q4].filter(v => v > 0);
+                          return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+                        }
+                        return g[selectedQuarterForView] || 0;
+                      };
+                      const sorted = [...students].filter(s => getGrade(s) > 0).sort((a, b) => getGrade(b) - getGrade(a));
+                      if (sorted.length === 0) return <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">No grades for {selectedSubjectForRanking}</td></tr>;
+                      return sorted.map((student, idx) => {
+                        const g = student.grades?.[selectedSubjectForRanking] || {};
+                        return (
+                          <tr key={student.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="px-4 py-3 font-bold text-gray-700">#{idx + 1}</td>
+                            <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">{student.lastName}, {student.firstName}</td>
+                            <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{student.gradeLevel} - {student.section}</td>
+                            <td className="px-4 py-3 text-center">{g.q1 || '—'}</td>
+                            <td className="px-4 py-3 text-center">{g.q2 || '—'}</td>
+                            <td className="px-4 py-3 text-center">{g.q3 || '—'}</td>
+                            <td className="px-4 py-3 text-center">{g.q4 || '—'}</td>
+                            <td className="px-4 py-3 text-center font-bold text-blue-700">{getGrade(student).toFixed(2)}</td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* By Quarter — full class grade grid */}
+          {gradesSubTab === 'by-quarter' && (
+            <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
+              <div className="bg-gradient-to-r from-purple-700 to-purple-800 text-white px-6 py-5 flex items-center gap-4">
+                <h3 className="text-xl font-bold">📅 Class Grades by Quarter</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-purple-200">Quarter:</span>
+                  <select value={selectedQuarterForView} onChange={e => setSelectedQuarterForView(e.target.value)}
+                    className="px-3 py-1.5 rounded bg-purple-600 text-white text-sm border border-purple-400 focus:outline-none">
+                    <option value="q1">Quarter 1</option>
+                    <option value="q2">Quarter 2</option>
+                    <option value="q3">Quarter 3</option>
+                    <option value="q4">Quarter 4</option>
+                  </select>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <th className="px-4 py-4 text-left">Student</th>
+                      <th className="px-4 py-4 text-left">Grade &amp; Section</th>
+                      {allSubjects.map(s => <th key={s} className="px-3 py-4 text-center whitespace-nowrap">{s}</th>)}
+                      <th className="px-4 py-4 text-center bg-purple-50">Quarter Avg</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {[...students].sort((a, b) => (b.average || 0) - (a.average || 0)).map((student, idx) => {
+                      const gradeVals = allSubjects.map(s => student.grades?.[s]?.[selectedQuarterForView] || 0).filter(v => v > 0);
+                      const qAvg = gradeVals.length > 0 ? (gradeVals.reduce((a, b) => a + b, 0) / gradeVals.length).toFixed(2) : '—';
+                      return (
+                        <tr key={student.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">{student.lastName}, {student.firstName}</td>
+                          <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{student.gradeLevel} - {student.section}</td>
+                          {allSubjects.map(subj => {
+                            const grade = student.grades?.[subj]?.[selectedQuarterForView];
+                            return (
+                              <td key={subj} className={`px-3 py-3 text-center font-medium ${
+                                !grade ? 'text-gray-400' : grade >= 90 ? 'text-green-700' : grade >= 75 ? 'text-blue-700' : 'text-red-700'
+                              }`}>{grade || '—'}</td>
+                            );
+                          })}
+                          <td className="px-4 py-3 text-center font-bold text-purple-700">{qAvg}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
 

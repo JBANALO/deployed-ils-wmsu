@@ -233,6 +233,51 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
   }
 });
 
+// POST /:id/send-grade-report — email parent a full grade breakdown (adviser only)
+router.post('/:id/send-grade-report', verifyUserForGrades, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { teacherName } = req.body;
+
+    const students = await query('SELECT * FROM students WHERE id = ?', [id]);
+    if (!students?.length) return res.status(404).json({ success: false, error: 'Student not found' });
+    const student = students[0];
+
+    if (!student.parent_email) {
+      return res.status(400).json({ success: false, error: 'No parent email on file for this student' });
+    }
+
+    const gradesRaw = await query(
+      'SELECT subject, quarter, grade FROM grades WHERE student_id = ? ORDER BY subject, quarter',
+      [id]
+    );
+    const gradesMap = {};
+    for (const g of gradesRaw) {
+      if (!gradesMap[g.subject]) gradesMap[g.subject] = { q1: null, q2: null, q3: null, q4: null };
+      gradesMap[g.subject][g.quarter.toLowerCase()] = parseFloat(g.grade);
+    }
+
+    const studentName = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(' ');
+    const result = await sendGradeReportEmail({
+      parentEmail: student.parent_email,
+      studentName,
+      gradeLevel: student.grade_level,
+      section: student.section,
+      gradesMap,
+      teacherName
+    });
+
+    if (result.success) {
+      res.json({ success: true, message: `Grade report sent to ${student.parent_email}` });
+    } else {
+      res.status(500).json({ success: false, error: result.error || 'Failed to send email' });
+    }
+  } catch (err) {
+    console.error('Error sending grade report email:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Public routes
 router.post('/', studentController.createStudent);
 router.get('/', studentController.getStudents);
