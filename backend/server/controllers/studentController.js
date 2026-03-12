@@ -145,6 +145,18 @@ const getAllStudents = async (req, res) => {
     if (teacherId) {
       let assignedClasses = []; // [{gradeLevel, section}]
 
+      // Look up user's name for fallback matching
+      let firstName = null, lastName = null;
+      try {
+        const [[userRow]] = await pool.query('SELECT firstName, lastName FROM users WHERE id = ?', [teacherId]);
+        if (userRow) { firstName = userRow.firstName; lastName = userRow.lastName; }
+      } catch (e) {
+        try {
+          const [[userRow2]] = await pool.query('SELECT first_name, last_name FROM users WHERE id = ?', [teacherId]);
+          if (userRow2) { firstName = userRow2.first_name; lastName = userRow2.last_name; }
+        } catch (e2) { /* give up */ }
+      }
+
       // 1. Classes where teacher is adviser
       try {
         const [adviserRows] = await pool.query(
@@ -154,6 +166,16 @@ const getAllStudents = async (req, res) => {
         adviserRows.forEach(row => assignedClasses.push({ gradeLevel: row.grade, section: row.section }));
       } catch (e) {
         console.log('[getAllStudents] adviser lookup failed:', e.message);
+      }
+      // Fallback: adviser by name
+      if (assignedClasses.length === 0 && firstName && lastName) {
+        try {
+          const [adviserRows] = await pool.query(
+            'SELECT grade, section FROM classes WHERE adviser_name LIKE ? AND adviser_name LIKE ?',
+            [`%${firstName}%`, `%${lastName}%`]
+          );
+          adviserRows.forEach(row => assignedClasses.push({ gradeLevel: row.grade, section: row.section }));
+        } catch (e) { /* non-critical */ }
       }
 
       // 2. Classes where teacher is subject teacher
@@ -168,6 +190,19 @@ const getAllStudents = async (req, res) => {
         });
       } catch (e) {
         console.log('[getAllStudents] subject_teachers lookup failed:', e.message);
+      }
+      // Fallback: subject teacher by name
+      if (firstName && lastName) {
+        try {
+          const [stRows] = await pool.query(
+            'SELECT DISTINCT c.grade, c.section FROM subject_teachers st JOIN classes c ON st.class_id = c.id WHERE st.teacher_name LIKE ? AND st.teacher_name LIKE ?',
+            [`%${firstName}%`, `%${lastName}%`]
+          );
+          stRows.forEach(row => {
+            const exists = assignedClasses.some(c => c.gradeLevel === row.grade && c.section === row.section);
+            if (!exists) assignedClasses.push({ gradeLevel: row.grade, section: row.section });
+          });
+        } catch (e) { /* non-critical */ }
       }
 
       if (assignedClasses.length > 0) {
