@@ -855,86 +855,118 @@ export default function EditGrades() {
                 </div>
               )}
               <div className="overflow-x-auto scrollbar-hide">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-gray-100">
-                      <th className="px-4 py-3 text-left font-semibold text-gray-700 border">Subject</th>
-                      <th className="px-4 py-3 text-center font-semibold text-gray-700 border">Q1</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.keys(gradeData)
-                      .filter(subject => subject !== 'Total Q1')
-                      .map((subject) => {
-                        const canEdit = availableSubjects.includes(subject);
-                        const hasGrade = gradeData[subject]?.q1 && gradeData[subject].q1 !== 0;
-                        
-                        return (
-                          <tr key={subject} className={canEdit ? 'hover:bg-gray-50' : 'bg-gray-50'}>
-                            <td className="px-4 py-3 font-medium border" style={{color: canEdit ? '#111827' : '#6b7280'}}>
-                              {subject}
-                              {!canEdit && isAdviserViewingClass && (
-                                <span className="ml-2 text-xs text-gray-400 font-normal">🔒 subject teacher</span>
+                {(() => {
+                  const quarterOrder = ['q1', 'q2', 'q3', 'q4'];
+                  const quartersToShow = selectedQuarter === 'all'
+                    ? quarterOrder
+                    : quarterOrder.slice(0, quarterOrder.indexOf(selectedQuarter) + 1);
+                  const isEditableQ = (q) => selectedQuarter === 'all' || q === selectedQuarter;
+                  const getQLabel = (q) => q.toUpperCase();
+                  const subjects = Object.keys(gradeData).filter(s => s !== 'Total Q1');
+
+                  const getQAvg = (q) => {
+                    const vals = subjects.map(s => parseFloat(gradeData[s]?.[q])).filter(v => !isNaN(v) && v > 0);
+                    return vals.length > 0 ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : null;
+                  };
+                  const getSubjectAvg = (subject) => {
+                    const vals = quarterOrder.map(q => parseFloat(gradeData[subject]?.[q])).filter(v => !isNaN(v) && v > 0);
+                    return vals.length > 0 ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : null;
+                  };
+                  const overallAvg = (() => {
+                    const avgs = subjects.map(s => parseFloat(getSubjectAvg(s))).filter(v => !isNaN(v) && v > 0);
+                    return avgs.length > 0 ? (avgs.reduce((a, b) => a + b, 0) / avgs.length).toFixed(2) : null;
+                  })();
+
+                  return (
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-gray-100">
+                          <th className="px-4 py-3 text-left font-semibold text-gray-700 border">Subject</th>
+                          {quartersToShow.map(q => (
+                            <th key={q} className={`px-4 py-3 text-center font-semibold border ${isEditableQ(q) ? 'text-red-700 bg-red-50' : 'text-gray-500'}`}>
+                              {getQLabel(q)}
+                              {isEditableQ(q) && selectedQuarter !== 'all' && <div className="text-xs font-normal text-red-400">current</div>}
+                            </th>
+                          ))}
+                          {selectedQuarter === 'all' && <th className="px-4 py-3 text-center font-semibold text-blue-700 border bg-blue-50">Average</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {subjects.map((subject) => {
+                          const canEdit = availableSubjects.includes(subject);
+                          return (
+                            <tr key={subject} className={canEdit ? 'hover:bg-gray-50' : 'bg-gray-50'}>
+                              <td className="px-4 py-3 font-medium border" style={{color: canEdit ? '#111827' : '#6b7280'}}>
+                                {subject}
+                                {!canEdit && isAdviserViewingClass && (
+                                  <span className="ml-2 text-xs text-gray-400 font-normal">🔒 subject teacher</span>
+                                )}
+                              </td>
+                              {quartersToShow.map(q => {
+                                const editable = canEdit && isEditableQ(q) && !isGradeLocked;
+                                const val = gradeData[subject]?.[q];
+                                const hasVal = val && val !== 0 && val !== '';
+                                return (
+                                  <td key={q} className="px-4 py-3 border">
+                                    <div className="flex items-center justify-center gap-1">
+                                      {editable ? (
+                                        <>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            placeholder="-"
+                                            value={val || ''}
+                                            onChange={(e) => handleGradeChange(subject, q, e.target.value)}
+                                            className="w-16 text-center border border-gray-300 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                                          />
+                                          {hasVal && (
+                                            <button type="button" onClick={() => handleGradeChange(subject, q, '')}
+                                              className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded px-1.5 py-1 transition text-sm font-bold" title="Clear">✕</button>
+                                          )}
+                                        </>
+                                      ) : (
+                                        <span className={`text-base font-semibold ${hasVal ? 'text-gray-700' : 'text-gray-300'}`}>
+                                          {hasVal ? val : '—'}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                              {selectedQuarter === 'all' && (
+                                <td className="px-4 py-3 text-center border bg-blue-50">
+                                  <span className="font-bold text-blue-700">{getSubjectAvg(subject) ?? '—'}</span>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-blue-50 border-t-2 border-blue-300">
+                          <td className="px-4 py-4 text-right font-bold text-gray-900 border">
+                            {selectedQuarter === 'all' ? 'Overall Average:' : `Total ${getQLabel(selectedQuarter)} Grade:`}
+                          </td>
+                          {quartersToShow.map(q => (
+                            <td key={q} className="px-4 py-4 text-center font-bold border">
+                              {isEditableQ(q) ? (
+                                <span className="text-2xl text-blue-700">{getQAvg(q) ?? '—'}</span>
+                              ) : (
+                                <span className="text-base text-gray-500">{getQAvg(q) ?? '—'}</span>
                               )}
                             </td>
-                            <td className="px-4 py-3 border">
-                              <div className="flex items-center justify-center gap-1">
-                                {canEdit ? (
-                                  <>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      max="100"
-                                      placeholder="-"
-                                      value={gradeData[subject]?.q1 || ''}
-                                      onChange={(e) => handleGradeChange(subject, 'q1', e.target.value)}
-                                      disabled={isGradeLocked}
-                                      className={`w-16 text-center border border-gray-300 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 ${isGradeLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                                    />
-                                    {!isGradeLocked && hasGrade && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleGradeChange(subject, 'q1', '')}
-                                        className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded px-1.5 py-1 transition text-sm font-bold"
-                                        title="Clear grade"
-                                      >
-                                        ✕
-                                      </button>
-                                    )}
-                                  </>
-                                ) : (
-                                  <span className={`text-lg font-semibold ${hasGrade ? 'text-gray-700' : 'text-gray-400'}`}>
-                                    {hasGrade ? gradeData[subject].q1 : '—'}
-                                  </span>
-                                )}
-                              </div>
+                          ))}
+                          {selectedQuarter === 'all' && (
+                            <td className="px-4 py-4 text-center border bg-blue-100">
+                              <span className="text-2xl font-bold text-blue-700">{overallAvg ?? '—'}</span>
                             </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-blue-50 border-t-2 border-blue-300">
-                      <td className="px-4 py-4 text-right font-bold text-gray-900 border">
-                        Total Q1 Grade:
-                      </td>
-                      <td className="px-4 py-4 text-center font-bold border">
-                        <span className="text-3xl text-blue-700">
-                          {(() => {
-                            const q1Grades = Object.keys(gradeData)
-                              .filter(subject => subject !== 'Total Q1')
-                              .map(subject => gradeData[subject]?.q1)
-                              .filter(grade => grade !== '' && grade !== 0 && grade !== null && grade !== undefined);
-                            
-                            if (q1Grades.length === 0) return '-';
-                            const avg = (q1Grades.reduce((a, b) => parseFloat(a) + parseFloat(b), 0) / q1Grades.length).toFixed(2);
-                            return avg;
-                          })()}
-                        </span>
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
+                          )}
+                        </tr>
+                      </tfoot>
+                    </table>
+                  );
+                })()}
               </div>
 
               {/* Action Buttons */}
