@@ -41,6 +41,11 @@ function formatStudent(s) {
     qrCode: qrCodeUrl,
     status: s.status,
     average: s.live_average != null ? Number(s.live_average) : (s.average ? Number(s.average) : null),
+    live_average: s.live_average != null ? Number(s.live_average) : null,
+    q1_avg: s.q1_avg != null ? Number(s.q1_avg) : null,
+    q2_avg: s.q2_avg != null ? Number(s.q2_avg) : null,
+    q3_avg: s.q3_avg != null ? Number(s.q3_avg) : null,
+    q4_avg: s.q4_avg != null ? Number(s.q4_avg) : null,
     declineReason: s.decline_reason || undefined,
     createdAt: s.created_at,
     updatedAt: s.updated_at,
@@ -308,7 +313,13 @@ exports.getStudents = async (req, res) => {
         const params = assignedClasses.flatMap(c => [c.gradeLevel, c.section]);
         
         const filteredStudents = await query(
-          `SELECT s.*, (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.grade > 0) AS live_average FROM students s WHERE (${conditions}) ORDER BY s.grade_level, s.section, s.last_name ASC`,
+          `SELECT s.*,
+            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.grade > 0) AS live_average,
+            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q1' AND g.grade > 0) AS q1_avg,
+            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q2' AND g.grade > 0) AS q2_avg,
+            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q3' AND g.grade > 0) AS q3_avg,
+            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q4' AND g.grade > 0) AS q4_avg
+           FROM students s WHERE (${conditions}) ORDER BY s.grade_level, s.section, s.last_name ASC`,
           params
         );
         console.log(`[getStudents] Returning ${filteredStudents.length} students from ${assignedClasses.length} assigned class(es)`);
@@ -321,7 +332,13 @@ exports.getStudents = async (req, res) => {
     }
 
     // No teacherId — return all students (admin/web use)
-    const allDbStudents = await query('SELECT s.*, (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.grade > 0) AS live_average FROM students s ORDER BY s.created_at DESC');
+    const allDbStudents = await query(`SELECT s.*,
+      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.grade > 0) AS live_average,
+      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q1' AND g.grade > 0) AS q1_avg,
+      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q2' AND g.grade > 0) AS q2_avg,
+      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q3' AND g.grade > 0) AS q3_avg,
+      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q4' AND g.grade > 0) AS q4_avg
+     FROM students s ORDER BY s.created_at DESC`);
     const formattedStudents = allDbStudents.map(formatStudent);
     res.status(200).json({ status: 'success', data: formattedStudents });
   } catch (error) {

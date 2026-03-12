@@ -306,8 +306,36 @@ export default function EditGrades() {
       ? dbSubjectsForGrade
       : (subjectsByGrade[student.gradeLevel] || []);
 
+    // Always re-fetch subject assignments fresh to avoid stale cached state
+    let freshSubjectsForClass = subjectsByClass[studentClassId] || [];
+    try {
+      const userStr = localStorage.getItem('user');
+      const freshUserId = userStr ? (JSON.parse(userStr).id) : null;
+      if (freshUserId) {
+        const stResp = await fetch(`${API_BASE_URL}/classes/subject-teacher/${freshUserId}`);
+        if (stResp.ok) {
+          const stData = await stResp.json();
+          const stClasses = Array.isArray(stData.data) ? stData.data : [];
+          const matchingClass = stClasses.find(cls => {
+            const g = (cls.grade || cls.grade_level || '').toLowerCase().replace(/\s+/g, '-');
+            const s2 = (cls.section || '').toLowerCase().replace(/\s+/g, '-');
+            return `${g}-${s2}` === studentClassId;
+          });
+          if (matchingClass) {
+            const raw = matchingClass.subjects_teaching || matchingClass.subjects || '';
+            const freshList = Array.isArray(raw) ? raw : (raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : []);
+            if (freshList.length > 0) {
+              freshSubjectsForClass = freshList;
+              setSubjectsByClass(prev => ({ ...prev, [studentClassId]: freshList }));
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not refresh subject assignments:', e.message);
+    }
     // Subjects this teacher can EDIT — only their specifically assigned subjects, regardless of adviser status
-    const editableSubjectsForClass = subjectsByClass[studentClassId] || [];
+    const editableSubjectsForClass = freshSubjectsForClass;
     console.log(isAdviserForClass ? 'Adviser' : 'Subject teacher', '- editable subjects:', editableSubjectsForClass);
 
     // Track whether adviser is viewing their own class (to show full read-only view)
@@ -790,17 +818,32 @@ export default function EditGrades() {
                         {student.gradeLevel} - {student.section}
                       </td>
                       <td className="px-6 py-5 text-center font-bold text-gray-900">
-                        {student.average || "No grades yet"}
+                        {(() => {
+                          const qAvg = selectedQuarter === 'all'
+                            ? (student.live_average || student.average)
+                            : student[`${selectedQuarter}_avg`];
+                          return qAvg ? parseFloat(qAvg).toFixed(2) : <span className="text-gray-400 font-normal text-xs">No Grades</span>;
+                        })()}
                       </td>
                       <td className="px-6 py-5">
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          (student.average || 0) >= 90 ? "bg-green-100 text-green-800" :
-                          (student.average || 0) >= 85 ? "bg-blue-100 text-blue-800" :
-                          (student.average || 0) >= 80 ? "bg-yellow-100 text-yellow-800" :
-                          "bg-gray-100 text-gray-800"
-                        }`}>
-                          {student.average ? getRemarks(student.average) : "Not graded"}
-                        </span>
+                        {(() => {
+                          const qAvg = selectedQuarter === 'all'
+                            ? (student.live_average || student.average)
+                            : student[`${selectedQuarter}_avg`];
+                          const avg = qAvg ? parseFloat(qAvg) : 0;
+                          return avg > 0 ? (
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                              avg >= 90 ? "bg-green-100 text-green-800" :
+                              avg >= 85 ? "bg-blue-100 text-blue-800" :
+                              avg >= 80 ? "bg-yellow-100 text-yellow-800" :
+                              "bg-gray-100 text-gray-800"
+                            }`}>
+                              {getRemarks(avg)}
+                            </span>
+                          ) : (
+                            <span className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-400">No Grades</span>
+                          );
+                        })()}
                       </td>
                       <td className="px-6 py-5 text-center">
                         <button
