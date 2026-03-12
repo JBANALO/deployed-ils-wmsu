@@ -294,19 +294,15 @@ export const validateTeacherData = (teachers) => {
     if (!teacher.lastName?.trim()) {
       rowErrors.push(`Row ${index + 1}: Last name is required`);
     }
-    
-    if (!teacher.email?.trim()) {
-      rowErrors.push(`Row ${index + 1}: Email is required`);
-    }
 
     // Password validation - required for import
     if (!teacher.password?.trim()) {
       rowErrors.push(`Row ${index + 1}: Password is required for import (use WMSUILS123)`);
     }
 
-    // Email format validation
+    // Email format validation (only if provided)
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (teacher.email && !emailRegex.test(teacher.email)) {
+    if (teacher.email?.trim() && !emailRegex.test(teacher.email)) {
       rowErrors.push(`Row ${index + 1}: Invalid email format`);
     }
 
