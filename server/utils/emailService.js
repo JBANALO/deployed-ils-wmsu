@@ -249,4 +249,93 @@ WMSU ILS - Elementary Department
   }
 };
 
-module.exports = { sendAttendanceEmail };
+/**
+ * Send grade report email to parent with full subject breakdown
+ */
+const sendGradeReportEmail = async ({ parentEmail, studentName, gradeLevel, section, gradesMap, teacherName }) => {
+  if (!parentEmail) return { success: false, error: 'No parent email provided' };
+
+  const rows = Object.entries(gradesMap).map(([subject, grades]) => {
+    const vals = [grades.q1, grades.q2, grades.q3, grades.q4].filter(v => v != null && v > 0);
+    const avg = vals.length > 0 ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : '—';
+    const avgColor = avg !== '—' && parseFloat(avg) < 75 ? '#dc2626' : '#111827';
+    return `<tr>
+      <td style="padding:8px 12px;border:1px solid #e5e7eb;font-size:13px;">${subject}</td>
+      <td style="padding:8px 12px;border:1px solid #e5e7eb;text-align:center;font-size:13px;">${grades.q1 ?? '—'}</td>
+      <td style="padding:8px 12px;border:1px solid #e5e7eb;text-align:center;font-size:13px;">${grades.q2 ?? '—'}</td>
+      <td style="padding:8px 12px;border:1px solid #e5e7eb;text-align:center;font-size:13px;">${grades.q3 ?? '—'}</td>
+      <td style="padding:8px 12px;border:1px solid #e5e7eb;text-align:center;font-size:13px;">${grades.q4 ?? '—'}</td>
+      <td style="padding:8px 12px;border:1px solid #e5e7eb;text-align:center;font-weight:bold;font-size:13px;color:${avgColor};">${avg}</td>
+    </tr>`;
+  }).join('');
+
+  const allVals = Object.values(gradesMap).flatMap(g => [g.q1, g.q2, g.q3, g.q4].filter(v => v != null && v > 0));
+  const overallAvg = allVals.length > 0 ? (allVals.reduce((a, b) => a + b, 0) / allVals.length).toFixed(2) : '—';
+  const remarks = overallAvg !== '—'
+    ? (parseFloat(overallAvg) >= 90 ? 'With High Honors' : parseFloat(overallAvg) >= 85 ? 'With Honors' : parseFloat(overallAvg) >= 75 ? 'Passed' : 'Needs Improvement')
+    : 'Pending';
+
+  const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',sans-serif;background:#f5f5f5;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;margin:0 auto;background:#fff;">
+  <tr><td style="background:#8B0000;padding:28px 24px;text-align:center;">
+    <h1 style="color:#fff;margin:0;font-size:22px;">WMSU ILS – Grade Report</h1>
+    <p style="color:#fca5a5;margin:6px 0 0;font-size:13px;">Elementary Department</p>
+  </td></tr>
+  <tr><td style="padding:28px 24px;">
+    <p style="font-size:15px;color:#111827;margin:0 0 6px;">Dear Parent/Guardian of <strong>${studentName}</strong>,</p>
+    <p style="font-size:13px;color:#6b7280;margin:0 0 20px;">Below is the grade report for <strong>${gradeLevel} – ${section}</strong>.</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:20px;">
+      <thead>
+        <tr style="background:#8B0000;color:#fff;">
+          <th style="padding:10px 12px;text-align:left;font-size:13px;">Subject</th>
+          <th style="padding:10px 12px;text-align:center;font-size:13px;">Q1</th>
+          <th style="padding:10px 12px;text-align:center;font-size:13px;">Q2</th>
+          <th style="padding:10px 12px;text-align:center;font-size:13px;">Q3</th>
+          <th style="padding:10px 12px;text-align:center;font-size:13px;">Q4</th>
+          <th style="padding:10px 12px;text-align:center;font-size:13px;">Subject Avg</th>
+        </tr>
+      </thead>
+      <tbody>${rows || '<tr><td colspan="6" style="padding:12px;text-align:center;color:#9ca3af;">No grades recorded yet</td></tr>'}</tbody>
+      <tfoot>
+        <tr style="background:#fef2f2;">
+          <td colspan="5" style="padding:10px 12px;font-weight:bold;color:#991b1b;font-size:14px;">Overall Average</td>
+          <td style="padding:10px 12px;text-align:center;font-weight:bold;color:#991b1b;font-size:16px;">${overallAvg}</td>
+        </tr>
+        <tr style="background:#fef2f2;">
+          <td colspan="5" style="padding:6px 12px;color:#991b1b;font-size:13px;">Remarks</td>
+          <td style="padding:6px 12px;text-align:center;font-weight:bold;color:#991b1b;font-size:13px;">${remarks}</td>
+        </tr>
+      </tfoot>
+    </table>
+    <p style="font-size:13px;color:#6b7280;margin:0 0 4px;">If you have concerns, please contact the class adviser.</p>
+    <p style="font-size:14px;color:#111827;margin:20px 0 0;">Best regards,<br><strong>${teacherName || 'Class Adviser'}</strong><br>WMSU ILS – Elementary Department</p>
+  </td></tr>
+  <tr><td style="background:#f9fafb;padding:14px;text-align:center;border-top:1px solid #e5e7eb;">
+    <p style="margin:0;color:#9ca3af;font-size:11px;">Automated message from WMSU ILS. Do not reply.</p>
+  </td></tr>
+</table></body></html>`;
+
+  const textContent = [
+    `Grade Report – ${studentName} (${gradeLevel} – ${section})`,
+    '',
+    ...Object.entries(gradesMap).map(([s, g]) => {
+      const vals = [g.q1, g.q2, g.q3, g.q4].filter(v => v != null && v > 0);
+      const avg = vals.length > 0 ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : '—';
+      return `${s}: Q1=${g.q1||'—'} Q2=${g.q2||'—'} Q3=${g.q3||'—'} Q4=${g.q4||'—'} Avg=${avg}`;
+    }),
+    '',
+    `Overall Average: ${overallAvg} (${remarks})`,
+    '',
+    `From: ${teacherName || 'Class Adviser'}, WMSU ILS`
+  ].join('\n');
+
+  return sendViaBrevo(
+    parentEmail,
+    `Grade Report: ${studentName} – ${gradeLevel} ${section}`,
+    htmlContent,
+    textContent
+  );
+};
+
+module.exports = { sendAttendanceEmail, sendGradeReportEmail };
