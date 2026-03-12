@@ -169,12 +169,26 @@ router.get('/:classId', async (req, res) => {
   }
 });
 
+// Helper to map raw class rows to structured objects
+function mapClassRows(classes) {
+  return classes.map(cls => {
+    const subjects = cls.subjects ? cls.subjects.split(',') : [];
+    const subjectTeachersList = cls.subject_teachers_list
+      ? cls.subject_teachers_list.split('|').map(st => {
+          const [teacher_id, teacher_name, subject] = st.split(':');
+          return { teacher_id, teacher_name, subject };
+        })
+      : [];
+    return { ...cls, subjects, subject_teachers: subjectTeachersList };
+  });
+}
+
 // Get classes where user is the adviser
 router.get('/adviser/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     
-    const [classes] = await pool.query(`
+    const CLASS_QUERY = `
       SELECT c.*, 
              GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects,
              GROUP_CONCAT(DISTINCT CONCAT_WS(':', st.teacher_id, st.teacher_name, st.subject) SEPARATOR '|') as subject_teachers_list
@@ -183,23 +197,34 @@ router.get('/adviser/:userId', async (req, res) => {
       WHERE c.adviser_id = ?
       GROUP BY c.id
       ORDER BY c.grade, c.section
-    `, [userId]);
-    
-    const classesWithDetails = classes.map(cls => {
-      const subjects = cls.subjects ? cls.subjects.split(',') : [];
-      const subjectTeachersList = cls.subject_teachers_list ? cls.subject_teachers_list.split('|').map(st => {
-        const [teacher_id, teacher_name, subject] = st.split(':');
-        return { teacher_id, teacher_name, subject };
-      }) : [];
-      
-      return {
-        ...cls,
-        subjects,
-        subject_teachers: subjectTeachersList
-      };
-    });
-    
-    res.json({ data: classesWithDetails });
+    `;
+
+    let [classes] = await pool.query(CLASS_QUERY, [userId]);
+
+    // Fallback: if no results by adviser_id, look up the user's name and search by adviser_name.
+    // This handles mismatched IDs (e.g. duplicate accounts, old vs new UUID).
+    if (classes.length === 0) {
+      const [[userRow]] = await pool.query(
+        'SELECT first_name, last_name FROM users WHERE id = ?',
+        [userId]
+      );
+      if (userRow && userRow.first_name && userRow.last_name) {
+        console.log(`adviser/:userId — no ID match for ${userId}, trying name fallback (${userRow.first_name} ${userRow.last_name})`);
+        [classes] = await pool.query(`
+          SELECT c.*, 
+                 GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects,
+                 GROUP_CONCAT(DISTINCT CONCAT_WS(':', st.teacher_id, st.teacher_name, st.subject) SEPARATOR '|') as subject_teachers_list
+          FROM classes c
+          LEFT JOIN subject_teachers st ON c.id = st.class_id
+          WHERE c.adviser_name LIKE ? AND c.adviser_name LIKE ?
+          GROUP BY c.id
+          ORDER BY c.grade, c.section
+        `, [`%${userRow.first_name}%`, `%${userRow.last_name}%`]);
+        console.log(`Name fallback found ${classes.length} class(es)`);
+      }
+    }
+
+    res.json({ data: mapClassRows(classes) });
   } catch (err) {
     console.error('Error fetching adviser classes:', err);
     res.status(500).json({ error: 'Failed to fetch adviser classes' });
@@ -222,21 +247,7 @@ router.get('/subject-teacher/:userId', async (req, res) => {
       ORDER BY c.grade, c.section
     `, [userId]);
     
-    const classesWithDetails = classes.map(cls => {
-      const subjects = cls.subjects ? cls.subjects.split(',') : [];
-      const subjectTeachersList = cls.subject_teachers_list ? cls.subject_teachers_list.split('|').map(st => {
-        const [teacher_id, teacher_name, subject] = st.split(':');
-        return { teacher_id, teacher_name, subject };
-      }) : [];
-      
-      return {
-        ...cls,
-        subjects,
-        subject_teachers: subjectTeachersList
-      };
-    });
-    
-    res.json({ data: classesWithDetails });
+    res.json({ data: mapClassRows(classes) });
   } catch (err) {
     console.error('Error fetching subject teacher classes:', err);
     res.status(500).json({ error: 'Failed to fetch subject teacher classes' });
