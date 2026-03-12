@@ -247,17 +247,12 @@ export const processTeacherData = (teachers) => {
     if (teacher.subjects?.trim()) {
       subjectsHandled = teacher.subjects
         .split(/[;,]/)
-        .map(s => s.trim()) // Keep original capitalization
+        .map(s => s.trim())
         .filter(s => s);
     }
 
-    // Determine role based on role field or default to 'adviser'
-    let role = teacher.role?.trim() || 'adviser';
-    if (role === 'subject_teacher') {
-      role = 'subject_teacher';
-    } else if (role === 'adviser') {
-      role = 'adviser';
-    }
+    // Default role to 'teacher' (unassigned) — admin assigns role later
+    let role = teacher.role?.trim() || 'teacher';
 
     return {
       firstName: teacher.firstName?.trim() || '',
@@ -273,7 +268,7 @@ export const processTeacherData = (teachers) => {
       role: role,
       gradeLevel: teacher.gradeLevel?.trim() || '',
       section: teacher.section?.trim() || '',
-      subjects: subjectsHandled, // Fixed: use 'subjects' instead of 'subjectsHandled'
+      subjects: subjectsHandled,
       bio: teacher.bio?.trim() || ''
     };
   });
@@ -313,43 +308,6 @@ export const validateTeacherData = (teachers) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (teacher.email && !emailRegex.test(teacher.email)) {
       rowErrors.push(`Row ${index + 1}: Invalid email format`);
-    }
-
-    // Role validation (case-insensitive)
-    const validRoles = ['adviser', 'subject_teacher'];
-    if (teacher.role && !validRoles.includes(teacher.role.trim().toLowerCase())) {
-      rowErrors.push(`Row ${index + 1}: Role must be 'adviser' or 'subject_teacher'`);
-    }
-
-    // Grade level validation (strict - only accept valid grades)
-    if (teacher.gradeLevel?.trim()) {
-      let normalizedGrade = teacher.gradeLevel.trim().toLowerCase();
-      console.log(`Row ${index + 1} - Original grade: "${teacher.gradeLevel}", Normalized: "${normalizedGrade}"`); // Debug log
-
-      // If it's just a number (e.g., "1"), convert to "grade 1"
-      if (/^\d+$/.test(normalizedGrade)) {
-        normalizedGrade = `grade ${normalizedGrade}`;
-      }
-
-      // Normalize formats like "GRADE 1", "Grade 1", etc.
-      normalizedGrade = normalizedGrade.replace(/\s+/g, ' ');
-
-      const validGrades = [
-        'kindergarten',
-        'grade 1',
-        'grade 2',
-        'grade 3',
-        'grade 4',
-        'grade 5',
-        'grade 6'
-      ];
-
-      console.log(`Row ${index + 1} - Final normalized grade: "${normalizedGrade}", Valid grades:`, validGrades); // Debug log
-
-      // Only accept valid grades - reject subjects
-      if (!validGrades.includes(normalizedGrade)) {
-        rowErrors.push(`Row ${index + 1}: Invalid grade level "${teacher.gradeLevel}" (must be "Kindergarten" or "Grade 1-6". Subjects like "filipino, math, gmrc, science" should be in the Subjects column)`);
-      }
     }
 
     if (rowErrors.length > 0) {

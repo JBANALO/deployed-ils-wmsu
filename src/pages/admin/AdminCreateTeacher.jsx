@@ -11,11 +11,6 @@ export default function AdminCreateTeacher() {
     username: "",
     email: "@wmsu.edu.ph",
     password: "", // Start empty
-    role: "adviser",
-    gradeLevel: "",
-    section: "",
-    subjects: [],
-    kindergartenSubjects: "",
     bio: "",
     profilePic: "",
   });
@@ -38,37 +33,7 @@ export default function AdminCreateTeacher() {
     }));
   };
 
-  const [sections, setSections] = useState([]);
-  const [allSubjects, setAllSubjects] = useState([]);
 
-  useEffect(() => {
-    api.get('/sections').then(r => setSections(r.data?.data || [])).catch(() => {});
-    api.get('/subjects').then(r => setAllSubjects(r.data?.data || [])).catch(() => {});
-  }, []);
-
-  // Subjects by grade level (Official DepEd format)
-  const subjectsByGradeLevel = {
-    "Kindergarten": ["Filipino", "English", "Mathematics", "GMRC", "MAPEH"],
-    "Grade 1": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
-    "Grade 2": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
-    "Grade 3": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
-    "Grade 4": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
-    "Grade 5": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
-    "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
-    "Multiple Grade Level (MG)": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"]
-  };
-
-  // Sections by grade level (legacy - kept for fallback)
-  const sectionsByGradeLevel = {
-    "Kindergarten": ["Love"],
-    "Grade 1": ["Humility"],
-    "Grade 2": ["Kindness"],
-    "Grade 3": ["Wisdom", "Diligence"],
-    "Grade 4": ["Prudence", "Generosity"], 
-    "Grade 5": ["Courage", "Justice"],
-    "Grade 6": ["Honesty", "Loyalty", "Industry"], 
-    "Multiple Grade Level": ["Responsibility"],
-  };
 
   // Auto-generate username based on first name
   useEffect(() => {
@@ -81,55 +46,10 @@ export default function AdminCreateTeacher() {
   const handleChange = (e) => {
     const { name, value, type, files } = e.target;
     
-    if (name === "gradeLevel") {
-      // Clear subjects and section when grade level changes
-      setFormData((prev) => ({ 
-        ...prev, 
-        [name]: value,
-        subjects: [], // Reset subjects array
-        section: "", // Reset section
-        kindergartenSubjects: "" // Reset kindergarten subjects
-      }));
-    } else if (name === "subjects") {
-      // Handle checkbox selection for subjects
-      const selectedSubject = value;
-      setFormData((prev) => {
-        const currentSubjects = prev.subjects || [];
-        if (currentSubjects.includes(selectedSubject)) {
-          // Remove subject if already selected
-          return { ...prev, subjects: currentSubjects.filter(s => s !== selectedSubject) };
-        } else {
-          // Add subject if not selected
-          return { ...prev, subjects: [...currentSubjects, selectedSubject] };
-        }
-      });
-    } else if (name === "kindergartenSubjects") {
-      // Handle kindergarten subjects text input
-      setFormData((prev) => ({ ...prev, [name]: value }));
-    } else if (name === "profilePic" && type === "file") {
-      // Handle file upload
+    if (name === "profilePic" && type === "file") {
       setFormData((prev) => ({ ...prev, [name]: files[0] }));
     } else {
-      // Handle regular text inputs
       setFormData((prev) => ({ ...prev, [name]: value }));
-    }
-  };
-
-  const handleSelectAllSubjects = () => {
-    if (formData.gradeLevel && formData.gradeLevel !== "Kindergarten" && subjectsByGradeLevel[formData.gradeLevel]) {
-      const allSubjects = subjectsByGradeLevel[formData.gradeLevel];
-      const currentSubjects = formData.subjects || [];
-      
-      // Check if all subjects are already selected
-      const allSelected = allSubjects.every(subject => currentSubjects.includes(subject));
-      
-      if (allSelected) {
-        // Deselect all subjects
-        setFormData(prev => ({ ...prev, subjects: [] }));
-      } else {
-        // Select all subjects
-        setFormData(prev => ({ ...prev, subjects: [...allSubjects] }));
-      }
     }
   };
 
@@ -165,15 +85,10 @@ export default function AdminCreateTeacher() {
         username: formData.username,
         email: formData.email,
         password: formData.password,
-        role: formData.role,
-        gradeLevel: formData.gradeLevel,
-        section: formData.section,
-        subjects: formData.gradeLevel === "Kindergarten" 
-          ? formData.kindergartenSubjects 
-          : formData.subjects.join(", "), // Convert array to comma-separated string
+        role: 'teacher',
         bio: formData.bio || '',
         profilePic: profilePicBase64,
-        status: 'approved', // Teachers are now immediately approved
+        status: 'approved',
       };
 
       const response = await api.post('/teachers', teacherData);
@@ -242,7 +157,7 @@ export default function AdminCreateTeacher() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700">Middle Name</label>
+              <label className="text-sm font-medium text-gray-700">Middle Name <span className="text-gray-400 font-normal">(Optional)</span></label>
               <input
                 type="text"
                 name="middleName"
@@ -357,123 +272,9 @@ export default function AdminCreateTeacher() {
             </div>
           </div>
 
-          <div>
-            <label className="text-sm font-medium text-gray-700">Role</label>
-            <select
-              name="role"
-              value={formData.role}
-              onChange={handleChange}
-              className="mt-1 w-full p-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-800"
-            >
-              <option value="adviser">Adviser</option>
-              <option value="subject_teacher">Subject Teacher</option>
-            </select>
-          </div>
-
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium text-gray-700">Grade Level</label>
-              <select
-                name="gradeLevel"
-                value={formData.gradeLevel}
-                onChange={handleChange}
-                className="mt-1 w-full p-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-800"
-              >
-                <option value="">Select Grade Level</option>
-                <option value="Kindergarten">Kindergarten</option>
-                <option value="Grade 1">Grade 1</option>
-                <option value="Grade 2">Grade 2</option>
-                <option value="Grade 3">Grade 3</option>
-                <option value="Grade 4">Grade 4</option>
-                <option value="Grade 5">Grade 5</option>
-                <option value="Grade 6">Grade 6</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">Section</label>
-              <select
-                name="section"
-                value={formData.section}
-                onChange={handleChange}
-                className="mt-1 w-full p-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-800"
-              >
-                <option value="">Select Section</option>
-                {(sections.length > 0 ? sections : []).map((s) => (
-                  <option key={s.id} value={s.name}>{s.name}</option>
-                ))}
-              </select>
-              {formData.gradeLevel && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Available sections: {sections.map(s => s.name).join(", ") || "No sections added yet"}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-gray-700">Subjects</label>
-            {formData.gradeLevel === "Kindergarten" ? (
-              <div className="mt-2 space-y-2">
-                <p className="text-xs text-gray-600 mb-2">
-                  Kindergarten subjects (flexible - describe activities/subjects):
-                </p>
-                <textarea
-                  name="kindergartenSubjects"
-                  value={formData.kindergartenSubjects}
-                  onChange={handleChange}
-                  rows="3"
-                  placeholder="e.g., Basic Reading, Numbers, Shapes, Colors, Play Activities, Story Time..."
-                  className="mt-1 w-full p-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-800"
-                />
-                <p className="text-xs text-gray-500">
-                  Since Kindergarten students are pre-schoolers, subjects are flexible. We'll confirm with client.
-                </p>
-              </div>
-            ) : formData.gradeLevel && subjectsByGradeLevel[formData.gradeLevel].length > 0 ? (
-              <div className="mt-2 space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-gray-600">
-                    Select subjects for {formData.gradeLevel}:
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleSelectAllSubjects}
-                    className="px-3 py-1 text-xs bg-red-800 text-white rounded hover:bg-red-900 transition-colors"
-                  >
-                    {formData.subjects.length === subjectsByGradeLevel[formData.gradeLevel].length ? 'Deselect All' : 'Select All'}
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {subjectsByGradeLevel[formData.gradeLevel].map((subject) => (
-                    <label key={subject} className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        name="subjects"
-                        value={subject}
-                        checked={formData.subjects.includes(subject)}
-                        onChange={handleChange}
-                        className="w-4 h-4 text-red-800 border-gray-300 rounded focus:ring-red-800"
-                      />
-                      <span className="text-sm text-gray-700">{subject}</span>
-                    </label>
-                  ))}
-                </div>
-                {formData.subjects.length > 0 && (
-                  <p className="text-xs text-green-600 mt-2">
-                    Selected: {formData.subjects.join(", ")}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="mt-2 p-3 bg-gray-50 rounded-md">
-                <p className="text-sm text-gray-500">
-                  Please select a grade level first to see available subjects
-                </p>
-              </div>
-            )}
-            <p className="text-xs text-gray-500 mt-1">
-              Works for both Advisers and Subject Teachers - select relevant subjects
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-blue-800 text-sm">
+              <strong>Note:</strong> Role, Grade Level, Section, and Subjects will be assigned later via the <strong>Assign Adviser</strong> page.
             </p>
           </div>
 

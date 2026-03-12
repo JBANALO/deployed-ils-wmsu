@@ -256,7 +256,7 @@ export default function AdminTeachers() {
         allTeachers = Array.isArray(teachersData) 
           ? teachersData.filter(teacher => {
               console.log('Checking teacher:', teacher.firstName, teacher.role, teacher.status);
-              return (teacher.role === 'adviser' || teacher.role === 'subject_teacher') &&
+              return (teacher.role === 'adviser' || teacher.role === 'subject_teacher' || teacher.role === 'teacher') &&
               teacher.status === 'approved'
             })
           : [];
@@ -764,18 +764,22 @@ export default function AdminTeachers() {
         View, verify, edit, or archive teacher accounts. 
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <div className="p-3 md:p-4 bg-red-50 rounded-lg text-center shadow-sm border border-red-100">
           <h3 className="text-sm md:text-lg font-semibold text-red-800">Total Teachers</h3>
           <p className="text-xl md:text-2xl font-bold">{teachers.length}</p>
+        </div>
+        <div className="p-3 md:p-4 bg-red-50 rounded-lg text-center shadow-sm border border-red-100">
+          <h3 className="text-sm md:text-lg font-semibold text-red-800">Advisers</h3>
+          <p className="text-xl md:text-2xl font-bold">{teachers.filter(t => t.role === 'adviser').length}</p>
         </div>
         <div className="p-3 md:p-4 bg-red-50 rounded-lg text-center shadow-sm border border-red-100">
           <h3 className="text-sm md:text-lg font-semibold text-red-800">Subject Teachers</h3>
           <p className="text-xl md:text-2xl font-bold">{teachers.filter(t => t.role === 'subject_teacher').length}</p>
         </div>
         <div className="p-3 md:p-4 bg-red-50 rounded-lg text-center shadow-sm border border-red-100">
-          <h3 className="text-sm md:text-lg font-semibold text-red-800">Advisers</h3>
-          <p className="text-xl md:text-2xl font-bold">{teachers.filter(t => t.role === 'adviser').length}</p>
+          <h3 className="text-sm md:text-lg font-semibold text-red-800">Unassigned</h3>
+          <p className="text-xl md:text-2xl font-bold">{teachers.filter(t => t.role === 'teacher').length}</p>
         </div>
       </div>
 
@@ -1153,6 +1157,93 @@ export default function AdminTeachers() {
             </div>
           </div>
         </div>
+
+        {/* Unassigned Teachers Table */}
+        <div className="mb-8">
+          <div className="bg-white rounded-lg shadow">
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-700 mb-1">
+                Unassigned Teachers
+              </h3>
+              <p className="text-xs text-gray-500">Teachers not yet assigned a role. Go to <strong>Assign Adviser</strong> to assign them.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-gray-100 text-gray-700">
+                  <tr>
+                    <th className="p-3 border">Name</th>
+                    <th className="p-3 border">Email</th>
+                    <th className="p-3 border">Status</th>
+                    <th className="p-3 border w-40 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTeachers.filter(t => t.role === 'teacher').length > 0 ? (
+                    filteredTeachers.filter(t => t.role === 'teacher').map((teacher) => (
+                      <tr key={teacher.id} className="hover:bg-gray-50 border-t">
+                        <td className="p-3 border">
+                          <span className="font-medium">{teacher.first_name || teacher.firstName} {teacher.last_name || teacher.lastName}</span>
+                        </td>
+                        <td className="p-3 border text-sm text-gray-600">{teacher.email}</td>
+                        <td className="p-3 border">
+                          <span className="text-xs font-semibold px-2 py-1 rounded bg-gray-200 text-gray-700">
+                            Unassigned
+                          </span>
+                        </td>
+                        <td className="p-3 border w-40">
+                          <div className="flex gap-2 justify-center items-center">
+                            <button 
+                              onClick={() => handleEditTeacher(teacher)}
+                              className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                              title="Edit"
+                            >
+                              <PencilSquareIcon className="w-5 h-5" />
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteTeacher(teacher.id)}
+                              className="p-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+                              title="Archive Teacher"
+                            >
+                              <TrashIcon className="w-5 h-5" />
+                            </button>
+
+                            <button 
+                              onClick={() => handleViewTeacher(teacher)}
+                              className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                              title="View Details"
+                            >
+                              <EyeIcon className="w-5 h-5" />
+                            </button>
+
+                            <button 
+                              onClick={() => handleViewCredentials(teacher)}
+                              disabled={credentialsLoading}
+                              className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={credentialsLoading ? "Loading..." : "View Credentials"}
+                            >
+                              {credentialsLoading ? (
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              ) : (
+                                <KeyIcon className="w-5 h-5" />
+                              )}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="4" className="p-8 text-center text-gray-500">
+                        {searchQuery ? 'No unassigned teachers found matching your search' : 'No unassigned teachers — all teachers have been assigned a role'}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* BULK IMPORT MODAL */}
@@ -1249,7 +1340,7 @@ export default function AdminTeachers() {
                 <div>
                   <p className="text-sm text-gray-600">Role</p>
                   <p className="font-semibold">
-                    {selectedTeacher.role === 'subject_teacher' ? 'Subject Teacher' : 'Adviser'}
+                    {selectedTeacher.role === 'subject_teacher' ? 'Subject Teacher' : selectedTeacher.role === 'adviser' ? 'Adviser' : 'Unassigned'}
                   </p>
                 </div>
                 
@@ -1346,6 +1437,7 @@ export default function AdminTeachers() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
                 >
                   <option value="">Select Role</option>
+                  <option value="teacher">Unassigned</option>
                   <option value="adviser">Adviser</option>
                   <option value="subject_teacher">Subject Teacher</option>
                 </select>
