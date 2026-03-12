@@ -94,6 +94,26 @@ export default function GradeLevel() {
         } catch (e) {}
       }
 
+      // Fallback: if no adviser classes found by ID, search all classes by adviser_name
+      // This handles cases where adviser_id was saved with a mismatched/old user ID
+      if (adviserClasses.length === 0 && user.firstName && user.lastName) {
+        try {
+          console.log('⚠️ No adviser classes by ID — trying name fallback...');
+          const allClassesResp = await fetch(`${API_BASE_URL}/classes`);
+          if (allClassesResp.ok) {
+            const allClassesData = await allClassesResp.json();
+            const allClasses = Array.isArray(allClassesData) ? allClassesData : [];
+            const userFullName = `${user.firstName} ${user.lastName}`.trim();
+            adviserClasses = allClasses.filter(c =>
+              c.adviser_name && c.adviser_name.trim() === userFullName
+            );
+            console.log(`✓ Adviser classes by name fallback: ${adviserClasses.length}`, adviserClasses.map(c => `${c.grade}-${c.section}`));
+          }
+        } catch (fbErr) {
+          console.warn('Name-based fallback fetch failed:', fbErr);
+        }
+      }
+
       // Fetch classes assigned to this subject teacher
       console.log(`Fetching subject teacher classes for user: ${user.id}`);
       const subjectTeacherResponse = await fetch(`${API_BASE_URL}/classes/subject-teacher/${user.id}`);
