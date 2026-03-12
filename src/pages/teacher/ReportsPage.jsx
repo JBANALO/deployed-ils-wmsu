@@ -317,9 +317,9 @@ export default function ReportsPage() {
       setAllSubjects([...subjectSet].sort());
       setSelectedSubjectForRanking(prev => prev || ([...subjectSet][0] || ''));
 
-      // Get top performing students (use studentsWithGrades which has calculated averages)
+      // Get top performing students — only those with avg >= 85 (honor level and above)
       const topPerformers = studentsWithGrades
-        .filter(s => s.average && s.average > 0)
+        .filter(s => s.average && s.average >= 85)
         .sort((a, b) => (b.average || 0) - (a.average || 0))
         .map((s, idx) => ({
           rank: idx + 1,
@@ -649,7 +649,7 @@ export default function ReportsPage() {
                         <p className="text-base font-semibold text-red-800">
                           {student.avg >= 98 ? '🥇 With Highest Honors' :
                            student.avg >= 95 ? '🥈 With High Honors' :
-                           student.avg >= 90 ? '🥉 With Honors' :
+                           student.avg >= 85 ? '🥉 With Honors' :
                            student.avg >= 75 ? '✅ No Award' :
                            '❌ Failed'}
                         </p>
@@ -701,9 +701,9 @@ export default function ReportsPage() {
                             <p className="text-sm font-semibold text-orange-800">
                               {student.avg >= 98 ? '🥇 With Highest Honors' :
                                student.avg >= 95 ? '🥈 With High Honors' :
-                               student.avg >= 90 ? '🥉 With Honors' :
+                               student.avg >= 85 ? '🥉 With Honors' :
                                student.avg >= 75 ? '✅ No Award' :
-                               '❌ Failed'}
+                               '❌ Failed'}}
                             </p>
                           </div>
                           {isAdviser && (
@@ -904,13 +904,13 @@ export default function ReportsPage() {
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                             (student.average || 0) >= 98 ? 'bg-yellow-100 text-yellow-800' :
                             (student.average || 0) >= 95 ? 'bg-green-100 text-green-800' :
-                            (student.average || 0) >= 90 ? 'bg-emerald-100 text-emerald-800' :
+                            (student.average || 0) >= 85 ? 'bg-emerald-100 text-emerald-800' :
                             (student.average || 0) >= 75 ? 'bg-blue-100 text-blue-800' :
                             'bg-red-100 text-red-800'
                           }`}>
                             {(student.average || 0) >= 98 ? '🥇 With Highest Honors' :
                              (student.average || 0) >= 95 ? '🥈 With High Honors' :
-                             (student.average || 0) >= 90 ? '🥉 With Honors' :
+                             (student.average || 0) >= 85 ? '🥉 With Honors' :
                              (student.average || 0) >= 75 ? '✅ No Award' :
                              '❌ Failed'}
                           </span>
