@@ -247,14 +247,15 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <h3 className="font-semibold text-blue-900 mb-2">CSV Format - Email & Username AUTO-GENERATED:</h3>
                 <pre className="text-sm bg-white p-2 rounded border border-blue-100 overflow-x-auto">
-{`firstName,lastName,email,username,gradeLevel,section
-Juan,Dela Cruz,,,Grade 3,Wisdom
-Maria,Santos,,,Grade 4,Knowledge
+{`firstName,lastName,sex,gradeLevel,section
+Juan,Dela Cruz,Male,Grade 3,Wisdom
+Maria,Santos,Female,Grade 4,Knowledge
 
 NOTE:
-- Email & Username columns can be EMPTY
-- Email: auto-generated as firstname.lastname@wmsu.edu.ph
-- Username: auto-generated as firstname.lastname`}
+- Sex: Male or Female
+- Email & Username are auto-generated
+- Email: firstname.lastname@wmsu.edu.ph
+- Username: firstname.lastname`}
                 </pre>
                 <button
                   onClick={handleDownloadTemplate}
@@ -326,10 +327,10 @@ NOTE:
                     <tr>
                       <th className="p-2 text-left">First Name</th>
                       <th className="p-2 text-left">Last Name</th>
-                      <th className="p-2 text-left">Email (Auto)</th>
-                      <th className="p-2 text-left">Username (Auto)</th>
+                      <th className="p-2 text-left">Sex</th>
                       <th className="p-2 text-left">Grade</th>
                       <th className="p-2 text-left">Section</th>
+                      <th className="p-2 text-left">Email (Auto)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -337,10 +338,10 @@ NOTE:
                       <tr key={i} className="border-b hover:bg-gray-50">
                         <td className="p-2">{student.firstName}</td>
                         <td className="p-2">{student.lastName}</td>
-                        <td className="p-2 text-xs text-blue-600 font-mono">{student.email}</td>
-                        <td className="p-2 text-xs text-blue-600 font-mono">{student.username}</td>
+                        <td className="p-2">{student.sex || '-'}</td>
                         <td className="p-2">{student.gradeLevel}</td>
                         <td className="p-2">{student.section}</td>
+                        <td className="p-2 text-xs text-blue-600 font-mono">{student.email}</td>
                       </tr>
                     ))}
                   </tbody>
