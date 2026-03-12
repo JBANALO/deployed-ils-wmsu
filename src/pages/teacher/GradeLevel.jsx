@@ -185,27 +185,33 @@ export default function GradeLevel() {
       "Grade 1": "bg-blue-600",
       "Grade 2": "bg-green-600",
       "Grade 3": "bg-yellow-600",
+      "Grade 4": "bg-orange-600",
+      "Grade 5": "bg-red-600",
+      "Grade 6": "bg-pink-600",
     };
 
     const uniqueGrades = [...new Set(assignedClasses.map(c => c.grade))];
     return uniqueGrades.map(grade => ({
       name: grade,
-      color: gradeColorMap[grade] || "bg-purple-600",
+      color: gradeColorMap[grade] || "bg-indigo-600",
       sections: assignedClasses
         .filter(c => c.grade === grade)
         .map(c => c.section)
     }));
   };
 
-  // ONLY ONE getColors FUNCTION — THIS IS THE FIX
   const getColors = (headerColor) => {
     const map = {
       "bg-purple-600": { bar: "from-purple-500 to-pink-500", text: "text-purple-700", pillBg: "bg-purple-100", pillText: "text-purple-800", pillHover: "hover:bg-purple-200", icon: "text-purple-600" },
       "bg-blue-600":   { bar: "from-blue-500 to-cyan-500",   text: "text-blue-700",   pillBg: "bg-blue-100",   pillText: "text-blue-800",   pillHover: "hover:bg-blue-200",   icon: "text-blue-600" },
       "bg-green-600":  { bar: "from-green-500 to-emerald-500", text: "text-green-700", pillBg: "bg-green-100", pillText: "text-green-800", pillHover: "hover:bg-green-200", icon: "text-green-600" },
       "bg-yellow-600": { bar: "from-yellow-400 to-orange-500", text: "text-yellow-700", pillBg: "bg-yellow-100", pillText: "text-yellow-800", pillHover: "hover:bg-yellow-200", icon: "text-yellow-600" },
+      "bg-orange-600": { bar: "from-orange-500 to-red-400", text: "text-orange-700", pillBg: "bg-orange-100", pillText: "text-orange-800", pillHover: "hover:bg-orange-200", icon: "text-orange-600" },
+      "bg-red-600":    { bar: "from-red-500 to-rose-400", text: "text-red-700", pillBg: "bg-red-100", pillText: "text-red-800", pillHover: "hover:bg-red-200", icon: "text-red-600" },
+      "bg-pink-600":   { bar: "from-pink-500 to-fuchsia-400", text: "text-pink-700", pillBg: "bg-pink-100", pillText: "text-pink-800", pillHover: "hover:bg-pink-200", icon: "text-pink-600" },
+      "bg-indigo-600": { bar: "from-indigo-500 to-violet-400", text: "text-indigo-700", pillBg: "bg-indigo-100", pillText: "text-indigo-800", pillHover: "hover:bg-indigo-200", icon: "text-indigo-600" },
     };
-    return map[headerColor] || map["bg-purple-600"];
+    return map[headerColor] || map["bg-indigo-600"];
   };
 
   const gradeLevels = getAssignedGradeLevels();

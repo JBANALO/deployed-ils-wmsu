@@ -378,17 +378,61 @@ export default function AdminAssignAdviser() {
                 </div>
               </div>
               {/* Subjects checklist — shows after class is chosen */}
-              {adviserSubjects.length > 0 && (
+              {adviserSubjects.length > 0 && (() => {
+                // Detect schedule conflicts: same day AND overlapping times between selected subjects
+                const toMinutes = t => { const [h,m] = (t||'00:00').split(':').map(Number); return h*60+m; };
+                const conflicts = new Set();
+                // Within selected subjects
+                for (let i = 0; i < selectedAdviserSubjects.length; i++) {
+                  for (let j = i+1; j < selectedAdviserSubjects.length; j++) {
+                    const a = selectedAdviserSubjects[i], b = selectedAdviserSubjects[j];
+                    if (a.day === b.day) {
+                      const aStart=toMinutes(a.startTime), aEnd=toMinutes(a.endTime);
+                      const bStart=toMinutes(b.startTime), bEnd=toMinutes(b.endTime);
+                      if (aStart < bEnd && bStart < aEnd) {
+                        conflicts.add(a.subject);
+                        conflicts.add(b.subject);
+                      }
+                    }
+                  }
+                }
+                // Against existing subject_teachers for this class
+                const existingSTs = selectedClass ? (classes.find(c => c.id === selectedClass.id)?.subject_teachers || []) : [];
+                const existingConflicts = new Set();
+                for (const entry of selectedAdviserSubjects) {
+                  for (const st of existingSTs) {
+                    if (st.day === entry.day) {
+                      const eStart=toMinutes(entry.startTime), eEnd=toMinutes(entry.endTime);
+                      const sStart=toMinutes(st.start_time), sEnd=toMinutes(st.end_time);
+                      if (eStart < sEnd && sStart < eEnd) {
+                        existingConflicts.add(`${entry.subject}|${st.teacher_name}|${st.subject}`);
+                        conflicts.add(entry.subject);
+                      }
+                    }
+                  }
+                }
+                return (
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Subjects this Adviser will teach <span className="text-gray-400 font-normal">(optional — set day &amp; time per subject)</span>
                   </label>
+                  {conflicts.size > 0 && (
+                    <div className="mb-2 p-2 bg-red-50 border border-red-300 rounded text-xs text-red-700">
+                      ⚠️ <strong>Schedule conflict detected!</strong> Check highlighted subjects — they share the same day and overlapping time.
+                      {[...existingConflicts].map((k,i) => {
+                        const [sub,,existSub] = k.split('|');
+                        return <div key={i} className="mt-0.5">• <em>{sub}</em> conflicts with existing <em>{existSub}</em></div>;
+                      })}
+                    </div>
+                  )}
                   <div className="space-y-1.5 p-3 border border-gray-200 rounded-md bg-gray-50 max-h-72 overflow-y-auto">
                     {adviserSubjects.map(sub => {
                       const entry = selectedAdviserSubjects.find(x => x.subject === sub);
                       const checked = !!entry;
+                      const hasConflict = conflicts.has(sub);
                       return (
                         <div key={sub} className={`rounded-md transition ${
+                          hasConflict ? 'bg-red-50 border border-red-300 p-2.5' :
                           checked ? 'bg-white border border-blue-200 shadow-sm p-2.5' : 'p-1'
                         }`}>
                           <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-800">
@@ -404,7 +448,8 @@ export default function AdminAssignAdviser() {
                               }}
                               className="accent-red-600 w-4 h-4 flex-shrink-0"
                             />
-                            <span className="font-medium">{sub}</span>
+                            <span className={`font-medium ${hasConflict ? 'text-red-700' : ''}`}>{sub}</span>
+                            {hasConflict && <span className="ml-1 text-xs text-red-600 font-semibold">⚠️ Conflict</span>}
                           </label>
                           {checked && (
                             <div className="mt-2 flex flex-wrap items-center gap-2 pl-6">
@@ -413,7 +458,7 @@ export default function AdminAssignAdviser() {
                                 onChange={(e) => setSelectedAdviserSubjects(prev =>
                                   prev.map(x => x.subject === sub ? { ...x, day: e.target.value } : x)
                                 )}
-                                className="text-xs p-1.5 border border-gray-300 rounded focus:ring-1 focus:ring-red-400"
+                                className={`text-xs p-1.5 border rounded focus:ring-1 focus:ring-red-400 ${hasConflict ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                               >
                                 {['Monday','Tuesday','Wednesday','Thursday','Friday'].map(d => (
                                   <option key={d} value={d}>{d}</option>
@@ -425,7 +470,7 @@ export default function AdminAssignAdviser() {
                                 onChange={(e) => setSelectedAdviserSubjects(prev =>
                                   prev.map(x => x.subject === sub ? { ...x, startTime: e.target.value } : x)
                                 )}
-                                className="text-xs p-1.5 border border-gray-300 rounded focus:ring-1 focus:ring-red-400"
+                                className={`text-xs p-1.5 border rounded focus:ring-1 focus:ring-red-400 ${hasConflict ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                               />
                               <span className="text-xs text-gray-400">to</span>
                               <input
@@ -434,7 +479,7 @@ export default function AdminAssignAdviser() {
                                 onChange={(e) => setSelectedAdviserSubjects(prev =>
                                   prev.map(x => x.subject === sub ? { ...x, endTime: e.target.value } : x)
                                 )}
-                                className="text-xs p-1.5 border border-gray-300 rounded focus:ring-1 focus:ring-red-400"
+                                className={`text-xs p-1.5 border rounded focus:ring-1 focus:ring-red-400 ${hasConflict ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                               />
                             </div>
                           )}
@@ -446,14 +491,29 @@ export default function AdminAssignAdviser() {
                     <p className="text-xs text-green-700 mt-1">{selectedAdviserSubjects.length} subject(s) selected</p>
                   )}
                 </div>
-              )}
+                );
+              })()}
               {selectedClass && adviserSubjects.length === 0 && (
                 <div className="md:col-span-2 text-xs text-amber-600 italic">
                   No subjects configured for this grade. Add them in Subjects first.
                 </div>
               )}
               <button
-                onClick={handleAssignAdviser}
+                onClick={() => {
+                  // Block save if there are conflicts
+                  const toMinutes = t => { const [h,m]=(t||'00:00').split(':').map(Number); return h*60+m; };
+                  for (let i=0;i<selectedAdviserSubjects.length;i++) {
+                    for (let j=i+1;j<selectedAdviserSubjects.length;j++) {
+                      const a=selectedAdviserSubjects[i], b=selectedAdviserSubjects[j];
+                      if (a.day===b.day && toMinutes(a.startTime)<toMinutes(b.endTime) && toMinutes(b.startTime)<toMinutes(a.endTime)) {
+                        setMessage(`⚠️ Schedule conflict: "${a.subject}" and "${b.subject}" overlap on ${a.day}. Please fix before saving.`);
+                        setMessageType('error');
+                        return;
+                      }
+                    }
+                  }
+                  handleAssignAdviser();
+                }}
                 className="w-full bg-red-600 text-white font-semibold py-3 rounded-md hover:bg-red-700 transition md:col-span-2"
               >
                 Assign Adviser{selectedAdviserSubjects.length > 0 ? ` + ${selectedAdviserSubjects.length} Subject(s)` : ''}
