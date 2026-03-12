@@ -139,7 +139,68 @@ const createStudent = async (req, res) => {
 
 const getAllStudents = async (req, res) => {
   try {
-    const { gradeLevel, section, status } = req.query;
+    const { gradeLevel, section, status, teacherId } = req.query;
+
+    // If teacherId provided, filter to only that teacher's assigned classes
+    if (teacherId) {
+      let assignedClasses = []; // [{gradeLevel, section}]
+
+      // 1. Classes where teacher is adviser
+      try {
+        const [adviserRows] = await pool.query(
+          'SELECT grade, section FROM classes WHERE adviser_id = ?',
+          [teacherId]
+        );
+        adviserRows.forEach(row => assignedClasses.push({ gradeLevel: row.grade, section: row.section }));
+      } catch (e) {
+        console.log('[getAllStudents] adviser lookup failed:', e.message);
+      }
+
+      // 2. Classes where teacher is subject teacher
+      try {
+        const [stRows] = await pool.query(
+          'SELECT DISTINCT c.grade, c.section FROM subject_teachers st JOIN classes c ON st.class_id = c.id WHERE st.teacher_id = ?',
+          [teacherId]
+        );
+        stRows.forEach(row => {
+          const exists = assignedClasses.some(c => c.gradeLevel === row.grade && c.section === row.section);
+          if (!exists) assignedClasses.push({ gradeLevel: row.grade, section: row.section });
+        });
+      } catch (e) {
+        console.log('[getAllStudents] subject_teachers lookup failed:', e.message);
+      }
+
+      if (assignedClasses.length > 0) {
+        const conditions = assignedClasses.map(() => '(s.grade_level = ? AND s.section = ?)').join(' OR ');
+        const params = assignedClasses.flatMap(c => [c.gradeLevel, c.section]);
+        const [students] = await pool.query(
+          `SELECT s.id, s.lrn, s.first_name, s.middle_name, s.last_name, s.age, s.sex,
+                  s.grade_level, s.section, s.parent_contact, s.student_email, s.status,
+                  s.attendance, s.profile_pic, s.qr_code, s.created_at, s.updated_at,
+                  COALESCE(
+                    (SELECT ROUND(AVG(subject_avg), 2) FROM (
+                      SELECT (COALESCE(NULLIF(q1,0),0)+COALESCE(NULLIF(q2,0),0)+COALESCE(NULLIF(q3,0),0)+COALESCE(NULLIF(q4,0),0)) /
+                             GREATEST((q1>0)+(q2>0)+(q3>0)+(q4>0),1) AS subject_avg
+                      FROM grades WHERE student_id = s.id AND (q1>0 OR q2>0 OR q3>0 OR q4>0)
+                    ) sub),
+                    IF(s.average > 0, s.average, NULL)
+                  ) AS average
+           FROM students s WHERE (${conditions}) ORDER BY s.first_name, s.last_name ASC`,
+          params
+        );
+        return res.json(students.map(s => ({
+          id: s.id, lrn: s.lrn, firstName: s.first_name, middleName: s.middle_name, lastName: s.last_name,
+          fullName: `${s.first_name} ${s.middle_name || ''} ${s.last_name}`.trim(),
+          age: s.age, sex: s.sex, gradeLevel: s.grade_level, section: s.section,
+          contact: s.parent_contact, email: s.student_email, status: s.status,
+          attendance: s.attendance, average: s.average, profilePic: s.profile_pic,
+          qrCode: s.qr_code, createdAt: s.created_at, updatedAt: s.updated_at
+        })));
+      }
+
+      // Teacher has no assigned class yet — return empty
+      return res.json([]);
+    }
 
     // Build query to fetch from database
     // Compute average live from grades table so it reflects actual saved grades
