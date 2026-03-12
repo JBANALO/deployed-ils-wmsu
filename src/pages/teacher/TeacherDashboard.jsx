@@ -50,8 +50,17 @@ export default function TeacherDashboard() {
             axios.get(`/classes/adviser/${user.id}`),
             axios.get(`/classes/subject-teacher/${user.id}`)
           ]);
-          const adviserClasses = Array.isArray(adviserRes.data.data) ? adviserRes.data.data : [];
+          let adviserClasses = Array.isArray(adviserRes.data.data) ? adviserRes.data.data : [];
           const stClasses = Array.isArray(stRes.data.data) ? stRes.data.data : [];
+          // Fallback: if no adviser classes by ID, search by adviser_name
+          if (adviserClasses.length === 0 && user.firstName && user.lastName) {
+            try {
+              const allRes = await axios.get('/classes');
+              const allClasses = Array.isArray(allRes.data) ? allRes.data : [];
+              const userFullName = `${user.firstName} ${user.lastName}`.trim();
+              adviserClasses = allClasses.filter(c => c.adviser_name && c.adviser_name.trim() === userFullName);
+            } catch (fbErr) { /* non-critical */ }
+          }
           const combined = [...adviserClasses, ...stClasses];
           assignedClasses = Array.from(new Map(combined.map(c => [c.id, c])).values());
         } catch (e) {

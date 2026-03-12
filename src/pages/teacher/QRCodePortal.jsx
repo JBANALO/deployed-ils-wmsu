@@ -163,8 +163,17 @@ export default function QRCodePortal() {
           axios.get(`/classes/adviser/${currentUser.id}`),
           axios.get(`/classes/subject-teacher/${currentUser.id}`)
         ]);
-        const adviserClasses = Array.isArray(adviserRes.data.data) ? adviserRes.data.data : [];
+        let adviserClasses = Array.isArray(adviserRes.data.data) ? adviserRes.data.data : [];
         const stClasses = Array.isArray(stRes.data.data) ? stRes.data.data : [];
+        // Fallback: if no adviser classes by ID, search by adviser_name
+        if (adviserClasses.length === 0 && currentUser.firstName && currentUser.lastName) {
+          try {
+            const allRes = await axios.get('/classes');
+            const allClasses = Array.isArray(allRes.data) ? allRes.data : [];
+            const userFullName = `${currentUser.firstName} ${currentUser.lastName}`.trim();
+            adviserClasses = allClasses.filter(c => c.adviser_name && c.adviser_name.trim() === userFullName);
+          } catch (fbErr) { /* non-critical */ }
+        }
         const combined = [...adviserClasses, ...stClasses];
         assignedClasses = Array.from(new Map(combined.map(c => [c.id, c])).values());
       } catch (e) {
