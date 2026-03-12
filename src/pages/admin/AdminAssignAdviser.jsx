@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { UserGroupIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/solid";
+import { UserGroupIcon, CheckCircleIcon, XCircleIcon, TrashIcon } from "@heroicons/react/24/solid";
 import { API_BASE_URL } from "../../api/config";
 import { toast } from 'react-toastify';
+import api from "../../api/axiosConfig";
 
 export default function AdminAssignAdviser() {
   const [classes, setClasses] = useState([]);
@@ -11,6 +12,15 @@ export default function AdminAssignAdviser() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState(""); // "success" or "error"
+  const [activeTab, setActiveTab] = useState("adviser"); // "adviser" | "subject"
+  // Subject teacher assignment state
+  const [selectedClassForSubject, setSelectedClassForSubject] = useState(null);
+  const [selectedSubjectTeacher, setSelectedSubjectTeacher] = useState("");
+  const [selectedSubject, setSelectedSubject] = useState("");
+  const [selectedDay, setSelectedDay] = useState("Monday");
+  const [startTime, setStartTime] = useState("08:00");
+  const [endTime, setEndTime] = useState("09:00");
+  const [classSubjects, setClassSubjects] = useState([]); // subjects for selected class (from admin DB)
 
   useEffect(() => {
     fetchData();
@@ -180,8 +190,6 @@ export default function AdminAssignAdviser() {
       if (response.ok) {
         setMessage(`Adviser removed from ${classItem.grade} - ${classItem.section}`);
         setMessageType("success");
-        
-        // Refetch data to get updated adviser assignments from database
         await fetchData();
       } else {
         setMessage("Error removing adviser");
@@ -194,6 +202,62 @@ export default function AdminAssignAdviser() {
     }
   };
 
+  // Fetch subjects for selected class from admin Subjects DB
+  useEffect(() => {
+    if (!selectedClassForSubject) { setClassSubjects([]); return; }
+    const fetchSubjects = async () => {
+      try {
+        const gradeKey = (selectedClassForSubject.grade || '').replace(/^Grade\s+/i, '').trim();
+        const resp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`);
+        const names = (resp.data?.data || []).map(s => s.name).filter(Boolean);
+        setClassSubjects(names);
+      } catch (e) {
+        setClassSubjects([]);
+      }
+    };
+    fetchSubjects();
+  }, [selectedClassForSubject]);
+
+  const handleAssignSubjectTeacher = async () => {
+    if (!selectedClassForSubject || !selectedSubjectTeacher || !selectedSubject) {
+      setMessage("Please select class, teacher, and subject");
+      setMessageType("error");
+      return;
+    }
+    try {
+      const teacher = teachers.find(t => t.id === selectedSubjectTeacher);
+      await api.put(`/classes/${selectedClassForSubject.id}/assign-subject-teacher`, {
+        teacher_id: teacher.id,
+        teacher_name: `${teacher.firstName} ${teacher.lastName}`,
+        subject: selectedSubject,
+        day: selectedDay,
+        start_time: startTime,
+        end_time: endTime
+      });
+      setMessage(`✅ ${teacher.firstName} ${teacher.lastName} assigned to teach ${selectedSubject} in ${selectedClassForSubject.grade} - ${selectedClassForSubject.section}`);
+      setMessageType("success");
+      setSelectedSubjectTeacher("");
+      setSelectedSubject("");
+      await fetchData();
+    } catch (error) {
+      const msg = error.response?.data?.error || error.response?.data?.message || error.message;
+      setMessage("Error: " + msg);
+      setMessageType("error");
+    }
+  };
+
+  const handleRemoveSubjectTeacher = async (classId, teacherId) => {
+    try {
+      await api.put(`/classes/${classId}/unassign-subject-teacher/${teacherId}`);
+      setMessage("Subject teacher removed successfully");
+      setMessageType("success");
+      await fetchData();
+    } catch (error) {
+      setMessage("Error removing subject teacher: " + error.message);
+      setMessageType("error");
+    }
+  };
+
   if (loading) {
     return <div className="p-6 text-center">Loading...</div>;
   }
@@ -201,9 +265,9 @@ export default function AdminAssignAdviser() {
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-800 mb-8 flex items-center gap-2">
+        <h1 className="text-3xl font-bold text-gray-800 mb-6 flex items-center gap-2">
           <UserGroupIcon className="w-8 h-8 text-red-600" />
-          Assign Adviser to Class
+          Assign Adviser / Subject Teacher
         </h1>
 
         {message && (
@@ -212,97 +276,230 @@ export default function AdminAssignAdviser() {
           </div>
         )}
 
+        {/* Tabs */}
+        <div className="flex gap-1 mb-6 bg-white rounded-lg shadow-sm p-1 border border-gray-200">
+          <button
+            onClick={() => setActiveTab("adviser")}
+            className={`flex-1 py-2.5 rounded-md text-sm font-semibold transition ${
+              activeTab === "adviser" ? "bg-red-600 text-white shadow" : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            👤 Assign Adviser
+          </button>
+          <button
+            onClick={() => setActiveTab("subject")}
+            className={`flex-1 py-2.5 rounded-md text-sm font-semibold transition ${
+              activeTab === "subject" ? "bg-red-600 text-white shadow" : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            📚 Assign Subject Teacher
+          </button>
+        </div>
+
         {/* Assignment Form */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-700 mb-4">Create New Assignment</h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            {/* Select Class */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Class</label>
-              <select
-                value={selectedClass ? (selectedClass.id || `${selectedClass.grade.toLowerCase().replace(/\s+/g, '-')}-${selectedClass.section.toLowerCase()}`) : ""}
-                onChange={(e) => {
-                  const selected = classes.find(c => (c.id || `${c.grade.toLowerCase().replace(/\s+/g, '-')}-${c.section.toLowerCase()}`) === e.target.value);
-                  setSelectedClass(selected);
-                }}
-                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+          {activeTab === "adviser" ? (
+            <>
+              <h2 className="text-xl font-semibold text-gray-700 mb-4">Assign Adviser to Class</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Class</label>
+                  <select
+                    value={selectedClass ? (selectedClass.id || `${selectedClass.grade.toLowerCase().replace(/\s+/g, '-')}-${selectedClass.section.toLowerCase()}`) : ""}
+                    onChange={(e) => {
+                      const selected = classes.find(c => (c.id || `${c.grade.toLowerCase().replace(/\s+/g, '-')}-${c.section.toLowerCase()}`) === e.target.value);
+                      setSelectedClass(selected);
+                    }}
+                    className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    <option value="">-- Choose a class --</option>
+                    {classes.map(classItem => {
+                      const classId = classItem.id || `${classItem.grade.toLowerCase().replace(/\s+/g, '-')}-${classItem.section.toLowerCase()}`;
+                      return (
+                        <option key={classId} value={classId}>
+                          {classItem.grade} - {classItem.section}
+                          {classItem.adviser_name && ` (Currently: ${classItem.adviser_name})`}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Adviser</label>
+                  <select
+                    value={selectedAdviser}
+                    onChange={(e) => setSelectedAdviser(e.target.value)}
+                    className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    <option value="">-- Choose an adviser --</option>
+                    {teachers.map(teacher => (
+                      <option key={teacher.id} value={teacher.id}>
+                        {teacher.firstName} {teacher.lastName} ({teacher.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <button
+                onClick={handleAssignAdviser}
+                className="w-full bg-red-600 text-white font-semibold py-3 rounded-md hover:bg-red-700 transition"
               >
-                <option value="">-- Choose a class --</option>
-                {classes.map(classItem => {
-                  const classId = classItem.id || `${classItem.grade.toLowerCase().replace(/\s+/g, '-')}-${classItem.section.toLowerCase()}`;
-                  return (
-                    <option key={classId} value={classId}>
-                      {classItem.grade} - {classItem.section}
-                      {classItem.adviser_name && ` (Currently: ${classItem.adviser_name})`}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-
-            {/* Select Adviser */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Adviser</label>
-              <select
-                value={selectedAdviser}
-                onChange={(e) => setSelectedAdviser(e.target.value)}
-                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                Assign Adviser
+              </button>
+            </>
+          ) : (
+            <>
+              <h2 className="text-xl font-semibold text-gray-700 mb-4">Assign Subject Teacher to Class</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {/* Class */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Class</label>
+                  <select
+                    value={selectedClassForSubject ? selectedClassForSubject.id : ""}
+                    onChange={(e) => {
+                      const cls = classes.find(c => String(c.id) === e.target.value);
+                      setSelectedClassForSubject(cls || null);
+                      setSelectedSubject("");
+                    }}
+                    className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    <option value="">-- Choose a class --</option>
+                    {classes.map(cls => (
+                      <option key={cls.id} value={cls.id}>{cls.grade} - {cls.section}</option>
+                    ))}
+                  </select>
+                </div>
+                {/* Teacher */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Subject Teacher</label>
+                  <select
+                    value={selectedSubjectTeacher}
+                    onChange={(e) => setSelectedSubjectTeacher(e.target.value)}
+                    className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    <option value="">-- Choose a teacher --</option>
+                    {teachers.map(teacher => (
+                      <option key={teacher.id} value={teacher.id}>
+                        {teacher.firstName} {teacher.lastName} ({teacher.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {/* Subject */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Subject</label>
+                  <select
+                    value={selectedSubject}
+                    onChange={(e) => setSelectedSubject(e.target.value)}
+                    className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    <option value="">-- Choose a subject --</option>
+                    {classSubjects.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                    {classSubjects.length === 0 && selectedClassForSubject && (
+                      <option disabled>No subjects configured for this grade. Add them in Subjects.</option>
+                    )}
+                  </select>
+                </div>
+                {/* Day */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Day</label>
+                  <select
+                    value={selectedDay}
+                    onChange={(e) => setSelectedDay(e.target.value)}
+                    className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    {["Monday","Tuesday","Wednesday","Thursday","Friday"].map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                {/* Time */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Time Period</label>
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <label className="text-xs text-gray-500">From</label>
+                      <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)}
+                        className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500" />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-xs text-gray-500">To</label>
+                      <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)}
+                        className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={handleAssignSubjectTeacher}
+                className="w-full bg-red-600 text-white font-semibold py-3 rounded-md hover:bg-red-700 transition"
               >
-                <option value="">-- Choose an adviser --</option>
-                {teachers.map(teacher => (
-                  <option key={teacher.id} value={teacher.id}>
-                    {teacher.firstName} {teacher.lastName} ({teacher.role})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <button
-            onClick={handleAssignAdviser}
-            className="w-full bg-red-600 text-white font-semibold py-3 rounded-md hover:bg-red-700 transition"
-          >
-            Assign Adviser
-          </button>
+                Assign Subject Teacher
+              </button>
+            </>
+          )}
         </div>
 
         {/* Classes List */}
         <div className="bg-white rounded-lg shadow-md overflow-hidden">
-          <h2 className="text-xl font-semibold text-gray-700 p-6 border-b">All Classes and Assigned Advisers</h2>
-          
+          <h2 className="text-xl font-semibold text-gray-700 p-6 border-b">All Classes Overview</h2>
           <div className="divide-y">
             {classes.length === 0 ? (
-              <div className="p-6 text-center text-gray-500">
-                No classes found. Make sure students are registered.
-              </div>
+              <div className="p-6 text-center text-gray-500">No classes found.</div>
             ) : (
               classes.map(classItem => (
-                <div key={classItem.id} className="p-6 flex items-center justify-between hover:bg-gray-50">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-800">
-                      {classItem.grade} - {classItem.section}
-                    </h3>
-                    {classItem.adviser_name ? (
-                      <p className="text-green-600 text-sm mt-1 flex items-center gap-1">
-                        <CheckCircleIcon className="w-4 h-4" />
-                        Adviser: {classItem.adviser_name}
-                      </p>
-                    ) : (
-                      <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
-                        <XCircleIcon className="w-4 h-4" />
-                        No adviser assigned
-                      </p>
+                <div key={classItem.id} className="p-6 hover:bg-gray-50">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">{classItem.grade} - {classItem.section}</h3>
+
+                  {/* Adviser row */}
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm">
+                      {classItem.adviser_name ? (
+                        <span className="text-green-700 flex items-center gap-1">
+                          <CheckCircleIcon className="w-4 h-4" />
+                          Adviser: <strong>{classItem.adviser_name}</strong>
+                        </span>
+                      ) : (
+                        <span className="text-red-500 flex items-center gap-1">
+                          <XCircleIcon className="w-4 h-4" />
+                          No adviser assigned
+                        </span>
+                      )}
+                    </span>
+                    {classItem.adviser_name && (
+                      <button
+                        onClick={() => handleUnassignAdviser(classItem)}
+                        className="text-xs bg-red-100 text-red-600 px-3 py-1 rounded hover:bg-red-200 transition"
+                      >
+                        Remove Adviser
+                      </button>
                     )}
                   </div>
-                  
-                  {classItem.adviser_name && (
-                    <button
-                      onClick={() => handleUnassignAdviser(classItem)}
-                      className="bg-red-100 text-red-600 px-4 py-2 rounded-md hover:bg-red-200 transition text-sm font-medium"
-                    >
-                      Remove
-                    </button>
+
+                  {/* Subject teachers */}
+                  {classItem.subject_teachers && classItem.subject_teachers.length > 0 ? (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Subject Teachers:</p>
+                      {classItem.subject_teachers.map((st, idx) => (
+                        <div key={idx} className="flex items-center justify-between bg-blue-50 rounded px-3 py-2">
+                          <span className="text-sm text-gray-800">
+                            <strong>{st.teacher_name}</strong> — <span className="text-blue-700">{st.subject}</span>
+                            <span className="text-xs text-gray-500 ml-2">{st.day} {st.start_time}–{st.end_time}</span>
+                          </span>
+                          <button
+                            onClick={() => handleRemoveSubjectTeacher(classItem.id, st.teacher_id)}
+                            className="text-red-500 hover:text-red-700 ml-3 flex-shrink-0"
+                            title="Remove"
+                          >
+                            <TrashIcon className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-400 italic mt-1">No subject teachers assigned</p>
                   )}
                 </div>
               ))
