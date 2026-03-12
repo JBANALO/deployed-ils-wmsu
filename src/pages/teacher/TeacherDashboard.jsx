@@ -42,14 +42,42 @@ export default function TeacherDashboard() {
         }
       }
 
-      // Fetch students - filter by teacher ID if available to get only assigned students
+      // Fetch classes assigned to this teacher (adviser + subject teacher)
+      let assignedClasses = [];
+      if (user?.id) {
+        try {
+          const [adviserRes, stRes] = await Promise.all([
+            axios.get(`/classes/adviser/${user.id}`),
+            axios.get(`/classes/subject-teacher/${user.id}`)
+          ]);
+          const adviserClasses = Array.isArray(adviserRes.data.data) ? adviserRes.data.data : [];
+          const stClasses = Array.isArray(stRes.data.data) ? stRes.data.data : [];
+          const combined = [...adviserClasses, ...stClasses];
+          assignedClasses = Array.from(new Map(combined.map(c => [c.id, c])).values());
+        } catch (e) {
+          console.error('Error fetching assigned classes:', e);
+        }
+      }
+
+      // Fetch students — send teacherId so backend filters, then JS-filter as safety net
       const studentsUrl = user?.id ? `/students?teacherId=${user.id}` : '/students';
       const studentsResponse = await axios.get(studentsUrl);
-      const students = Array.isArray(studentsResponse.data.data) 
+      let students = Array.isArray(studentsResponse.data.data) 
         ? studentsResponse.data.data 
         : Array.isArray(studentsResponse.data) 
         ? studentsResponse.data 
         : [];
+
+      // JS-side filter by assigned classes (safety net for stale cache / type mismatches)
+      if (assignedClasses.length > 0 && students.length > 0) {
+        const normalize = str => (str || '').toString().trim().toLowerCase();
+        students = students.filter(student =>
+          assignedClasses.some(c =>
+            normalize(c.grade) === normalize(student.gradeLevel) &&
+            normalize(c.section) === normalize(student.section)
+          )
+        );
+      }
 
       // Fetch attendance
       const attendanceResponse = await axios.get('/attendance');

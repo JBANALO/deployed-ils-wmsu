@@ -147,45 +147,47 @@ export default function QRCodePortal() {
       // Get current user from localStorage
       const userStr = localStorage.getItem("user");
       let currentUser = null;
-      
       if (userStr) {
         currentUser = JSON.parse(userStr);
-        console.log('Current user:', currentUser);
+      }
+
+      if (!currentUser?.id) {
+        setLoading(false);
+        return;
+      }
+
+      // Fetch classes assigned to this teacher (adviser + subject teacher)
+      let assignedClasses = [];
+      try {
+        const [adviserRes, stRes] = await Promise.all([
+          axios.get(`/classes/adviser/${currentUser.id}`),
+          axios.get(`/classes/subject-teacher/${currentUser.id}`)
+        ]);
+        const adviserClasses = Array.isArray(adviserRes.data.data) ? adviserRes.data.data : [];
+        const stClasses = Array.isArray(stRes.data.data) ? stRes.data.data : [];
+        const combined = [...adviserClasses, ...stClasses];
+        assignedClasses = Array.from(new Map(combined.map(c => [c.id, c])).values());
+      } catch (e) {
+        console.error('Error fetching assigned classes:', e);
       }
       
-      // Fetch all students from the main students endpoint
+      // Fetch all students
       const response = await axios.get('/students');
       let studentData = Array.isArray(response.data.data) ? response.data.data : 
                        Array.isArray(response.data) ? response.data : [];
       
       console.log('Total students fetched:', studentData.length);
-      
-      // Filter students based on teacher's role and assignment
-      if (currentUser) {
-        console.log('Filtering students for user role:', currentUser.role);
-        
-        if (currentUser.role === 'adviser' && currentUser.section) {
-          // Adviser sees only students from their assigned section
-          console.log('Filtering by adviser section:', currentUser.gradeLevel, currentUser.section);
-          studentData = studentData.filter(student => 
-            student.gradeLevel === currentUser.gradeLevel && 
-            student.section === currentUser.section
-          );
-        } else if (currentUser.role === 'subject_teacher') {
-          // Subject teachers can see students from multiple sections where they teach
-          console.log('Subject teacher - showing all students for now');
-          // For now, show all students - this can be refined based on class assignments
-        } else if (currentUser.role === 'teacher') {
-          // Regular teachers see students from their assigned grade/section
-          if (currentUser.gradeLevel && currentUser.section) {
-            console.log('Filtering by teacher section:', currentUser.gradeLevel, currentUser.section);
-            studentData = studentData.filter(student => 
-              student.gradeLevel === currentUser.gradeLevel && 
-              student.section === currentUser.section
-            );
-          }
-        }
-        // Admin sees all students (no filtering)
+
+      // Filter students to only those in teacher's assigned classes
+      if (assignedClasses.length > 0) {
+        const normalize = str => (str || '').toString().trim().toLowerCase();
+        studentData = studentData.filter(student =>
+          assignedClasses.some(c =>
+            normalize(c.grade) === normalize(student.gradeLevel) &&
+            normalize(c.section) === normalize(student.section)
+          )
+        );
+        console.log('Filtered to assigned classes:', studentData.length, 'students from', assignedClasses.map(c => `${c.grade}-${c.section}`).join(', '));
       }
       
       console.log('Filtered students count:', studentData.length);
