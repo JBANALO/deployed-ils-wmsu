@@ -173,18 +173,27 @@ export default function EditGrades() {
       
       console.log('EditGrades - Assigned classes:', uniqueClasses.map(c => `${c.grade}-${c.section}`));
 
-      // Track adviser class IDs for quick lookup
-      const adviserIds = adviserClasses.map(c => c.id);
+      // Track adviser class IDs as slugs matching studentClassId format in openGradeModal
+      const adviserIds = adviserClasses.map(c => {
+        const grade = (c.grade || c.grade_level || '').toLowerCase().replace(/\s+/g, '-');
+        const section = (c.section || '').toLowerCase().replace(/\s+/g, '-');
+        return `${grade}-${section}`;
+      });
       setAdviserClassIds(adviserIds);
-      console.log('EditGrades - Adviser class IDs:', adviserIds);
+      console.log('EditGrades - Adviser class slugs:', adviserIds);
 
       // Build per-class subject map for subject teacher assignments
-      // cls.subjects is an array returned by the API (from GROUP_CONCAT in the query)
+      // API returns subjects_teaching (GROUP_CONCAT), and cls.id is DB integer — so key by slug
       const classSubjectMap = {};
       subjectTeacherClasses.forEach(cls => {
-        const clsSubjects = Array.isArray(cls.subjects) ? cls.subjects : (cls.subjects ? cls.subjects.split(',') : []);
+        const raw = cls.subjects_teaching || cls.subjects || '';
+        const clsSubjects = Array.isArray(raw) ? raw : (raw ? raw.split(',') : []);
         if (clsSubjects.length > 0) {
-          classSubjectMap[cls.id] = clsSubjects.map(s => s.trim()).filter(s => s);
+          // Key by slug: matches studentClassId computed in openGradeModal
+          const grade = (cls.grade || cls.grade_level || '').toLowerCase().replace(/\s+/g, '-');
+          const section = (cls.section || '').toLowerCase().replace(/\s+/g, '-');
+          const slug = `${grade}-${section}`;
+          classSubjectMap[slug] = clsSubjects.map(s => s.trim()).filter(s => s);
         }
       });
       setSubjectsByClass(classSubjectMap);
