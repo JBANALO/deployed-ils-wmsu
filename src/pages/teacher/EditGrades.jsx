@@ -876,6 +876,9 @@ export default function EditGrades() {
                   const isEditableQ = (q) => selectedQuarter === 'all' || q === selectedQuarter;
                   const getQLabel = (q) => q.toUpperCase();
                   const subjects = Object.keys(gradeData).filter(s => s !== 'Total Q1');
+                  // Normalize subject name: strip trailing " (Grade X)" or " (Kindergarten)" for fuzzy matching
+                  const normalizeSubject = (s) => s.replace(/\s*\(Grade\s+\d+\)\s*$/i, '').replace(/\s*\(Kindergarten\)\s*$/i, '').trim().toLowerCase();
+                  const normalizedAvailable = availableSubjects.map(normalizeSubject);
 
                   const getQAvg = (q) => {
                     const vals = subjects.map(s => parseFloat(gradeData[s]?.[q])).filter(v => !isNaN(v) && v > 0);
@@ -906,7 +909,9 @@ export default function EditGrades() {
                       </thead>
                       <tbody>
                         {subjects.map((subject) => {
-                          const canEdit = availableSubjects.includes(subject);
+                          // Normalize both sides to handle "English (Grade 3)" vs "English" mismatch
+                          const canEdit = availableSubjects.includes(subject) ||
+                            normalizedAvailable.includes(normalizeSubject(subject));
                           return (
                             <tr key={subject} className={canEdit ? 'hover:bg-gray-50' : 'bg-gray-50'}>
                               <td className="px-4 py-3 font-medium border" style={{color: canEdit ? '#111827' : '#6b7280'}}>
