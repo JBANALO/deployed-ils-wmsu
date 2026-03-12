@@ -15,6 +15,7 @@ import axios from "../../api/axiosConfig";
 
 const GRADE_TABS = [
   { key: 'all', label: 'All Grades' },
+  { key: 'Kindergarten', label: 'Kindergarten' },
   { key: '1', label: 'Grade 1' },
   { key: '2', label: 'Grade 2' },
   { key: '3', label: 'Grade 3' },
@@ -24,6 +25,7 @@ const GRADE_TABS = [
 ];
 
 const GRADE_COLORS = {
+  'Kindergarten': { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
   '1': { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200' },
   '2': { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-200' },
   '3': { bg: 'bg-yellow-100', text: 'text-yellow-700', border: 'border-yellow-200' },
@@ -192,7 +194,10 @@ export default function AdminSubjects() {
   const getGradeLabel = (gradeLevels) => {
     if (!gradeLevels) return 'All Grades';
     const grades = gradeLevels.split(',');
-    if (grades.length === 1) return `Grade ${grades[0]}`;
+    if (grades.length === 1) {
+      if (grades[0] === 'Kindergarten') return 'Kindergarten';
+      return `Grade ${grades[0]}`;
+    }
     if (grades.length === 3 && grades.includes('4') && grades.includes('5') && grades.includes('6')) {
       return 'Grade 4-6';
     }
@@ -437,6 +442,7 @@ export default function AdminSubjects() {
                   required
                 >
                   <option value="">Select Grade Level(s)</option>
+                  <option value="Kindergarten">Kindergarten Only</option>
                   <option value="1">Grade 1 Only</option>
                   <option value="2">Grade 2 Only</option>
                   <option value="3">Grade 3 Only</option>
@@ -517,6 +523,7 @@ export default function AdminSubjects() {
                   required
                 >
                   <option value="">Select Grade Level(s)</option>
+                  <option value="Kindergarten">Kindergarten Only</option>
                   <option value="1">Grade 1 Only</option>
                   <option value="2">Grade 2 Only</option>
                   <option value="3">Grade 3 Only</option>
