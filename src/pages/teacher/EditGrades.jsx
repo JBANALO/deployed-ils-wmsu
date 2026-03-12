@@ -28,6 +28,7 @@ export default function EditGrades() {
   const [assignedClasses, setAssignedClasses] = useState([]);
   const [adviserClassIds, setAdviserClassIds] = useState([]); // Classes where user is adviser
   const [subjectsByClass, setSubjectsByClass] = useState({}); // Map: classId -> [subjects]
+  const [isAdviserViewingClass, setIsAdviserViewingClass] = useState(false); // adviser opened modal for their own class
   
   // Modal state
   const [showGradeModal, setShowGradeModal] = useState(false);
@@ -296,20 +297,14 @@ export default function EditGrades() {
       ? dbSubjectsForGrade
       : (subjectsByGrade[student.gradeLevel] || []);
 
-    // Determine which subjects can be edited for THIS class
-    let editableSubjectsForClass = [];
-    if (isAdviserForClass) {
-      editableSubjectsForClass = gradeSubjectList;
-      console.log('User is adviser for this class - can edit all subjects:', editableSubjectsForClass);
-    } else if (subjectsByClass[studentClassId]) {
-      editableSubjectsForClass = subjectsByClass[studentClassId];
-      console.log('User is subject teacher for this class - can edit:', editableSubjectsForClass);
-    } else {
-      console.log('User has no assignment for this class');
-      editableSubjectsForClass = [];
-    }
-    
-    // Update availableSubjects for this specific student
+    // Subjects this teacher can EDIT — only their specifically assigned subjects, regardless of adviser status
+    const editableSubjectsForClass = subjectsByClass[studentClassId] || [];
+    console.log(isAdviserForClass ? 'Adviser' : 'Subject teacher', '- editable subjects:', editableSubjectsForClass);
+
+    // Track whether adviser is viewing their own class (to show full read-only view)
+    setIsAdviserViewingClass(isAdviserForClass);
+
+    // Update availableSubjects (controls which inputs are enabled)
     setAvailableSubjects(editableSubjectsForClass);
     
     // Fetch grades from API
@@ -321,7 +316,8 @@ export default function EditGrades() {
     } catch (error) {
       console.error('Error fetching grades:', error);
     }
-    
+
+    // Adviser sees ALL subjects; subject teacher sees only their assigned subjects
     const subjectsToShow = isAdviserForClass ? gradeSubjectList : editableSubjectsForClass;
     const initialGrades = {};
     subjectsToShow.forEach(subject => {
@@ -844,6 +840,11 @@ export default function EditGrades() {
                   <p className="text-red-800 font-semibold">🔒 These grades are locked and cannot be edited.</p>
                 </div>
               )}
+              {isAdviserViewingClass && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                  <span className="font-semibold">📋 Adviser View:</span> You can see all subjects and grades entered by subject teachers. You can only edit subjects assigned to you.
+                </div>
+              )}
               <div className="overflow-x-auto scrollbar-hide">
                 <table className="w-full border-collapse">
                   <thead>
@@ -856,36 +857,46 @@ export default function EditGrades() {
                     {Object.keys(gradeData)
                       .filter(subject => subject !== 'Total Q1')
                       .map((subject) => {
-                        // Subject teachers can only edit their assigned subjects (but now we only show those anyway)
                         const canEdit = availableSubjects.includes(subject);
+                        const hasGrade = gradeData[subject]?.q1 && gradeData[subject].q1 !== 0;
                         
                         return (
-                          <tr key={subject} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 font-medium text-gray-900 border">
+                          <tr key={subject} className={canEdit ? 'hover:bg-gray-50' : 'bg-gray-50'}>
+                            <td className="px-4 py-3 font-medium border" style={{color: canEdit ? '#111827' : '#6b7280'}}>
                               {subject}
+                              {!canEdit && isAdviserViewingClass && (
+                                <span className="ml-2 text-xs text-gray-400 font-normal">🔒 subject teacher</span>
+                              )}
                             </td>
                             <td className="px-4 py-3 border">
                               <div className="flex items-center justify-center gap-1">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max="100"
-                                  placeholder="-"
-                                  value={gradeData[subject]?.q1 || ''}
-                                  onChange={(e) => handleGradeChange(subject, 'q1', e.target.value)}
-                                  disabled={isGradeLocked || !canEdit}
-                                  className={`w-16 text-center border border-gray-300 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 ${isGradeLocked || !canEdit ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                                  title={!canEdit ? 'You do not have permission to edit this subject' : ''}
-                                />
-                                {!isGradeLocked && canEdit && gradeData[subject]?.q1 !== '' && gradeData[subject]?.q1 !== 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleGradeChange(subject, 'q1', '')}
-                                    className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded px-1.5 py-1 transition text-sm font-bold"
-                                    title="Clear grade"
-                                  >
-                                    ✕
-                                  </button>
+                                {canEdit ? (
+                                  <>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      placeholder="-"
+                                      value={gradeData[subject]?.q1 || ''}
+                                      onChange={(e) => handleGradeChange(subject, 'q1', e.target.value)}
+                                      disabled={isGradeLocked}
+                                      className={`w-16 text-center border border-gray-300 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 ${isGradeLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                    />
+                                    {!isGradeLocked && hasGrade && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleGradeChange(subject, 'q1', '')}
+                                        className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded px-1.5 py-1 transition text-sm font-bold"
+                                        title="Clear grade"
+                                      >
+                                        ✕
+                                      </button>
+                                    )}
+                                  </>
+                                ) : (
+                                  <span className={`text-lg font-semibold ${hasGrade ? 'text-gray-700' : 'text-gray-400'}`}>
+                                    {hasGrade ? gradeData[subject].q1 : '—'}
+                                  </span>
                                 )}
                               </div>
                             </td>
