@@ -96,6 +96,7 @@ export default function GradeLevel() {
 
       // Fallback: if no adviser classes found by ID, search all classes by adviser_name
       // This handles cases where adviser_id was saved with a mismatched/old user ID
+      // Uses partial match (contains firstName AND lastName) to handle middle names
       if (adviserClasses.length === 0 && user.firstName && user.lastName) {
         try {
           console.log('⚠️ No adviser classes by ID — trying name fallback...');
@@ -103,9 +104,10 @@ export default function GradeLevel() {
           if (allClassesResp.ok) {
             const allClassesData = await allClassesResp.json();
             const allClasses = Array.isArray(allClassesData) ? allClassesData : [];
-            const userFullName = `${user.firstName} ${user.lastName}`.trim();
             adviserClasses = allClasses.filter(c =>
-              c.adviser_name && c.adviser_name.trim() === userFullName
+              c.adviser_name &&
+              c.adviser_name.includes(user.firstName) &&
+              c.adviser_name.includes(user.lastName)
             );
             console.log(`✓ Adviser classes by name fallback: ${adviserClasses.length}`, adviserClasses.map(c => `${c.grade}-${c.section}`));
           }

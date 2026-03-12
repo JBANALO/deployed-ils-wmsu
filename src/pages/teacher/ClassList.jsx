@@ -85,6 +85,23 @@ export default function ClassList() {
         console.error('Error fetching adviser classes:', e);
       }
 
+      // Fallback: if no adviser classes by ID, search by adviser_name (partial match for middle names)
+      if (adviserClasses.length === 0 && user.firstName && user.lastName) {
+        try {
+          const allClassesResp = await fetch(`${API_BASE_URL}/classes`);
+          if (allClassesResp.ok) {
+            const allClassesData = await allClassesResp.json();
+            const allClasses = Array.isArray(allClassesData) ? allClassesData : [];
+            adviserClasses = allClasses.filter(c =>
+              c.adviser_name &&
+              c.adviser_name.includes(user.firstName) &&
+              c.adviser_name.includes(user.lastName)
+            );
+            console.log('ClassList: Name fallback adviser classes:', adviserClasses.map(c => `${c.grade}-${c.section}`));
+          }
+        } catch (fbErr) { /* non-critical */ }
+      }
+
       // Fetch subject teacher classes
       let subjectTeacherClasses = [];
       try {
