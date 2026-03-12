@@ -332,9 +332,9 @@ export default function ReportsPage() {
 
       setTopStudents(topPerformers);
 
-      // Get lowest performing students
+      // Get lowest performing students (only those with avg <= 80 — actual underperformers)
       const lowestPerformers = studentsWithGrades
-        .filter(s => s.average && s.average > 0)
+        .filter(s => s.average && s.average > 0 && s.average <= 80)
         .sort((a, b) => (a.average || 0) - (b.average || 0))
         .map((s, idx) => ({
           rank: idx + 1,
@@ -646,7 +646,13 @@ export default function ReportsPage() {
 
                       <div className="text-right">
                         <p className="text-xl font-bold text-red-700">{student.avg}</p>
-                        <p className="text-base font-semibold text-red-800">With Honors</p>
+                        <p className="text-base font-semibold text-red-800">
+                          {student.avg >= 98 ? '🥇 With Highest Honors' :
+                           student.avg >= 95 ? '🥈 With High Honors' :
+                           student.avg >= 90 ? '🥉 With Honors' :
+                           student.avg >= 75 ? '✅ No Award' :
+                           '❌ Failed'}
+                        </p>
                       </div>
                     </div>
                   ))
@@ -692,7 +698,13 @@ export default function ReportsPage() {
                         <div className="flex items-center gap-3">
                           <div className="text-right">
                             <p className="text-xl font-bold text-orange-700">{student.avg}</p>
-                            <p className="text-sm font-semibold text-orange-800">Needs Improvement</p>
+                            <p className="text-sm font-semibold text-orange-800">
+                              {student.avg >= 98 ? '🥇 With Highest Honors' :
+                               student.avg >= 95 ? '🥈 With High Honors' :
+                               student.avg >= 90 ? '🥉 With Honors' :
+                               student.avg >= 75 ? '✅ No Award' :
+                               '❌ Failed'}
+                            </p>
                           </div>
                           {isAdviser && (
                             <button
@@ -890,12 +902,17 @@ export default function ReportsPage() {
                         <td className="px-4 py-3 text-center font-bold text-gray-900">{student.average?.toFixed(2) || '—'}</td>
                         <td className="px-4 py-3 text-center">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            (student.average || 0) >= 90 ? 'bg-green-100 text-green-800' :
-                            (student.average || 0) >= 85 ? 'bg-blue-100 text-blue-800' :
-                            (student.average || 0) >= 75 ? 'bg-yellow-100 text-yellow-800' :
+                            (student.average || 0) >= 98 ? 'bg-yellow-100 text-yellow-800' :
+                            (student.average || 0) >= 95 ? 'bg-green-100 text-green-800' :
+                            (student.average || 0) >= 90 ? 'bg-emerald-100 text-emerald-800' :
+                            (student.average || 0) >= 75 ? 'bg-blue-100 text-blue-800' :
                             'bg-red-100 text-red-800'
                           }`}>
-                            {(student.average || 0) >= 90 ? 'High Honors' : (student.average || 0) >= 85 ? 'With Honors' : (student.average || 0) >= 75 ? 'Passed' : 'Needs Improvement'}
+                            {(student.average || 0) >= 98 ? '🥇 With Highest Honors' :
+                             (student.average || 0) >= 95 ? '🥈 With High Honors' :
+                             (student.average || 0) >= 90 ? '🥉 With Honors' :
+                             (student.average || 0) >= 75 ? '✅ No Award' :
+                             '❌ Failed'}
                           </span>
                         </td>
                       </tr>
