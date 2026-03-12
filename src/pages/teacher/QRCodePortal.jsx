@@ -165,13 +165,16 @@ export default function QRCodePortal() {
         ]);
         let adviserClasses = Array.isArray(adviserRes.data.data) ? adviserRes.data.data : [];
         const stClasses = Array.isArray(stRes.data.data) ? stRes.data.data : [];
-        // Fallback: if no adviser classes by ID, search by adviser_name
+        // Fallback: if no adviser classes by ID, search by adviser_name (partial match for middle names)
         if (adviserClasses.length === 0 && currentUser.firstName && currentUser.lastName) {
           try {
             const allRes = await axios.get('/classes');
             const allClasses = Array.isArray(allRes.data) ? allRes.data : [];
-            const userFullName = `${currentUser.firstName} ${currentUser.lastName}`.trim();
-            adviserClasses = allClasses.filter(c => c.adviser_name && c.adviser_name.trim() === userFullName);
+            adviserClasses = allClasses.filter(c =>
+              c.adviser_name &&
+              c.adviser_name.includes(currentUser.firstName) &&
+              c.adviser_name.includes(currentUser.lastName)
+            );
           } catch (fbErr) { /* non-critical */ }
         }
         const combined = [...adviserClasses, ...stClasses];
