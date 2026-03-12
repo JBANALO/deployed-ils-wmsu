@@ -48,6 +48,8 @@ export default function AdminTeachers() {
   const [selectedTeacher, setSelectedTeacher] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [credentialsLoading, setCredentialsLoading] = useState(false);
+  const [selectedArchivedTeachers, setSelectedArchivedTeachers] = useState(new Set());
+  const [selectAllArchived, setSelectAllArchived] = useState(false);
 
   // Subjects by grade level (Official DepEd K-12 Curriculum)
   const subjectsByGradeLevel = {
@@ -227,6 +229,50 @@ export default function AdminTeachers() {
       setTeacherToPermanentDelete(null);
       toast.error('Error permanently deleting teacher: ' + error.message);
     }
+  };
+
+  // Bulk permanent delete for archived teachers
+  const handleBulkPermanentDelete = async () => {
+    if (selectedArchivedTeachers.size === 0) return;
+    
+    const confirmed = window.confirm(`Are you sure you want to PERMANENTLY DELETE ${selectedArchivedTeachers.size} archived teacher(s)? This cannot be undone.`);
+    
+    if (confirmed) {
+      try {
+        for (const teacherId of selectedArchivedTeachers) {
+          await api.delete(`/teachers/${teacherId}/permanent`);
+        }
+        setSelectedArchivedTeachers(new Set());
+        setSelectAllArchived(false);
+        await fetchArchivedTeachers();
+        toast.success(`${selectedArchivedTeachers.size} archived teacher(s) permanently deleted.`);
+      } catch (error) {
+        console.error('Bulk permanent delete error:', error);
+        toast.error('Error deleting archived teachers: ' + error.message);
+        await fetchArchivedTeachers();
+      }
+    }
+  };
+
+  const toggleSelectAllArchived = () => {
+    if (selectAllArchived) {
+      setSelectedArchivedTeachers(new Set());
+      setSelectAllArchived(false);
+    } else {
+      setSelectedArchivedTeachers(new Set(archivedTeachers.map(t => t.id)));
+      setSelectAllArchived(true);
+    }
+  };
+
+  const handleSelectArchivedTeacher = (teacherId) => {
+    const newSelected = new Set(selectedArchivedTeachers);
+    if (newSelected.has(teacherId)) {
+      newSelected.delete(teacherId);
+    } else {
+      newSelected.add(teacherId);
+    }
+    setSelectedArchivedTeachers(newSelected);
+    setSelectAllArchived(newSelected.size === archivedTeachers.length);
   };
 
   // Toggle archives view
@@ -1666,11 +1712,41 @@ export default function AdminTeachers() {
       {showArchives && (
         <div className="mt-10">
           <div className="bg-white rounded-lg shadow p-6 mb-4 border-l-4 border-purple-600">
-            <h3 className="text-xl font-bold text-purple-800 mb-2">Archived Teachers</h3>
-            <p className="text-sm text-gray-600">
-              These teacher accounts have been archived and will be permanently deleted after 30 days. 
-              You can restore accounts or permanently delete them before the automatic deletion.
-            </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-purple-800 mb-2">Archived Teachers</h3>
+                <p className="text-sm text-gray-600">
+                  These teacher accounts have been archived and will be permanently deleted after 30 days. 
+                  You can restore accounts or permanently delete them before the automatic deletion.
+                </p>
+              </div>
+              {archivedTeachers.length > 0 && (
+                <div className="flex gap-2 flex-shrink-0 ml-4">
+                  {selectedArchivedTeachers.size > 0 && (
+                    <button
+                      onClick={handleBulkPermanentDelete}
+                      className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 text-sm font-semibold"
+                    >
+                      Delete Selected ({selectedArchivedTeachers.size})
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (selectAllArchived) {
+                        setSelectedArchivedTeachers(new Set());
+                        setSelectAllArchived(false);
+                      } else {
+                        setSelectedArchivedTeachers(new Set(archivedTeachers.map(t => t.id)));
+                        setSelectAllArchived(true);
+                      }
+                    }}
+                    className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 text-sm font-semibold"
+                  >
+                    {selectAllArchived ? 'Unselect All' : 'Select All'}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {archivesLoading ? (
@@ -1688,6 +1764,14 @@ export default function AdminTeachers() {
                 <table className="w-full text-left border-collapse">
                   <thead className="bg-purple-100 text-purple-800">
                     <tr>
+                      <th className="p-3 border text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectAllArchived}
+                          onChange={toggleSelectAllArchived}
+                          className="w-4 h-4 cursor-pointer"
+                        />
+                      </th>
                       <th className="p-3 border font-semibold">Name</th>
                       <th className="p-3 border font-semibold">Email</th>
                       <th className="p-3 border font-semibold">Role</th>
@@ -1703,6 +1787,14 @@ export default function AdminTeachers() {
                       
                       return (
                         <tr key={teacher.id} className="hover:bg-gray-50">
+                          <td className="p-3 border text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedArchivedTeachers.has(teacher.id)}
+                              onChange={() => handleSelectArchivedTeacher(teacher.id)}
+                              className="w-4 h-4 cursor-pointer"
+                            />
+                          </td>
                           <td className="p-3 border">
                             <span className="font-medium">
                               {teacher.firstName || teacher.first_name} {teacher.lastName || teacher.last_name}
