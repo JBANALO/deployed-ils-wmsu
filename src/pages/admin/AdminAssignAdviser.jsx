@@ -38,6 +38,7 @@ export default function AdminAssignAdviser() {
         const resp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`);
         const names = (resp.data?.data || []).map(s => s.name).filter(Boolean);
         setAdviserSubjects(names);
+        setSelectedAdviserSubjects([]); // reset schedule when class changes
       } catch (e) {
         setAdviserSubjects([]);
       }
@@ -178,18 +179,18 @@ export default function AdminAssignAdviser() {
 
       if (response.ok) {
         // Also assign selected subjects to subject_teachers with the adviser as teacher
-        for (const subject of selectedAdviserSubjects) {
+        for (const item of selectedAdviserSubjects) {
           try {
             await api.put(`/classes/${classId}/assign-subject-teacher`, {
               teacher_id: adviser.id,
               teacher_name: adviserName,
-              subject,
-              day: "Monday",
-              start_time: "08:00",
-              end_time: "09:00"
+              subject: item.subject,
+              day: item.day,
+              start_time: item.startTime,
+              end_time: item.endTime
             });
           } catch (subjectErr) {
-            console.warn(`Could not assign subject ${subject}:`, subjectErr.message);
+            console.warn(`Could not assign subject ${item.subject}:`, subjectErr.message);
           }
         }
         setMessage(`Successfully assigned ${adviserName} to ${selectedClass.grade} - ${selectedClass.section}${selectedAdviserSubjects.length > 0 ? ` with ${selectedAdviserSubjects.length} subject(s)` : ''}`);
@@ -380,24 +381,66 @@ export default function AdminAssignAdviser() {
               {adviserSubjects.length > 0 && (
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Subjects this Adviser will teach <span className="text-gray-400 font-normal">(optional)</span>
+                    Subjects this Adviser will teach <span className="text-gray-400 font-normal">(optional — set day &amp; time per subject)</span>
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 border border-gray-200 rounded-md bg-gray-50">
-                    {adviserSubjects.map(sub => (
-                      <label key={sub} className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 hover:text-gray-900">
-                        <input
-                          type="checkbox"
-                          checked={selectedAdviserSubjects.includes(sub)}
-                          onChange={(e) => {
-                            setSelectedAdviserSubjects(prev =>
-                              e.target.checked ? [...prev, sub] : prev.filter(s => s !== sub)
-                            );
-                          }}
-                          className="accent-red-600 w-4 h-4"
-                        />
-                        {sub}
-                      </label>
-                    ))}
+                  <div className="space-y-1.5 p-3 border border-gray-200 rounded-md bg-gray-50 max-h-72 overflow-y-auto">
+                    {adviserSubjects.map(sub => {
+                      const entry = selectedAdviserSubjects.find(x => x.subject === sub);
+                      const checked = !!entry;
+                      return (
+                        <div key={sub} className={`rounded-md transition ${
+                          checked ? 'bg-white border border-blue-200 shadow-sm p-2.5' : 'p-1'
+                        }`}>
+                          <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-800">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedAdviserSubjects(prev => [...prev, { subject: sub, day: 'Monday', startTime: '08:00', endTime: '09:00' }]);
+                                } else {
+                                  setSelectedAdviserSubjects(prev => prev.filter(x => x.subject !== sub));
+                                }
+                              }}
+                              className="accent-red-600 w-4 h-4 flex-shrink-0"
+                            />
+                            <span className="font-medium">{sub}</span>
+                          </label>
+                          {checked && (
+                            <div className="mt-2 flex flex-wrap items-center gap-2 pl-6">
+                              <select
+                                value={entry.day}
+                                onChange={(e) => setSelectedAdviserSubjects(prev =>
+                                  prev.map(x => x.subject === sub ? { ...x, day: e.target.value } : x)
+                                )}
+                                className="text-xs p-1.5 border border-gray-300 rounded focus:ring-1 focus:ring-red-400"
+                              >
+                                {['Monday','Tuesday','Wednesday','Thursday','Friday'].map(d => (
+                                  <option key={d} value={d}>{d}</option>
+                                ))}
+                              </select>
+                              <input
+                                type="time"
+                                value={entry.startTime}
+                                onChange={(e) => setSelectedAdviserSubjects(prev =>
+                                  prev.map(x => x.subject === sub ? { ...x, startTime: e.target.value } : x)
+                                )}
+                                className="text-xs p-1.5 border border-gray-300 rounded focus:ring-1 focus:ring-red-400"
+                              />
+                              <span className="text-xs text-gray-400">to</span>
+                              <input
+                                type="time"
+                                value={entry.endTime}
+                                onChange={(e) => setSelectedAdviserSubjects(prev =>
+                                  prev.map(x => x.subject === sub ? { ...x, endTime: e.target.value } : x)
+                                )}
+                                className="text-xs p-1.5 border border-gray-300 rounded focus:ring-1 focus:ring-red-400"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                   {selectedAdviserSubjects.length > 0 && (
                     <p className="text-xs text-green-700 mt-1">{selectedAdviserSubjects.length} subject(s) selected</p>

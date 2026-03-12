@@ -342,7 +342,8 @@ export default function EditGrades() {
     setIsAdviserViewingClass(isAdviserForClass);
 
     // Update availableSubjects (controls which inputs are enabled)
-    setAvailableSubjects(editableSubjectsForClass);
+    // Adviser can edit ALL subjects for their class; subject teacher only edits their assigned subjects
+    setAvailableSubjects(isAdviserForClass ? gradeSubjectList : editableSubjectsForClass);
     
     // Fetch grades from API
     let studentGrades = {};
