@@ -84,8 +84,16 @@ export default function AdminTeachers() {
     
     // Handle different subjects data formats
     if (typeof subjects === 'string') {
-      // If subjects is a string, split by comma
-      subjects = subjects.split(',').map(s => s.trim()).filter(s => s);
+      // Try parsing as JSON array first
+      if (subjects.startsWith('[')) {
+        try {
+          subjects = JSON.parse(subjects);
+        } catch (e) {
+          subjects = subjects.split(',').map(s => s.trim()).filter(s => s);
+        }
+      } else {
+        subjects = subjects.split(',').map(s => s.trim()).filter(s => s);
+      }
     } else if (!Array.isArray(subjects)) {
       subjects = [];
     }
@@ -107,8 +115,8 @@ export default function AdminTeachers() {
     // Guard against undefined gradeLevel
     if (!gradeLevel) {
       return {
-        actualGradeLevel: section || 'N/A',
-        actualSection: '-',
+        actualGradeLevel: '',
+        actualSection: '',
         actualSubjects: []
       };
     }
