@@ -4,6 +4,7 @@ const studentController = require('../controllers/studentController');
 const { query } = require('../config/database');
 const jwt = require('jsonwebtoken');
 const { readUsers } = require('../utils/fileStorage');
+const { sendGradeReportEmail } = require('../utils/emailService');
 
 const router = express.Router();
 
