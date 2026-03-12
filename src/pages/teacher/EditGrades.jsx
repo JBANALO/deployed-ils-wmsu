@@ -327,7 +327,20 @@ export default function EditGrades() {
     }
 
     // Adviser sees ALL subjects; subject teacher sees only their assigned subjects
-    const subjectsToShow = isAdviserForClass ? gradeSubjectList : editableSubjectsForClass;
+    // Always prefer admin-configured subjects as the source of truth
+    let subjectsToShow;
+    if (isAdviserForClass) {
+      // Adviser sees all admin-configured subjects for the grade level
+      subjectsToShow = gradeSubjectList;
+    } else if (gradeSubjectList.length > 0) {
+      // Subject teacher: only show their assigned subjects that admin has configured for this grade
+      subjectsToShow = editableSubjectsForClass.filter(s => gradeSubjectList.includes(s));
+      // If nothing intersects (edge case), fall back to their assigned subjects
+      if (subjectsToShow.length === 0) subjectsToShow = editableSubjectsForClass;
+    } else {
+      // Admin hasn't configured subjects for this grade yet — fall back to teacher's assigned subjects
+      subjectsToShow = editableSubjectsForClass;
+    }
     const initialGrades = {};
     subjectsToShow.forEach(subject => {
       initialGrades[subject] = {
@@ -898,7 +911,7 @@ export default function EditGrades() {
                             <tr key={subject} className={canEdit ? 'hover:bg-gray-50' : 'bg-gray-50'}>
                               <td className="px-4 py-3 font-medium border" style={{color: canEdit ? '#111827' : '#6b7280'}}>
                                 {subject}
-                                {!canEdit && isAdviserViewingClass && (
+                                {!canEdit && (
                                   <span className="ml-2 text-xs text-gray-400 font-normal">🔒 subject teacher</span>
                                 )}
                               </td>
