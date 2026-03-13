@@ -3,6 +3,7 @@ import { XMarkIcon, CheckIcon, ExclamationTriangleIcon, ArrowDownTrayIcon } from
 import { parseCSVFile, processTeacherData, validateTeacherData } from '../../utils/csvParser';
 import api from '../../api/axiosConfig';
 import toast from 'react-hot-toast';
+import { generateWmsuPassword } from '../../utils/passwordGenerator';
 
 export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
   const [step, setStep] = useState('upload'); // 'upload', 'preview', 'importing', 'complete'
@@ -10,7 +11,7 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
   const [validationErrors, setValidationErrors] = useState([]);
   const [importResults, setImportResults] = useState([]);
   const [isImporting, setIsImporting] = useState(false);
-  const [defaultPassword, setDefaultPassword] = useState('Password123');
+  const [defaultPassword, setDefaultPassword] = useState('WMSU12345');
   const [fileError, setFileError] = useState('');
   const [successCount, setSuccessCount] = useState(0);
 
@@ -108,7 +109,7 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
             lastName: teacher.lastName,
             username: teacher.username,
             email: teacher.email,
-            password: teacher.password || defaultPassword,
+            password: teacher.password?.trim() || generateWmsuPassword(teacher) || defaultPassword,
             role: 'teacher',
             gradeLevel: '',
             section: '',
@@ -159,7 +160,7 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
     setImportResults([]);
     setSuccessCount(0);
     setFileError('');
-    setDefaultPassword('Password123');
+    setDefaultPassword('WMSU12345');
   };
 
   const handleClose = () => {
@@ -208,7 +209,7 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
                     <strong className="text-green-700">Required:</strong><br />
                     • No.: Counter (1, 2, 3, etc.)<br />
                     • First Name, Last Name: Required<br />
-                    • Password: Required (use "WMSUILS123" for all imports)<br />
+                    • Password: Optional. If blank, auto-generated as unique <strong>WMSU#####</strong><br />
                     <br />
                     <strong className="text-blue-700">Optional (auto-generated if empty):</strong><br />
                     • Middle Name<br />
@@ -282,7 +283,7 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
                   <strong>✓ CSV Valid:</strong> {csvData.length} teachers ready to import
                 </p>
                 <p className="text-blue-700 text-xs mt-1">
-                  All teachers will use password: WMSUILS123
+                  Blank passwords are auto-generated in <strong>WMSU#####</strong> format.
                 </p>
               </div>
 

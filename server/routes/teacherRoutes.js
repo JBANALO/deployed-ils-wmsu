@@ -5,6 +5,21 @@ const router = express.Router();
 const teacherController = require('../controllers/teacherControllerFile');
 const { query } = require('../config/database');
 
+const generateWmsuPassword = (teacher = {}) => {
+  const emailSeed = (teacher.email || '').includes('@') ? teacher.email.split('@')[0] : (teacher.email || '');
+  const seed = (emailSeed || teacher.username || `${teacher.firstName || ''}${teacher.lastName || ''}` || 'teacher')
+    .toString()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) % 90000;
+  }
+
+  return `WMSU${String(hash + 10000).padStart(5, '0')}`;
+};
+
 // Teacher routes
 router.get('/', teacherController.getAllTeachers);
 router.get('/pending', teacherController.getPendingTeachers);
@@ -87,20 +102,13 @@ router.get('/:id/credentials', async (req, res) => {
     // Determine which password to use
     let passwordToShow;
     
-    if (teacherData.password) {
+    if (teacherData.password && !teacherData.password.startsWith('$2')) {
       // Use stored password field
       passwordToShow = teacherData.password;
       console.log(`Using stored password for teacher: ${teacherData.username}`);
     } else {
-      // Fallback to generated pattern if no password stored
-      if (teacherData.email && teacherData.email.includes('@wmsu.edu.ph')) {
-        const emailPart = teacherData.email.replace('@wmsu.edu.ph', '').slice(-4).padStart(4, '0');
-        passwordToShow = `WMSU${emailPart}XXXX`;
-        console.log(`Generated password pattern for teacher: ${teacherData.username}, pattern: ${passwordToShow}`);
-      } else {
-        passwordToShow = 'Password123';
-        console.log(`Using default password for teacher: ${teacherData.username}`);
-      }
+      passwordToShow = generateWmsuPassword(teacherData);
+      console.log(`Generated deterministic password for teacher: ${teacherData.username}, pattern: ${passwordToShow}`);
     }
 
     const credentials = {
