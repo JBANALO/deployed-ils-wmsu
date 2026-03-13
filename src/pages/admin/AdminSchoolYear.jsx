@@ -14,6 +14,7 @@ import {
 } from "@heroicons/react/24/solid";
 import { toast } from 'react-toastify';
 import axios from "../../api/axiosConfig";
+import GradesReportCard from "../../components/GradesReportCard";
 import {
   BarChart,
   Bar,
@@ -62,6 +63,8 @@ export default function AdminSchoolYear() {
     is_active: false
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showReportCard, setShowReportCard] = useState(false);
+  const [reportCardStudent, setReportCardStudent] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -225,6 +228,38 @@ export default function AdminSchoolYear() {
       is_active: sy.is_active === 1
     });
     setShowEditModal(true);
+  };
+
+  const parseStudentName = (fullName = '') => {
+    const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return { firstName: '', lastName: '' };
+    if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+    return {
+      firstName: parts[0],
+      lastName: parts.slice(1).join(' ')
+    };
+  };
+
+  const handleOpenStudentReportCard = (row) => {
+    if (!row?.student_id) {
+      toast.info('No student link available for this log record.');
+      return;
+    }
+
+    const nameParts = parseStudentName(row.student_name);
+    const gradeLevel = row.to_grade || row.from_grade || '';
+    const section = row.to_section || row.from_section || '';
+
+    setReportCardStudent({
+      id: row.student_id,
+      firstName: nameParts.firstName,
+      lastName: nameParts.lastName,
+      fullName: row.student_name,
+      gradeLevel,
+      section,
+      lrn: row.lrn || ''
+    });
+    setShowReportCard(true);
   };
 
   const openArchiveModal = (sy) => {
@@ -506,7 +541,20 @@ export default function AdminSchoolYear() {
                 {promotionHistory.map((row) => (
                   <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-2 px-3 text-gray-600">{new Date(row.created_at).toLocaleString()}</td>
-                    <td className="py-2 px-3 font-medium text-gray-800">{row.student_name}</td>
+                    <td className="py-2 px-3 font-medium text-gray-800">
+                      {row.student_id ? (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenStudentReportCard(row)}
+                          className="text-blue-700 hover:text-blue-900 hover:underline"
+                          title="View report card"
+                        >
+                          {row.student_name}
+                        </button>
+                      ) : (
+                        row.student_name
+                      )}
+                    </td>
                     <td className="py-2 px-3 text-gray-700">{row.lrn || '-'}</td>
                     <td className="py-2 px-3 text-gray-700">{row.from_grade}{row.from_section ? ` - ${row.from_section}` : ''}</td>
                     <td className="py-2 px-3 text-gray-700">{row.to_grade || '-'}{row.to_section ? ` - ${row.to_section}` : ''}</td>
@@ -889,6 +937,20 @@ export default function AdminSchoolYear() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Student Report Card Modal */}
+      {showReportCard && reportCardStudent && (
+        <GradesReportCard
+          students={[reportCardStudent]}
+          quarter="q4"
+          gradeLevel={reportCardStudent.gradeLevel}
+          section={reportCardStudent.section}
+          onClose={() => {
+            setShowReportCard(false);
+            setReportCardStudent(null);
+          }}
+        />
       )}
     </div>
   );
