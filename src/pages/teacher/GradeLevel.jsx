@@ -103,7 +103,7 @@ export default function GradeLevel() {
           const allClassesResp = await fetch(`${API_BASE_URL}/classes`);
           if (allClassesResp.ok) {
             const allClassesData = await allClassesResp.json();
-            const allClasses = Array.isArray(allClassesData) ? allClassesData : [];
+            const allClasses = Array.isArray(allClassesData) ? allClassesData : (Array.isArray(allClassesData.data) ? allClassesData.data : []);
             adviserClasses = allClasses.filter(c =>
               c.adviser_name &&
               c.adviser_name.includes(user.firstName) &&
