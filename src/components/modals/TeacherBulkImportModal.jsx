@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { XMarkIcon, CheckIcon, ExclamationTriangleIcon, ArrowDownTrayIcon } from '@heroicons/react/24/solid';
-import { parseCSVFile, processTeacherData, validateTeacherData, generateEmail, generateUsername } from '../../utils/csvParser';
-import { authService } from '../../api/userService';
+import { parseCSVFile, processTeacherData, validateTeacherData } from '../../utils/csvParser';
 import api from '../../api/axiosConfig';
 import toast from 'react-hot-toast';
 
@@ -97,34 +96,47 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
     setStep('importing');
     
     try {
-      console.log('🚀 Starting bulk import with', csvData.length, 'teachers');
-      console.log('📊 CSV Data:', csvData);
-      
-      const response = await api.post('/admin/bulk-import-teachers', {
-        teachers: csvData
-      });
-      
-      console.log('✅ Import API Response:', response.data);
-      console.log('📈 Import Results:', { imported: response.data.imported, updated: response.data.updated, errors: response.data.errors, total: response.data.total });
-      console.log('📊 Response details:', JSON.stringify(response.data, null, 2));
-      
-      const { imported, updated, errors, total } = response.data;
-      
-      console.log('📈 Import Results:', { imported, updated, errors, total });
-      
-      setImportResults([
-        ...csvData.map((teacher, index) => ({
-          row: index + 1,
-          firstName: teacher.firstName,
-          lastName: teacher.lastName,
-          email: teacher.email,
-          status: imported > index ? 'imported' : updated > index ? 'updated' : errors > index ? 'error' : 'pending'
-        })),
-        { type: 'success', message: `Successfully processed ${total} teachers` }
-      ]);
-      
+      const results = [];
+      let imported = 0;
+
+      // Use the same endpoint used by the Teachers page to avoid data-source mismatch.
+      for (const teacher of csvData) {
+        try {
+          const payload = {
+            firstName: teacher.firstName,
+            middleName: teacher.middleName || '',
+            lastName: teacher.lastName,
+            username: teacher.username,
+            email: teacher.email,
+            password: teacher.password || defaultPassword,
+            role: 'teacher',
+            gradeLevel: '',
+            section: '',
+            subjects: [],
+            bio: ''
+          };
+
+          await api.post('/teachers', payload);
+          imported++;
+          results.push({
+            name: `${teacher.firstName} ${teacher.lastName}`,
+            message: 'Imported successfully',
+            status: 'imported'
+          });
+        } catch (err) {
+          const message = err?.message || 'Import failed';
+          results.push({
+            name: `${teacher.firstName} ${teacher.lastName}`,
+            message,
+            status: 'error'
+          });
+        }
+      }
+
+      setImportResults(results);
       setSuccessCount(imported);
       setStep('complete');
+      setIsImporting(false);
       
       // Close modal and refresh teacher list
       setTimeout(() => {
@@ -134,10 +146,9 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
       
     } catch (error) {
       console.error('❌ Import error:', error);
-      console.error('❌ Error response:', error.response);
       setStep('upload');
       setIsImporting(false);
-      toast.error('Import failed: ' + (error.response?.data?.error || error.message));
+      toast.error('Import failed: ' + (error.message || 'Unknown error'));
     }
   };
 
