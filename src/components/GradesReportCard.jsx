@@ -5,6 +5,8 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
   const [classSubjects, setClassSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [studentsWithGrades, setStudentsWithGrades] = useState([]);
+  const [gradeSubjectsMap, setGradeSubjectsMap] = useState({});
+  const [classAdviserMap, setClassAdviserMap] = useState({});
 
   const quarterLabels = {
     q1: 'FIRST QUARTER',
@@ -12,6 +14,9 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
     q3: 'THIRD QUARTER',
     q4: 'FOURTH QUARTER'
   };
+
+  const toGradeKey = (value) => String(value || '').replace(/^Grade\s+/i, '').trim();
+  const toClassKey = (grade, sec) => `${String(grade || '').toLowerCase().replace(/\s+/g, '-')}-${String(sec || '').toLowerCase().replace(/\s+/g, '-')}`;
 
   // Fallback subjects by grade (only used if class subjects not found)
   const subjectsByGrade = {
@@ -119,6 +124,44 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
     fetchClassSubjects();
   }, [classId, gradeLevel]);
 
+  // Fetch subjects per actual student grade and class adviser names
+  useEffect(() => {
+    const fetchMetadata = async () => {
+      try {
+        const uniqueGradeKeys = [...new Set((students || []).map(s => toGradeKey(s.gradeLevel || gradeLevel)).filter(Boolean))];
+        const gradeMap = {};
+
+        await Promise.all(uniqueGradeKeys.map(async (g) => {
+          try {
+            const resp = await api.get(`/subjects/grade/${encodeURIComponent(g)}`);
+            const names = (resp.data?.data || []).map(item => item.name).filter(Boolean);
+            gradeMap[g] = names;
+          } catch (_) {
+            gradeMap[g] = [];
+          }
+        }));
+
+        setGradeSubjectsMap(gradeMap);
+
+        const classesResp = await api.get('/classes');
+        const classes = Array.isArray(classesResp.data)
+          ? classesResp.data
+          : (Array.isArray(classesResp.data?.data) ? classesResp.data.data : []);
+        const adviserMap = {};
+        classes.forEach((cls) => {
+          adviserMap[toClassKey(cls.grade, cls.section)] = cls.adviser_name || '';
+        });
+        setClassAdviserMap(adviserMap);
+      } catch (error) {
+        console.error('Error fetching report card metadata:', error);
+      }
+    };
+
+    if (students && students.length > 0) {
+      fetchMetadata();
+    }
+  }, [students, gradeLevel]);
+
   const subjects = classSubjects.length > 0 ? classSubjects : (subjectsByGrade[gradeLevel] || []);
   const today = new Date().toLocaleDateString();
   const currentYear = new Date().getFullYear();
@@ -166,14 +209,20 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
             const gradeObj = student.grades || {};
             // Use student's actual grade level
             const studentGradeLevel = student.gradeLevel || gradeLevel;
+            const studentGradeKey = toGradeKey(studentGradeLevel);
+            const studentClassKey = toClassKey(studentGradeLevel, student.section || section);
+            const classAdviserName = classAdviserMap[studentClassKey] || '_______________';
             // Prefer subjects that actually have grade data; fall back to class/grade subject list
             const gradeKeys = Object.keys(gradeObj).filter(k => {
               const g = gradeObj[k];
               return g && (g.q1 || g.q2 || g.q3 || g.q4);
             });
-            const baseSubjects = subjects.length > 0
-              ? subjects
-              : (subjectsByGrade[studentGradeLevel] || subjectsByGrade["Grade 1"] || []);
+            const gradeConfiguredSubjects = gradeSubjectsMap[studentGradeKey] || [];
+            const baseSubjects = gradeConfiguredSubjects.length > 0
+              ? gradeConfiguredSubjects
+              : (subjects.length > 0
+                ? subjects
+                : (subjectsByGrade[studentGradeLevel] || subjectsByGrade["Grade 1"] || []));
             // Always include admin-configured subjects, then append existing graded keys not in config
             const studentSubjects = [...new Set([...(baseSubjects || []), ...gradeKeys])];
             // Helper: find grade data for a subject name (handles minor name differences)
@@ -219,7 +268,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
                   </div>
                   <div>
                     <p><span className="font-bold">Section:</span> {student.section || section}</p>
-                    <p><span className="font-bold">Class Adviser:</span> _______________</p>
+                    <p><span className="font-bold">Class Adviser:</span> {classAdviserName}</p>
                   </div>
                 </div>
 
