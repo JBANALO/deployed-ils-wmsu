@@ -245,7 +245,7 @@ const StudentPortal = () => {
               <tbody>
                 ${grades.length > 0 ? grades.map((g, i) => `
                   <tr>
-                    <td style="border: 1px solid #333; padding: 4px; text-align: left;">${g.subject}</td>
+                    <td style="border: 1px solid #333; padding: 4px; text-align: left;">${formatReportCardSubject(g.subject)}</td>
                     <td style="border: 1px solid #333; padding: 4px;">${g.q1 || ''}</td>
                     <td style="border: 1px solid #333; padding: 4px;">${g.q2 || ''}</td>
                     <td style="border: 1px solid #333; padding: 4px;">${g.q3 || ''}</td>
@@ -476,6 +476,11 @@ const StudentPortal = () => {
   };
 
   const reportCardAdviserName = profile.adviserName?.trim() || '_______________';
+
+  const formatReportCardSubject = (subject = '') => String(subject)
+    .replace(/\s*\(Grade\s+\d+\)\s*$/i, '')
+    .replace(/\s*\(Kindergarten\)\s*$/i, '')
+    .trim();
 
   const months = [
     "Aug", "Sept", "Oct", "Nov", "Dec",
@@ -777,7 +782,7 @@ const StudentPortal = () => {
                 <tbody>
                   ${grades.length > 0 ? grades.map((g) => `
                     <tr>
-                      <td style="border: 1px solid #333; padding: 4px; text-align: left;">${g.subject}</td>
+                      <td style="border: 1px solid #333; padding: 4px; text-align: left;">${formatReportCardSubject(g.subject)}</td>
                       <td style="border: 1px solid #333; padding: 4px;">${g.q1 || ''}</td>
                       <td style="border: 1px solid #333; padding: 4px;">${g.q2 || ''}</td>
                       <td style="border: 1px solid #333; padding: 4px;">${g.q3 || ''}</td>
@@ -1372,7 +1377,7 @@ const StudentPortal = () => {
                       {grades.length > 0 ? (
                         grades.map((g, i) => (
                           <tr key={i}>
-                            <td className="border border-gray-300 px-2 py-1 text-left">{g.subject}</td>
+                            <td className="border border-gray-300 px-2 py-1 text-left">{formatReportCardSubject(g.subject)}</td>
                             <td className="border border-gray-300 px-2 py-1">{g.q1 || ''}</td>
                             <td className="border border-gray-300 px-2 py-1">{g.q2 || ''}</td>
                             <td className="border border-gray-300 px-2 py-1">{g.q3 || ''}</td>
