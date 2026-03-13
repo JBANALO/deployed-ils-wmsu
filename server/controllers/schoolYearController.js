@@ -380,6 +380,24 @@ async function logPromotionHistory(conn, payload) {
   );
 }
 
+// Pick destination class for promoted student in the target grade.
+// Strategy: choose class with lowest current student count to balance sections.
+async function pickDestinationClass(conn, targetGrade) {
+  const [rows] = await conn.query(
+    `SELECT c.id, c.grade, c.section, c.adviser_id, c.adviser_name,
+            COUNT(s.id) AS student_count
+     FROM classes c
+     LEFT JOIN students s
+       ON s.grade_level = c.grade AND s.section = c.section
+     WHERE c.grade = ?
+     GROUP BY c.id, c.grade, c.section, c.adviser_id, c.adviser_name
+     ORDER BY student_count ASC, c.section ASC`,
+    [targetGrade]
+  );
+
+  return rows[0] || null;
+}
+
 // Promote students to next grade
 exports.promoteStudents = async (req, res) => {
   let connection;
@@ -465,11 +483,24 @@ exports.promoteStudents = async (req, res) => {
           details: { hasCompleteGrades: true, hasFailingGrade: false }
         });
       } else {
+        const destinationClass = await pickDestinationClass(connection, nextGrade);
+        const nextSection = destinationClass?.section || currentSection;
+
         await connection.query(
-          'UPDATE students SET grade_level = ? WHERE id = ?',
-          [nextGrade, student.id]
+          'UPDATE students SET grade_level = ?, section = ? WHERE id = ?',
+          [nextGrade, nextSection, student.id]
         );
-        const row = { id: student.id, name: studentName, fromGrade: currentGrade, toGrade: nextGrade, avg: avg.toFixed(2) };
+
+        const row = {
+          id: student.id,
+          name: studentName,
+          fromGrade: currentGrade,
+          fromSection: currentSection,
+          toGrade: nextGrade,
+          toSection: nextSection,
+          adviser: destinationClass?.adviser_name || null,
+          avg: avg.toFixed(2)
+        };
         promotions.push(row);
 
         await logPromotionHistory(connection, {
@@ -481,11 +512,17 @@ exports.promoteStudents = async (req, res) => {
           fromGrade: currentGrade,
           fromSection: currentSection,
           toGrade: nextGrade,
-          toSection: currentSection,
+          toSection: nextSection,
           average: avg,
           status: 'promoted',
           reason: 'Completed all subjects and passed all quarters',
-          details: { hasCompleteGrades: true, hasFailingGrade: false }
+          details: {
+            hasCompleteGrades: true,
+            hasFailingGrade: false,
+            destinationClassId: destinationClass?.id || null,
+            destinationAdviserId: destinationClass?.adviser_id || null,
+            destinationAdviserName: destinationClass?.adviser_name || null
+          }
         });
       }
     }
