@@ -66,8 +66,35 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
   useEffect(() => {
     const fetchClassSubjects = async () => {
       try {
+        // Source of truth: fetch subjects for this grade level from admin Subjects table
+        if (gradeLevel && gradeLevel !== 'All Grades') {
+          // grade_levels in DB stores just the number (e.g. '3' not 'Grade 3')
+          const gradeKey = (gradeLevel || '').replace(/^Grade\s+/i, '').trim();
+          const resp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`);
+          const names = (resp.data?.data || []).map(s => s.name).filter(Boolean);
+          // Optionally merge with class-specific subjects to keep older data visible
+          if (classId) {
+            try {
+              const classResp = await api.get(`/classes/${classId}/subjects`);
+              const classSpecific = (classResp.data?.subjects || []).filter(Boolean);
+              const merged = [...new Set([...(names || []), ...classSpecific])];
+              if (merged.length > 0) {
+                setClassSubjects(merged);
+                return;
+              }
+            } catch (_) {
+              // ignore class-subject endpoint failures and continue with grade subjects
+            }
+          }
+
+          if (names.length > 0) {
+            setClassSubjects(names);
+            return;
+          }
+        }
+
         if (classId) {
-          // Fetch subjects assigned to this specific class
+          // Fallback: fetch subjects assigned to this specific class
           const response = await api.get(`/classes/${classId}/subjects`);
           const classSpecificSubjects = response.data.subjects || [];
           if (classSpecificSubjects.length > 0) {
@@ -75,17 +102,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
             return;
           }
         }
-        // Fetch subjects for this grade level from the admin Subjects table
-        if (gradeLevel && gradeLevel !== 'All Grades') {
-          // grade_levels in DB stores just the number (e.g. '3' not 'Grade 3')
-          const gradeKey = (gradeLevel || '').replace(/^Grade\s+/i, '').trim();
-          const resp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`);
-          const names = (resp.data?.data || []).map(s => s.name).filter(Boolean);
-          if (names.length > 0) {
-            setClassSubjects(names);
-            return;
-          }
-        }
+
         // Last fallback: hardcoded list
         if (gradeLevel && gradeLevel !== 'All Grades') {
           setClassSubjects(subjectsByGrade[gradeLevel] || []);
@@ -154,9 +171,11 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
               const g = gradeObj[k];
               return g && (g.q1 || g.q2 || g.q3 || g.q4);
             });
-            const studentSubjects = gradeKeys.length > 0
-              ? gradeKeys
-              : (subjects.length > 0 ? subjects : (subjectsByGrade[studentGradeLevel] || subjectsByGrade["Grade 1"] || []));
+            const baseSubjects = subjects.length > 0
+              ? subjects
+              : (subjectsByGrade[studentGradeLevel] || subjectsByGrade["Grade 1"] || []);
+            // Always include admin-configured subjects, then append existing graded keys not in config
+            const studentSubjects = [...new Set([...(baseSubjects || []), ...gradeKeys])];
             // Helper: find grade data for a subject name (handles minor name differences)
             const findGrade = (subjectName) => {
               if (gradeObj[subjectName]) return gradeObj[subjectName];
