@@ -2,10 +2,130 @@
 // File-based teacher controller for when database is unavailable
 
 const { readUsers, writeUsers } = require('../utils/fileStorage');
+const { query } = require('../config/database');
+
+const normalizeName = (value = '') => value.toString().trim().toLowerCase().replace(/\s+/g, ' ');
+
+const parseSubjects = (subjects) => {
+  if (Array.isArray(subjects)) return subjects;
+  if (!subjects) return [];
+  if (typeof subjects === 'string') {
+    if (subjects.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(subjects);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        return subjects.split(',').map(subject => subject.trim()).filter(Boolean);
+      }
+    }
+    return subjects.split(',').map(subject => subject.trim()).filter(Boolean);
+  }
+  return [];
+};
 
 // Get all teachers/advisers from users.json
-const getAllTeachers = (req, res) => {
+const getAllTeachers = async (req, res) => {
   try {
+    try {
+      const dbTeachers = await query(
+        `SELECT id, first_name, middle_name, last_name, username, email, role,
+                grade_level, section, subjects, bio, profile_pic, verification_status, created_at
+         FROM teachers
+         ORDER BY first_name, last_name`
+      );
+
+      if (dbTeachers.length > 0) {
+        let classAssignments = [];
+        let classesWithAdvisers = [];
+        let subjectTeachers = [];
+
+        try {
+          classAssignments = await query(
+            `SELECT grade_level, section, adviser_id, adviser_name FROM class_assignments`
+          );
+        } catch (error) {
+          classAssignments = [];
+        }
+
+        try {
+          classesWithAdvisers = await query(
+            `SELECT grade, section, adviser_id, adviser_name FROM classes WHERE adviser_id IS NOT NULL OR adviser_name IS NOT NULL`
+          );
+        } catch (error) {
+          classesWithAdvisers = [];
+        }
+
+        try {
+          subjectTeachers = await query(
+            `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time FROM subject_teachers`
+          );
+        } catch (error) {
+          subjectTeachers = [];
+        }
+
+        const teachers = dbTeachers.map((teacher) => {
+          const fullName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim();
+          const normalizedFullName = normalizeName(fullName);
+
+          const adviserMatch = classesWithAdvisers.find((item) =>
+            String(item.adviser_id) === String(teacher.id) || normalizeName(item.adviser_name) === normalizedFullName
+          );
+
+          const assignmentMatch = classAssignments.find((item) =>
+            String(item.adviser_id) === String(teacher.id) || normalizeName(item.adviser_name) === normalizedFullName
+          );
+
+          const subjectMatches = subjectTeachers.filter((item) =>
+            String(item.teacher_id) === String(teacher.id) || normalizeName(item.teacher_name) === normalizedFullName
+          );
+
+          const derivedRole = adviserMatch || assignmentMatch
+            ? 'adviser'
+            : subjectMatches.length > 0
+              ? 'subject_teacher'
+              : (teacher.role || 'teacher');
+
+          const derivedGradeLevel = adviserMatch?.grade || assignmentMatch?.grade_level || teacher.grade_level || '';
+          const derivedSection = adviserMatch?.section || assignmentMatch?.section || teacher.section || '';
+          const derivedSubjects = subjectMatches.length > 0
+            ? [...new Set(subjectMatches.map((item) => item.subject).filter(Boolean))]
+            : parseSubjects(teacher.subjects);
+
+          return {
+            id: teacher.id,
+            firstName: teacher.first_name || '',
+            middleName: teacher.middle_name || '',
+            lastName: teacher.last_name || '',
+            fullName,
+            username: teacher.username,
+            email: teacher.email,
+            role: derivedRole,
+            gradeLevel: derivedGradeLevel,
+            section: derivedSection,
+            position: teacher.role,
+            subjectsHandled: derivedSubjects,
+            subjects: derivedSubjects,
+            bio: teacher.bio || '',
+            profilePic: teacher.profile_pic || '',
+            status: teacher.verification_status || 'approved',
+            createdAt: teacher.created_at
+          };
+        });
+
+        console.log(`getAllTeachers: Found ${teachers.length} teachers from database`);
+
+        return res.json({
+          status: 'success',
+          data: {
+            teachers
+          },
+          teachers
+        });
+      }
+    } catch (dbError) {
+      console.log('getAllTeachers DB lookup failed, falling back to users.json:', dbError.message);
+    }
+
     const users = readUsers();
     
     // Filter for users with teacher-related roles and not archived

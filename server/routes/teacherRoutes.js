@@ -48,18 +48,34 @@ router.get('/:id/credentials', async (req, res) => {
       console.log('Error reading JSON file, falling back to MySQL:', fileError.message);
     }
     
-    // If not found in JSON, check MySQL as fallback
+    // If not found in JSON, check MySQL teachers table first
     if (!teacherData) {
-      const [teacher] = await query(
-        `SELECT id, username, email, password, 
+      const teacherRows = await query(
+        `SELECT id, username, email, password,
          first_name as firstName, last_name as lastName, role
-         FROM users 
+         FROM teachers
          WHERE id = ? AND role IN ('teacher', 'adviser', 'subject_teacher')`,
         [id]
       );
 
-      if (teacher && teacher.length > 0) {
-        teacherData = teacher[0];
+      if (teacherRows && teacherRows.length > 0) {
+        teacherData = teacherRows[0];
+        console.log(`Found teacher in MySQL teachers table: ${teacherData.email}`);
+      }
+    }
+
+    // If still not found, check MySQL users table
+    if (!teacherData) {
+      const userRows = await query(
+        `SELECT id, username, email, password,
+         firstName, lastName, role
+         FROM users
+         WHERE id = ? AND role IN ('teacher', 'adviser', 'subject_teacher')`,
+        [id]
+      );
+
+      if (userRows && userRows.length > 0) {
+        teacherData = userRows[0];
         console.log(`Found teacher in MySQL: ${teacherData.email}`);
       }
     }
