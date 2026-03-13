@@ -15,9 +15,11 @@ export default function TeacherDashboard() {
   });
   const [recentActivity, setRecentActivity] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeSchoolYear, setActiveSchoolYear] = useState(null);
 
   useEffect(() => {
     loadDashboardData();
+    fetchActiveSchoolYear();
     
     // Auto-refresh every 15 seconds to reflect admin changes immediately
     const interval = setInterval(() => {
@@ -26,6 +28,15 @@ export default function TeacherDashboard() {
     
     return () => clearInterval(interval);
   }, []);
+
+  const fetchActiveSchoolYear = async () => {
+    try {
+      const res = await axios.get('/school-years/active');
+      setActiveSchoolYear(res.data?.data || res.data || null);
+    } catch (e) {
+      // non-critical
+    }
+  };
 
   const loadDashboardData = async () => {
     try {
@@ -165,7 +176,12 @@ export default function TeacherDashboard() {
       <div className="bg-white rounded-lg shadow p-5 border border-gray-300 border-b-red-800 border-b-4">
         <div className="flex items-center gap-4 mb-4">
           <UserCircleIcon className="w-30 h-30 text-red-800 transition-transform duration-300 hover:scale-105 translate-x-[5px]" />
-          <h2 className="text-6xl pl-5 font-bold text-gray-900">Dashboard</h2>
+          <div className="pl-5">
+            <h2 className="text-6xl font-bold text-gray-900">Dashboard</h2>
+            {activeSchoolYear?.label && (
+              <p className="text-sm text-gray-500 mt-1">School Year: <span className="font-semibold text-red-800">{activeSchoolYear.label}</span></p>
+            )}
+          </div>
         </div>
       </div>
 
