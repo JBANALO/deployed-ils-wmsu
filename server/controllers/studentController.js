@@ -379,6 +379,14 @@ exports.getStudent = async (req, res) => {
     const formattedStudent = formatStudent(student);
     const studentLRN = student.lrn; // LRN is used as studentId in attendance table
     
+    const normalizeSubjectName = (value = '') => String(value)
+      .replace(/\s*\(Grade\s+\d+\)\s*$/i, '')
+      .replace(/\s*\(Kindergarten\)\s*$/i, '')
+      .trim()
+      .toLowerCase();
+
+    const toGradeKey = (gradeLabel = '') => String(gradeLabel).replace(/^Grade\s+/i, '').trim();
+
     // ======== FETCH GRADES ========
     const gradesRaw = await query(
       'SELECT subject, quarter, grade FROM grades WHERE student_id = ? ORDER BY subject, quarter',
@@ -387,6 +395,7 @@ exports.getStudent = async (req, res) => {
     
     // Group grades by subject with quarters
     const gradesMap = {};
+    const gradesMapByNormalized = {};
     for (const g of gradesRaw) {
       if (!gradesMap[g.subject]) {
         gradesMap[g.subject] = { subject: g.subject, q1: null, q2: null, q3: null, q4: null };
@@ -397,9 +406,39 @@ exports.getStudent = async (req, res) => {
       if (qKey === 'q3') gradesMap[g.subject].q3 = parseFloat(g.grade);
       if (qKey === 'q4') gradesMap[g.subject].q4 = parseFloat(g.grade);
     }
+
+    // Build normalized map for subject-name matching (e.g., English vs English (Grade 3))
+    Object.values(gradesMap).forEach((g) => {
+      const key = normalizeSubjectName(g.subject);
+      if (!key) return;
+      if (!gradesMapByNormalized[key]) {
+        gradesMapByNormalized[key] = g;
+      }
+    });
+
+    // Fetch admin-configured subjects for current grade and ensure they are always shown (even without grades)
+    const gradeKey = toGradeKey(student.grade_level);
+    const currentGradeSubjectsRows = await query(
+      'SELECT name FROM subjects WHERE is_archived = 0 AND FIND_IN_SET(?, grade_levels) ORDER BY name',
+      [gradeKey]
+    );
+    const currentGradeSubjects = currentGradeSubjectsRows.map(r => r.name).filter(Boolean);
+
+    const currentGradesMap = {};
+    currentGradeSubjects.forEach((subjectName) => {
+      const normalizedKey = normalizeSubjectName(subjectName);
+      const matched = gradesMapByNormalized[normalizedKey] || { q1: null, q2: null, q3: null, q4: null };
+      currentGradesMap[subjectName] = {
+        subject: subjectName,
+        q1: matched.q1 ?? null,
+        q2: matched.q2 ?? null,
+        q3: matched.q3 ?? null,
+        q4: matched.q4 ?? null
+      };
+    });
     
     // Calculate averages and remarks
-    const grades = Object.values(gradesMap).map(g => {
+    const grades = Object.values(currentGradesMap).map(g => {
       const quarterGrades = [g.q1, g.q2, g.q3, g.q4].filter(x => x !== null && x > 0);
       const average = quarterGrades.length > 0 
         ? (quarterGrades.reduce((a, b) => a + b, 0) / quarterGrades.length).toFixed(2)
@@ -407,6 +446,63 @@ exports.getStudent = async (req, res) => {
       const remarks = average ? (parseFloat(average) >= 75 ? 'Passed' : 'Failed') : 'Pending';
       return { ...g, average, remarks };
     });
+
+    // Build previous-grade history (best effort): use promotion_history table if available
+    // and map subjects by grade-level configuration so previous records remain visible after promotion.
+    let gradeHistory = [];
+    try {
+      const historyRows = await query(
+        `SELECT from_grade, from_section, to_grade, to_section, average, status, created_at
+         FROM promotion_history
+         WHERE student_id = ?
+         ORDER BY created_at DESC`,
+        [studentId]
+      );
+
+      const previousGrades = [...new Set(
+        historyRows
+          .map(h => h.from_grade)
+          .filter(g => g && g !== student.grade_level)
+      )];
+
+      for (const prevGrade of previousGrades) {
+        const prevKey = toGradeKey(prevGrade);
+        const prevSubjectsRows = await query(
+          'SELECT name FROM subjects WHERE is_archived = 0 AND FIND_IN_SET(?, grade_levels) ORDER BY name',
+          [prevKey]
+        );
+        const prevSubjects = prevSubjectsRows.map(r => r.name).filter(Boolean);
+
+        const prevGrades = prevSubjects.map(subjectName => {
+          const matched = gradesMapByNormalized[normalizeSubjectName(subjectName)] || { q1: null, q2: null, q3: null, q4: null };
+          const quarterGrades = [matched.q1, matched.q2, matched.q3, matched.q4].filter(x => x !== null && x > 0);
+          const avg = quarterGrades.length > 0
+            ? (quarterGrades.reduce((a, b) => a + b, 0) / quarterGrades.length).toFixed(2)
+            : null;
+          return {
+            subject: subjectName,
+            q1: matched.q1 ?? null,
+            q2: matched.q2 ?? null,
+            q3: matched.q3 ?? null,
+            q4: matched.q4 ?? null,
+            average: avg,
+            remarks: avg ? (parseFloat(avg) >= 75 ? 'Passed' : 'Failed') : 'Pending'
+          };
+        });
+
+        if (prevGrades.length > 0) {
+          gradeHistory.push({
+            gradeLevel: prevGrade,
+            section: historyRows.find(h => h.from_grade === prevGrade)?.from_section || null,
+            promotedAt: historyRows.find(h => h.from_grade === prevGrade)?.created_at || null,
+            grades: prevGrades
+          });
+        }
+      }
+    } catch (historyErr) {
+      // promotion_history may not exist yet in some environments; ignore safely
+      console.log('promotion_history lookup skipped:', historyErr.message);
+    }
     
     // ======== FETCH ATTENDANCE ========
     // Mobile app uses LRN as studentId, so we search by both LRN and student ID
@@ -454,12 +550,52 @@ exports.getStudent = async (req, res) => {
       [classId]
     );
     
-    // Also get adviser info for the class
-    const classInfo = await query(
-      'SELECT adviser_name FROM classes WHERE id = ?',
-      [classId]
-    );
-    const adviserName = classInfo.length > 0 ? classInfo[0].adviser_name : null;
+    // Also get adviser info for the class with fallbacks for legacy/alternate class IDs.
+    let adviserName = null;
+
+    try {
+      const classInfoById = await query(
+        'SELECT adviser_name FROM classes WHERE id = ? LIMIT 1',
+        [classId]
+      );
+      adviserName = classInfoById[0]?.adviser_name || null;
+    } catch (classIdErr) {
+      console.log('classes by id lookup failed:', classIdErr.message);
+    }
+
+    if (!adviserName) {
+      try {
+        const classInfoByGradeSection = await query(
+          `SELECT adviser_name
+           FROM classes
+           WHERE (grade = ? OR grade = ? OR REPLACE(LOWER(grade), 'grade ', '') = LOWER(?))
+             AND section = ?
+           LIMIT 1`,
+          [student.grade_level, toGradeKey(student.grade_level), toGradeKey(student.grade_level), student.section]
+        );
+        adviserName = classInfoByGradeSection[0]?.adviser_name || null;
+      } catch (classGradeErr) {
+        console.log('classes by grade/section lookup failed:', classGradeErr.message);
+      }
+    }
+
+    if (!adviserName) {
+      try {
+        const adviserFromAssignment = await query(
+          `SELECT t.full_name AS adviser_name
+           FROM class_assignments ca
+           JOIN classes c ON ca.class_id = c.id
+           JOIN teachers t ON ca.teacher_id = t.id
+           WHERE (c.grade = ? OR c.grade = ? OR REPLACE(LOWER(c.grade), 'grade ', '') = LOWER(?))
+             AND c.section = ?
+           LIMIT 1`,
+          [student.grade_level, toGradeKey(student.grade_level), toGradeKey(student.grade_level), student.section]
+        );
+        adviserName = adviserFromAssignment[0]?.adviser_name || null;
+      } catch (assignmentErr) {
+        console.log('class_assignments adviser lookup failed:', assignmentErr.message);
+      }
+    }
     
     // Calculate overall average for profile
     const allAverages = grades.map(g => parseFloat(g.average)).filter(x => x > 0);
@@ -469,6 +605,7 @@ exports.getStudent = async (req, res) => {
     
     formattedStudent.average = overallAverage;
     formattedStudent.grades = grades;
+    formattedStudent.gradeHistory = gradeHistory;
     formattedStudent.attendance = attendanceRaw;
     formattedStudent.attendanceSummary = attendanceSummary;
     formattedStudent.schedule = scheduleRaw;
