@@ -169,7 +169,7 @@ export default function AdminSchoolYear() {
           <strong>Promotion Complete! 🎓</strong>
           <br />✅ {data?.totalPromoted || 0} students promoted
           <br />🎓 {data?.totalGraduated || 0} students graduated
-          <br />🔄 {data?.totalRetained || 0} students retained (avg &lt;75)
+          <br />🔄 {data?.totalRetained || 0} students retained (incomplete grades or avg &lt;75)
         </div>,
         { autoClose: 6000 }
       );
@@ -408,6 +408,7 @@ export default function AdminSchoolYear() {
                 <tr className="border-b border-gray-200">
                   <th className="text-left py-2 px-3 text-gray-500 font-medium">Current Grade</th>
                   <th className="text-center py-2 px-3 text-gray-500 font-medium">Total</th>
+                  <th className="text-center py-2 px-3 text-blue-600 font-medium">✓ Complete Q1-Q4</th>
                   <th className="text-center py-2 px-3 text-green-600 font-medium">↑ Promote (avg ≥75)</th>
                   <th className="text-center py-2 px-3 text-orange-500 font-medium">↺ Retain (avg &lt;75)</th>
                   <th className="text-left py-2 px-3 text-gray-500 font-medium">Promoted To</th>
@@ -420,6 +421,9 @@ export default function AdminSchoolYear() {
                   }`}>
                     <td className="py-3 px-3 font-medium text-gray-800">{item.fromGrade}</td>
                     <td className="py-3 px-3 text-center font-bold text-gray-700">{item.total}</td>
+                    <td className="py-3 px-3 text-center">
+                      <span className="bg-blue-100 text-blue-700 font-semibold px-2 py-1 rounded-full">{item.completeCount ?? 0}</span>
+                    </td>
                     <td className="py-3 px-3 text-center">
                       <span className="bg-green-100 text-green-700 font-semibold px-2 py-1 rounded-full">{item.willPromote}</span>
                     </td>
@@ -629,7 +633,7 @@ export default function AdminSchoolYear() {
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold">Promote Students</h3>
-                  <p className="text-sm text-gray-500">Based on average grade per student</p>
+                  <p className="text-sm text-gray-500">Requires complete Q1-Q4 grades for all subjects + average ≥ 75</p>
                 </div>
               </div>
               <button onClick={() => setShowPromoteModal(false)} className="text-gray-400 hover:text-gray-600">
@@ -639,7 +643,7 @@ export default function AdminSchoolYear() {
 
             {/* Passing grade rule */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-800">
-              <strong>Promotion Rule:</strong> Students with an average grade of <strong>75 or above</strong> will be promoted to the next grade level. Below 75 will be retained.
+              <strong>Promotion Rule:</strong> Students are promoted only if they have <strong>complete grades for all required subjects in Q1-Q4</strong> and an overall average of <strong>75 or above</strong>. Otherwise, retained.
             </div>
 
             {/* Breakdown table */}
@@ -649,6 +653,7 @@ export default function AdminSchoolYear() {
                 <thead>
                   <tr className="border-b border-gray-200">
                     <th className="text-left py-1 text-gray-500 font-medium">Grade</th>
+                    <th className="text-center py-1 text-blue-600 font-medium">✓ Complete Q1-Q4</th>
                     <th className="text-center py-1 text-green-600 font-medium">↑ Promote</th>
                     <th className="text-center py-1 text-orange-500 font-medium">↺ Retain</th>
                     <th className="text-left py-1 text-gray-500 font-medium">Moving To</th>
@@ -658,6 +663,9 @@ export default function AdminSchoolYear() {
                   {promotionPreview.map((item, i) => (
                     <tr key={i} className={`border-b border-gray-100 ${ item.isGraduating ? 'bg-yellow-50' : '' }`}>
                       <td className="py-2 font-medium text-gray-800">{item.fromGrade}</td>
+                      <td className="py-2 text-center">
+                        <span className="bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">{item.completeCount ?? 0}</span>
+                      </td>
                       <td className="py-2 text-center">
                         <span className="bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">{item.willPromote ?? item.count}</span>
                       </td>
