@@ -47,6 +47,7 @@ const StudentPortal = () => {
                 adviserName: studentData.adviserName || ''
               },
               grades: studentData.grades || [],
+              gradeHistory: studentData.gradeHistory || [],
               attendance: studentData.attendance || [],
               attendanceSummary: studentData.attendanceSummary || {},
               schedule: studentData.schedule || []
@@ -68,6 +69,7 @@ const StudentPortal = () => {
                 finalAverage: 'Loading...'
               },
               grades: [],
+              gradeHistory: [],
               attendance: [],
               attendanceSummary: {},
               schedule: []
@@ -111,7 +113,7 @@ const StudentPortal = () => {
     );
   }
 
-  const { profile, grades = [] } = data;
+  const { profile, grades = [], gradeHistory = [] } = data;
 
   // Report card preview function
   const previewReportCard = () => {
@@ -195,6 +197,11 @@ const StudentPortal = () => {
             <div style="display: flex; align-items: center;">
               <span style="font-weight: bold; margin-right: 8px;">LRN:</span>
               <span style="text-decoration: underline; margin-left: 8px;">${profile.lrn}</span>
+            </div>
+
+            <div style="display: flex; align-items: center; margin-top: 4px;">
+              <span style="font-weight: bold; margin-right: 8px;">Class Adviser:</span>
+              <span style="text-decoration: underline; margin-left: 8px;">${reportCardAdviserName}</span>
             </div>
           </div>
 
@@ -307,8 +314,8 @@ const StudentPortal = () => {
               <p style="font-size: 12px; line-height: 1.2;">Principal</p>
             </div>
             <div style="flex: 1; max-width: 300px;">
-              <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">LEONEL D. FRANCISCO, Ph.D</p>
-              <p style="font-size: 12px; line-height: 1.2;">Teacher</p>
+              <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">${reportCardAdviserName}</p>
+              <p style="font-size: 12px; line-height: 1.2;">Class Adviser</p>
             </div>
           </div>
 
@@ -366,7 +373,7 @@ const StudentPortal = () => {
                 </div>
                 <div>
                   <p style="font-weight: bold; text-decoration: underline;">______________________</p>
-                  <p>Teacher</p>
+                  <p>Class Adviser</p>
                 </div>
               </div>
             </div>
@@ -467,6 +474,8 @@ const StudentPortal = () => {
     const sum = grades.reduce((acc, cur) => acc + (parseFloat(cur.average) || 0), 0);
     return (sum / grades.length).toFixed(2);
   };
+
+  const reportCardAdviserName = profile.adviserName?.trim() || '_______________';
 
   const months = [
     "Aug", "Sept", "Oct", "Nov", "Dec",
@@ -728,6 +737,11 @@ const StudentPortal = () => {
                 <span>LRN:</span>
                 <span class="underline">${profile.lrn}</span>
               </div>
+
+              <div class="student-info-row">
+                <span>Class Adviser:</span>
+                <span class="underline">${reportCardAdviserName}</span>
+              </div>
             </div>
 
             <!-- Message to Parents -->
@@ -859,8 +873,8 @@ const StudentPortal = () => {
                 <p style="font-size: 12px; line-height: 1.2;">Principal</p>
               </div>
               <div style="flex: 1; max-width: 300px;">
-                <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">LEONEL D. FRANCISCO, Ph.D</p>
-                <p style="font-size: 12px; line-height: 1.2;">Teacher</p>
+                <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">${reportCardAdviserName}</p>
+                <p style="font-size: 12px; line-height: 1.2;">Class Adviser</p>
               </div>
             </div>
 
@@ -983,6 +997,58 @@ const StudentPortal = () => {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+
+                {gradeHistory.length > 0 && (
+                  <div className="mt-10">
+                    <h4 className="text-xl font-bold text-gray-800 mb-4">Previous Grade Records</h4>
+                    <div className="space-y-6">
+                      {gradeHistory.map((record, idx) => (
+                        <div key={`${record.gradeLevel || 'grade'}-${idx}`} className="border border-gray-200 rounded-lg p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                            <p className="font-semibold text-gray-800">
+                              {record.gradeLevel || 'Previous Grade'}
+                              {record.section ? ` - ${record.section}` : ''}
+                            </p>
+                            {record.promotedAt && (
+                              <p className="text-xs text-gray-500">
+                                Promoted on {new Date(record.promotedAt).toLocaleDateString('en-US')}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead className="bg-gray-100">
+                                <tr>
+                                  <th className="px-4 py-2 text-left">Subject</th>
+                                  <th className="px-4 py-2 text-center">Q1</th>
+                                  <th className="px-4 py-2 text-center">Q2</th>
+                                  <th className="px-4 py-2 text-center">Q3</th>
+                                  <th className="px-4 py-2 text-center">Q4</th>
+                                  <th className="px-4 py-2 text-center">Average</th>
+                                  <th className="px-4 py-2 text-center">Remarks</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(record.grades || []).map((g, subIdx) => (
+                                  <tr key={`${g.subject}-${subIdx}`} className="border-b">
+                                    <td className="px-4 py-2 font-medium">{g.subject}</td>
+                                    <td className="px-4 py-2 text-center">{g.q1 || '-'}</td>
+                                    <td className="px-4 py-2 text-center">{g.q2 || '-'}</td>
+                                    <td className="px-4 py-2 text-center">{g.q3 || '-'}</td>
+                                    <td className="px-4 py-2 text-center">{g.q4 || '-'}</td>
+                                    <td className="px-4 py-2 text-center">{g.average || 'N/A'}</td>
+                                    <td className="px-4 py-2 text-center">{g.remarks || 'Pending'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1258,6 +1324,11 @@ const StudentPortal = () => {
                     <span className="font-semibold mr-2">LRN:</span>
                     <span className="ml-2 underline decoration-gray-600">{profile.lrn}</span>
                   </div>
+
+                  <div className="flex items-center">
+                    <span className="font-semibold mr-2">Class Adviser:</span>
+                    <span className="ml-2 underline decoration-gray-600">{reportCardAdviserName}</span>
+                  </div>
                 </div>
 
                 {/* Message to Parents */}
@@ -1377,8 +1448,8 @@ const StudentPortal = () => {
                     <p>Principal</p>
                   </div>
                   <div>
-                    <p className="font-bold underline">LEONEL D. FRANCISCO, Ph.D</p>
-                    <p>Teacher</p>
+                    <p className="font-bold underline">{reportCardAdviserName}</p>
+                    <p>Class Adviser</p>
                   </div>
                 </div>
 
@@ -1444,7 +1515,7 @@ const StudentPortal = () => {
                       </div>
                       <div>
                         <p className="font-semibold underline">______________________</p>
-                        <p>Teacher</p>
+                        <p>Class Adviser</p>
                       </div>
                     </div>
                   </div>
