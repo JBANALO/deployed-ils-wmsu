@@ -17,6 +17,9 @@ router.get('/students-by-grade', schoolYearController.getStudentsByGrade);
 // Get promotion preview
 router.get('/promotion-preview', schoolYearController.getPromotionPreview);
 
+// Get promotion history logs
+router.get('/promotion-history', schoolYearController.getPromotionHistory);
+
 // Create a new school year
 router.post('/', schoolYearController.createSchoolYear);
 

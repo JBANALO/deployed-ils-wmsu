@@ -43,6 +43,7 @@ export default function AdminSchoolYear() {
   const [activeSchoolYear, setActiveSchoolYear] = useState(null);
   const [studentsByGrade, setStudentsByGrade] = useState([]);
   const [promotionPreview, setPromotionPreview] = useState([]);
+  const [promotionHistory, setPromotionHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -65,12 +66,13 @@ export default function AdminSchoolYear() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [syRes, activeRes, gradeRes, previewRes, archivedRes] = await Promise.allSettled([
+      const [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes] = await Promise.allSettled([
         axios.get('/school-years'),
         axios.get('/school-years/active'),
         axios.get('/school-years/students-by-grade'),
         axios.get('/school-years/promotion-preview'),
-        axios.get('/school-years/archived')
+        axios.get('/school-years/archived'),
+        axios.get('/school-years/promotion-history')
       ]);
 
       if (syRes.status === 'fulfilled') setSchoolYears(syRes.value.data?.data || []);
@@ -78,8 +80,9 @@ export default function AdminSchoolYear() {
       if (gradeRes.status === 'fulfilled') setStudentsByGrade(gradeRes.value.data?.data || []);
       if (previewRes.status === 'fulfilled') setPromotionPreview(previewRes.value.data?.data || []);
       if (archivedRes.status === 'fulfilled') setArchivedSchoolYears(archivedRes.value.data?.data || []);
+      if (historyRes.status === 'fulfilled') setPromotionHistory(historyRes.value.data?.data || []);
 
-      const failed = [syRes, activeRes, gradeRes, previewRes, archivedRes].filter(r => r.status === 'rejected');
+      const failed = [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes].filter(r => r.status === 'rejected');
       if (failed.length > 0) {
         console.error('Some school year data failed to load:', failed.map(f => f.reason?.message));
       }
@@ -433,6 +436,60 @@ export default function AdminSchoolYear() {
                     <td className={`py-3 px-3 font-medium ${
                       item.isGraduating ? 'text-yellow-600' : 'text-green-600'
                     }`}>{item.toGrade}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Promotion History Logs */}
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+            <ArchiveBoxIcon className="w-5 h-5 text-red-800" />
+            Promotion History Logs
+          </h3>
+          <span className="text-xs text-gray-500">Recent {promotionHistory.length} records</span>
+        </div>
+
+        {promotionHistory.length === 0 ? (
+          <p className="text-gray-400 text-center py-6">No promotion history yet</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Date</th>
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Student</th>
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">LRN</th>
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">From</th>
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">To</th>
+                  <th className="text-center py-2 px-3 text-gray-500 font-medium">Average</th>
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Status</th>
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {promotionHistory.map((row) => (
+                  <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="py-2 px-3 text-gray-600">{new Date(row.created_at).toLocaleString()}</td>
+                    <td className="py-2 px-3 font-medium text-gray-800">{row.student_name}</td>
+                    <td className="py-2 px-3 text-gray-700">{row.lrn || '-'}</td>
+                    <td className="py-2 px-3 text-gray-700">{row.from_grade}{row.from_section ? ` - ${row.from_section}` : ''}</td>
+                    <td className="py-2 px-3 text-gray-700">{row.to_grade || '-'}{row.to_section ? ` - ${row.to_section}` : ''}</td>
+                    <td className="py-2 px-3 text-center text-gray-700">{row.average ?? '-'}</td>
+                    <td className="py-2 px-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                        row.status === 'promoted' ? 'bg-green-100 text-green-700' :
+                        row.status === 'graduated' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-orange-100 text-orange-700'
+                      }`}>
+                        {row.status}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-gray-600">{row.reason || '-'}</td>
                   </tr>
                 ))}
               </tbody>

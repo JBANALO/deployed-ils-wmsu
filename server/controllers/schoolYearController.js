@@ -245,31 +245,139 @@ async function getRequiredSubjectsForGrade(conn, gradeLevel) {
   return rows.map(r => r.name).filter(Boolean);
 }
 
-async function hasCompleteAllQuarterGrades(conn, studentId, gradeLevel) {
-  const subjects = await getRequiredSubjectsForGrade(conn, gradeLevel);
-  if (subjects.length === 0) return false;
-
-  for (const subject of subjects) {
-    const [rows] = await conn.query(
-      'SELECT quarter, grade FROM grades WHERE student_id = ? AND subject = ? AND quarter IN (\'Q1\', \'Q2\', \'Q3\', \'Q4\')',
-      [studentId, subject]
-    );
-
-    const byQuarter = new Map(rows.map(r => [String(r.quarter || '').toUpperCase(), Number(r.grade || 0)]));
-    const complete = REQUIRED_QUARTERS.every(q => byQuarter.has(q) && byQuarter.get(q) > 0);
-    if (!complete) return false;
-  }
-
-  return true;
+function normalizeSubjectName(value = '') {
+  return String(value)
+    .replace(/\s*\(Grade\s+\d+\)\s*$/i, '')
+    .replace(/\s*\(Kindergarten\)\s*$/i, '')
+    .trim()
+    .toLowerCase();
 }
 
-// Helper — get a student's average grade across all subjects
-async function getStudentAverage(conn, studentId) {
-  const [rows] = await conn.query(
-    'SELECT AVG(grade) as avg FROM grades WHERE student_id = ? AND grade > 0',
-    [studentId]
+async function evaluatePromotionEligibility(conn, student) {
+  const requiredSubjects = await getRequiredSubjectsForGrade(conn, student.grade_level);
+  if (requiredSubjects.length === 0) {
+    return {
+      eligible: false,
+      average: 0,
+      hasCompleteGrades: false,
+      hasFailingGrade: false,
+      reason: 'No subjects configured for this grade level'
+    };
+  }
+
+  const [gradeRows] = await conn.query(
+    `SELECT subject, quarter, grade
+     FROM grades
+     WHERE student_id = ? AND quarter IN ('Q1','Q2','Q3','Q4')`,
+    [student.id]
   );
-  return rows[0]?.avg ?? null;
+
+  const gradeMap = new Map();
+  for (const row of gradeRows) {
+    const subjectKey = normalizeSubjectName(row.subject);
+    const quarterKey = String(row.quarter || '').toUpperCase();
+    const gradeValue = Number(row.grade || 0);
+
+    if (!subjectKey || !REQUIRED_QUARTERS.includes(quarterKey)) continue;
+    if (!gradeMap.has(subjectKey)) gradeMap.set(subjectKey, new Map());
+    gradeMap.get(subjectKey).set(quarterKey, gradeValue);
+  }
+
+  let total = 0;
+  let count = 0;
+  let hasFailingGrade = false;
+
+  for (const subject of requiredSubjects) {
+    const subjectKey = normalizeSubjectName(subject);
+    const byQuarter = gradeMap.get(subjectKey);
+    const complete = byQuarter && REQUIRED_QUARTERS.every(q => byQuarter.has(q) && byQuarter.get(q) > 0);
+
+    if (!complete) {
+      return {
+        eligible: false,
+        average: 0,
+        hasCompleteGrades: false,
+        hasFailingGrade: false,
+        reason: `Incomplete grades for ${subject}`
+      };
+    }
+
+    for (const q of REQUIRED_QUARTERS) {
+      const g = Number(byQuarter.get(q) || 0);
+      total += g;
+      count += 1;
+      if (g < PASSING_GRADE) hasFailingGrade = true;
+    }
+  }
+
+  const average = count > 0 ? total / count : 0;
+  const eligible = !hasFailingGrade && average >= PASSING_GRADE;
+
+  return {
+    eligible,
+    average,
+    hasCompleteGrades: true,
+    hasFailingGrade,
+    reason: eligible
+      ? 'Eligible for promotion'
+      : (hasFailingGrade
+        ? `Has failing grade below ${PASSING_GRADE}`
+        : `Average below ${PASSING_GRADE}`)
+  };
+}
+
+async function ensurePromotionHistoryTable(conn) {
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS promotion_history (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      school_year_id INT NULL,
+      school_year_label VARCHAR(50) NULL,
+      student_id INT NOT NULL,
+      lrn VARCHAR(50) NULL,
+      student_name VARCHAR(255) NOT NULL,
+      from_grade VARCHAR(50) NOT NULL,
+      from_section VARCHAR(100) NULL,
+      to_grade VARCHAR(50) NULL,
+      to_section VARCHAR(100) NULL,
+      average DECIMAL(5,2) NULL,
+      status VARCHAR(30) NOT NULL,
+      reason VARCHAR(255) NULL,
+      details_json JSON NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_student_id (student_id),
+      INDEX idx_created_at (created_at)
+    )
+  `);
+}
+
+async function getActiveSchoolYearMeta(conn) {
+  const [rows] = await conn.query(
+    'SELECT id, label FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1'
+  );
+  return rows[0] || null;
+}
+
+async function logPromotionHistory(conn, payload) {
+  await conn.query(
+    `INSERT INTO promotion_history
+      (school_year_id, school_year_label, student_id, lrn, student_name, from_grade, from_section, to_grade, to_section, average, status, reason, details_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+    [
+      payload.schoolYearId || null,
+      payload.schoolYearLabel || null,
+      payload.studentId,
+      payload.lrn || null,
+      payload.studentName,
+      payload.fromGrade,
+      payload.fromSection || null,
+      payload.toGrade || null,
+      payload.toSection || null,
+      payload.average != null ? Number(payload.average).toFixed(2) : null,
+      payload.status,
+      payload.reason || null,
+      JSON.stringify(payload.details || {})
+    ]
+  );
 }
 
 // Promote students to next grade
@@ -284,52 +392,101 @@ exports.promoteStudents = async (req, res) => {
     const graduates  = [];
     const retained   = [];
 
+    await ensurePromotionHistoryTable(connection);
+    const activeSY = await getActiveSchoolYearMeta(connection);
+
     const [students] = await connection.query(
-      'SELECT id, first_name, last_name, grade_level FROM students ORDER BY grade_level'
+      'SELECT id, lrn, first_name, last_name, grade_level, section FROM students ORDER BY grade_level, section, last_name, first_name'
     );
 
     for (const student of students) {
       const currentGrade = student.grade_level || '';
       const nextGrade    = GRADE_PROGRESSION[currentGrade];
       const studentName  = `${student.first_name || ''} ${student.last_name || ''}`.trim();
+      const currentSection = student.section || null;
 
       if (!nextGrade) continue; // unknown grade level — skip
 
-      const hasCompleteGrades = await hasCompleteAllQuarterGrades(connection, student.id, currentGrade);
-
-      // Calculate average from grades table
-      const [avgRows] = await connection.query(
-        'SELECT AVG(grade) as avg FROM grades WHERE student_id = ? AND grade > 0',
-        [student.id]
-      );
-      const avg = parseFloat(avgRows[0]?.avg ?? 0);
-      const passed = hasCompleteGrades && avg >= PASSING_GRADE;
+      const eligibility = await evaluatePromotionEligibility(connection, student);
+      const avg = Number(eligibility.average || 0);
+      const passed = eligibility.eligible;
 
       if (!passed) {
         // Retain student
-        retained.push({
+        const retainedRow = {
           id: student.id,
           name: studentName,
           grade: currentGrade,
           avg: avg.toFixed(2),
-          reason: hasCompleteGrades ? 'Average below 75' : 'Incomplete grades (Q1-Q4 required for all subjects)'
+          reason: eligibility.reason
+        };
+        retained.push(retainedRow);
+
+        await logPromotionHistory(connection, {
+          schoolYearId: activeSY?.id,
+          schoolYearLabel: activeSY?.label,
+          studentId: student.id,
+          lrn: student.lrn,
+          studentName,
+          fromGrade: currentGrade,
+          fromSection: currentSection,
+          toGrade: currentGrade,
+          toSection: currentSection,
+          average: avg,
+          status: 'retained',
+          reason: eligibility.reason,
+          details: { hasCompleteGrades: eligibility.hasCompleteGrades, hasFailingGrade: eligibility.hasFailingGrade }
         });
         continue;
       }
 
       if (nextGrade === 'Graduate') {
-        // Mark as graduated — remove from active students or flag
+        // Mark as graduated
         await connection.query(
           "UPDATE students SET grade_level = 'Graduate', status = 'graduated' WHERE id = ?",
           [student.id]
         );
-        graduates.push({ id: student.id, name: studentName, fromGrade: currentGrade, avg: avg.toFixed(2) });
+        const row = { id: student.id, name: studentName, fromGrade: currentGrade, avg: avg.toFixed(2) };
+        graduates.push(row);
+
+        await logPromotionHistory(connection, {
+          schoolYearId: activeSY?.id,
+          schoolYearLabel: activeSY?.label,
+          studentId: student.id,
+          lrn: student.lrn,
+          studentName,
+          fromGrade: currentGrade,
+          fromSection: currentSection,
+          toGrade: 'Graduate',
+          toSection: currentSection,
+          average: avg,
+          status: 'graduated',
+          reason: 'Completed all subjects and passed all quarters',
+          details: { hasCompleteGrades: true, hasFailingGrade: false }
+        });
       } else {
         await connection.query(
           'UPDATE students SET grade_level = ? WHERE id = ?',
           [nextGrade, student.id]
         );
-        promotions.push({ id: student.id, name: studentName, fromGrade: currentGrade, toGrade: nextGrade, avg: avg.toFixed(2) });
+        const row = { id: student.id, name: studentName, fromGrade: currentGrade, toGrade: nextGrade, avg: avg.toFixed(2) };
+        promotions.push(row);
+
+        await logPromotionHistory(connection, {
+          schoolYearId: activeSY?.id,
+          schoolYearLabel: activeSY?.label,
+          studentId: student.id,
+          lrn: student.lrn,
+          studentName,
+          fromGrade: currentGrade,
+          fromSection: currentSection,
+          toGrade: nextGrade,
+          toSection: currentSection,
+          average: avg,
+          status: 'promoted',
+          reason: 'Completed all subjects and passed all quarters',
+          details: { hasCompleteGrades: true, hasFailingGrade: false }
+        });
       }
     }
 
@@ -369,7 +526,7 @@ exports.getPromotionPreview = async (req, res) => {
       if (totalCount === 0) continue;
 
       const [students] = await connection.query(
-        'SELECT id, first_name, last_name, grade_level FROM students WHERE grade_level = ? ORDER BY last_name, first_name',
+        'SELECT id, first_name, last_name, grade_level, section FROM students WHERE grade_level = ? ORDER BY last_name, first_name',
         [grade]
       );
 
@@ -377,19 +534,15 @@ exports.getPromotionPreview = async (req, res) => {
       let willRetain = 0;
       let completeCount = 0;
       let incompleteCount = 0;
+      let failingCount = 0;
 
       for (const student of students) {
-        const complete = await hasCompleteAllQuarterGrades(connection, student.id, grade);
-        if (complete) completeCount += 1;
+        const eligibility = await evaluatePromotionEligibility(connection, student);
+        if (eligibility.hasCompleteGrades) completeCount += 1;
         else incompleteCount += 1;
+        if (eligibility.hasFailingGrade) failingCount += 1;
 
-        const [avgRows] = await connection.query(
-          'SELECT AVG(grade) as avg FROM grades WHERE student_id = ? AND grade > 0',
-          [student.id]
-        );
-        const avg = parseFloat(avgRows[0]?.avg ?? 0);
-
-        if (complete && avg >= PASSING_GRADE) willPromote += 1;
+        if (eligibility.eligible) willPromote += 1;
         else willRetain += 1;
       }
 
@@ -401,6 +554,7 @@ exports.getPromotionPreview = async (req, res) => {
         willRetain,
         completeCount,
         incompleteCount,
+        failingCount,
         isGraduating
       });
     }
@@ -411,6 +565,27 @@ exports.getPromotionPreview = async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to fetch promotion preview' });
   } finally {
     if (connection) connection.release();
+  }
+};
+
+// Get promotion history logs
+exports.getPromotionHistory = async (req, res) => {
+  try {
+    const rows = await query(
+      `SELECT id, school_year_label, student_id, lrn, student_name, from_grade, from_section, to_grade, to_section,
+              average, status, reason, created_at
+       FROM promotion_history
+       ORDER BY created_at DESC
+       LIMIT 500`
+    );
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    // If table doesn't exist yet on a fresh DB, return empty list instead of failing page load
+    if (error && error.code === 'ER_NO_SUCH_TABLE') {
+      return res.json({ success: true, data: [] });
+    }
+    console.error('Error fetching promotion history:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch promotion history' });
   }
 };
 
