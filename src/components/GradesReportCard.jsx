@@ -260,7 +260,10 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
                   </div>
                 </div>
 
-                <h2 className="text-center text-sm font-bold mb-4">REPORT CARD</h2>
+                <div className="text-center mb-4">
+                  <h2 className="text-sm font-bold">REPORT CARD</h2>
+                  <p className="text-xs mt-1">School Year: {reportCardSchoolYear}</p>
+                </div>
 
                 {/* Student Information */}
                 <div className="grid grid-cols-2 gap-4 mb-4 text-xs">
