@@ -14,6 +14,12 @@ const DEPED_SUBJECTS = {
   "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Social Studies", "Values Education", "Music", "Arts", "Physical Education", "Computer"],
 };
 
+const normalizeSubjectName = (value) => String(value || '')
+  .replace(/\s*\(Grade\s+\d+\)\s*$/i, '')
+  .replace(/\s*\(Kindergarten\)\s*$/i, '')
+  .trim()
+  .toLowerCase();
+
 export default function AdminGrades() {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,6 +36,7 @@ export default function AdminGrades() {
   const [editGrades, setEditGrades] = useState({});
   const [selectedQuarter, setSelectedQuarter] = useState('q1');
   const [saving, setSaving] = useState(false);
+  const [subjectsByGrade, setSubjectsByGrade] = useState({});
 
 
 
@@ -63,6 +70,23 @@ export default function AdminGrades() {
       // Combine: students with grades first, then students without
       const allStudents = [...sortedStudents, ...studentsWithoutGrades];
       setStudents(allStudents);
+
+      // Load subjects configured by admin for each grade present in students list
+      const uniqueGrades = [...new Set(allStudents.map(s => s.gradeLevel).filter(Boolean))];
+      const subjectMap = {};
+      await Promise.all(uniqueGrades.map(async (gradeLabel) => {
+        try {
+          const gradeKey = String(gradeLabel).replace(/^Grade\s+/i, '').trim();
+          const subjRes = await axios.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`);
+          const names = (subjRes.data?.data || []).map(s => s.name).filter(Boolean);
+          if (names.length > 0) subjectMap[gradeLabel] = names;
+        } catch (e) {
+          // Keep fallback list if subject API fails for this grade
+        }
+      }));
+      if (Object.keys(subjectMap).length > 0) {
+        setSubjectsByGrade(subjectMap);
+      }
 
       // Extract unique sections from ALL students (not just ones with grades)
       const uniqueSections = [...new Set(allStudents.map(s => `${s.gradeLevel} - ${s.section}`))].filter(s => s !== 'undefined - undefined');
@@ -103,17 +127,30 @@ export default function AdminGrades() {
     setShowViewModal(true);
   };
 
+  const getSubjectsForStudent = (student) => {
+    const grade = student?.gradeLevel;
+    return subjectsByGrade[grade] || DEPED_SUBJECTS[grade] || DEPED_SUBJECTS['Grade 1'];
+  };
+
+  const getMatchedGrade = (gradesObj, subjectName) => {
+    if (gradesObj[subjectName]) return gradesObj[subjectName];
+    const normalized = normalizeSubjectName(subjectName);
+    const key = Object.keys(gradesObj).find(k => normalizeSubjectName(k) === normalized);
+    return key ? gradesObj[key] : {};
+  };
+
   // Edit student grades  
   const handleEditGrades = async (student) => {
     setSelectedStudent(student);
     const grades = await fetchStudentGrades(student);
     
     // Initialize edit grades with existing or empty values for all subjects
-    const subjects = DEPED_SUBJECTS[student.gradeLevel] || DEPED_SUBJECTS["Grade 1"];
+    const subjects = getSubjectsForStudent(student);
     const initialGrades = {};
     subjects.forEach(subject => {
-      if (grades[subject]) {
-        initialGrades[subject] = grades[subject].q1 || grades[subject].q2 || grades[subject].q3 || grades[subject].q4 || 0;
+      const matchedGrade = getMatchedGrade(grades, subject);
+      if (Object.keys(matchedGrade).length > 0) {
+        initialGrades[subject] = matchedGrade.q1 || matchedGrade.q2 || matchedGrade.q3 || matchedGrade.q4 || 0;
       } else {
         initialGrades[subject] = 0;
       }
@@ -433,8 +470,8 @@ export default function AdminGrades() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(DEPED_SUBJECTS[selectedStudent.gradeLevel] || DEPED_SUBJECTS["Grade 1"]).map(subject => {
-                    const grade = studentGrades[subject] || {};
+                  {getSubjectsForStudent(selectedStudent).map(subject => {
+                    const grade = getMatchedGrade(studentGrades, subject);
                     const avg = grade.average || ((grade.q1 || 0) + (grade.q2 || 0) + (grade.q3 || 0) + (grade.q4 || 0)) / 4;
                     return (
                       <tr key={subject}>
@@ -511,8 +548,8 @@ export default function AdminGrades() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(DEPED_SUBJECTS[selectedStudent.gradeLevel] || DEPED_SUBJECTS["Grade 1"]).map(subject => {
-                    const currentGrade = studentGrades[subject]?.[selectedQuarter] || '-';
+                  {getSubjectsForStudent(selectedStudent).map(subject => {
+                    const currentGrade = getMatchedGrade(studentGrades, subject)?.[selectedQuarter] || '-';
                     return (
                       <tr key={subject}>
                         <td className="border p-2">{subject}</td>
