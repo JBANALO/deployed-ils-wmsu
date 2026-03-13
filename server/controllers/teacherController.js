@@ -83,7 +83,7 @@ exports.createTeacher = async (req, res) => {
         gradeLevel || null,
         section || null,
         safeProfilePic || null,
-        'pending',
+        'approved',
         new Date(),
         new Date()
       ]
@@ -127,6 +127,7 @@ exports.getAllTeachers = async (req, res) => {
       bio: teacher.bio,
       profilePic: teacher.profile_pic,
       plainPassword: teacher.password, // Use password field for CSV export
+      status: teacher.verification_status,
       verificationStatus: teacher.verification_status,
       createdAt: teacher.created_at,
       updatedAt: teacher.updated_at
