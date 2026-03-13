@@ -17,6 +17,18 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
 
   const toGradeKey = (value) => String(value || '').replace(/^Grade\s+/i, '').trim();
   const toClassKey = (grade, sec) => `${String(grade || '').toLowerCase().replace(/\s+/g, '-')}-${String(sec || '').toLowerCase().replace(/\s+/g, '-')}`;
+  const normalizeSubjectName = (value) => String(value || '').replace(/\s*\(Grade\s+\d+\)\s*$/i, '').replace(/\s*\(Kindergarten\)\s*$/i, '').trim().toLowerCase();
+  const uniqueSubjects = (list) => {
+    const seen = new Set();
+    const result = [];
+    (Array.isArray(list) ? list : []).forEach((name) => {
+      const key = normalizeSubjectName(name);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      result.push(name);
+    });
+    return result;
+  };
   const studentGrade = (student) => student?.gradeLevel || student?.grade_level || gradeLevel;
   const studentSection = (student) => student?.section || student?.Section || section;
   const currentUserName = (() => {
@@ -29,17 +41,6 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
       return '';
     }
   })();
-
-  // Fallback subjects by grade (only used if class subjects not found)
-  const subjectsByGrade = {
-    "Kindergarten": ["Filipino", "English", "Mathematics", "GMRC", "MAPEH"],
-    "Grade 1": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
-    "Grade 2": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
-    "Grade 3": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "GMRC", "MAPEH"],
-    "Grade 4": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
-    "Grade 5": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
-    "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "EPP", "GMRC", "MAPEH"],
-  };
 
   // Fetch grades for all students when component mounts
   useEffect(() => {
@@ -88,21 +89,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
           // grade_levels in DB stores just the number (e.g. '3' not 'Grade 3')
           const gradeKey = (gradeLevel || '').replace(/^Grade\s+/i, '').trim();
           const resp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`);
-          const names = (resp.data?.data || []).map(s => s.name).filter(Boolean);
-          // Optionally merge with class-specific subjects to keep older data visible
-          if (classId) {
-            try {
-              const classResp = await api.get(`/classes/${classId}/subjects`);
-              const classSpecific = (classResp.data?.subjects || []).filter(Boolean);
-              const merged = [...new Set([...(names || []), ...classSpecific])];
-              if (merged.length > 0) {
-                setClassSubjects(merged);
-                return;
-              }
-            } catch (_) {
-              // ignore class-subject endpoint failures and continue with grade subjects
-            }
-          }
+          const names = uniqueSubjects((resp.data?.data || []).map(s => s.name).filter(Boolean));
 
           if (names.length > 0) {
             setClassSubjects(names);
@@ -173,7 +160,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
     }
   }, [students, gradeLevel]);
 
-  const subjects = classSubjects.length > 0 ? classSubjects : (subjectsByGrade[gradeLevel] || []);
+  const subjects = classSubjects;
   const today = new Date().toLocaleDateString();
   const currentYear = new Date().getFullYear();
 
@@ -228,22 +215,18 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
               const g = gradeObj[k];
               return g && (g.q1 || g.q2 || g.q3 || g.q4);
             });
-            const gradeConfiguredSubjects = gradeSubjectsMap[studentGradeKey] || [];
-            const baseSubjects = gradeConfiguredSubjects.length > 0
+            const gradeConfiguredSubjects = uniqueSubjects(gradeSubjectsMap[studentGradeKey] || []);
+            // Report card rows must follow admin grade subjects only.
+            // If none are configured, fall back to whatever grades exist so report card is not empty.
+            const studentSubjects = gradeConfiguredSubjects.length > 0
               ? gradeConfiguredSubjects
-              : (subjects.length > 0
-                ? subjects
-                : []);
-            // Always include admin-configured subjects, then append existing graded keys not in config
-            const studentSubjects = [...new Set([...(baseSubjects || []), ...gradeKeys])];
+              : uniqueSubjects(gradeKeys);
             // Helper: find grade data for a subject name (handles minor name differences)
             const findGrade = (subjectName) => {
               if (gradeObj[subjectName]) return gradeObj[subjectName];
-              const lower = subjectName.toLowerCase();
+              const normalizedSubject = normalizeSubjectName(subjectName);
               const matchedKey = Object.keys(gradeObj).find(k =>
-                k.toLowerCase() === lower ||
-                k.toLowerCase().startsWith(lower) ||
-                lower.startsWith(k.toLowerCase())
+                normalizeSubjectName(k) === normalizedSubject
               );
               return matchedKey ? gradeObj[matchedKey] : null;
             };
