@@ -29,6 +29,9 @@ export default function AdminAssignAdviser() {
     fetchData();
   }, []);
 
+  const normalizeId = (value) => String(value ?? "");
+  const findTeacherById = (teacherId) => teachers.find((teacher) => normalizeId(teacher.id) === normalizeId(teacherId));
+
   // Fetch subjects when class is selected in Assign Adviser tab
   useEffect(() => {
     if (!selectedClass) { setAdviserSubjects([]); setSelectedAdviserSubjects([]); return; }
@@ -140,7 +143,7 @@ export default function AdminAssignAdviser() {
     }
 
     try {
-      const adviser = teachers.find(t => t.id === selectedAdviser);
+      const adviser = findTeacherById(selectedAdviser);
       
       // Safety check: make sure adviser was found
       if (!adviser) {
@@ -178,6 +181,8 @@ export default function AdminAssignAdviser() {
       toast.info('Assignment response received');
 
       if (response.ok) {
+        const subjectAssignmentErrors = [];
+
         // Also assign selected subjects to subject_teachers with the adviser as teacher
         for (const item of selectedAdviserSubjects) {
           try {
@@ -190,11 +195,19 @@ export default function AdminAssignAdviser() {
               end_time: item.endTime
             });
           } catch (subjectErr) {
-            console.warn(`Could not assign subject ${item.subject}:`, subjectErr.message);
+            const subjectMessage = subjectErr.response?.data?.message || subjectErr.response?.data?.error || subjectErr.message;
+            console.warn(`Could not assign subject ${item.subject}:`, subjectMessage);
+            subjectAssignmentErrors.push(`${item.subject}: ${subjectMessage}`);
           }
         }
-        setMessage(`Successfully assigned ${adviserName} to ${selectedClass.grade} - ${selectedClass.section}${selectedAdviserSubjects.length > 0 ? ` with ${selectedAdviserSubjects.length} subject(s)` : ''}`);
-        setMessageType("success");
+
+        if (subjectAssignmentErrors.length > 0) {
+          setMessage(`Adviser assigned, but some subject schedules were rejected: ${subjectAssignmentErrors.join(' | ')}`);
+          setMessageType("error");
+        } else {
+          setMessage(`Successfully assigned ${adviserName} to ${selectedClass.grade} - ${selectedClass.section}${selectedAdviserSubjects.length > 0 ? ` with ${selectedAdviserSubjects.length} subject(s)` : ''}`);
+          setMessageType("success");
+        }
         setSelectedClass(null);
         setSelectedAdviser("");
         setSelectedAdviserSubjects([]);
@@ -262,7 +275,13 @@ export default function AdminAssignAdviser() {
       return;
     }
     try {
-      const teacher = teachers.find(t => t.id === selectedSubjectTeacher);
+      const teacher = findTeacherById(selectedSubjectTeacher);
+      if (!teacher) {
+        throw new Error(`Teacher with ID ${selectedSubjectTeacher} not found. Available teachers: ${teachers.map(t => t.id).join(', ')}`);
+      }
+      if (startTime >= endTime) {
+        throw new Error('End time must be later than start time');
+      }
       await api.put(`/classes/${selectedClassForSubject.id}/assign-subject-teacher`, {
         teacher_id: teacher.id,
         teacher_name: `${teacher.firstName} ${teacher.lastName}`,
@@ -370,7 +389,7 @@ export default function AdminAssignAdviser() {
                   >
                     <option value="">-- Choose an adviser --</option>
                     {teachers.map(teacher => (
-                      <option key={teacher.id} value={teacher.id}>
+                      <option key={normalizeId(teacher.id)} value={normalizeId(teacher.id)}>
                         {teacher.firstName} {teacher.lastName} ({teacher.role})
                       </option>
                     ))}
@@ -551,7 +570,7 @@ export default function AdminAssignAdviser() {
                   >
                     <option value="">-- Choose a teacher --</option>
                     {teachers.map(teacher => (
-                      <option key={teacher.id} value={teacher.id}>
+                      <option key={normalizeId(teacher.id)} value={normalizeId(teacher.id)}>
                         {teacher.firstName} {teacher.lastName} ({teacher.role})
                       </option>
                     ))}

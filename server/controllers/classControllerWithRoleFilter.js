@@ -520,6 +520,9 @@ const assignSubjectTeacher = async (req, res) => {
   try {
     const { classId } = req.params;
     const { teacher_id, teacher_name, subject, day, start_time, end_time } = req.body;
+    const assignmentDay = day || 'Monday';
+    const assignmentStart = start_time || '08:00';
+    const assignmentEnd = end_time || '09:00';
 
     console.log(`assignSubjectTeacher - classId: ${classId}, teacher_id: ${teacher_id}, subject: ${subject}`);
 
@@ -527,6 +530,13 @@ const assignSubjectTeacher = async (req, res) => {
       return res.status(400).json({ 
         success: false, 
         message: 'teacher_id and subject are required' 
+      });
+    }
+
+    if (assignmentStart >= assignmentEnd) {
+      return res.status(400).json({
+        success: false,
+        message: 'End time must be later than start time'
       });
     }
 
@@ -546,21 +556,39 @@ const assignSubjectTeacher = async (req, res) => {
       )
     `);
 
-    // Check for time conflict
-    const [conflicts] = await pool.query(
+    // Check for class-level schedule conflict on the same day/time
+    const [classConflicts] = await pool.query(
+      `SELECT c.grade, c.section, st.teacher_name, st.subject, st.day, st.start_time, st.end_time
+       FROM subject_teachers st
+       JOIN classes c ON st.class_id = c.id
+       WHERE st.class_id = ? AND st.day = ?
+       AND NOT (st.end_time <= ? OR st.start_time >= ?)`,
+      [classId, assignmentDay, assignmentStart, assignmentEnd]
+    );
+
+    if (classConflicts.length > 0) {
+      const conflict = classConflicts[0];
+      return res.status(400).json({
+        success: false,
+        message: `Time conflict: ${conflict.teacher_name || 'Another teacher'} already teaches ${conflict.subject} in ${conflict.grade} - ${conflict.section} on ${conflict.day} from ${conflict.start_time} to ${conflict.end_time}`
+      });
+    }
+
+    // Check for teacher-level schedule conflict on the same day/time across any class
+    const [teacherConflicts] = await pool.query(
       `SELECT c.grade, c.section, st.subject, st.day, st.start_time, st.end_time
        FROM subject_teachers st
        JOIN classes c ON st.class_id = c.id
-       WHERE st.teacher_id = ? AND st.day = ? AND st.class_id != ?
+       WHERE st.teacher_id = ? AND st.day = ?
        AND NOT (st.end_time <= ? OR st.start_time >= ?)`,
-      [teacher_id, day || 'Monday', classId, start_time || '08:00', end_time || '09:00']
+      [teacher_id, assignmentDay, assignmentStart, assignmentEnd]
     );
 
-    if (conflicts.length > 0) {
-      const conflict = conflicts[0];
+    if (teacherConflicts.length > 0) {
+      const conflict = teacherConflicts[0];
       return res.status(400).json({
         success: false,
-        message: `Time conflict: Teacher already assigned to ${conflict.grade} - ${conflict.section} (${conflict.subject}) on ${conflict.day} from ${conflict.start_time} to ${conflict.end_time}`
+        message: `Time conflict: Teacher is already assigned to ${conflict.grade} - ${conflict.section} (${conflict.subject}) on ${conflict.day} from ${conflict.start_time} to ${conflict.end_time}`
       });
     }
 
@@ -581,7 +609,7 @@ const assignSubjectTeacher = async (req, res) => {
     await pool.query(
       `INSERT INTO subject_teachers (class_id, teacher_id, teacher_name, subject, day, start_time, end_time)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [classId, teacher_id, teacher_name || '', subject, day || 'Monday', start_time || '08:00', end_time || '09:00']
+      [classId, teacher_id, teacher_name || '', subject, assignmentDay, assignmentStart, assignmentEnd]
     );
 
     console.log('✅ Subject teacher assigned successfully');
@@ -589,7 +617,7 @@ const assignSubjectTeacher = async (req, res) => {
     return res.json({
       success: true,
       message: 'Subject teacher assigned successfully',
-      data: { classId, teacher_id, teacher_name, subject, day, start_time, end_time }
+      data: { classId, teacher_id, teacher_name, subject, day: assignmentDay, start_time: assignmentStart, end_time: assignmentEnd }
     });
 
   } catch (error) {
