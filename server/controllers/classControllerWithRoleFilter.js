@@ -297,6 +297,35 @@ const getAdviserClasses = async (req, res) => {
 
       // No match found at all
       console.log(`No classes found for adviser ${adviserId}`);
+
+      // Final fallback: match by adviser_name for cases where IDs are mismatched (UUID vs numeric)
+      try {
+        const [teacherRows] = await pool.query(
+          `SELECT id, first_name, last_name FROM teachers WHERE id = ?`,
+          [adviserId]
+        );
+        if (teacherRows.length > 0) {
+          const t = teacherRows[0];
+          const fullName = `${t.first_name || ''} ${t.last_name || ''}`.trim();
+          const [nameMatchRows] = await pool.query(
+            `SELECT c.* FROM classes c WHERE c.adviser_name LIKE ? OR c.adviser_name LIKE ?`,
+            [`%${t.first_name}%${t.last_name}%`, `%${t.last_name}%${t.first_name}%`]
+          );
+          if (nameMatchRows.length > 0) {
+            console.log(`Name fallback matched ${nameMatchRows.length} class(es) for adviser '${fullName}'`);
+            // Also fix the stale adviser_id in classes table so future lookups work by ID
+            await pool.query(
+              `UPDATE classes SET adviser_id = ? WHERE adviser_name LIKE ? OR adviser_name LIKE ?`,
+              [String(adviserId), `%${t.first_name}%${t.last_name}%`, `%${t.last_name}%${t.first_name}%`]
+            );
+            const enriched = nameMatchRows.map(cls => ({ ...cls, adviser_id: String(adviserId), adviser_name: fullName }));
+            return res.json({ success: true, data: enriched });
+          }
+        }
+      } catch (nameErr) {
+        console.log('Name fallback error:', nameErr.message);
+      }
+
       return res.json({ success: true, data: [] });
 
     } catch (dbError) {
