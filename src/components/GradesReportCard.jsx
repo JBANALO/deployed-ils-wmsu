@@ -17,6 +17,18 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
 
   const toGradeKey = (value) => String(value || '').replace(/^Grade\s+/i, '').trim();
   const toClassKey = (grade, sec) => `${String(grade || '').toLowerCase().replace(/\s+/g, '-')}-${String(sec || '').toLowerCase().replace(/\s+/g, '-')}`;
+  const studentGrade = (student) => student?.gradeLevel || student?.grade_level || gradeLevel;
+  const studentSection = (student) => student?.section || student?.Section || section;
+  const currentUserName = (() => {
+    try {
+      const raw = localStorage.getItem('user');
+      if (!raw) return '';
+      const u = JSON.parse(raw);
+      return `${u.firstName || u.first_name || ''} ${u.lastName || u.last_name || ''}`.trim();
+    } catch (_) {
+      return '';
+    }
+  })();
 
   // Fallback subjects by grade (only used if class subjects not found)
   const subjectsByGrade = {
@@ -108,16 +120,15 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
           }
         }
 
-        // Last fallback: hardcoded list
+        // Last fallback: keep empty so UI relies on DB-configured subjects and actual encoded grades
         if (gradeLevel && gradeLevel !== 'All Grades') {
-          setClassSubjects(subjectsByGrade[gradeLevel] || []);
+          setClassSubjects([]);
         } else {
-          const allSubjects = [...new Set(Object.values(subjectsByGrade).flat())];
-          setClassSubjects(allSubjects);
+          setClassSubjects([]);
         }
       } catch (error) {
         console.error('Error fetching class subjects:', error);
-        setClassSubjects(subjectsByGrade[gradeLevel] || []);
+        setClassSubjects([]);
       }
     };
 
@@ -128,10 +139,10 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
   useEffect(() => {
     const fetchMetadata = async () => {
       try {
-        const uniqueGradeKeys = [...new Set((students || []).map(s => toGradeKey(s.gradeLevel || gradeLevel)).filter(Boolean))];
+        const normalizedGradeKeys = [...new Set((students || []).map(s => toGradeKey(studentGrade(s))).filter(Boolean))];
         const gradeMap = {};
 
-        await Promise.all(uniqueGradeKeys.map(async (g) => {
+        await Promise.all(normalizedGradeKeys.map(async (g) => {
           try {
             const resp = await api.get(`/subjects/grade/${encodeURIComponent(g)}`);
             const names = (resp.data?.data || []).map(item => item.name).filter(Boolean);
@@ -208,10 +219,10 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
           ) : studentsWithGrades.map((student, studentIndex) => {
             const gradeObj = student.grades || {};
             // Use student's actual grade level
-            const studentGradeLevel = student.gradeLevel || gradeLevel;
+            const studentGradeLevel = studentGrade(student);
             const studentGradeKey = toGradeKey(studentGradeLevel);
-            const studentClassKey = toClassKey(studentGradeLevel, student.section || section);
-            const classAdviserName = classAdviserMap[studentClassKey] || '_______________';
+            const studentClassKey = toClassKey(studentGradeLevel, studentSection(student));
+            const classAdviserName = classAdviserMap[studentClassKey] || student.adviser_name || currentUserName || '_______________';
             // Prefer subjects that actually have grade data; fall back to class/grade subject list
             const gradeKeys = Object.keys(gradeObj).filter(k => {
               const g = gradeObj[k];
@@ -222,7 +233,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
               ? gradeConfiguredSubjects
               : (subjects.length > 0
                 ? subjects
-                : (subjectsByGrade[studentGradeLevel] || subjectsByGrade["Grade 1"] || []));
+                : []);
             // Always include admin-configured subjects, then append existing graded keys not in config
             const studentSubjects = [...new Set([...(baseSubjects || []), ...gradeKeys])];
             // Helper: find grade data for a subject name (handles minor name differences)
@@ -255,7 +266,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
                 {/* Student Information */}
                 <div className="grid grid-cols-2 gap-4 mb-4 text-xs">
                   <div>
-                    <p><span className="font-bold">Name:</span> {student.fullName || `${student.firstName} ${student.lastName}`}</p>
+                    <p><span className="font-bold">Name:</span> {student.fullName || `${student.firstName || student.first_name || ''} ${student.lastName || student.last_name || ''}`.trim()}</p>
                     <p><span className="font-bold">LRN:</span> {student.lrn || 'N/A'}</p>
                   </div>
                   <div>
@@ -267,7 +278,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
                     <p><span className="font-bold">School Year:</span> {currentYear}-{currentYear + 1}</p>
                   </div>
                   <div>
-                    <p><span className="font-bold">Section:</span> {student.section || section}</p>
+                    <p><span className="font-bold">Section:</span> {studentSection(student)}</p>
                     <p><span className="font-bold">Class Adviser:</span> {classAdviserName}</p>
                   </div>
                 </div>

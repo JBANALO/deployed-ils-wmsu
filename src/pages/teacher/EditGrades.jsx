@@ -14,6 +14,8 @@ import {
 } from "@heroicons/react/24/solid";
 
 export default function EditGrades() {
+  const getStudentGradeLevel = (student) => student?.gradeLevel || student?.grade_level || "";
+  const getStudentSection = (student) => student?.section || student?.Section || "";
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedSubject, setSelectedSubject] = useState("Mathematics");
@@ -75,13 +77,13 @@ export default function EditGrades() {
   // Update available sections when grade level changes
   useEffect(() => {
     if (selectedGradeLevel === "All Grades") {
-      const allSections = [...new Set(students.map(s => s.section))].sort();
+      const allSections = [...new Set(students.map(s => getStudentSection(s)).filter(Boolean))].sort();
       setAvailableSections(allSections);
     } else {
       const sectionsForGrade = [...new Set(
         students
-          .filter(s => s.gradeLevel === selectedGradeLevel)
-          .map(s => s.section)
+          .filter(s => getStudentGradeLevel(s) === selectedGradeLevel)
+          .map(s => getStudentSection(s))
       )].sort();
       setAvailableSections(sectionsForGrade);
     }
@@ -225,8 +227,8 @@ export default function EditGrades() {
       const normalize = str => (str || '').toString().trim().toLowerCase();
       const filteredStudents = (Array.isArray(allStudents) ? allStudents : []).filter(student => {
         return uniqueClasses.some(c => 
-          normalize(c.grade) === normalize(student.gradeLevel) && 
-          normalize(c.section) === normalize(student.section)
+          normalize(c.grade) === normalize(getStudentGradeLevel(student)) && 
+          normalize(c.section) === normalize(getStudentSection(student))
         );
       });
       
@@ -284,7 +286,7 @@ export default function EditGrades() {
     }
     
     // Determine student's class ID
-    const studentClassId = `${(student.gradeLevel || '').toLowerCase().replace(/\s+/g, '-')}-${(student.section || '').toLowerCase().replace(/\s+/g, '-')}`;
+    const studentClassId = `${(getStudentGradeLevel(student) || '').toLowerCase().replace(/\s+/g, '-')}-${(getStudentSection(student) || '').toLowerCase().replace(/\s+/g, '-')}`;
     console.log('Opening grades for student class:', studentClassId, 'Adviser classes:', adviserClassIds);
     
     // Check if user is adviser for this class
@@ -294,17 +296,17 @@ export default function EditGrades() {
     let dbSubjectsForGrade = [];
     try {
       // grade_levels column stores just the number e.g. '3', not 'Grade 3'
-      const gradeKey = (student.gradeLevel || '').replace(/^Grade\s+/i, '').trim();
+      const gradeKey = (getStudentGradeLevel(student) || '').replace(/^Grade\s+/i, '').trim();
       const subjResp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`);
       dbSubjectsForGrade = (subjResp.data?.data || []).map(s => s.name).filter(Boolean);
-      console.log('DB subjects for', student.gradeLevel, ':', dbSubjectsForGrade);
+      console.log('DB subjects for', getStudentGradeLevel(student), ':', dbSubjectsForGrade);
     } catch (e) {
       console.warn('Could not fetch subjects from DB, using fallback:', e.message);
     }
     // Fall back to hardcoded list only if DB returned nothing
     const gradeSubjectList = dbSubjectsForGrade.length > 0
       ? dbSubjectsForGrade
-      : (subjectsByGrade[student.gradeLevel] || []);
+      : (subjectsByGrade[getStudentGradeLevel(student)] || []);
 
     // Always re-fetch subject assignments fresh to avoid stale cached state
     let freshSubjectsForClass = subjectsByClass[studentClassId] || [];
@@ -1067,21 +1069,21 @@ export default function EditGrades() {
           quarter={selectedQuarter}
           gradeLevel={
             Array.isArray(reportCardStudent)
-              ? (reportCardStudent[0]?.gradeLevel || selectedGradeLevel)
-              : (reportCardStudent ? reportCardStudent.gradeLevel : (selectedGradeLevel === "All Grades" ? "All Grades" : selectedGradeLevel))
+              ? ((reportCardStudent[0]?.gradeLevel || reportCardStudent[0]?.grade_level) || selectedGradeLevel)
+              : (reportCardStudent ? (reportCardStudent.gradeLevel || reportCardStudent.grade_level) : (selectedGradeLevel === "All Grades" ? "All Grades" : selectedGradeLevel))
           }
           section={
             Array.isArray(reportCardStudent)
-              ? (reportCardStudent[0]?.section || selectedSection)
-              : (reportCardStudent ? reportCardStudent.section : selectedSection)
+              ? ((reportCardStudent[0]?.section || reportCardStudent[0]?.Section) || selectedSection)
+              : (reportCardStudent ? (reportCardStudent.section || reportCardStudent.Section) : selectedSection)
           }
           classId={
             Array.isArray(reportCardStudent)
               ? (reportCardStudent[0]
-                ? `${(reportCardStudent[0].gradeLevel || '').toLowerCase().replace(/\s+/g, '-')}-${(reportCardStudent[0].section || '').toLowerCase().replace(/\s+/g, '-')}`
+                ? `${((reportCardStudent[0].gradeLevel || reportCardStudent[0].grade_level) || '').toLowerCase().replace(/\s+/g, '-')}-${((reportCardStudent[0].section || reportCardStudent[0].Section) || '').toLowerCase().replace(/\s+/g, '-')}`
                 : null)
               : (reportCardStudent
-                ? `${(reportCardStudent.gradeLevel || '').toLowerCase().replace(/\s+/g, '-')}-${(reportCardStudent.section || '').toLowerCase().replace(/\s+/g, '-')}`
+                ? `${((reportCardStudent.gradeLevel || reportCardStudent.grade_level) || '').toLowerCase().replace(/\s+/g, '-')}-${((reportCardStudent.section || reportCardStudent.Section) || '').toLowerCase().replace(/\s+/g, '-')}`
                 : (selectedGradeLevel !== "All Grades" && selectedSection !== "All Sections"
                   ? `${selectedGradeLevel.toLowerCase().replace(/\s+/g, '-')}-${selectedSection.toLowerCase().replace(/\s+/g, '-')}`
                   : null))
