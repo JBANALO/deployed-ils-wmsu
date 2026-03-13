@@ -57,6 +57,8 @@ export default function AdminSchoolYear() {
     label: '',
     start_date: '',
     end_date: '',
+    principal_name: '',
+    assistant_principal_name: '',
     is_active: false
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -105,7 +107,7 @@ export default function AdminSchoolYear() {
       await axios.post('/school-years', formData);
       toast.success('School year created successfully!');
       setShowAddModal(false);
-      setFormData({ label: '', start_date: '', end_date: '', is_active: false });
+      setFormData({ label: '', start_date: '', end_date: '', principal_name: '', assistant_principal_name: '', is_active: false });
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to create school year');
@@ -122,7 +124,7 @@ export default function AdminSchoolYear() {
       toast.success('School year updated successfully!');
       setShowEditModal(false);
       setSelectedSchoolYear(null);
-      setFormData({ label: '', start_date: '', end_date: '', is_active: false });
+      setFormData({ label: '', start_date: '', end_date: '', principal_name: '', assistant_principal_name: '', is_active: false });
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update school year');
@@ -218,6 +220,8 @@ export default function AdminSchoolYear() {
       label: sy.label,
       start_date: sy.start_date?.split('T')[0] || '',
       end_date: sy.end_date?.split('T')[0] || '',
+      principal_name: sy.principal_name || '',
+      assistant_principal_name: sy.assistant_principal_name || '',
       is_active: sy.is_active === 1
     });
     setShowEditModal(true);
@@ -567,6 +571,26 @@ export default function AdminSchoolYear() {
                   required
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Principal Name</label>
+                <input
+                  type="text"
+                  value={formData.principal_name}
+                  onChange={(e) => setFormData({ ...formData, principal_name: e.target.value })}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  placeholder="e.g., MA. NORA D. LAI, Ed.D, JD"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Assistant Principal Name</label>
+                <input
+                  type="text"
+                  value={formData.assistant_principal_name}
+                  onChange={(e) => setFormData({ ...formData, assistant_principal_name: e.target.value })}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  placeholder="e.g., Assistant Principal"
+                />
+              </div>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -637,6 +661,26 @@ export default function AdminSchoolYear() {
                   onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                   required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Principal Name</label>
+                <input
+                  type="text"
+                  value={formData.principal_name}
+                  onChange={(e) => setFormData({ ...formData, principal_name: e.target.value })}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  placeholder="e.g., MA. NORA D. LAI, Ed.D, JD"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Assistant Principal Name</label>
+                <input
+                  type="text"
+                  value={formData.assistant_principal_name}
+                  onChange={(e) => setFormData({ ...formData, assistant_principal_name: e.target.value })}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  placeholder="e.g., Assistant Principal"
                 />
               </div>
               <div className="flex items-center gap-2">

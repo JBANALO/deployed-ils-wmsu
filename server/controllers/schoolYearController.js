@@ -1,8 +1,29 @@
 const { query, pool } = require('../config/database');
 
+let leadershipColumnsEnsured = false;
+
+async function ensureSchoolYearLeadershipColumns() {
+  if (leadershipColumnsEnsured) return;
+
+  const columns = await query('SHOW COLUMNS FROM school_years');
+  const hasPrincipal = columns.some(c => c.Field === 'principal_name');
+  const hasAssistantPrincipal = columns.some(c => c.Field === 'assistant_principal_name');
+
+  if (!hasPrincipal) {
+    await query('ALTER TABLE school_years ADD COLUMN principal_name VARCHAR(255) NULL AFTER end_date');
+  }
+
+  if (!hasAssistantPrincipal) {
+    await query('ALTER TABLE school_years ADD COLUMN assistant_principal_name VARCHAR(255) NULL AFTER principal_name');
+  }
+
+  leadershipColumnsEnsured = true;
+}
+
 // Get all school years (non-archived)
 exports.getAllSchoolYears = async (req, res) => {
   try {
+    await ensureSchoolYearLeadershipColumns();
     const rows = await query(
       'SELECT * FROM school_years WHERE is_archived = 0 ORDER BY start_date DESC'
     );
@@ -16,6 +37,7 @@ exports.getAllSchoolYears = async (req, res) => {
 // Get active school year
 exports.getActiveSchoolYear = async (req, res) => {
   try {
+    await ensureSchoolYearLeadershipColumns();
     const rows = await query(
       'SELECT * FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1'
     );
@@ -32,6 +54,7 @@ exports.getActiveSchoolYear = async (req, res) => {
 // Get archived school years
 exports.getArchivedSchoolYears = async (req, res) => {
   try {
+    await ensureSchoolYearLeadershipColumns();
     const rows = await query(
       'SELECT * FROM school_years WHERE is_archived = 1 ORDER BY start_date DESC'
     );
@@ -45,7 +68,8 @@ exports.getArchivedSchoolYears = async (req, res) => {
 // Create a new school year
 exports.createSchoolYear = async (req, res) => {
   try {
-    const { label, start_date, end_date, is_active } = req.body;
+    await ensureSchoolYearLeadershipColumns();
+    const { label, start_date, end_date, is_active, principal_name, assistant_principal_name } = req.body;
 
     // Validate required fields
     if (!label || !start_date || !end_date) {
@@ -61,14 +85,31 @@ exports.createSchoolYear = async (req, res) => {
     }
 
     const result = await query(
-      'INSERT INTO school_years (label, start_date, end_date, is_active) VALUES (?, ?, ?, ?)',
-      [label, start_date, end_date, is_active ? 1 : 0]
+      `INSERT INTO school_years (
+        label, start_date, end_date, principal_name, assistant_principal_name, is_active
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        label,
+        start_date,
+        end_date,
+        principal_name ? String(principal_name).trim() : null,
+        assistant_principal_name ? String(assistant_principal_name).trim() : null,
+        is_active ? 1 : 0
+      ]
     );
 
     res.status(201).json({ 
       success: true, 
       message: 'School year created successfully',
-      data: { id: result.insertId, label, start_date, end_date, is_active: is_active ? 1 : 0 }
+      data: {
+        id: result.insertId,
+        label,
+        start_date,
+        end_date,
+        principal_name: principal_name ? String(principal_name).trim() : null,
+        assistant_principal_name: assistant_principal_name ? String(assistant_principal_name).trim() : null,
+        is_active: is_active ? 1 : 0
+      }
     });
   } catch (error) {
     console.error('Error creating school year:', error);
@@ -82,8 +123,9 @@ exports.createSchoolYear = async (req, res) => {
 // Update a school year
 exports.updateSchoolYear = async (req, res) => {
   try {
+    await ensureSchoolYearLeadershipColumns();
     const { id } = req.params;
-    const { label, start_date, end_date, is_active } = req.body;
+    const { label, start_date, end_date, is_active, principal_name, assistant_principal_name } = req.body;
 
     // If setting as active, deactivate others first
     if (is_active) {
@@ -91,8 +133,19 @@ exports.updateSchoolYear = async (req, res) => {
     }
 
     const result = await query(
-      'UPDATE school_years SET label = ?, start_date = ?, end_date = ?, is_active = ?, updated_at = NOW() WHERE id = ?',
-      [label, start_date, end_date, is_active ? 1 : 0, id]
+      `UPDATE school_years
+       SET label = ?, start_date = ?, end_date = ?, principal_name = ?, assistant_principal_name = ?,
+           is_active = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [
+        label,
+        start_date,
+        end_date,
+        principal_name ? String(principal_name).trim() : null,
+        assistant_principal_name ? String(assistant_principal_name).trim() : null,
+        is_active ? 1 : 0,
+        id
+      ]
     );
 
     if (result.affectedRows === 0) {
