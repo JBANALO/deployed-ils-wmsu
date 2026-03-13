@@ -44,6 +44,8 @@ export default function AdminSchoolYear() {
   const [studentsByGrade, setStudentsByGrade] = useState([]);
   const [promotionPreview, setPromotionPreview] = useState([]);
   const [promotionHistory, setPromotionHistory] = useState([]);
+  const [promotionCandidates, setPromotionCandidates] = useState([]);
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -66,13 +68,14 @@ export default function AdminSchoolYear() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes] = await Promise.allSettled([
+      const [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes, candidatesRes] = await Promise.allSettled([
         axios.get('/school-years'),
         axios.get('/school-years/active'),
         axios.get('/school-years/students-by-grade'),
         axios.get('/school-years/promotion-preview'),
         axios.get('/school-years/archived'),
-        axios.get('/school-years/promotion-history')
+        axios.get('/school-years/promotion-history'),
+        axios.get('/school-years/promotion-candidates')
       ]);
 
       if (syRes.status === 'fulfilled') setSchoolYears(syRes.value.data?.data || []);
@@ -81,8 +84,9 @@ export default function AdminSchoolYear() {
       if (previewRes.status === 'fulfilled') setPromotionPreview(previewRes.value.data?.data || []);
       if (archivedRes.status === 'fulfilled') setArchivedSchoolYears(archivedRes.value.data?.data || []);
       if (historyRes.status === 'fulfilled') setPromotionHistory(historyRes.value.data?.data || []);
+      if (candidatesRes.status === 'fulfilled') setPromotionCandidates(candidatesRes.value.data?.data || []);
 
-      const failed = [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes].filter(r => r.status === 'rejected');
+      const failed = [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes, candidatesRes].filter(r => r.status === 'rejected');
       if (failed.length > 0) {
         console.error('Some school year data failed to load:', failed.map(f => f.reason?.message));
       }
@@ -162,10 +166,17 @@ export default function AdminSchoolYear() {
     }
   };
 
-  const handlePromoteStudents = async () => {
+  const handlePromoteStudents = async (mode = 'all') => {
     setIsSubmitting(true);
     try {
-      const response = await axios.post('/school-years/promote-students');
+      const selectedIds = Array.from(selectedCandidateIds);
+      if (mode === 'selected' && selectedIds.length === 0) {
+        toast.error('Please select at least one eligible student to promote.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const response = await axios.post('/school-years/promote-students', mode === 'selected' ? { studentIds: selectedIds } : {});
       const data = response.data?.data;
       toast.success(
         <div>
@@ -177,12 +188,28 @@ export default function AdminSchoolYear() {
         { autoClose: 6000 }
       );
       setShowPromoteModal(false);
+      setSelectedCandidateIds(new Set());
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to promote students');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const toggleCandidate = (studentId) => {
+    setSelectedCandidateIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllEligible = () => {
+    const eligibleIds = promotionCandidates.filter(c => c.canPromote).map(c => c.id);
+    const allSelected = eligibleIds.length > 0 && eligibleIds.every(id => selectedCandidateIds.has(id));
+    setSelectedCandidateIds(allSelected ? new Set() : new Set(eligibleIds));
   };
 
   const openEditModal = (sy) => {
@@ -736,6 +763,58 @@ export default function AdminSchoolYear() {
               </table>
             </div>
 
+            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-gray-700">Select Eligible Students (Optional)</p>
+                <button
+                  type="button"
+                  onClick={toggleSelectAllEligible}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                >
+                  {promotionCandidates.filter(c => c.canPromote).every(c => selectedCandidateIds.has(c.id)) ? 'Clear Selection' : 'Select All Eligible'}
+                </button>
+              </div>
+              <div className="max-h-48 overflow-y-auto border border-gray-200 rounded bg-white">
+                {promotionCandidates.length === 0 ? (
+                  <p className="text-sm text-gray-500 p-3">No candidates found</p>
+                ) : (
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-gray-100">
+                      <tr>
+                        <th className="text-left py-2 px-2">Select</th>
+                        <th className="text-left py-2 px-2">Student</th>
+                        <th className="text-left py-2 px-2">From</th>
+                        <th className="text-left py-2 px-2">To</th>
+                        <th className="text-left py-2 px-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {promotionCandidates.map((cand) => (
+                        <tr key={cand.id} className="border-t border-gray-100">
+                          <td className="py-2 px-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedCandidateIds.has(cand.id)}
+                              onChange={() => toggleCandidate(cand.id)}
+                              disabled={!cand.canPromote}
+                            />
+                          </td>
+                          <td className="py-2 px-2">{cand.name}</td>
+                          <td className="py-2 px-2">{cand.fromGrade}</td>
+                          <td className="py-2 px-2">{cand.toGrade}</td>
+                          <td className="py-2 px-2">
+                            <span className={`px-2 py-0.5 rounded-full font-semibold ${cand.canPromote ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                              {cand.canPromote ? 'Eligible' : 'Not Eligible'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
               <p className="text-sm text-yellow-800">
                 <strong>⚠️ Warning:</strong> This action <strong>cannot be undone</strong>. Grade 6 students who pass will be marked as <strong>Graduated 🎓</strong>. Kindergarten students who pass will move to <strong>Grade 1</strong>.
@@ -750,11 +829,18 @@ export default function AdminSchoolYear() {
                 Cancel
               </button>
               <button
-                onClick={handlePromoteStudents}
+                onClick={() => handlePromoteStudents('selected')}
+                disabled={isSubmitting || selectedCandidateIds.size === 0}
+                className="flex-1 px-4 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-600 transition disabled:opacity-50"
+              >
+                {isSubmitting ? 'Promoting...' : `Promote Selected (${selectedCandidateIds.size})`}
+              </button>
+              <button
+                onClick={() => handlePromoteStudents('all')}
                 disabled={isSubmitting}
                 className="flex-1 px-4 py-2 bg-red-800 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50"
               >
-                {isSubmitting ? 'Promoting...' : 'Confirm Promote Students'}
+                {isSubmitting ? 'Promoting...' : 'Promote All Students'}
               </button>
             </div>
           </div>

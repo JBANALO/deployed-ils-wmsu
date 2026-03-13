@@ -380,6 +380,64 @@ async function logPromotionHistory(conn, payload) {
   );
 }
 
+async function getStudentsForPromotion(conn, studentIds = null) {
+  if (Array.isArray(studentIds) && studentIds.length > 0) {
+    const placeholders = studentIds.map(() => '?').join(',');
+    const [rows] = await conn.query(
+      `SELECT id, lrn, first_name, last_name, grade_level, section
+       FROM students
+       WHERE id IN (${placeholders})
+       ORDER BY grade_level, section, last_name, first_name`,
+      studentIds
+    );
+    return rows;
+  }
+
+  const [rows] = await conn.query(
+    'SELECT id, lrn, first_name, last_name, grade_level, section FROM students ORDER BY grade_level, section, last_name, first_name'
+  );
+  return rows;
+}
+
+async function buildPromotionCandidate(conn, student) {
+  const currentGrade = student.grade_level || '';
+  const nextGrade = GRADE_PROGRESSION[currentGrade];
+  const studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim();
+
+  if (!nextGrade) {
+    return {
+      id: student.id,
+      lrn: student.lrn || null,
+      name: studentName,
+      fromGrade: currentGrade,
+      fromSection: student.section || null,
+      toGrade: null,
+      toSection: student.section || null,
+      canPromote: false,
+      reason: 'No promotion path for current grade',
+      average: 0,
+      hasCompleteGrades: false,
+      hasFailingGrade: false
+    };
+  }
+
+  const eligibility = await evaluatePromotionEligibility(conn, student);
+  return {
+    id: student.id,
+    lrn: student.lrn || null,
+    name: studentName,
+    fromGrade: currentGrade,
+    fromSection: student.section || null,
+    toGrade: nextGrade,
+    toSection: student.section || null,
+    canPromote: eligibility.eligible,
+    reason: eligibility.reason,
+    average: Number(eligibility.average || 0).toFixed(2),
+    hasCompleteGrades: eligibility.hasCompleteGrades,
+    hasFailingGrade: eligibility.hasFailingGrade
+  };
+}
+
 // Pick destination class for promoted student in the target grade.
 // Strategy: choose class with lowest current student count to balance sections.
 async function pickDestinationClass(conn, targetGrade) {
@@ -403,6 +461,11 @@ exports.promoteStudents = async (req, res) => {
   let connection;
 
   try {
+    const requestedIdsRaw = Array.isArray(req.body?.studentIds) ? req.body.studentIds : [];
+    const requestedStudentIds = requestedIdsRaw
+      .map(id => Number(id))
+      .filter(id => Number.isInteger(id) && id > 0);
+
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
@@ -413,9 +476,12 @@ exports.promoteStudents = async (req, res) => {
     await ensurePromotionHistoryTable(connection);
     const activeSY = await getActiveSchoolYearMeta(connection);
 
-    const [students] = await connection.query(
-      'SELECT id, lrn, first_name, last_name, grade_level, section FROM students ORDER BY grade_level, section, last_name, first_name'
-    );
+    const students = await getStudentsForPromotion(connection, requestedStudentIds.length > 0 ? requestedStudentIds : null);
+
+    if (requestedStudentIds.length > 0 && students.length === 0) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: 'No valid selected students found for promotion' });
+    }
 
     for (const student of students) {
       const currentGrade = student.grade_level || '';
@@ -529,15 +595,43 @@ exports.promoteStudents = async (req, res) => {
 
     await connection.commit();
 
+    const scopeText = requestedStudentIds.length > 0
+      ? `from ${requestedStudentIds.length} selected student(s)`
+      : 'from all students';
+
     res.json({
       success: true,
-      message: `Promoted ${promotions.length} students. ${graduates.length} graduated. ${retained.length} retained.`,
+      message: `Promoted ${promotions.length} students ${scopeText}. ${graduates.length} graduated. ${retained.length} retained.`,
       data: { promotions, graduates, retained, totalPromoted: promotions.length, totalGraduated: graduates.length, totalRetained: retained.length }
     });
   } catch (error) {
     if (connection) await connection.rollback();
     console.error('Error promoting students:', error);
     res.status(500).json({ success: false, message: 'Failed to promote students' });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+// Get promotion candidates with eligibility (for select-to-promote UI)
+exports.getPromotionCandidates = async (req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    const students = await getStudentsForPromotion(connection, null);
+
+    const candidates = [];
+    for (const student of students) {
+      const candidate = await buildPromotionCandidate(connection, student);
+      if (candidate.toGrade) {
+        candidates.push(candidate);
+      }
+    }
+
+    res.json({ success: true, data: candidates });
+  } catch (error) {
+    console.error('Error fetching promotion candidates:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch promotion candidates' });
   } finally {
     if (connection) connection.release();
   }
