@@ -28,9 +28,18 @@ const StudentPortal = () => {
         toast.loading('Loading student data...', { id: 'studentData' });
         const baseURL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 
                  (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
-        const res = await fetch(`${baseURL}/students/portal?studentId=${studentId}`, { credentials: 'include' });
+        const [res, activeSchoolYearRes] = await Promise.all([
+          fetch(`${baseURL}/students/portal?studentId=${studentId}`, { credentials: 'include' }),
+          fetch(`${baseURL}/school-years/active`, { credentials: 'include' })
+        ]);
+
         if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
         const result = await res.json();
+        let activeSchoolYear = null;
+        if (activeSchoolYearRes.ok) {
+          const activeResult = await activeSchoolYearRes.json();
+          activeSchoolYear = activeResult?.data || null;
+        }
           
           // Map API response structure to frontend expectations
           if (result.status === 'success' && result.data?.student) {
@@ -44,7 +53,10 @@ const StudentPortal = () => {
                 age: studentData.age || '',
                 sex: studentData.sex || '',
                 finalAverage: studentData.average || 'N/A',
-                adviserName: studentData.adviserName || ''
+                adviserName: studentData.adviserName || '',
+                schoolYearLabel: activeSchoolYear?.label || '',
+                principalName: activeSchoolYear?.principal_name || '',
+                assistantPrincipalName: activeSchoolYear?.assistant_principal_name || ''
               },
               grades: studentData.grades || [],
               gradeHistory: studentData.gradeHistory || [],
@@ -66,7 +78,10 @@ const StudentPortal = () => {
                 gradeLevel: 'Loading...',
                 section: 'Loading...',
                 lrn: 'Loading...',
-                finalAverage: 'Loading...'
+                finalAverage: 'Loading...',
+                schoolYearLabel: '',
+                principalName: '',
+                assistantPrincipalName: ''
               },
               grades: [],
               gradeHistory: [],
@@ -158,12 +173,7 @@ const StudentPortal = () => {
               </p>
               <h3 style="margin: 8px 0 0 0; font-weight: bold;">PUPIL'S PROGRESS REPORT CARD</h3>
               <div style="display: flex; align-items: center; justify-content: center;">
-                <span style="font-size: 14px; margin-right: 8px;">
-                  School Year 20
-                  <span style="display: inline-block; width: 24px; border-bottom: 1px solid #666; vertical-align: bottom; margin: 0 4px;"></span>
-                  - 20
-                  <span style="display: inline-block; width: 24px; border-bottom: 1px solid #666; vertical-align: bottom; margin: 0 4px;"></span>
-                </span>
+                <span style="font-size: 14px; margin-right: 8px;">School Year ${reportCardSchoolYearLabel}</span>
               </div>
             </div>
           </div>
@@ -310,8 +320,12 @@ const StudentPortal = () => {
           <!-- Signatures -->
           <div style="margin-top: 48px; display: flex; justify-content: center; gap: 200px; text-align: center; font-size: 14px; width: 100%;">
             <div style="flex: 1; max-width: 300px;">
-              <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">MA. NORA D. LAI, Ed.D, JD</p>
+              <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">${reportCardPrincipalName}</p>
               <p style="font-size: 12px; line-height: 1.2;">Principal</p>
+            </div>
+            <div style="flex: 1; max-width: 300px;">
+              <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">${reportCardAssistantPrincipalName}</p>
+              <p style="font-size: 12px; line-height: 1.2;">Assistant Principal</p>
             </div>
             <div style="flex: 1; max-width: 300px;">
               <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">${reportCardAdviserName}</p>
@@ -368,7 +382,7 @@ const StudentPortal = () => {
               <p>Approved:</p>
               <div style="margin-top: 32px; display: flex; justify-content: center; gap: 400px; text-align: center; font-size: 14px;">
                 <div>
-                  <p style="font-weight: bold; text-decoration: underline;">MA. NORA D. LAI, Ed.D, JD</p>
+                  <p style="font-weight: bold; text-decoration: underline;">${reportCardPrincipalName}</p>
                   <p>Principal</p>
                 </div>
                 <div>
@@ -392,7 +406,7 @@ const StudentPortal = () => {
 
               <div style="text-align: center;">
                 <p style="font-weight: bold; text-decoration: underline; line-height: 1.2;">
-                  MA. NORA D. LAI, Ed.D, JD
+                  ${reportCardPrincipalName}
                 </p>
                 <p style="line-height: 1.2;">Principal</p>
               </div>
@@ -476,6 +490,9 @@ const StudentPortal = () => {
   };
 
   const reportCardAdviserName = profile.adviserName?.trim() || '_______________';
+  const reportCardPrincipalName = profile.principalName?.trim() || 'MA. NORA D. LAI, Ed.D, JD';
+  const reportCardAssistantPrincipalName = profile.assistantPrincipalName?.trim() || '_______________';
+  const reportCardSchoolYearLabel = profile.schoolYearLabel?.trim() || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
 
   const formatReportCardSubject = (subject = '') => String(subject)
     .replace(/\s*\(Grade\s+\d+\)\s*$/i, '')
@@ -702,12 +719,7 @@ const StudentPortal = () => {
                 </p>
                 <h3 style="margin: 8px 0 0 0; font-weight: bold;">PUPIL'S PROGRESS REPORT CARD</h3>
                 <div style="display: flex; align-items: center; justify-content: center;">
-                  <span style="font-size: 14px; margin-right: 8px;">
-                    School Year 20
-                    <span style="display: inline-block; width: 24px; border-bottom: 1px solid #666; vertical-align: bottom; margin: 0 4px;"></span>
-                    - 20
-                    <span style="display: inline-block; width: 24px; border-bottom: 1px solid #666; vertical-align: bottom; margin: 0 4px;"></span>
-                  </span>
+                  <span style="font-size: 14px; margin-right: 8px;">School Year ${reportCardSchoolYearLabel}</span>
                 </div>
               </div>
             </div>
@@ -874,8 +886,12 @@ const StudentPortal = () => {
             <!-- Signatures -->
             <div style="margin-top: 48px; display: flex; justify-content: center; gap: 200px; text-align: center; font-size: 14px; width: 100%;">
               <div style="flex: 1; max-width: 300px;">
-                <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">MA. NORA D. LAI, Ed.D, JD</p>
+                <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">${reportCardPrincipalName}</p>
                 <p style="font-size: 12px; line-height: 1.2;">Principal</p>
+              </div>
+              <div style="flex: 1; max-width: 300px;">
+                <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">${reportCardAssistantPrincipalName}</p>
+                <p style="font-size: 12px; line-height: 1.2;">Assistant Principal</p>
               </div>
               <div style="flex: 1; max-width: 300px;">
                 <p style="font-weight: bold; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.2;">${reportCardAdviserName}</p>
@@ -1289,12 +1305,7 @@ const StudentPortal = () => {
                     </p>
                     <h3 className="font-bold mt-2">PUPIL'S PROGRESS REPORT CARD</h3>
                     <div className="flex items-center justify-center">
-                      <span className="text-sm mr-2">
-                        School Year 20
-                        <span className="inline-block w-6 border-b border-gray-400 align-bottom mx-1"></span>
-                        - 20
-                        <span className="inline-block w-6 border-b border-gray-400 align-bottom ml-1"></span>
-                      </span>
+                      <span className="text-sm mr-2">School Year {reportCardSchoolYearLabel}</span>
                     </div>
                   </div>
                 </div>
@@ -1449,8 +1460,12 @@ const StudentPortal = () => {
                 {/* Signatures */}
                 <div className="mt-12 flex justify-center gap-80 text-center text-sm">
                   <div>
-                    <p className="font-bold underline">MA. NORA D. LAI, Ed.D, JD</p>
+                    <p className="font-bold underline">{reportCardPrincipalName}</p>
                     <p>Principal</p>
+                  </div>
+                  <div>
+                    <p className="font-bold underline">{reportCardAssistantPrincipalName}</p>
+                    <p>Assistant Principal</p>
                   </div>
                   <div>
                     <p className="font-bold underline">{reportCardAdviserName}</p>
@@ -1515,7 +1530,7 @@ const StudentPortal = () => {
                     <p>Approved:</p>
                     <div className="mt-8 flex justify-center gap-100 text-center text-sm">
                       <div>
-                        <p className="font-semibold underline">MA. NORA D. LAI, Ed.D, JD</p>
+                        <p className="font-semibold underline">{reportCardPrincipalName}</p>
                         <p>Principal</p>
                       </div>
                       <div>
@@ -1539,7 +1554,7 @@ const StudentPortal = () => {
 
                     <div className="text-center">
                       <p className="font-semibold underline leading-tight">
-                        MA. NORA D. LAI, Ed.D, JD
+                        {reportCardPrincipalName}
                       </p>
                       <p className="leading-tight">Principal</p>
                     </div>

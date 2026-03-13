@@ -7,6 +7,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
   const [studentsWithGrades, setStudentsWithGrades] = useState([]);
   const [gradeSubjectsMap, setGradeSubjectsMap] = useState({});
   const [classAdviserMap, setClassAdviserMap] = useState({});
+  const [activeSchoolYearMeta, setActiveSchoolYearMeta] = useState(null);
 
   const quarterLabels = {
     q1: 'FIRST QUARTER',
@@ -162,7 +163,22 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
 
   const subjects = classSubjects;
   const today = new Date().toLocaleDateString();
-  const currentYear = new Date().getFullYear();
+  const reportCardSchoolYear = activeSchoolYearMeta?.label || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
+  const reportCardPrincipalName = activeSchoolYearMeta?.principal_name || '________________';
+  const reportCardAssistantPrincipalName = activeSchoolYearMeta?.assistant_principal_name || '________________';
+
+  useEffect(() => {
+    const fetchActiveSchoolYearMeta = async () => {
+      try {
+        const response = await api.get('/school-years/active');
+        setActiveSchoolYearMeta(response.data?.data || null);
+      } catch (error) {
+        console.error('Error fetching active school year metadata:', error);
+      }
+    };
+
+    fetchActiveSchoolYearMeta();
+  }, []);
 
   const handlePrint = () => {
     window.print();
@@ -258,7 +274,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
                   </div>
                   <div>
                     <p><span className="font-bold">Grade:</span> {studentGradeLevel}</p>
-                    <p><span className="font-bold">School Year:</span> {currentYear}-{currentYear + 1}</p>
+                    <p><span className="font-bold">School Year:</span> {reportCardSchoolYear}</p>
                   </div>
                   <div>
                     <p><span className="font-bold">Section:</span> {studentSection(student)}</p>
@@ -346,11 +362,15 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
                 <div className="grid grid-cols-3 gap-4 mt-8 text-xs">
                   <div>
                     <p className="border-t border-gray-800 text-center pt-2">Prepared by:</p>
+                    <p className="text-center text-xs font-semibold py-1">{classAdviserName}</p>
                     <p className="text-center text-xs text-gray-600 py-1">Class Adviser</p>
                   </div>
                   <div>
                     <p className="border-t border-gray-800 text-center pt-2">Verified by:</p>
-                    <p className="text-center text-xs text-gray-600 py-1">School Administrator</p>
+                    <p className="text-center text-xs font-semibold py-1">{reportCardPrincipalName}</p>
+                    <p className="text-center text-xs text-gray-600 py-1">Principal</p>
+                    <p className="text-center text-xs font-semibold py-1">{reportCardAssistantPrincipalName}</p>
+                    <p className="text-center text-xs text-gray-600 py-1">Assistant Principal</p>
                   </div>
                   <div>
                     <p className="border-t border-gray-800 text-center pt-2">Date:</p>
