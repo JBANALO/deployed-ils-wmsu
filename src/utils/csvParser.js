@@ -1,3 +1,5 @@
+import { generateWmsuPassword } from './passwordGenerator';
+
 /**
  * Helper function to remove quotes from CSV values
  * @param {string} value - CSV value possibly wrapped in quotes
@@ -264,7 +266,7 @@ export const processTeacherData = (teachers) => {
       username: teacher.username?.trim()
         ? teacher.username
         : generateUsername(teacher.firstName, teacher.lastName),
-      password: teacher.password?.trim() || 'WMSUILS123',
+      password: teacher.password?.trim() || generateWmsuPassword(teacher),
       role: role,
       gradeLevel: teacher.gradeLevel?.trim() || '',
       section: teacher.section?.trim() || '',
@@ -297,7 +299,7 @@ export const validateTeacherData = (teachers) => {
 
     // Password validation - required for import
     if (!teacher.password?.trim()) {
-      rowErrors.push(`Row ${index + 1}: Password is required for import (use WMSUILS123)`);
+      rowErrors.push(`Row ${index + 1}: Password is required or leave it blank to auto-generate WMSU#####`);
     }
 
     // Email format validation (only if provided)

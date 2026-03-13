@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api/axiosConfig";
 import { toast } from 'react-toastify';
+import { generateWmsuPassword } from "../../utils/passwordGenerator";
 
 export default function AdminCreateTeacher() {
   const [formData, setFormData] = useState({
@@ -23,10 +24,7 @@ export default function AdminCreateTeacher() {
 
   // Generate password function (based on email like students)
   const generatePassword = () => {
-    // Extract the part before @wmsu.edu.ph from email (like students use LRN)
-    const emailPart = formData.email.replace('@wmsu.edu.ph', '').slice(-4).padStart(4, '0');
-    // Remove random numbers for predictable passwords
-    const password = `WMSU${emailPart}0000`;
+    const password = generateWmsuPassword(formData);
     setFormData(prev => ({ 
       ...prev, 
       password: password

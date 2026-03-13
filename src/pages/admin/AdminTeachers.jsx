@@ -17,6 +17,7 @@ import { toast } from 'react-toastify';
 import RestoreTeacherModal from '../../components/modals/RestoreTeacherModal';
 import PermanentDeleteTeacherModal from '../../components/modals/PermanentDeleteTeacherModal';
 import TeacherBulkImportModal from "../../components/modals/TeacherBulkImportModal";
+import { generateWmsuPassword } from "../../utils/passwordGenerator";
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -624,18 +625,15 @@ export default function AdminTeachers() {
           );
           
           if (isBulkImport) {
-            passwordToShow = 'Password123'; // Default for bulk imports
+            passwordToShow = generateWmsuPassword(teacher);
             console.log('Detected bulk imported teacher:', teacher.username);
           } else {
             // For individually created accounts, try to determine the actual generated password
             if (teacher.email && teacher.email.includes('@wmsu.edu.ph')) {
-              // This is the actual pattern used in AdminCreateTeacher (now predictable)
-              const emailPart = teacher.email.replace('@wmsu.edu.ph', '').slice(-4).padStart(4, '0');
-              // Use predictable pattern: WMSU{emailPart}0000
-              passwordToShow = `WMSU${emailPart}0000`;
+              passwordToShow = generateWmsuPassword(teacher);
               console.log('Detected individually created teacher, exact password:', passwordToShow);
             } else {
-              passwordToShow = 'Password123'; // Final fallback
+              passwordToShow = generateWmsuPassword(teacher);
               console.log('Using fallback password for teacher:', teacher.username);
             }
           }
