@@ -50,11 +50,12 @@ export default function TeacherDashboard() {
         return;
       }
       const normalize = str => (str || '').toString().trim().toLowerCase();
+      const normalizeGrade = str => normalize(str).replace(/^grade\s+/, '');
       // Show history rows where the student's from_grade+from_section belonged to this teacher
       const filtered = all.filter(row =>
         classKeys.some(k => {
           const [kg, ks] = k.split('||');
-          return normalize(row.from_grade) === normalize(kg) && normalize(row.from_section) === normalize(ks);
+          return normalizeGrade(row.from_grade) === normalizeGrade(kg) && normalize(row.from_section) === normalize(ks);
         })
       );
       setPromotionHistory(filtered);
@@ -234,31 +235,12 @@ export default function TeacherDashboard() {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-6 border border-gray-300">
-        <h3 className="text-2xl font-bold mb-4 text-gray-900">Recent Activity</h3>
-        {loading ? (
-          <p className="text-gray-500 text-center py-4">Loading recent activity...</p>
-        ) : recentActivity.length === 0 ? (
-          <p className="text-gray-500 text-center py-4">No recent activity</p>
-        ) : (
-          <div className="space-y-3">
-            {recentActivity.map((activity, idx) => (
-              <div key={idx} className="bg-blue-50 p-3 rounded-md border border-gray-200 hover:shadow-sm transition">
-                <p className="font-medium">{activity.message}</p>
-                <p className="text-xs text-gray-600">{activity.detail}</p>
-                <p className="text-xs text-gray-500 mt-1">{activity.time}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* Promotion History */}
       <div className="bg-white rounded-lg shadow p-6 border border-gray-300">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <AcademicCapIcon className="w-7 h-7 text-red-800" />
-            Promotion History
+            Promotion History Logs
           </h3>
           <span className="text-xs text-gray-500">{promotionHistory.length} record{promotionHistory.length !== 1 ? 's' : ''}</span>
         </div>
@@ -303,6 +285,26 @@ export default function TeacherDashboard() {
           </div>
         )}
       </div>
+
+      <div className="bg-white rounded-lg shadow p-6 border border-gray-300">
+        <h3 className="text-2xl font-bold mb-4 text-gray-900">Recent Activity</h3>
+        {loading ? (
+          <p className="text-gray-500 text-center py-4">Loading recent activity...</p>
+        ) : recentActivity.length === 0 ? (
+          <p className="text-gray-500 text-center py-4">No recent activity</p>
+        ) : (
+          <div className="space-y-3">
+            {recentActivity.map((activity, idx) => (
+              <div key={idx} className="bg-blue-50 p-3 rounded-md border border-gray-200 hover:shadow-sm transition">
+                <p className="font-medium">{activity.message}</p>
+                <p className="text-xs text-gray-600">{activity.detail}</p>
+                <p className="text-xs text-gray-500 mt-1">{activity.time}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }
