@@ -4,6 +4,7 @@ import {
   UsersIcon,
   CalendarIcon,
   ChartBarSquareIcon,
+  AcademicCapIcon,
 } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
 
@@ -16,6 +17,8 @@ export default function TeacherDashboard() {
   const [recentActivity, setRecentActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeSchoolYear, setActiveSchoolYear] = useState(null);
+  const [promotionHistory, setPromotionHistory] = useState([]);
+  const [assignedClassKeys, setAssignedClassKeys] = useState([]);
 
   useEffect(() => {
     loadDashboardData();
@@ -33,6 +36,28 @@ export default function TeacherDashboard() {
     try {
       const res = await axios.get('/school-years/active');
       setActiveSchoolYear(res.data?.data || res.data || null);
+    } catch (e) {
+      // non-critical
+    }
+  };
+
+  const fetchPromotionHistory = async (classKeys) => {
+    try {
+      const res = await axios.get('/school-years/promotion-history');
+      const all = Array.isArray(res.data?.data) ? res.data.data : [];
+      if (classKeys.length === 0) {
+        setPromotionHistory([]);
+        return;
+      }
+      const normalize = str => (str || '').toString().trim().toLowerCase();
+      // Show history rows where the student's from_grade+from_section belonged to this teacher
+      const filtered = all.filter(row =>
+        classKeys.some(k => {
+          const [kg, ks] = k.split('||');
+          return normalize(row.from_grade) === normalize(kg) && normalize(row.from_section) === normalize(ks);
+        })
+      );
+      setPromotionHistory(filtered);
     } catch (e) {
       // non-critical
     }
@@ -77,6 +102,10 @@ export default function TeacherDashboard() {
           }
           const combined = [...adviserClasses, ...stClasses];
           assignedClasses = Array.from(new Map(combined.map(c => [c.id, c])).values());
+          // Store keys for promotion history filtering
+          const keys = assignedClasses.map(c => `${c.grade}||${c.section}`);
+          setAssignedClassKeys(keys);
+          fetchPromotionHistory(keys);
         } catch (e) {
           console.error('Error fetching assigned classes:', e);
         }
@@ -220,6 +249,57 @@ export default function TeacherDashboard() {
                 <p className="text-xs text-gray-500 mt-1">{activity.time}</p>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* Promotion History */}
+      <div className="bg-white rounded-lg shadow p-6 border border-gray-300">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <AcademicCapIcon className="w-7 h-7 text-red-800" />
+            Promotion History
+          </h3>
+          <span className="text-xs text-gray-500">{promotionHistory.length} record{promotionHistory.length !== 1 ? 's' : ''}</span>
+        </div>
+        {promotionHistory.length === 0 ? (
+          <p className="text-gray-400 text-center py-4">No promotion records for your class yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50">
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Date</th>
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Student</th>
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">LRN</th>
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">From</th>
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">To</th>
+                  <th className="text-center py-2 px-3 text-gray-500 font-medium">Average</th>
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {promotionHistory.map((row) => (
+                  <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="py-2 px-3 text-gray-500 text-xs">{new Date(row.created_at).toLocaleDateString()}</td>
+                    <td className="py-2 px-3 font-medium text-gray-800">{row.student_name}</td>
+                    <td className="py-2 px-3 text-gray-600">{row.lrn || '-'}</td>
+                    <td className="py-2 px-3 text-gray-700">{row.from_grade}{row.from_section ? ` - ${row.from_section}` : ''}</td>
+                    <td className="py-2 px-3 text-gray-700">{row.to_grade || '-'}{row.to_section ? ` - ${row.to_section}` : ''}</td>
+                    <td className="py-2 px-3 text-center text-gray-700">{row.average ?? '-'}</td>
+                    <td className="py-2 px-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                        row.status === 'promoted' ? 'bg-green-100 text-green-700' :
+                        row.status === 'graduated' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-orange-100 text-orange-700'
+                      }`}>
+                        {row.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
