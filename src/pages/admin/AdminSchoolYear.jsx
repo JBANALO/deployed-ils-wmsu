@@ -47,6 +47,9 @@ export default function AdminSchoolYear() {
   const [promotionHistory, setPromotionHistory] = useState([]);
   const [promotionCandidates, setPromotionCandidates] = useState([]);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState(new Set());
+  const [classes, setClasses] = useState([]);
+  const [selectedPromotionSchoolYearId, setSelectedPromotionSchoolYearId] = useState('');
+  const [promotionAssignments, setPromotionAssignments] = useState({});
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -73,14 +76,15 @@ export default function AdminSchoolYear() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes, candidatesRes] = await Promise.allSettled([
+      const [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes, candidatesRes, classesRes] = await Promise.allSettled([
         axios.get('/school-years'),
         axios.get('/school-years/active'),
         axios.get('/school-years/students-by-grade'),
         axios.get('/school-years/promotion-preview'),
         axios.get('/school-years/archived'),
         axios.get('/school-years/promotion-history'),
-        axios.get('/school-years/promotion-candidates')
+        axios.get('/school-years/promotion-candidates'),
+        axios.get('/classes')
       ]);
 
       if (syRes.status === 'fulfilled') setSchoolYears(syRes.value.data?.data || []);
@@ -90,8 +94,21 @@ export default function AdminSchoolYear() {
       if (archivedRes.status === 'fulfilled') setArchivedSchoolYears(archivedRes.value.data?.data || []);
       if (historyRes.status === 'fulfilled') setPromotionHistory(historyRes.value.data?.data || []);
       if (candidatesRes.status === 'fulfilled') setPromotionCandidates(candidatesRes.value.data?.data || []);
+      if (classesRes.status === 'fulfilled') {
+        const classesData = Array.isArray(classesRes.value.data)
+          ? classesRes.value.data
+          : (Array.isArray(classesRes.value.data?.data) ? classesRes.value.data.data : []);
+        setClasses(classesData);
+      }
 
-      const failed = [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes, candidatesRes].filter(r => r.status === 'rejected');
+      if (activeRes.status === 'fulfilled') {
+        const active = activeRes.value.data?.data || null;
+        if (active?.id) {
+          setSelectedPromotionSchoolYearId(String(active.id));
+        }
+      }
+
+      const failed = [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes, candidatesRes, classesRes].filter(r => r.status === 'rejected');
       if (failed.length > 0) {
         console.error('Some school year data failed to load:', failed.map(f => f.reason?.message));
       }
@@ -181,7 +198,33 @@ export default function AdminSchoolYear() {
         return;
       }
 
-      const response = await axios.post('/school-years/promote-students', mode === 'selected' ? { studentIds: selectedIds } : {});
+      if (!selectedPromotionSchoolYearId) {
+        toast.error('Please select a school year for this promotion run.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const selectedCandidates = promotionCandidates.filter(c => selectedIds.includes(c.id));
+      const needsAssignment = selectedCandidates.filter(c => c.canPromote && c.toGrade !== 'Graduate');
+
+      for (const cand of needsAssignment) {
+        if (!promotionAssignments[cand.id]) {
+          toast.error(`Please select target section/adviser for ${cand.name}.`);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      const assignments = needsAssignment.map(cand => ({
+        studentId: cand.id,
+        classId: Number(promotionAssignments[cand.id])
+      }));
+
+      const payload = mode === 'selected'
+        ? { studentIds: selectedIds, assignments, schoolYearId: Number(selectedPromotionSchoolYearId) }
+        : { schoolYearId: Number(selectedPromotionSchoolYearId) };
+
+      const response = await axios.post('/school-years/promote-students', payload);
       const data = response.data?.data;
       toast.success(
         <div>
@@ -194,6 +237,7 @@ export default function AdminSchoolYear() {
       );
       setShowPromoteModal(false);
       setSelectedCandidateIds(new Set());
+      setPromotionAssignments({});
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to promote students');
@@ -215,6 +259,17 @@ export default function AdminSchoolYear() {
     const eligibleIds = promotionCandidates.filter(c => c.canPromote).map(c => c.id);
     const allSelected = eligibleIds.length > 0 && eligibleIds.every(id => selectedCandidateIds.has(id));
     setSelectedCandidateIds(allSelected ? new Set() : new Set(eligibleIds));
+  };
+
+  const getDestinationClassOptions = (gradeLevel) => {
+    return classes.filter(c => String(c.grade || '').toLowerCase() === String(gradeLevel || '').toLowerCase());
+  };
+
+  const handleDestinationClassChange = (studentId, classId) => {
+    setPromotionAssignments(prev => ({
+      ...prev,
+      [studentId]: classId
+    }));
   };
 
   const openEditModal = (sy) => {
@@ -460,11 +515,15 @@ export default function AdminSchoolYear() {
             Student Promotion Preview
           </h3>
           <button
-            onClick={() => setShowPromoteModal(true)}
+            onClick={() => {
+              setShowPromoteModal(true);
+              setPromotionAssignments({});
+              setSelectedCandidateIds(new Set());
+            }}
             className="flex items-center gap-2 bg-red-800 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-700 transition"
           >
             <ArrowUpIcon className="w-5 h-5" />
-            Promote All Students
+            Promote Students
           </button>
         </div>
 
@@ -856,6 +915,20 @@ export default function AdminSchoolYear() {
             </div>
 
             <div className="bg-gray-50 rounded-lg p-4 mb-4">
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Promotion School Year</label>
+                <select
+                  value={selectedPromotionSchoolYearId}
+                  onChange={(e) => setSelectedPromotionSchoolYearId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Select school year</option>
+                  {schoolYears.map((sy) => (
+                    <option key={sy.id} value={sy.id}>{sy.label}</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="flex items-center justify-between mb-3">
                 <p className="text-sm font-semibold text-gray-700">Select Eligible Students (Optional)</p>
                 <button
@@ -877,6 +950,7 @@ export default function AdminSchoolYear() {
                         <th className="text-left py-2 px-2">Student</th>
                         <th className="text-left py-2 px-2">From</th>
                         <th className="text-left py-2 px-2">To</th>
+                        <th className="text-left py-2 px-2">Target Section / Adviser</th>
                         <th className="text-left py-2 px-2">Status</th>
                       </tr>
                     </thead>
@@ -894,6 +968,25 @@ export default function AdminSchoolYear() {
                           <td className="py-2 px-2">{cand.name}</td>
                           <td className="py-2 px-2">{cand.fromGrade}</td>
                           <td className="py-2 px-2">{cand.toGrade}</td>
+                          <td className="py-2 px-2 min-w-[220px]">
+                            {cand.toGrade === 'Graduate' ? (
+                              <span className="text-gray-400">N/A (Graduate)</span>
+                            ) : (
+                              <select
+                                value={promotionAssignments[cand.id] || ''}
+                                onChange={(e) => handleDestinationClassChange(cand.id, e.target.value)}
+                                disabled={!cand.canPromote || !selectedCandidateIds.has(cand.id)}
+                                className="w-full border border-gray-300 rounded px-2 py-1 disabled:bg-gray-100"
+                              >
+                                <option value="">Select destination class</option>
+                                {getDestinationClassOptions(cand.toGrade).map((cls) => (
+                                  <option key={cls.id} value={cls.id}>
+                                    {`${cls.grade} - ${cls.section} (${cls.adviser_name || 'No Adviser'})`}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </td>
                           <td className="py-2 px-2">
                             <span className={`px-2 py-0.5 rounded-full font-semibold ${cand.canPromote ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
                               {cand.canPromote ? 'Eligible' : 'Not Eligible'}
@@ -932,7 +1025,7 @@ export default function AdminSchoolYear() {
                 disabled={isSubmitting}
                 className="flex-1 px-4 py-2 bg-red-800 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50"
               >
-                {isSubmitting ? 'Promoting...' : 'Promote All Students'}
+                {isSubmitting ? 'Promoting...' : 'Auto Promote All (No Manual Assignment)'}
               </button>
             </div>
           </div>
