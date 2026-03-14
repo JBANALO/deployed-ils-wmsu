@@ -410,6 +410,16 @@ async function getActiveSchoolYearMeta(conn) {
   return rows[0] || null;
 }
 
+async function getSchoolYearMetaById(conn, schoolYearId) {
+  const id = Number(schoolYearId);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const [rows] = await conn.query(
+    'SELECT id, label FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1',
+    [id]
+  );
+  return rows[0] || null;
+}
+
 async function logPromotionHistory(conn, payload) {
   await conn.query(
     `INSERT INTO promotion_history
@@ -518,6 +528,17 @@ exports.promoteStudents = async (req, res) => {
     const requestedStudentIds = requestedIdsRaw
       .map(id => Number(id))
       .filter(id => Number.isInteger(id) && id > 0);
+    const requestedSchoolYearId = Number(req.body?.schoolYearId || 0);
+    const assignmentsRaw = Array.isArray(req.body?.assignments) ? req.body.assignments : [];
+    const assignmentByStudentId = new Map();
+
+    assignmentsRaw.forEach((item) => {
+      const studentId = Number(item?.studentId);
+      const classId = Number(item?.classId);
+      if (Number.isInteger(studentId) && studentId > 0 && Number.isInteger(classId) && classId > 0) {
+        assignmentByStudentId.set(studentId, classId);
+      }
+    });
 
     connection = await pool.getConnection();
     await connection.beginTransaction();
@@ -527,7 +548,8 @@ exports.promoteStudents = async (req, res) => {
     const retained   = [];
 
     await ensurePromotionHistoryTable(connection);
-    const activeSY = await getActiveSchoolYearMeta(connection);
+    const selectedSY = await getSchoolYearMetaById(connection, requestedSchoolYearId);
+    const activeSY = selectedSY || await getActiveSchoolYearMeta(connection);
 
     const students = await getStudentsForPromotion(connection, requestedStudentIds.length > 0 ? requestedStudentIds : null);
 
@@ -602,7 +624,30 @@ exports.promoteStudents = async (req, res) => {
           details: { hasCompleteGrades: true, hasFailingGrade: false }
         });
       } else {
-        const destinationClass = await pickDestinationClass(connection, nextGrade);
+        let destinationClass = null;
+        const requestedClassId = assignmentByStudentId.get(student.id);
+        if (requestedClassId) {
+          const [rows] = await connection.query(
+            `SELECT id, grade, section, adviser_id, adviser_name
+             FROM classes
+             WHERE id = ? AND grade = ?
+             LIMIT 1`,
+            [requestedClassId, nextGrade]
+          );
+          destinationClass = rows[0] || null;
+        }
+
+        if (!destinationClass) {
+          if (requestedStudentIds.length > 0) {
+            await connection.rollback();
+            return res.status(400).json({
+              success: false,
+              message: `Missing or invalid destination class assignment for ${studentName} (${nextGrade})`
+            });
+          }
+          destinationClass = await pickDestinationClass(connection, nextGrade);
+        }
+
         const nextSection = destinationClass?.section || currentSection;
 
         await connection.query(
