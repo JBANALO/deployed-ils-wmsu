@@ -56,7 +56,18 @@ export default function AdminCreateTeacher() {
     setError("");
     setSuccess("");
 
-    // Email validation no longer needed since domain is added automatically
+    const normalizedEmail = String(formData.email || '').trim().toLowerCase();
+    const emailPrefix = normalizedEmail.replace('@wmsu.edu.ph', '').trim();
+
+    if (!normalizedEmail.endsWith('@wmsu.edu.ph') || !emailPrefix) {
+      setError('Please enter a valid teacher email before @wmsu.edu.ph');
+      return;
+    }
+
+    if (!formData.firstName?.trim() || !formData.lastName?.trim()) {
+      setError('First name and last name are required.');
+      return;
+    }
 
     if (formData.password.length < 6) {
       setError("Password must be at least 6 characters long.");
@@ -77,11 +88,11 @@ export default function AdminCreateTeacher() {
       }
 
       const teacherData = {
-        firstName: formData.firstName,
+        firstName: formData.firstName.trim(),
         middleName: formData.middleName,
-        lastName: formData.lastName,
+        lastName: formData.lastName.trim(),
         username: formData.username,
-        email: formData.email,
+        email: normalizedEmail,
         password: formData.password,
         role: 'teacher',
         bio: formData.bio || '',
@@ -118,8 +129,9 @@ export default function AdminCreateTeacher() {
         }
       }, 16000); // 1 second after main redirect
     } catch (err) {
-      toast.error("Registration error: " + (err.message || "Failed to create teacher account."));
-      setError(err.message || "Failed to create teacher account.");
+      const msg = err?.response?.data?.message || err.message || "Failed to create teacher account.";
+      toast.error("Registration error: " + msg);
+      setError(msg);
     } finally {
       setIsSubmitting(false);
     }

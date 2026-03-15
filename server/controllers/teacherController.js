@@ -44,9 +44,21 @@ exports.createTeacher = async (req, res) => {
       bio
     } = req.body;
 
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    let normalizedUsername = String(username || '').trim().toLowerCase();
+
+    if (!normalizedUsername) {
+      normalizedUsername = `${String(firstName || '').trim().toLowerCase()}${String(lastName || '').trim().toLowerCase()}`
+        .replace(/\s+/g, '');
+    }
+
     // Validate input
-    if (!firstName || !lastName || !email || !password) {
+    if (!firstName || !lastName || !normalizedEmail || !password) {
       return res.status(400).json({ message: 'Please provide all required fields' });
+    }
+
+    if (!normalizedEmail.includes('@wmsu.edu.ph')) {
+      return res.status(400).json({ message: 'Email must be a valid @wmsu.edu.ph address' });
     }
 
     // Only allow valid teacher roles
@@ -55,9 +67,19 @@ exports.createTeacher = async (req, res) => {
     }
 
     // Check if teacher already exists
-    const existingTeacher = await query('SELECT * FROM teachers WHERE email = ? OR username = ?', [email, username]);
-    if (existingTeacher.length > 0) {
-      return res.status(400).json({ message: 'Teacher with this email or username already exists' });
+    const existingEmail = await query('SELECT id FROM teachers WHERE email = ? LIMIT 1', [normalizedEmail]);
+    if (existingEmail.length > 0) {
+      return res.status(400).json({ message: 'Teacher with this email already exists' });
+    }
+
+    // Ensure username is unique for manual creation flow
+    let uniqueUsername = normalizedUsername;
+    let suffix = 1;
+    while (true) {
+      const existingUsername = await query('SELECT id FROM teachers WHERE username = ? LIMIT 1', [uniqueUsername]);
+      if (existingUsername.length === 0) break;
+      uniqueUsername = `${normalizedUsername}${suffix}`;
+      suffix += 1;
     }
 
     // Hash password
@@ -74,8 +96,8 @@ exports.createTeacher = async (req, res) => {
         firstName, 
         middleName || null, 
         lastName, 
-        username, 
-        email, 
+        uniqueUsername, 
+        normalizedEmail, 
         hashedPassword,
         role, 
         subjects || null, 
@@ -92,7 +114,8 @@ exports.createTeacher = async (req, res) => {
     res.status(201).json({ 
       message: `${role.charAt(0).toUpperCase() + role.slice(1)} account created successfully!`,
       teacherId: result.insertId,
-      role
+      role,
+      username: uniqueUsername
     });
   } catch (error) {
     console.error('Error creating teacher:', error);

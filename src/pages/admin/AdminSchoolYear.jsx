@@ -50,6 +50,8 @@ export default function AdminSchoolYear() {
   const [classes, setClasses] = useState([]);
   const [selectedPromotionSchoolYearId, setSelectedPromotionSchoolYearId] = useState('');
   const [promotionAssignments, setPromotionAssignments] = useState({});
+  const [historyGradeFilter, setHistoryGradeFilter] = useState('All Grades');
+  const [historySectionFilter, setHistorySectionFilter] = useState('All Sections');
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -329,6 +331,24 @@ export default function AdminSchoolYear() {
     fill: GRADE_COLORS[item.grade] || '#6b7280'
   }));
 
+  const historyGrades = ['All Grades', ...new Set(
+    promotionHistory
+      .map(h => h.from_grade)
+      .filter(Boolean)
+  )];
+
+  const historySections = ['All Sections', ...new Set(
+    promotionHistory
+      .map(h => h.from_section)
+      .filter(Boolean)
+  )];
+
+  const filteredPromotionHistory = promotionHistory.filter((row) => {
+    const gradeOk = historyGradeFilter === 'All Grades' || row.from_grade === historyGradeFilter;
+    const sectionOk = historySectionFilter === 'All Sections' || row.from_section === historySectionFilter;
+    return gradeOk && sectionOk;
+  });
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -536,7 +556,7 @@ export default function AdminSchoolYear() {
                 <tr className="border-b border-gray-200">
                   <th className="text-left py-2 px-3 text-gray-500 font-medium">Current Grade</th>
                   <th className="text-center py-2 px-3 text-gray-500 font-medium">Total</th>
-                  <th className="text-center py-2 px-3 text-blue-600 font-medium">✓ Complete Q1-Q4</th>
+                  <th className="text-center py-2 px-3 text-blue-600 font-medium">✓ Complete Q1-Q2</th>
                   <th className="text-center py-2 px-3 text-green-600 font-medium">↑ Promote (avg ≥75)</th>
                   <th className="text-center py-2 px-3 text-orange-500 font-medium">↺ Retain (avg &lt;75)</th>
                   <th className="text-left py-2 px-3 text-gray-500 font-medium">Promoted To</th>
@@ -576,10 +596,37 @@ export default function AdminSchoolYear() {
             <ArchiveBoxIcon className="w-5 h-5 text-red-800" />
             Promotion History Logs
           </h3>
-          <span className="text-xs text-gray-500">Recent {promotionHistory.length} records</span>
+          <span className="text-xs text-gray-500">Showing {filteredPromotionHistory.length} of {promotionHistory.length} records</span>
         </div>
 
-        {promotionHistory.length === 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Filter by Grade</label>
+            <select
+              value={historyGradeFilter}
+              onChange={(e) => setHistoryGradeFilter(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+            >
+              {historyGrades.map((g) => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Filter by Section</label>
+            <select
+              value={historySectionFilter}
+              onChange={(e) => setHistorySectionFilter(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+            >
+              {historySections.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {filteredPromotionHistory.length === 0 ? (
           <p className="text-gray-400 text-center py-6">No promotion history yet</p>
         ) : (
           <div className="overflow-x-auto">
@@ -597,7 +644,7 @@ export default function AdminSchoolYear() {
                 </tr>
               </thead>
               <tbody>
-                {promotionHistory.map((row) => (
+                {filteredPromotionHistory.map((row) => (
                   <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-2 px-3 text-gray-600">{new Date(row.created_at).toLocaleString()}</td>
                     <td className="py-2 px-3 font-medium text-gray-800">
@@ -869,7 +916,7 @@ export default function AdminSchoolYear() {
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold">Promote Students</h3>
-                  <p className="text-sm text-gray-500">Requires complete Q1-Q4 grades for all subjects + average ≥ 75</p>
+                  <p className="text-sm text-gray-500">Requires complete Q1-Q2 grades for all subjects + average ≥ 75</p>
                 </div>
               </div>
               <button onClick={() => setShowPromoteModal(false)} className="text-gray-400 hover:text-gray-600">
@@ -884,7 +931,7 @@ export default function AdminSchoolYear() {
 
             {/* Passing grade rule */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-800">
-              <strong>Promotion Rule:</strong> Students are promoted only if they have <strong>complete grades for all required subjects in Q1-Q4</strong> and an overall average of <strong>75 or above</strong>. Otherwise, retained.
+              <strong>Promotion Rule:</strong> Students are promoted only if they have <strong>complete grades for all required subjects in Q1-Q2</strong> and an overall average of <strong>75 or above</strong>. Otherwise, retained.
             </div>
 
             {/* Breakdown table */}
@@ -894,7 +941,7 @@ export default function AdminSchoolYear() {
                 <thead>
                   <tr className="border-b border-gray-200">
                     <th className="text-left py-1 text-gray-500 font-medium">Grade</th>
-                    <th className="text-center py-1 text-blue-600 font-medium">✓ Complete Q1-Q4</th>
+                    <th className="text-center py-1 text-blue-600 font-medium">✓ Complete Q1-Q2</th>
                     <th className="text-center py-1 text-green-600 font-medium">↑ Promote</th>
                     <th className="text-center py-1 text-orange-500 font-medium">↺ Retain</th>
                     <th className="text-left py-1 text-gray-500 font-medium">Moving To</th>
