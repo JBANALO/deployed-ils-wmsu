@@ -280,7 +280,7 @@ const GRADE_PROGRESSION = {
   'Grade 6':      'Graduate'
 };
 const PASSING_GRADE = 75;
-const REQUIRED_QUARTERS = ['Q1', 'Q2'];
+const REQUIRED_QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'];
 
 function toGradeKey(gradeLevel = '') {
   return String(gradeLevel).replace(/^Grade\s+/i, '').trim();
@@ -321,7 +321,7 @@ async function evaluatePromotionEligibility(conn, student) {
   const [gradeRows] = await conn.query(
     `SELECT subject, quarter, grade
      FROM grades
-     WHERE student_id = ? AND quarter IN ('Q1','Q2')`,
+     WHERE student_id = ? AND quarter IN ('Q1','Q2','Q3','Q4')`,
     [student.id]
   );
 

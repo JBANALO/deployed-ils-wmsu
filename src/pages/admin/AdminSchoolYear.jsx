@@ -556,7 +556,7 @@ export default function AdminSchoolYear() {
                 <tr className="border-b border-gray-200">
                   <th className="text-left py-2 px-3 text-gray-500 font-medium">Current Grade</th>
                   <th className="text-center py-2 px-3 text-gray-500 font-medium">Total</th>
-                  <th className="text-center py-2 px-3 text-blue-600 font-medium">✓ Complete Q1-Q2</th>
+                  <th className="text-center py-2 px-3 text-blue-600 font-medium">✓ Complete Q1-Q4</th>
                   <th className="text-center py-2 px-3 text-green-600 font-medium">↑ Promote (avg ≥75)</th>
                   <th className="text-center py-2 px-3 text-orange-500 font-medium">↺ Retain (avg &lt;75)</th>
                   <th className="text-left py-2 px-3 text-gray-500 font-medium">Promoted To</th>
@@ -916,7 +916,7 @@ export default function AdminSchoolYear() {
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold">Promote Students</h3>
-                  <p className="text-sm text-gray-500">Requires complete Q1-Q2 grades for all subjects + average ≥ 75</p>
+                  <p className="text-sm text-gray-500">Requires complete Q1-Q4 grades for all subjects + average ≥ 75</p>
                 </div>
               </div>
               <button onClick={() => setShowPromoteModal(false)} className="text-gray-400 hover:text-gray-600">
@@ -931,7 +931,7 @@ export default function AdminSchoolYear() {
 
             {/* Passing grade rule */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-800">
-              <strong>Promotion Rule:</strong> Students are promoted only if they have <strong>complete grades for all required subjects in Q1-Q2</strong> and an overall average of <strong>75 or above</strong>. Otherwise, retained.
+              <strong>Promotion Rule:</strong> Students are promoted only if they have <strong>complete grades for all required subjects in Q1-Q4</strong> and an overall average of <strong>75 or above</strong>. Otherwise, retained.
             </div>
 
             {/* Breakdown table */}
@@ -941,7 +941,7 @@ export default function AdminSchoolYear() {
                 <thead>
                   <tr className="border-b border-gray-200">
                     <th className="text-left py-1 text-gray-500 font-medium">Grade</th>
-                    <th className="text-center py-1 text-blue-600 font-medium">✓ Complete Q1-Q2</th>
+                    <th className="text-center py-1 text-blue-600 font-medium">✓ Complete Q1-Q4</th>
                     <th className="text-center py-1 text-green-600 font-medium">↑ Promote</th>
                     <th className="text-center py-1 text-orange-500 font-medium">↺ Retain</th>
                     <th className="text-left py-1 text-gray-500 font-medium">Moving To</th>
