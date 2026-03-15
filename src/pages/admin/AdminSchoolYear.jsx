@@ -217,7 +217,7 @@ export default function AdminSchoolYear() {
 
       const assignments = needsAssignment.map(cand => ({
         studentId: cand.id,
-        classId: Number(promotionAssignments[cand.id])
+        classId: String(promotionAssignments[cand.id])
       }));
 
       const payload = mode === 'selected'
