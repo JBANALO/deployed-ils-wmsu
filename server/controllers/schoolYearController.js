@@ -385,7 +385,7 @@ async function ensurePromotionHistoryTable(conn) {
       id INT AUTO_INCREMENT PRIMARY KEY,
       school_year_id INT NULL,
       school_year_label VARCHAR(50) NULL,
-      student_id INT NOT NULL,
+      student_id VARCHAR(100) NOT NULL,
       lrn VARCHAR(50) NULL,
       student_name VARCHAR(255) NOT NULL,
       from_grade VARCHAR(50) NOT NULL,
@@ -401,6 +401,25 @@ async function ensurePromotionHistoryTable(conn) {
       INDEX idx_created_at (created_at)
     )
   `);
+
+  // Backward compatibility: older deployments created student_id as INT.
+  // Promotion now supports UUID/string student IDs as well.
+  try {
+    const [cols] = await conn.query(
+      `SELECT DATA_TYPE
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'promotion_history'
+         AND COLUMN_NAME = 'student_id'
+       LIMIT 1`
+    );
+    const dataType = String(cols?.[0]?.DATA_TYPE || '').toLowerCase();
+    if (dataType && dataType !== 'varchar') {
+      await conn.query('ALTER TABLE promotion_history MODIFY COLUMN student_id VARCHAR(100) NOT NULL');
+    }
+  } catch (migrationErr) {
+    console.error('Promotion history student_id migration warning:', migrationErr.message);
+  }
 }
 
 async function getActiveSchoolYearMeta(conn) {
@@ -526,16 +545,16 @@ exports.promoteStudents = async (req, res) => {
   try {
     const requestedIdsRaw = Array.isArray(req.body?.studentIds) ? req.body.studentIds : [];
     const requestedStudentIds = requestedIdsRaw
-      .map(id => Number(id))
-      .filter(id => Number.isInteger(id) && id > 0);
+      .map(id => String(id || '').trim())
+      .filter(Boolean);
     const requestedSchoolYearId = Number(req.body?.schoolYearId || 0);
     const assignmentsRaw = Array.isArray(req.body?.assignments) ? req.body.assignments : [];
     const assignmentByStudentId = new Map();
 
     assignmentsRaw.forEach((item) => {
-      const studentId = Number(item?.studentId);
-      const classId = Number(item?.classId);
-      if (Number.isInteger(studentId) && studentId > 0 && Number.isInteger(classId) && classId > 0) {
+      const studentId = String(item?.studentId || '').trim();
+      const classId = String(item?.classId || '').trim();
+      if (studentId && classId) {
         assignmentByStudentId.set(studentId, classId);
       }
     });
@@ -625,7 +644,7 @@ exports.promoteStudents = async (req, res) => {
         });
       } else {
         let destinationClass = null;
-        const requestedClassId = assignmentByStudentId.get(student.id);
+        const requestedClassId = assignmentByStudentId.get(String(student.id));
         if (requestedClassId) {
           const [rows] = await connection.query(
             `SELECT id, grade, section, adviser_id, adviser_name
