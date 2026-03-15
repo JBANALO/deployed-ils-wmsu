@@ -860,8 +860,9 @@ export default function AdminSchoolYear() {
       {/* Promote Students Confirmation Modal */}
       {showPromoteModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-xl shadow-xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-white rounded-xl p-4 md:p-6 w-full max-w-6xl shadow-xl max-h-[94vh] overflow-y-auto">
+            <div className="sticky top-0 z-10 bg-white pb-3 mb-4 border-b border-gray-100">
+              <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="bg-red-100 p-3 rounded-full">
                   <AcademicCapIcon className="w-6 h-6 text-red-600" />
@@ -874,6 +875,11 @@ export default function AdminSchoolYear() {
               <button onClick={() => setShowPromoteModal(false)} className="text-gray-400 hover:text-gray-600">
                 <XMarkIcon className="w-6 h-6" />
               </button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-700 font-semibold">Manual: Select student + assign section/adviser</span>
+                <span className="px-2 py-1 rounded-full bg-red-100 text-red-700 font-semibold">Automatic: Promote all using system auto-assignment</span>
+              </div>
             </div>
 
             {/* Passing grade rule */}
@@ -939,7 +945,7 @@ export default function AdminSchoolYear() {
                   {promotionCandidates.filter(c => c.canPromote).every(c => selectedCandidateIds.has(c.id)) ? 'Clear Selection' : 'Select All Eligible'}
                 </button>
               </div>
-              <div className="max-h-48 overflow-y-auto border border-gray-200 rounded bg-white">
+              <div className="max-h-[46vh] overflow-auto border border-gray-200 rounded bg-white">
                 {promotionCandidates.length === 0 ? (
                   <p className="text-sm text-gray-500 p-3">No candidates found</p>
                 ) : (
@@ -1006,26 +1012,26 @@ export default function AdminSchoolYear() {
               </p>
             </div>
 
-            <div className="flex gap-3">
+            <div className="sticky bottom-0 bg-white pt-3 border-t border-gray-100 flex flex-col md:flex-row gap-3">
               <button
                 onClick={() => setShowPromoteModal(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                className="md:flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handlePromoteStudents('selected')}
                 disabled={isSubmitting || selectedCandidateIds.size === 0}
-                className="flex-1 px-4 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-600 transition disabled:opacity-50"
+                className="md:flex-1 px-4 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-600 transition disabled:opacity-50"
               >
-                {isSubmitting ? 'Promoting...' : `Promote Selected (${selectedCandidateIds.size})`}
+                {isSubmitting ? 'Promoting...' : `Manual Promote Selected (${selectedCandidateIds.size})`}
               </button>
               <button
                 onClick={() => handlePromoteStudents('all')}
                 disabled={isSubmitting}
-                className="flex-1 px-4 py-2 bg-red-800 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+                className="md:flex-1 px-4 py-2 bg-red-800 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50"
               >
-                {isSubmitting ? 'Promoting...' : 'Auto Promote All (No Manual Assignment)'}
+                {isSubmitting ? 'Promoting...' : 'Automatic Promote All'}
               </button>
             </div>
           </div>
