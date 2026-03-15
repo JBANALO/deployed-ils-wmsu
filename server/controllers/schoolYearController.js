@@ -520,6 +520,53 @@ async function buildPromotionCandidate(conn, student) {
   };
 }
 
+function buildClassIdFromGradeSection(gradeLevel = '', section = '') {
+  const grade = String(gradeLevel || '').toLowerCase().replace(/\s+/g, '-');
+  const sec = String(section || '').toLowerCase().replace(/\s+/g, '-');
+  if (!grade || !sec) return '';
+  return `${grade}-${sec}`;
+}
+
+async function getScheduleSnapshotForClass(conn, gradeLevel, section) {
+  if (!gradeLevel || !section) return [];
+
+  const classIdCandidates = new Set();
+  const slugId = buildClassIdFromGradeSection(gradeLevel, section);
+  if (slugId) classIdCandidates.add(slugId);
+
+  const [classRows] = await conn.query(
+    `SELECT id
+     FROM classes
+     WHERE (grade = ? OR grade = ? OR REPLACE(LOWER(grade), 'grade ', '') = LOWER(?))
+       AND section = ?`,
+    [gradeLevel, toGradeKey(gradeLevel), toGradeKey(gradeLevel), section]
+  );
+
+  classRows.forEach((row) => {
+    if (row?.id != null) classIdCandidates.add(String(row.id));
+  });
+
+  const classIds = Array.from(classIdCandidates).filter(Boolean);
+  if (classIds.length === 0) return [];
+
+  const placeholders = classIds.map(() => '?').join(',');
+  const [scheduleRows] = await conn.query(
+    `SELECT subject, teacher_name, day, start_time, end_time
+     FROM subject_teachers
+     WHERE class_id IN (${placeholders})
+     ORDER BY FIELD(day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'), start_time`,
+    classIds
+  );
+
+  return (scheduleRows || []).map((row) => ({
+    subject: row.subject,
+    teacher_name: row.teacher_name,
+    day: row.day,
+    start_time: row.start_time,
+    end_time: row.end_time
+  }));
+}
+
 // Pick destination class for promoted student in the target grade.
 // Strategy: choose class with lowest current student count to balance sections.
 async function pickDestinationClass(conn, targetGrade) {
@@ -588,6 +635,7 @@ exports.promoteStudents = async (req, res) => {
       const eligibility = await evaluatePromotionEligibility(connection, student);
       const avg = Number(eligibility.average || 0);
       const passed = eligibility.eligible;
+      const previousSchedule = passed ? await getScheduleSnapshotForClass(connection, currentGrade, currentSection) : [];
 
       if (!passed) {
         // Retain student
@@ -640,7 +688,11 @@ exports.promoteStudents = async (req, res) => {
           average: avg,
           status: 'graduated',
           reason: 'Completed all subjects and passed all quarters',
-          details: { hasCompleteGrades: true, hasFailingGrade: false }
+          details: {
+            hasCompleteGrades: true,
+            hasFailingGrade: false,
+            previousSchedule
+          }
         });
       } else {
         let destinationClass = null;
@@ -704,7 +756,8 @@ exports.promoteStudents = async (req, res) => {
             hasFailingGrade: false,
             destinationClassId: destinationClass?.id || null,
             destinationAdviserId: destinationClass?.adviser_id || null,
-            destinationAdviserName: destinationClass?.adviser_name || null
+            destinationAdviserName: destinationClass?.adviser_name || null,
+            previousSchedule
           }
         });
       }

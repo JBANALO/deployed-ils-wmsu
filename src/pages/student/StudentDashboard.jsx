@@ -62,7 +62,8 @@ const StudentPortal = () => {
               gradeHistory: studentData.gradeHistory || [],
               attendance: studentData.attendance || [],
               attendanceSummary: studentData.attendanceSummary || {},
-              schedule: studentData.schedule || []
+              schedule: studentData.schedule || [],
+              previousScheduleHistory: studentData.previousScheduleHistory || []
             };
             setData(mappedData);
             toast.success('Student data loaded successfully!', { id: 'studentData' });
@@ -87,7 +88,8 @@ const StudentPortal = () => {
               gradeHistory: [],
               attendance: [],
               attendanceSummary: {},
-              schedule: []
+              schedule: [],
+              previousScheduleHistory: []
             });
           }
       } catch (err) {
@@ -1233,6 +1235,58 @@ const StudentPortal = () => {
                     <BookOpen className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                     <p className="text-lg">No schedule available yet.</p>
                     <p className="text-sm">Your class schedule will appear here once set by the administrator.</p>
+                  </div>
+                )}
+
+                {data.previousScheduleHistory && data.previousScheduleHistory.length > 0 && (
+                  <div className="mt-8">
+                    <h4 className="text-xl font-bold text-gray-800 mb-4">Previous Schedule Before Promotion</h4>
+                    <div className="space-y-4">
+                      {data.previousScheduleHistory.map((record, idx) => (
+                        <div key={idx} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                            <p className="font-semibold text-gray-800">
+                              {record.fromGrade || 'Previous Grade'}
+                              {record.fromSection ? ` - ${record.fromSection}` : ''}
+                              {' '}→ {record.toGrade || 'Next Grade'}
+                              {record.toSection ? ` - ${record.toSection}` : ''}
+                            </p>
+                            {record.promotedAt && (
+                              <p className="text-xs text-gray-500">
+                                Saved on {new Date(record.promotedAt).toLocaleDateString('en-US')}
+                              </p>
+                            )}
+                          </div>
+
+                          {Array.isArray(record.schedule) && record.schedule.length > 0 ? (
+                            <div className="grid gap-3">
+                              {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => {
+                                const daySchedule = record.schedule.filter(s => s.day === day);
+                                if (daySchedule.length === 0) return null;
+                                return (
+                                  <div key={day} className="border rounded-md overflow-hidden bg-white">
+                                    <div className="bg-gray-200 text-gray-700 px-3 py-1 text-sm font-semibold">{day}</div>
+                                    <div className="divide-y">
+                                      {daySchedule.map((item, i) => (
+                                        <div key={i} className="flex items-center px-3 py-2 text-sm">
+                                          <div className="w-32 text-gray-600">{item.start_time} - {item.end_time}</div>
+                                          <div className="flex-1">
+                                            <p className="font-semibold text-gray-800">{item.subject}</p>
+                                            <p className="text-xs text-gray-500">{item.teacher_name}</p>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-gray-500">No saved schedule snapshot for this promotion record.</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

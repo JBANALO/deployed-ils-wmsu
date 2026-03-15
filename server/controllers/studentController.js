@@ -549,6 +549,46 @@ exports.getStudent = async (req, res) => {
          start_time`,
       [classId]
     );
+
+    // Previous schedule snapshots (captured at promotion time)
+    let previousScheduleHistory = [];
+    try {
+      const scheduleHistoryRows = await query(
+        `SELECT from_grade, from_section, to_grade, to_section, status, created_at, details_json
+         FROM promotion_history
+         WHERE student_id = ? AND status IN ('promoted', 'graduated')
+         ORDER BY created_at DESC`,
+        [studentId]
+      );
+
+      previousScheduleHistory = scheduleHistoryRows
+        .map((row) => {
+          let details = {};
+          try {
+            details = typeof row.details_json === 'string'
+              ? JSON.parse(row.details_json || '{}')
+              : (row.details_json || {});
+          } catch (_) {
+            details = {};
+          }
+
+          const snapshot = Array.isArray(details.previousSchedule) ? details.previousSchedule : [];
+          if (snapshot.length === 0) return null;
+
+          return {
+            fromGrade: row.from_grade || null,
+            fromSection: row.from_section || null,
+            toGrade: row.to_grade || null,
+            toSection: row.to_section || null,
+            status: row.status || null,
+            promotedAt: row.created_at || null,
+            schedule: snapshot
+          };
+        })
+        .filter(Boolean);
+    } catch (scheduleHistoryErr) {
+      console.log('previous schedule history lookup skipped:', scheduleHistoryErr.message);
+    }
     
     // Also get adviser info for the class with fallbacks for legacy/alternate class IDs.
     let adviserName = null;
@@ -609,6 +649,7 @@ exports.getStudent = async (req, res) => {
     formattedStudent.attendance = attendanceRaw;
     formattedStudent.attendanceSummary = attendanceSummary;
     formattedStudent.schedule = scheduleRaw;
+    formattedStudent.previousScheduleHistory = previousScheduleHistory;
     formattedStudent.adviserName = adviserName;
     
     console.log('✅ Student portal data loaded:', {
