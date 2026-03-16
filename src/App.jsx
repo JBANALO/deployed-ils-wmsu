@@ -21,8 +21,10 @@ import QRCodePortal from "./pages/teacher/QRCodePortal.jsx";
 import ReportsPage from "./pages/teacher/ReportsPage";
 import CustomerService from "./pages/teacher/CustomerService";
 import TeacherProfile from "./pages/teacher/TeacherProfile";
+import TeacherSettings from "./pages/teacher/TeacherSettings";
 
 import AdminLayout from "./layouts/admin/AdminLayout";
+import SuperAdminLayout from "./layouts/superadmin/SuperAdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminProfile from "./pages/admin/AdminProfile";
 import AdminTeachers from "./pages/admin/AdminTeachers";
@@ -41,6 +43,12 @@ import AdminSchoolYear from "./pages/admin/AdminSchoolYear.jsx";
 import AdminSubjects from "./pages/admin/AdminSubjects.jsx";
 import AdminSections from "./pages/admin/AdminSections.jsx";
 import CreateAccount from "./pages/admin/CreateAccount";
+import SuperAdminDashboard from "./pages/superadmin/SuperAdminDashboard.jsx";
+import AdminAccounts from "./pages/superadmin/AdminAccounts.jsx";
+import TeacherAccounts from "./pages/superadmin/TeacherAccounts.jsx";
+import StudentAccounts from "./pages/superadmin/StudentAccounts.jsx";
+import SuperAdminSettings from "./pages/superadmin/Settings.jsx";
+import SuperAdminProfile from "./pages/superadmin/SuperAdminProfile.jsx";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
 import { Toaster } from 'react-hot-toast';  
@@ -110,6 +118,7 @@ function App() {
               <Route element={<TeacherLayout />}>
                 <Route path="/teacher/teacher-dashboard" element={<TeacherDashboard />} />
                 <Route path="/teacher/teacher-profile" element={<TeacherProfile />} />
+                <Route path="/teacher/settings" element={<TeacherSettings />} />
                 <Route path="/grade-level" element={<GradeLevel />} />
                 <Route path="/edit-grades" element={<EditGrades />} />
                 <Route path="/class-list" element={<ClassList />} />
@@ -138,6 +147,17 @@ function App() {
                 <Route path="/admin/school-year" element={<AdminSchoolYear />} />
                 <Route path="/admin/subjects" element={<AdminSubjects />} />
                 <Route path="/admin/sections" element={<AdminSections />} />
+              </Route>
+            </Route>
+
+            <Route element={<ProtectedRoute allowedRoles={['super_admin']} />}>
+              <Route element={<SuperAdminLayout />}>
+                <Route path="/admin/super-admin" element={<SuperAdminDashboard />} />
+                <Route path="/admin/super-profile" element={<SuperAdminProfile />} />
+                <Route path="/admin/admin-accounts" element={<AdminAccounts />} />
+                <Route path="/admin/teacher-accounts" element={<TeacherAccounts />} />
+                <Route path="/admin/student-accounts" element={<StudentAccounts />} />
+                <Route path="/admin/super-settings" element={<SuperAdminSettings />} />
               </Route>
             </Route>
 

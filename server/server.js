@@ -181,6 +181,69 @@ app.get('/api', (req, res) => {
   res.json({ message: 'WMSU Portal API is running', status: 'OK' });
 });
 
+// Login route - uses JSON file
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    console.log('Login route called with body:', req.body);
+    
+    const { email, username, password } = req.body;
+    const loginField = email || username;
+    
+    if (!loginField || !password) {
+      return res.status(400).json({ status: 'fail', message: 'Email/username and password are required' });
+    }
+
+    // Read users from JSON file
+    const { readUsers } = require('./utils/fileStorage');
+    const users = readUsers();
+    
+    // Find user by email or username
+    const user = users.find(u => 
+      u.email === loginField || u.username === loginField
+    );
+    
+    if (!user) {
+      console.log('User not found:', loginField);
+      return res.status(401).json({ status: 'fail', message: 'Incorrect email or password' });
+    }
+    
+    // Check password (plain text comparison for JSON file)
+    if (user.password !== password) {
+      console.log('Password mismatch for user:', loginField);
+      return res.status(401).json({ status: 'fail', message: 'Incorrect email or password' });
+    }
+    
+    // Generate token
+    const { signToken } = require('./utils/auth');
+    const token = signToken(user.id);
+    
+    console.log('Login successful for user:', user.email);
+    console.log('User data:', user);
+    console.log('User role:', user.role);
+    
+    res.json({
+      status: 'success',
+      message: 'Login successful',
+      token,
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        gradeLevel: user.gradeLevel,
+        section: user.section
+      },
+      role: user.role
+    });
+    
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ status: 'fail', message: 'Server error during login' });
+  }
+});
+
 // Manual QR sync endpoint
 app.post('/api/admin/sync-qrcodes', async (req, res) => {
   try {

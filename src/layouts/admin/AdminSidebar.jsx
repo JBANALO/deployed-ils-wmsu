@@ -13,6 +13,7 @@ import {
   CalendarDaysIcon,
   BookOpenIcon,
   RectangleGroupIcon,
+  ShieldCheckIcon,
 } from "@heroicons/react/24/solid";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -20,10 +21,20 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
   const [hoveredItem, setHoveredItem] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
+  
+  // Get current user role
+  const getCurrentUserRole = () => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    return user.role || 'admin';
+  };
+
+  const currentUserRole = getCurrentUserRole();
 
   const menuItems = [
     { name: "Dashboard", icon: <ChartBarIcon className="w-6 h-6" />, path: "/admin/admin-dashboard" },
-    { name: "Create Admin Account", icon: <UserPlusIcon className="w-6 h-6" />, path: "/admin/create-account" },
+    { name: "Admin Accounts", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/admin-teachers", role: "super_admin" },
+    { name: "Teacher Accounts", icon: <AcademicCapIcon className="w-6 h-6" />, path: "/admin/admin-students", role: "super_admin" },
+    { name: "Students Accounts", icon: <UserPlusIcon className="w-6 h-6" />, path: "/admin/admin-grades", role: "super_admin" },
     { name: "Teachers", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/admin-teachers" },
     { name: "Students", icon: <AcademicCapIcon className="w-6 h-6" />, path: "/admin/admin-students" },
     { name: "Grades", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, path: "/admin/admin-grades" },
@@ -33,6 +44,7 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
     { name: "Assign Adviser", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/assign-adviser" },
     { name: "Attendance", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, path: "/admin/admin-attendance" },
     { name: "School Year", icon: <CalendarDaysIcon className="w-6 h-6" />, path: "/admin/school-year" },
+    { name: "Super Admin", icon: <ShieldCheckIcon className="w-6 h-6" />, path: "/admin/super-admin", role: "super_admin" },
   ];
 
   return (
@@ -51,7 +63,9 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
       </div>
 
       <nav className="flex flex-col mt-2 space-y-1 flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#b91c1c transparent' }}>
-        {menuItems.map((item) => (
+        {menuItems
+          .filter(item => !item.role || item.role === currentUserRole)
+          .map((item) => (
           <div
             key={item.name}
             className="relative"
