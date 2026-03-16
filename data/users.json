@@ -12,6 +12,18 @@
     "updatedAt": "2026-03-16T00:00:00.000Z"
   },
   {
+    "id": "admin-ashnicx02-001",
+    "firstName": "Ashnicx",
+    "lastName": "Admin",
+    "username": "ashnicx02",
+    "role": "admin",
+    "email": "ashnicx02@wmsu.edu.ph",
+    "password": "WMSUILS123",
+    "status": "approved",
+    "createdAt": "2026-03-16T00:00:00.000Z",
+    "updatedAt": "2026-03-16T00:00:00.000Z"
+  },
+  {
     "id": "243fba7f-36e2-4e72-962b-7e530b3c81d2",
     "firstName": "System",
     "lastName": "Admin",
