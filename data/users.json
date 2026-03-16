@@ -1,10 +1,22 @@
 [
   {
+    "id": "super-admin-001",
+    "firstName": "Super",
+    "lastName": "Admin",
+    "username": "superadmin",
+    "role": "super_admin",
+    "email": "superadmin@wmsu.edu.ph",
+    "password": "super_admin123",
+    "status": "approved",
+    "createdAt": "2026-03-16T00:00:00.000Z",
+    "updatedAt": "2026-03-16T00:00:00.000Z"
+  },
+  {
     "id": "243fba7f-36e2-4e72-962b-7e530b3c81d2",
     "firstName": "System",
     "lastName": "Admin",
     "username": "admin1",
-    "role": "admin",
+    "role": "super_admin",
     "email": "admin1@wmsu.edu.ph",
     "password": "$2a$12$e2ZP.m/aHfiww7NlosqDhu9URwQ46lxKlNkKfDhstoQ1OGky69sWG",
     "createdAt": "2025-11-30T03:56:37.953Z"

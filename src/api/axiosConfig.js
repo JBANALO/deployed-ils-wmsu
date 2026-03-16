@@ -31,7 +31,10 @@ api.interceptors.request.use(
 
 // Add a response interceptor
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Just pass through the response unchanged
+    return response;
+  },
   (error) => {
     // Handle errors globally
     if (error.response) {

@@ -3,33 +3,31 @@ import {
   Bars3Icon,
   Cog6ToothIcon,
   ChartBarIcon,
-  BookOpenIcon,
-  ClipboardDocumentCheckIcon,
-  ViewColumnsIcon,
-  AcademicCapIcon,
   UsersIcon,
-  ChatBubbleLeftEllipsisIcon,
+  AcademicCapIcon,
+  UserPlusIcon,
+  ShieldCheckIcon,
+  BuildingLibraryIcon,
+  CalendarDaysIcon,
+  ClipboardDocumentCheckIcon,
 } from "@heroicons/react/24/solid";
 import { useNavigate, useLocation } from "react-router-dom";
 
-export default function TeacherSidebar({ sidebarOpen, setSidebarOpen }) {
-  const [hoveredItem, setHoveredItem] = useState("");
+export default function SuperAdminSidebar({ sidebarOpen, setSidebarOpen }) {
+  const [hoveredItem, setHoveredItem] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
 
   const menuItems = [
-    { name: "Dashboard", icon: <ChartBarIcon className="w-6 h-6" />, path: "/teacher/teacher-dashboard" },
-    { name: "Grade Level", icon: <BookOpenIcon className="w-6 h-6" />, path: "/grade-level" },
-    { name: "Edit Grades", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, path: "/edit-grades" },
-    { name: "Class List", icon: <ViewColumnsIcon className="w-6 h-6" />, path: "/class-list" },
-    { name: "QR Code Portal", icon: <AcademicCapIcon className="w-6 h-6" />, path: "/qr-portal" },
-    { name: "Reports", icon: <UsersIcon className="w-6 h-6" />, path: "/reports" },
-    { name: "Customer Service", icon: <ChatBubbleLeftEllipsisIcon className="w-6 h-6" />, path: "/customer-service" },
+    { name: "Super Admin Dashboard", icon: <ShieldCheckIcon className="w-6 h-6" />, path: "/admin/super-admin" },
+    { name: "Admin Accounts", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/admin-accounts" },
+    { name: "Teacher Accounts", icon: <AcademicCapIcon className="w-6 h-6" />, path: "/admin/teacher-accounts" },
+    { name: "Student Accounts", icon: <UserPlusIcon className="w-6 h-6" />, path: "/admin/student-accounts" },
   ];
 
   return (
     <aside
-      className={`fixed top-0 left-0 h-full bg-[#8f0303] text-white flex flex-col justify-between transition-[width] duration-500 ease-in-out z-30 ${
+      className={`fixed top-0 left-0 h-full bg-[#8f0303] text-white flex flex-col transition-[width] duration-500 ease-in-out z-30 ${
         sidebarOpen ? "w-64" : "w-20"
       }`}
     >
@@ -42,7 +40,7 @@ export default function TeacherSidebar({ sidebarOpen, setSidebarOpen }) {
         </button>
       </div>
 
-      <nav className="flex flex-col mt-2 space-y-1 flex-1">
+      <nav className="flex flex-col mt-2 space-y-1 flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#b91c1c transparent' }}>
         {menuItems.map((item) => (
           <div
             key={item.name}
@@ -79,26 +77,25 @@ export default function TeacherSidebar({ sidebarOpen, setSidebarOpen }) {
       </nav>
 
       <div
-        onClick={() => navigate("/teacher/settings")}
-        className={`relative px-4 py-4 flex items-center gap-3 transition-all duration-300 ease-in-out cursor-pointer ${
-          location.pathname === "/teacher/settings"
+        onClick={() => navigate("/admin/super-settings")}
+        className={`relative px-5 py-3 flex items-center gap-4 w-full text-left transition-all duration-300 ease-in-out rounded-md cursor-pointer ${
+          location.pathname === "/admin/super-settings"
             ? "bg-red-700"
             : "hover:bg-red-700"
         }`}
         onMouseEnter={() => setHoveredItem("Settings")}
         onMouseLeave={() => setHoveredItem(null)}
       >
-        <Cog6ToothIcon className="w-6 h-6 flex-shrink-0 translate-x-[10px]" />
+        <Cog6ToothIcon className="w-6 h-6" />
+
         {sidebarOpen && (
-          <span className="text-sm transition-all duration-300 ease-in-out translate-x-[10px]">
+          <span className="text-sm transition-all duration-300 ease-in-out">
             Settings
           </span>
         )}
+
         {!sidebarOpen && hoveredItem === "Settings" && (
-          <div
-            className="absolute left-[90px] top-1/2 -translate-y-1/2 bg-black text-white text-xs rounded px-2 py-1 whitespace-nowrap shadow-lg"
-            style={{ animation: "fadeIn 0.2s ease-in-out" }}
-          >
+          <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 bg-black text-white text-xs rounded px-2 py-1 whitespace-nowrap shadow-lg">
             Settings
           </div>
         )}

@@ -28,6 +28,10 @@ export default function EditGrades() {
   const [assignedSubjects, setAssignedSubjects] = useState([]);
   const [availableSubjects, setAvailableSubjects] = useState([]);
   const [assignedClasses, setAssignedClasses] = useState([]);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [errorModal, setErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const [adviserClassIds, setAdviserClassIds] = useState([]); // Classes where user is adviser
   const [subjectsByClass, setSubjectsByClass] = useState({}); // Map: classId -> [subjects]
   const [isAdviserViewingClass, setIsAdviserViewingClass] = useState(false); // adviser opened modal for their own class
@@ -557,15 +561,18 @@ export default function EditGrades() {
       });
 
       if (response.data?.success) {
-        alert(`✅ Grades saved successfully! You have 24 hours to edit them again.`);
+        setSuccessMessage("✅ Grades saved successfully! You have 24 hours to edit them again.");
+        setShowSuccessModal(true);
         fetchStudents();
         setShowGradeModal(false);
       } else {
-        alert(`❌ Failed to save grades: ${response.data?.message || 'Unknown error'}`);
+        setErrorMessage(`❌ Failed to save grades: ${response.data?.message || 'Unknown error'}`);
+        setErrorModal(true);
       }
     } catch (apiError) {
       console.error('Error saving grades:', apiError);
-      alert(`❌ Error saving grades: ${apiError.response?.data?.message || apiError.message}`);
+      setErrorMessage(`❌ Error saving grades: ${apiError.response?.data?.message || apiError.message}`);
+      setErrorModal(true);
     }
   };
 
@@ -673,7 +680,7 @@ export default function EditGrades() {
               <option value="q2">Quarter 2</option>
               <option value="q3">Quarter 3</option>
               <option value="q4">Quarter 4</option>
-              <option value="all">📊 All Quarters</option>
+              <option value="all">All Quarters</option>
             </select>
           </div>
           
@@ -1044,7 +1051,7 @@ export default function EditGrades() {
                       : 'bg-green-600 hover:bg-green-700 text-white'
                   }`}
                 >
-                  💾 Save Grades
+                  Save Grades
                 </button>
                 <button
                   onClick={() => setShowGradeModal(false)}
@@ -1090,6 +1097,48 @@ export default function EditGrades() {
           }
           onClose={() => { setShowReportCard(false); setReportCardStudent(null); }}
         />
+      )}
+
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mx-auto mb-4">
+              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-center text-gray-900 mb-2">Success!</h3>
+            <p className="text-gray-600 text-center mb-6">{successMessage}</p>
+            <button
+              onClick={() => setShowSuccessModal(false)}
+              className="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors font-medium"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Error Modal */}
+      {errorModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mx-auto mb-4">
+              <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-center text-gray-900 mb-2">Error!</h3>
+            <p className="text-gray-600 text-center mb-6">{errorMessage}</p>
+            <button
+              onClick={() => setErrorModal(false)}
+              className="w-full bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition-colors font-medium"
+            >
+              OK
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

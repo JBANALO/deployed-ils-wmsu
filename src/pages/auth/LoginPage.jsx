@@ -74,8 +74,17 @@ export default function LoginPage() {
       const response = await authService.login(loginData);
 
       console.log('Login response:', response);
-      const user = response?.data?.user;
+      console.log('Response type:', typeof response);
+      console.log('Response keys:', Object.keys(response));
+      console.log('Response data:', response.data);
+      console.log('Response data type:', typeof response.data);
+      console.log('Response data keys:', Object.keys(response.data || {}));
+      
+      // The data is directly in the response, not in response.data
+      const user = response?.user;
+      console.log('User object:', user);
       const role = user?.role;
+      console.log('Role extracted:', role);
 
       if (!role) {
         setError("Login succeeded but no role was returned.");
@@ -103,7 +112,9 @@ export default function LoginPage() {
       // Normalize role for comparison
       const normalizedRole = role?.toLowerCase().trim();
       
-      if (normalizedRole === "admin") {
+      if (normalizedRole === "super_admin") {
+        navigate("/admin/super-admin");
+      } else if (normalizedRole === "admin") {
         navigate("/admin/admin-dashboard");
       } else if (normalizedRole === "teacher" || normalizedRole === "subject_teacher" || normalizedRole === "adviser") {
         navigate("/teacher/teacher-dashboard");
