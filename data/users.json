@@ -24,6 +24,30 @@
     "updatedAt": "2026-03-16T00:00:00.000Z"
   },
   {
+    "id": "044d76b3-0b79-4dd0-bdca-90e1f2fc715f",
+    "firstName": "Josie",
+    "lastName": "Ortega",
+    "username": "adminjb",
+    "role": "admin",
+    "email": "adminjb@wmsu.edu.ph",
+    "password": "admin123",
+    "status": "approved",
+    "createdAt": "2026-03-17T00:00:00.000Z",
+    "updatedAt": "2026-03-17T00:00:00.000Z"
+  },
+  {
+    "id": "632212702",
+    "firstName": "Snow",
+    "lastName": "Princess",
+    "username": "snow.princess",
+    "role": "teacher",
+    "email": "snow.princess@wmsu.edu.ph",
+    "password": "WMSU81916",
+    "status": "approved",
+    "createdAt": "2026-03-17T00:00:00.000Z",
+    "updatedAt": "2026-03-17T00:00:00.000Z"
+  },
+  {
     "id": "243fba7f-36e2-4e72-962b-7e530b3c81d2",
     "firstName": "System",
     "lastName": "Admin",
