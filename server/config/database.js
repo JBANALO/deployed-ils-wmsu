@@ -6,6 +6,11 @@ let pool;
 let dbAvailable = false;
 
 const dbUrl = process.env.DATABASE_URL;
+const railwayHost = process.env.MYSQLHOST || process.env.MYSQL_HOST;
+const railwayUser = process.env.MYSQLUSER || process.env.MYSQL_USER;
+const railwayPassword = process.env.MYSQLPASSWORD || process.env.MYSQL_PASSWORD;
+const railwayDatabase = process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE;
+const railwayPort = process.env.MYSQLPORT || process.env.MYSQL_PORT;
 
 if (dbUrl) {
   // Production / Railway
@@ -16,8 +21,22 @@ if (dbUrl) {
     waitForConnections: true,
     connectionLimit: 10,
   });
+} else if (railwayHost && railwayUser && railwayDatabase) {
+  // Railway sometimes provides split MYSQL* variables instead of DATABASE_URL
+  console.log('Using Railway MYSQL* environment configuration');
+  pool = mysql.createPool({
+    host: railwayHost,
+    user: railwayUser,
+    password: railwayPassword || '',
+    database: railwayDatabase,
+    port: parseInt(railwayPort || '3306'),
+    dateStrings: true,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+  });
 } else {
-  // Local XAMPP
+  // Local XAMPP fallback
   console.log('Using local XAMPP database configuration');
   pool = mysql.createPool({
     host: process.env.DB_HOST || 'localhost',
