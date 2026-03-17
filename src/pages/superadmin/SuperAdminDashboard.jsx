@@ -75,17 +75,48 @@ export default function SuperAdminDashboard() {
   const loadAccountsData = async () => {
     try {
       setLoading(true);
-      
-      // Only use JSON file, no database calls
-      const { readUsers } = require('../../utils/fileStorage');
-      const allUsers = readUsers();
-      
-      // Categorize accounts from JSON file
-      const admins = allUsers.filter(u => u.role === 'admin');
-      const teachers = allUsers.filter(u => 
-        ['teacher', 'subject_teacher', 'adviser'].includes(u.role)
-      );
-      const students = allUsers.filter(u => u.role === 'student');
+
+      const [usersRes, teachersRes, studentsRes] = await Promise.all([
+        axios.get('/users').catch(() => ({ data: {} })),
+        axios.get('/teachers').catch(() => ({ data: {} })),
+        axios.get('/students').catch(() => ({ data: {} }))
+      ]);
+
+      const users = usersRes.data?.data?.users || usersRes.data?.users || usersRes.data?.data || [];
+      const teacherRows = teachersRes.data?.data?.teachers || teachersRes.data?.teachers || teachersRes.data?.data || [];
+      const studentRows = studentsRes.data?.data || studentsRes.data || [];
+
+      const admins = Array.isArray(users)
+        ? users.filter((u) => ['admin', 'super_admin'].includes((u.role || '').toLowerCase()))
+        : [];
+
+      const teachers = Array.isArray(teacherRows)
+        ? teacherRows.map((t) => ({
+            id: t.id,
+            firstName: t.firstName || t.first_name || '',
+            lastName: t.lastName || t.last_name || '',
+            email: t.email || '',
+            username: t.username || '',
+            role: t.role || 'teacher',
+            status: t.status || t.verification_status || 'approved',
+            gradeLevel: t.gradeLevel || t.grade_level || '',
+            section: t.section || ''
+          }))
+        : [];
+
+      const students = Array.isArray(studentRows)
+        ? studentRows.map((s) => ({
+            id: s.id,
+            firstName: s.firstName || s.first_name || '',
+            lastName: s.lastName || s.last_name || '',
+            email: s.email || s.student_email || s.wmsu_email || '',
+            username: s.username || '',
+            role: 'student',
+            status: s.status || 'Active',
+            gradeLevel: s.gradeLevel || s.grade_level || '',
+            section: s.section || ''
+          }))
+        : [];
       
       setAccounts({
         admins,
@@ -122,8 +153,10 @@ export default function SuperAdminDashboard() {
     
     try {
       let endpoint;
-      if (selectedAccount.type === 'admin' || selectedAccount.type === 'teacher') {
+      if (selectedAccount.type === 'admin') {
         endpoint = `/users/${selectedAccount.id}`;
+      } else if (selectedAccount.type === 'teacher') {
+        endpoint = `/teachers/${selectedAccount.id}`;
       } else {
         endpoint = `/students/${selectedAccount.id}`;
       }
@@ -185,6 +218,39 @@ export default function SuperAdminDashboard() {
       case 'adviser': return 'bg-green-100 text-green-800';
       case 'student': return 'bg-blue-100 text-blue-800';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const saveAccountChanges = async () => {
+    if (!selectedAccount) return;
+
+    try {
+      if (selectedAccount.type === 'admin') {
+        await axios.put(`/users/${selectedAccount.id}`, {
+          firstName: selectedAccount.firstName,
+          lastName: selectedAccount.lastName,
+          username: selectedAccount.username,
+          email: selectedAccount.email
+        });
+      } else if (selectedAccount.type === 'teacher') {
+        await axios.put(`/teachers/${selectedAccount.id}`, {
+          firstName: selectedAccount.firstName,
+          lastName: selectedAccount.lastName,
+          email: selectedAccount.email
+        });
+      } else {
+        await axios.put(`/students/${selectedAccount.id}`, {
+          firstName: selectedAccount.firstName,
+          lastName: selectedAccount.lastName,
+          email: selectedAccount.email
+        });
+      }
+
+      toast.success('Account updated successfully');
+      setShowEditModal(false);
+      loadAccountsData();
+    } catch (error) {
+      toast.error('Error updating account: ' + error.message);
     }
   };
 
@@ -435,12 +501,7 @@ export default function SuperAdminDashboard() {
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  // TODO: Implement update logic
-                  toast.success('Account updated successfully');
-                  setShowEditModal(false);
-                  loadAccountsData();
-                }}
+                onClick={saveAccountChanges}
                 className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
               >
                 Save Changes

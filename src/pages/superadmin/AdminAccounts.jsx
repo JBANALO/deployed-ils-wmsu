@@ -14,6 +14,7 @@ export default function AdminAccounts() {
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
+    username: "",
     email: "",
     password: "",
     department: "",
@@ -27,8 +28,12 @@ export default function AdminAccounts() {
   const fetchAdmins = async () => {
     try {
       setLoading(true);
-      const response = await api.get("/api/admin/admins");
-      setAdmins(response.data.admins || []);
+      const response = await api.get("/users");
+      const users = response.data?.data?.users || response.data?.users || [];
+      const adminUsers = Array.isArray(users)
+        ? users.filter((u) => ['admin', 'super_admin'].includes((u.role || '').toLowerCase()))
+        : [];
+      setAdmins(adminUsers);
     } catch (error) {
       console.error("Error fetching admins:", error);
       toast.error("Failed to fetch admin accounts");
@@ -44,12 +49,18 @@ export default function AdminAccounts() {
   const handleCreateAdmin = async (e) => {
     e.preventDefault();
     try {
-      const response = await api.post("/api/admin/create-admin", formData);
+      const username = formData.username?.trim() || formData.email.split('@')[0];
+      await api.post("/users/signup", {
+        ...formData,
+        username,
+        role: 'admin'
+      });
       toast.success("Admin account created successfully");
       setShowCreateModal(false);
       setFormData({
         firstName: "",
         lastName: "",
+        username: "",
         email: "",
         password: "",
         department: "",
@@ -65,13 +76,19 @@ export default function AdminAccounts() {
   const handleUpdateAdmin = async (e) => {
     e.preventDefault();
     try {
-      await api.put(`/api/admin/admins/${selectedAdmin.id}`, formData);
+      await api.put(`/users/${selectedAdmin.id}`, {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        username: formData.username,
+        email: formData.email
+      });
       toast.success("Admin account updated successfully");
       setShowEditModal(false);
       setSelectedAdmin(null);
       setFormData({
         firstName: "",
         lastName: "",
+        username: "",
         email: "",
         password: "",
         department: "",
@@ -86,7 +103,7 @@ export default function AdminAccounts() {
 
   const handleDeleteAdmin = async () => {
     try {
-      await api.delete(`/api/admin/admins/${selectedAdmin.id}`);
+      await api.delete(`/users/${selectedAdmin.id}`);
       toast.success("Admin account deleted successfully");
       setShowDeleteModal(false);
       setSelectedAdmin(null);
@@ -102,6 +119,7 @@ export default function AdminAccounts() {
     setFormData({
       firstName: admin.firstName,
       lastName: admin.lastName,
+      username: admin.username || "",
       email: admin.email,
       password: "",
       department: admin.department || "",
@@ -273,6 +291,15 @@ export default function AdminAccounts() {
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700">Username</label>
+                  <input
+                    type="text"
+                    value={formData.username}
+                    onChange={(e) => setFormData({...formData, username: e.target.value})}
+                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                  />
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-700">Password</label>
                   <input
                     type="password"
@@ -355,6 +382,15 @@ export default function AdminAccounts() {
                     required
                     value={formData.email}
                     onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Username</label>
+                  <input
+                    type="text"
+                    value={formData.username}
+                    onChange={(e) => setFormData({...formData, username: e.target.value})}
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
                   />
                 </div>
