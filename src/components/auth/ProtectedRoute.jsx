@@ -3,6 +3,9 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 export default function ProtectedRoute({ allowedRoles }) {
   const location = useLocation();
 
+  const normalizeRole = (value = "") =>
+    String(value).toLowerCase().trim().replace(/[-\s]+/g, "_");
+
   // Read token and user from localStorage (saved during login)
   const token = localStorage.getItem('token');
   const storedUser = localStorage.getItem('user');
@@ -18,8 +21,11 @@ export default function ProtectedRoute({ allowedRoles }) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  const role = user?.role?.toLowerCase();
-  const isAllowed = !allowedRoles || allowedRoles.length === 0 || allowedRoles.includes(role);
+  const role = normalizeRole(user?.role);
+  const normalizedAllowedRoles = Array.isArray(allowedRoles)
+    ? allowedRoles.map(normalizeRole)
+    : [];
+  const isAllowed = normalizedAllowedRoles.length === 0 || normalizedAllowedRoles.includes(role);
 
   if (!isAllowed) {
     return <Navigate to="/login" replace />;
