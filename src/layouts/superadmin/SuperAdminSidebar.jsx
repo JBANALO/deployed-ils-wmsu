@@ -10,6 +10,8 @@ import {
   BuildingLibraryIcon,
   CalendarDaysIcon,
   ClipboardDocumentCheckIcon,
+  BookOpenIcon,
+  RectangleGroupIcon,
 } from "@heroicons/react/24/solid";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -23,6 +25,16 @@ export default function SuperAdminSidebar({ sidebarOpen, setSidebarOpen }) {
     { name: "Admin Accounts", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/admin-accounts" },
     { name: "Teacher Accounts", icon: <AcademicCapIcon className="w-6 h-6" />, path: "/admin/teacher-accounts" },
     { name: "Student Accounts", icon: <UserPlusIcon className="w-6 h-6" />, path: "/admin/student-accounts" },
+    { name: "Admin Dashboard", icon: <ChartBarIcon className="w-6 h-6" />, path: "/admin/admin-dashboard" },
+    { name: "Teachers", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/admin-teachers" },
+    { name: "Students", icon: <AcademicCapIcon className="w-6 h-6" />, path: "/admin/admin-students" },
+    { name: "Grades", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, path: "/admin/admin-grades" },
+    { name: "Classes", icon: <BuildingLibraryIcon className="w-6 h-6" />, path: "/admin/admin-classes" },
+    { name: "Subjects", icon: <BookOpenIcon className="w-6 h-6" />, path: "/admin/subjects" },
+    { name: "Sections", icon: <RectangleGroupIcon className="w-6 h-6" />, path: "/admin/sections" },
+    { name: "Assign Adviser", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/assign-adviser" },
+    { name: "Attendance", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, path: "/admin/admin-attendance" },
+    { name: "School Year", icon: <CalendarDaysIcon className="w-6 h-6" />, path: "/admin/school-year" },
   ];
 
   return (

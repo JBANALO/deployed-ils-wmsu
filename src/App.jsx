@@ -101,7 +101,7 @@ function App() {
             <Route path="/forgot-password" element={<ForgotPassword />} />
 
             {/* Admin-only standalone pages */}
-            <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+            <Route element={<ProtectedRoute allowedRoles={['admin', 'super_admin', 'superadmin']} />}>
               <Route path="/admin/create-account" element={<CreateAccount />} />
             </Route>
 
@@ -128,7 +128,7 @@ function App() {
               </Route>
             </Route>
 
-            <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+            <Route element={<ProtectedRoute allowedRoles={['admin', 'super_admin', 'superadmin']} />}>
               <Route element={<AdminLayout />}>
                 <Route path="/admin/admin-dashboard" element={<AdminDashboard />} />
                 <Route path="/admin/admin-profile" element={<AdminProfile />} />
