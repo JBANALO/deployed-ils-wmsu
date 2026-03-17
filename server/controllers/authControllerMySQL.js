@@ -138,21 +138,7 @@ exports.login = async (req, res) => {
       users = [];
     }
 
-    // 2️⃣ If not a student, check admin/teacher accounts in JSON file
-    if (users.length === 0) {
-      try {
-        const allUsers = readUsers(); // teachers/admins stored here
-        users = allUsers.filter(u =>
-          (u.role === 'admin' || u.role === 'teacher' || u.role === 'adviser') &&
-          (u.email?.toLowerCase() === loginField.toLowerCase() ||
-           u.username?.toLowerCase() === loginField.toLowerCase())
-        );
-      } catch (fileError) {
-        console.log('Error reading users.json file:', fileError.message);
-      }
-    }
-
-    // 3️⃣ If still not found, try MySQL `users` and `teachers` tables
+    // 2️⃣ If not a student, try MySQL `users` and `teachers` tables first
     if (users.length === 0) {
       try {
         users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [loginField, loginField]);
@@ -168,6 +154,24 @@ exports.login = async (req, res) => {
           console.log('Teachers DB login check failed:', dbError.message);
           users = [];
         }
+      }
+    }
+
+    // 3️⃣ Final fallback: JSON file accounts
+    if (users.length === 0) {
+      try {
+        const allUsers = readUsers();
+        users = allUsers.filter(u => {
+          const role = String(u.role || '').toLowerCase();
+          const isAllowedRole = role === 'admin' || role === 'super_admin' || role === 'teacher' || role === 'adviser' || role === 'subject_teacher';
+          return (
+            isAllowedRole &&
+            (u.email?.toLowerCase() === loginField.toLowerCase() ||
+             u.username?.toLowerCase() === loginField.toLowerCase())
+          );
+        });
+      } catch (fileError) {
+        console.log('Error reading users.json file:', fileError.message);
       }
     }
 
