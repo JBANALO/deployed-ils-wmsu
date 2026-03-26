@@ -41,7 +41,7 @@ const createEmailTransporter = () => {
     return nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: process.env.EMAIL_USER || 'wmsu.ils.system@gmail.com',
+        user: process.env.EMAIL_USER || 'hz202300368@wmsu.edu.ph',
         pass: process.env.EMAIL_PASS || 'your-app-password'
       }
     });
@@ -67,7 +67,7 @@ const sendStatusUpdateEmail = async (message, newStatus) => {
   };
 
   const mailOptions = {
-    from: process.env.SENDGRID_EMAIL_FROM || process.env.EMAIL_USER || 'wmsu.ils.system@gmail.com',
+    from: process.env.HELP_EMAIL_FROM || process.env.EMAIL_USER || 'wmsu.ils.system@gmail.com',
     to: message.teacher_email,
     subject: `Help Center Request Status Update - ${newStatus}`,
     html: `
@@ -91,7 +91,7 @@ const sendStatusUpdateEmail = async (message, newStatus) => {
       <body>
         <div class="container">
           <div class="header">
-            <h1>📚 WMSU ILS Help Center</h1>
+            <h1>WMSU ILS Help Center</h1>
             <p>Status Update Notification</p>
           </div>
           
@@ -106,7 +106,7 @@ const sendStatusUpdateEmail = async (message, newStatus) => {
             <p>${statusMessages[newStatus]}</p>
             
             <div class="details">
-              <h3>📋 Request Details:</h3>
+              <h3>Request Details:</h3>
               <p><strong>Subject:</strong> ${message.subject}</p>
               <p><strong>Category:</strong> ${message.category}</p>
               <p><strong>Priority:</strong> ${message.priority}</p>
@@ -114,7 +114,7 @@ const sendStatusUpdateEmail = async (message, newStatus) => {
               
               ${message.grade_level || message.section ? `
               <div class="grade-info">
-                <strong>📚 Class Information:</strong><br>
+                <strong>Class Information:</strong><br>
                 ${message.grade_level ? `Grade: ${message.grade_level}` : ''}
                 ${message.grade_level && message.section ? ' | ' : ''}
                 ${message.section ? `Section: ${message.section}` : ''}
