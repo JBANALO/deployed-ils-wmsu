@@ -117,15 +117,19 @@ const sendStatusUpdateEmail = async (message, newStatus) => {
               <p><strong>Subject:</strong> ${message.subject}</p>
               <p><strong>Category:</strong> ${message.category}</p>
               <p><strong>Priority:</strong> ${message.priority}</p>
-              <p><strong>Submitted:</strong> ${new Date(message.created_at).toLocaleString('en-PH', {
-                timeZone: 'Asia/Manila',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-                hour: 'numeric',
-                minute: '2-digit',
-                hour12: true
-              })}</p>
+              <p><strong>Submitted:</strong> ${(() => {
+                const date = new Date(message.created_at);
+                // Convert to Philippine time (UTC+8)
+                const phTime = new Date(date.getTime() + (date.getTimezoneOffset() * 60000) + (8 * 3600000));
+                return phTime.toLocaleString('en-US', {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true
+                }) + ' (PH Time)';
+              })()}</p>
               
               ${message.grade_level || message.section ? `
               <div class="grade-info">
@@ -901,7 +905,7 @@ app.get('/api/teacher/help-center', async (req, res) => {
 
     const messages = await query(`
       SELECT * FROM help_center_messages 
-      WHERE teacher_id = ? 
+      WHERE teacher_id = ? AND (teacher_deleted IS NULL OR teacher_deleted = FALSE)
       ORDER BY created_at DESC
     `, [teacher_id]);
 
@@ -989,9 +993,11 @@ app.delete('/api/teacher/help-center/:id', async (req, res) => {
 
     const message = messageDetails[0];
 
-    // Delete the message
+    // Mark as deleted by teacher (soft delete - only hides from teacher view)
     const result = await query(`
-      DELETE FROM help_center_messages WHERE id = ? AND teacher_id = ?
+      UPDATE help_center_messages 
+      SET teacher_deleted = TRUE, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ? AND teacher_id = ?
     `, [id, teacher_id]);
 
     if (result.affectedRows === 0) {
@@ -1045,7 +1051,7 @@ app.get('/api/admin/help-center', async (req, res) => {
 
     const messages = await query(`
       SELECT * FROM help_center_messages 
-      WHERE ${whereClause} 
+      WHERE ${whereClause} AND (admin_deleted IS NULL OR admin_deleted = FALSE)
       ORDER BY created_at DESC
     `, params);
 
@@ -1235,9 +1241,11 @@ app.delete('/api/admin/help-center/:id', async (req, res) => {
 
     const message = messageDetails[0];
 
-    // Delete the message
+    // Mark as deleted by admin (soft delete - only hides from admin view)
     const result = await query(`
-      DELETE FROM help_center_messages WHERE id = ?
+      UPDATE help_center_messages 
+      SET admin_deleted = TRUE, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
     `, [id]);
 
     if (result.affectedRows === 0) {
@@ -1316,8 +1324,288 @@ app.use((err, req, res, next) => {
 });
 
 // ============================================
+// ADMIN SETTINGS ENDPOINTS
+// ============================================
+
+// Get admin settings
+app.get('/api/admin/settings', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    
+    // Get settings from database or return defaults
+    let settings = {
+      siteName: "WMSU ILS-Elementary Department",
+      siteDescription: "Automated Grades Portal and Students Attendance using QR Code",
+      adminEmail: "admin@wmsu.edu.ph",
+      allowRegistration: true,
+      requireApproval: true,
+      sessionTimeout: "30",
+      maintenance: false,
+      notifications: {
+        email: true,
+        sms: false,
+        browser: true,
+      },
+      backup: {
+        enabled: true,
+        frequency: "daily",
+        lastBackup: null,
+      },
+    };
+
+    // Try to get settings from database
+    try {
+      const result = await query('SELECT settings FROM system_settings WHERE id = 1');
+      if (result.length > 0 && result[0].settings) {
+        settings = { ...settings, ...JSON.parse(result[0].settings) };
+      }
+    } catch (err) {
+      console.log('Settings table not found, using defaults');
+    }
+
+    res.json(settings);
+  } catch (error) {
+    console.error('Error fetching admin settings:', error);
+    res.status(500).json({ message: 'Failed to fetch settings' });
+  }
+});
+
+// Update admin settings
+app.put('/api/admin/settings', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const settings = req.body;
+
+    // Validate settings
+    if (!settings.siteName || !settings.adminEmail) {
+      return res.status(400).json({ message: 'Site name and admin email are required' });
+    }
+
+    // Create system_settings table if it doesn't exist
+    await query(`
+      CREATE TABLE IF NOT EXISTS system_settings (
+        id INT PRIMARY KEY DEFAULT 1,
+        settings JSON,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Upsert settings
+    await query(`
+      INSERT INTO system_settings (id, settings) 
+      VALUES (1, ?) 
+      ON DUPLICATE KEY UPDATE settings = VALUES(settings)
+    `, [JSON.stringify(settings)]);
+
+    res.json({ message: 'Settings updated successfully', settings });
+  } catch (error) {
+    console.error('Error updating admin settings:', error);
+    res.status(500).json({ message: 'Failed to update settings' });
+  }
+});
+
+// Create backup
+app.post('/api/admin/backup', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const fs = require('fs');
+    const path = require('path');
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', ' ').replace('Z', '');
+    const backupDir = path.join(__dirname, '../backups');
+    
+    // Create backups directory if it doesn't exist
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+    
+    const backupFile = path.join(backupDir, `backup-${timestamp}.sql`);
+    
+    // Get all tables
+    const tables = await query('SHOW TABLES');
+    const tableNames = tables.map(t => Object.values(t)[0]);
+    
+    let backupContent = `-- WMSU ILS Database Backup
+-- Generated on: ${new Date().toISOString().replace(/[:.]/g, '-').replace('T', ' ').replace('Z', '')}
+-- Server: ${process.env.NODE_ENV || 'development'}
+`;
+
+    // Dump each table
+    for (const table of tableNames) {
+      if (table === 'system_settings') continue; // Skip settings table from backup
+      
+      backupContent += `\n-- Table: ${table}\n`;
+      
+      // Get table structure
+      const structure = await query(`SHOW CREATE TABLE \`${table}\``);
+      backupContent += structure[0]['Create Table'] + ';\n\n';
+      
+      // Get table data
+      const data = await query(`SELECT * FROM \`${table}\``);
+      if (data.length > 0) {
+        backupContent += `-- Data for table: ${table}\n`;
+        data.forEach(row => {
+          const values = Object.values(row).map(val => 
+            val === null ? 'NULL' : `'${val.toString().replace(/'/g, "''")}'`
+          );
+          backupContent += `INSERT INTO \`${table}\` VALUES (${values.join(', ')});\n`;
+        });
+        backupContent += '\n';
+      }
+    }
+
+    // Write backup file
+    fs.writeFileSync(backupFile, backupContent);
+    
+    // Update last backup timestamp
+    try {
+      await query(`
+        INSERT INTO system_settings (id, settings) 
+        VALUES (1, JSON_OBJECT('backup', JSON_OBJECT('lastBackup', ?)))
+        ON DUPLICATE KEY UPDATE 
+        settings = JSON_SET(
+          COALESCE(settings, '{}'),
+          '$.backup.lastBackup',
+          ?
+        )
+      `, [timestamp, timestamp]);
+    } catch (err) {
+      console.warn('Failed to update backup timestamp:', err.message);
+    }
+    
+    res.json({ 
+      message: 'Backup created successfully', 
+      filename: `backup-${timestamp}.sql`,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error creating backup:', error);
+    res.status(500).json({ message: 'Failed to create backup' });
+  }
+});
+
+// Get backup history
+app.get('/api/admin/backup/history', async (req, res) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    
+    const backupDir = path.join(__dirname, '../backups');
+    
+    if (!fs.existsSync(backupDir)) {
+      return res.json({ backups: [] });
+    }
+    
+    const files = fs.readdirSync(backupDir)
+      .filter(file => file.endsWith('.sql'))
+      .map(file => {
+        const filePath = path.join(backupDir, file);
+        const stats = fs.statSync(filePath);
+        return {
+          filename: file,
+          size: stats.size,
+          created: stats.birthtime.toISOString(),
+          modified: stats.mtime.toISOString()
+        };
+      })
+      .sort((a, b) => new Date(b.created) - new Date(a.created));
+    
+    res.json({ backups: files });
+  } catch (error) {
+    console.error('Error fetching backup history:', error);
+    res.status(500).json({ message: 'Failed to fetch backup history' });
+  }
+});
+
+// Download backup file
+app.get('/api/admin/backup/download/:filename', async (req, res) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    
+    const { filename } = req.params;
+    const backupDir = path.join(__dirname, '../backups');
+    const filePath = path.join(backupDir, filename);
+    
+    // Validate filename to prevent directory traversal
+    if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      return res.status(400).json({ message: 'Invalid filename' });
+    }
+    
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: 'Backup file not found' });
+    }
+    
+    // Send file for download
+    res.download(filePath, filename, (err) => {
+      if (err) {
+        console.error('Error downloading backup file:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ message: 'Failed to download backup file' });
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error downloading backup:', error);
+    res.status(500).json({ message: 'Failed to download backup' });
+  }
+});
+
+app.post('/api/admin/test-notification', async (req, res) => {
+  try {
+    const { type, recipient } = req.body;
+    
+    if (type === 'email') {
+      const transporter = createEmailTransporter();
+      const mailOptions = {
+        from: process.env.EMAIL_USER || 'admin@wmsu.edu.ph',
+        to: recipient,
+        subject: 'WMSU ILS - Test Notification',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #8B0000, #DC143C); color: white; padding: 20px; text-align: center;">
+              <h1>WMSU Integrated Learning System</h1>
+              <p>Test Notification</p>
+            </div>
+            <div style="padding: 20px; background-color: #f9f9f9;">
+              <h2>Test Email Notification</h2>
+              <p>This is a test email to verify that the notification system is working correctly.</p>
+              <p>If you received this email, the system is functioning properly.</p>
+              <div style="background-color: #e8f5e8; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <strong>Test Details:</strong><br>
+                • Type: Email Notification<br>
+                • Sent: ${new Date().toLocaleString()}<br>
+                • Recipient: ${recipient}
+              </div>
+            </div>
+            <div style="background-color: #8B0000; color: white; padding: 15px; text-align: center; font-size: 12px;">
+              <p>&copy; 2026 WMSU Integrated Learning System. All rights reserved.</p>
+              <p style="font-size: 10px;">This is an automated test message. Please do not reply to this email.</p>
+            </div>
+          </div>
+        `
+      };
+
+      await transporter.sendMail(mailOptions);
+      res.json({ message: 'Test email sent successfully' });
+    } else if (type === 'browser') {
+      // Browser notifications are handled client-side, so we just return success
+      // The actual browser notification will be triggered by the frontend
+      res.json({ message: 'Browser notification test successful' });
+    } else {
+      res.status(400).json({ message: 'Unsupported notification type' });
+    }
+  } catch (error) {
+    console.error('Error sending test notification:', error);
+    res.status(500).json({ message: 'Failed to send test notification' });
+  }
+});
+
+// ============================================
 // SERVE FRONTEND
 // ============================================
+
 const distPath = path.join(__dirname, '../dist');
 const fs2 = require('fs');
 
@@ -1341,11 +1629,6 @@ if (fs2.existsSync(distPath)) {
 // Graceful shutdown handling
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully');
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully');
   process.exit(0);
 });
 
@@ -1560,6 +1843,29 @@ const startServer = async () => {
       console.log('✅ Help Center messages table columns updated');
     } catch (err) {
       console.warn('⚠️ Help Center messages table update error:', err.message);
+    }
+
+    // Add teacher_deleted column if it doesn't exist
+    try {
+      await query(`ALTER TABLE help_center_messages ADD COLUMN IF NOT EXISTS teacher_deleted BOOLEAN DEFAULT FALSE`);
+      await query(`ALTER TABLE help_center_messages ADD COLUMN IF NOT EXISTS admin_deleted BOOLEAN DEFAULT FALSE`);
+      console.log('✅ Help Center delete columns ready');
+    } catch (err) {
+      console.warn('⚠️ Help Center delete columns creation warning:', err.message);
+    }
+
+    // Create system_settings table if it doesn't exist
+    try {
+      await query(`
+        CREATE TABLE IF NOT EXISTS system_settings (
+          id INT PRIMARY KEY DEFAULT 1,
+          settings JSON,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+      `);
+      console.log('✅ System settings table ready');
+    } catch (err) {
+      console.warn('⚠️ System settings table creation warning:', err.message);
     }
   }
 

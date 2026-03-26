@@ -80,6 +80,13 @@ export default function CustomerServicePage() {
     return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
+  // Fetch messages when modal is opened
+  useEffect(() => {
+    if (showMessagesModal) {
+      fetchMessages();
+    }
+  }, [showMessagesModal]);
+
   const fetchMessages = async () => {
     if (!user?.id) return;
     
