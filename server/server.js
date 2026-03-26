@@ -20,20 +20,27 @@ if (process.env.SENDGRID_API_KEY) {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 }
 
-// Create email transporter (SendGrid for Railway compatibility)
+// Create email transporter (SendGrid HTTP API for Railway compatibility)
 const createEmailTransporter = () => {
   // Use SendGrid HTTP API if available, fallback to Gmail SMTP
   if (process.env.SENDGRID_API_KEY) {
-    // Return a mock transporter for compatibility
+    // Use SendGrid HTTP API directly
     return {
       sendMail: async (mailOptions) => {
-        const msg = {
-          to: mailOptions.to,
-          from: mailOptions.from,
-          subject: mailOptions.subject,
-          html: mailOptions.html,
-        };
-        await sgMail.send(msg);
+        try {
+          const msg = {
+            to: mailOptions.to,
+            from: mailOptions.from,
+            subject: mailOptions.subject,
+            html: mailOptions.html,
+          };
+          const result = await sgMail.send(msg);
+          console.log(' SendGrid HTTP API response:', result);
+          return result;
+        } catch (error) {
+          console.error(' SendGrid API error:', error);
+          throw error;
+        }
       }
     };
   } else {
