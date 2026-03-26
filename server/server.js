@@ -14,15 +14,29 @@ const userRoutes = require('./routes/userRoutes');
 // Email configuration
 const nodemailer = require('nodemailer');
 
-// Create email transporter
+// Create email transporter (SendGrid for Railway compatibility)
 const createEmailTransporter = () => {
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER || 'wmsu.ils.system@gmail.com',
-      pass: process.env.EMAIL_PASS || 'your-app-password'
-    }
-  });
+  // Use SendGrid if available, fallback to Gmail
+  if (process.env.SENDGRID_API_KEY) {
+    return nodemailer.createTransport({
+      host: 'smtp.sendgrid.net',
+      port: 587,
+      secure: false,
+      auth: {
+        user: 'apikey',
+        pass: process.env.SENDGRID_API_KEY
+      }
+    });
+  } else {
+    // Fallback to Gmail (works locally)
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER || 'wmsu.ils.system@gmail.com',
+        pass: process.env.EMAIL_PASS || 'your-app-password'
+      }
+    });
+  }
 };
 
 // Send status update email to teacher
@@ -44,7 +58,7 @@ const sendStatusUpdateEmail = async (message, newStatus) => {
   };
 
   const mailOptions = {
-    from: process.env.EMAIL_USER || 'wmsu.ils.system@gmail.com',
+    from: process.env.SENDGRID_EMAIL_FROM || process.env.EMAIL_USER || 'wmsu.ils.system@gmail.com',
     to: message.teacher_email,
     subject: `Help Center Request Status Update - ${newStatus}`,
     html: `
@@ -1078,15 +1092,19 @@ app.put('/api/admin/help-center/:id/reply', async (req, res) => {
     // Send email notification to teacher with admin reply (non-blocking)
     setImmediate(async () => {
       try {
-        console.log('📧 Attempting to send email to:', message.teacher_email);
+        const emailService = process.env.SENDGRID_API_KEY ? 'SendGrid' : 'Gmail';
+        console.log('📧 Attempting to send email via:', emailService);
         console.log('📧 Email config:', {
+          service: emailService,
           EMAIL_USER: process.env.EMAIL_USER,
+          SENDGRID_API_KEY: process.env.SENDGRID_API_KEY ? '***SET***' : 'NOT_SET',
           EMAIL_PASS: process.env.EMAIL_PASS ? '***SET***' : 'NOT_SET',
-          hasAdminReply: !!admin_reply
+          hasAdminReply: !!admin_reply,
+          recipient: message.teacher_email
         });
         
         await sendStatusUpdateEmail({ ...message, admin_reply }, newStatus);
-        console.log(`✅ Admin reply email sent to ${message.teacher_email}`);
+        console.log(`✅ Admin reply email sent via ${emailService} to ${message.teacher_email}`);
       } catch (emailError) {
         console.warn('⚠️ Failed to send admin reply email:', emailError.message);
         console.warn('⚠️ Full email error:', emailError);
