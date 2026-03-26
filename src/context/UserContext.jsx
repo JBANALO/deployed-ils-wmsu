@@ -1,6 +1,15 @@
-import React, { createContext, useState, useEffect } from "react";
+import React, { createContext, useState, useEffect, useContext } from "react";
 
 export const UserContext = createContext();
+
+// Custom hook to use the UserContext
+export const useAuth = () => {
+  const context = useContext(UserContext);
+  if (!context) {
+    throw new Error('useAuth must be used within a UserProvider');
+  }
+  return context;
+};
 
 export const UserProvider = ({ children }) => {
   const [adminUser, setAdminUser] = useState(null);

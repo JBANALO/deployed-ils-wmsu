@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   Bars3Icon,
-  Cog6ToothIcon,
   ChartBarIcon,
   BookOpenIcon,
   ClipboardDocumentCheckIcon,
@@ -24,7 +23,6 @@ export default function TeacherSidebar({ sidebarOpen, setSidebarOpen }) {
     { name: "Class List", icon: <ViewColumnsIcon className="w-6 h-6" />, path: "/class-list" },
     { name: "QR Code Portal", icon: <AcademicCapIcon className="w-6 h-6" />, path: "/qr-portal" },
     { name: "Reports", icon: <UsersIcon className="w-6 h-6" />, path: "/reports" },
-    { name: "Customer Service", icon: <ChatBubbleLeftEllipsisIcon className="w-6 h-6" />, path: "/customer-service" },
   ];
 
   return (
@@ -79,27 +77,27 @@ export default function TeacherSidebar({ sidebarOpen, setSidebarOpen }) {
       </nav>
 
       <div
-        onClick={() => navigate("/teacher/settings")}
+        onClick={() => navigate("/customer-service")}
         className={`relative px-4 py-4 flex items-center gap-3 transition-all duration-300 ease-in-out cursor-pointer ${
-          location.pathname === "/teacher/settings"
+          location.pathname === "/customer-service"
             ? "bg-red-700"
             : "hover:bg-red-700"
         }`}
-        onMouseEnter={() => setHoveredItem("Settings")}
+        onMouseEnter={() => setHoveredItem("Help Center")}
         onMouseLeave={() => setHoveredItem(null)}
       >
-        <Cog6ToothIcon className="w-6 h-6 flex-shrink-0 translate-x-[10px]" />
+        <ChatBubbleLeftEllipsisIcon className="w-6 h-6 flex-shrink-0 translate-x-[10px]" />
         {sidebarOpen && (
           <span className="text-sm transition-all duration-300 ease-in-out translate-x-[10px]">
-            Settings
+            Help Center
           </span>
         )}
-        {!sidebarOpen && hoveredItem === "Settings" && (
+        {!sidebarOpen && hoveredItem === "Help Center" && (
           <div
             className="absolute left-[90px] top-1/2 -translate-y-1/2 bg-black text-white text-xs rounded px-2 py-1 whitespace-nowrap shadow-lg"
             style={{ animation: "fadeIn 0.2s ease-in-out" }}
           >
-            Settings
+            Help Center
           </div>
         )}
       </div>

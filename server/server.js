@@ -11,6 +11,121 @@ const passport = require('./config/passport');
 const { query } = require('./config/database');
 const userRoutes = require('./routes/userRoutes');
 
+// Email configuration
+const nodemailer = require('nodemailer');
+
+// Create email transporter
+const createEmailTransporter = () => {
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER || 'wmsu.ils.system@gmail.com',
+      pass: process.env.EMAIL_PASS || 'your-app-password'
+    }
+  });
+};
+
+// Send status update email to teacher
+const sendStatusUpdateEmail = async (message, newStatus) => {
+  const transporter = createEmailTransporter();
+  
+  const statusMessages = {
+    'In Progress': 'Your request is now being reviewed and worked on by our support team.',
+    'Resolved': 'Your request has been successfully resolved! Please check the details below.',
+    'Closed': 'Your support request has been closed. If you need further assistance, please submit a new request.',
+    'Pending': 'Your request is pending and will be reviewed soon.'
+  };
+
+  const statusColors = {
+    'In Progress': '#3B82F6',
+    'Resolved': '#10B981',
+    'Closed': '#6B7280',
+    'Pending': '#F59E0B'
+  };
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER || 'wmsu.ils.system@gmail.com',
+    to: message.teacher_email,
+    subject: `Help Center Request Status Update - ${newStatus}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Help Center Status Update</title>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #DC2626; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+          .status-badge { display: inline-block; padding: 8px 16px; border-radius: 20px; color: white; font-weight: bold; margin: 15px 0; }
+          .details { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
+          .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+          .grade-info { background: #FEF3C7; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #F59E0B; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>📚 WMSU ILS Help Center</h1>
+            <p>Status Update Notification</p>
+          </div>
+          
+          <div class="content">
+            <h2>Hello ${message.teacher_name},</h2>
+            <p>Your help center request has been updated!</p>
+            
+            <div class="status-badge" style="background-color: ${statusColors[newStatus]};">
+              Status: ${newStatus}
+            </div>
+            
+            <p>${statusMessages[newStatus]}</p>
+            
+            <div class="details">
+              <h3>📋 Request Details:</h3>
+              <p><strong>Subject:</strong> ${message.subject}</p>
+              <p><strong>Category:</strong> ${message.category}</p>
+              <p><strong>Priority:</strong> ${message.priority}</p>
+              <p><strong>Submitted:</strong> ${new Date(message.created_at).toLocaleDateString()}</p>
+              
+              ${message.grade_level || message.section ? `
+              <div class="grade-info">
+                <strong>📚 Class Information:</strong><br>
+                ${message.grade_level ? `Grade: ${message.grade_level}` : ''}
+                ${message.grade_level && message.section ? ' | ' : ''}
+                ${message.section ? `Section: ${message.section}` : ''}
+              </div>
+              ` : ''}
+              
+              <p><strong>Message:</strong></p>
+              <p style="background: #f3f4f6; padding: 15px; border-radius: 8px;">${message.message}</p>
+              
+              ${message.admin_reply ? `
+              <div style="background: #EFF6FF; padding: 15px; border-radius: 8px; border-left: 4px solid #3B82F6; margin-top: 15px;">
+                <strong>💬 Admin Response:</strong><br>
+                ${message.admin_reply}
+              </div>
+              ` : ''}
+            </div>
+            
+            <p>You can view all your requests and responses in the Help Center section of the WMSU ILS system.</p>
+            
+            <div class="footer">
+              <p>Thank you for using WMSU ILS Help Center!</p>
+              <p>If you have any questions, please don't hesitate to contact us.</p>
+              <p style="font-size: 12px;">This is an automated message. Please do not reply to this email.</p>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
 // Auto-sync QR codes from students.json to database on startup
 const syncQRCodesOnStartup = async () => {
   try {
@@ -681,6 +796,446 @@ app.use((req, res, next) => {
   next();
 });
 
+// ============================================
+// HELP CENTER API ENDPOINTS (Teachers Only)
+// ============================================
+
+// Submit a help center message
+app.post('/api/teacher/help-center', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const { teacher_id, teacher_name, teacher_email, grade_level, section, subject, message, category, priority } = req.body;
+
+    // Validate required fields
+    if (!teacher_id || !teacher_name || !teacher_email || !subject || !message) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'All required fields must be provided'
+      });
+    }
+
+    // Insert the message
+    const result = await query(`
+      INSERT INTO help_center_messages 
+      (teacher_id, teacher_name, teacher_email, grade_level, section, subject, message, category, priority)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [teacher_id, teacher_name, teacher_email, grade_level || null, section || null, subject, message, category || 'Other', priority || 'Medium']);
+
+    res.json({
+      status: 'success',
+      message: 'Help center message submitted successfully',
+      data: {
+        id: result.insertId,
+        teacher_id,
+        teacher_name,
+        teacher_email,
+        grade_level: grade_level || null,
+        section: section || null,
+        subject,
+        message,
+        category: category || 'Other',
+        priority: priority || 'Medium',
+        status: 'Pending'
+      }
+    });
+  } catch (error) {
+    console.error('Error submitting help center message:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to submit help center message',
+      error: error.message
+    });
+  }
+});
+
+// Get help center messages for a specific teacher
+app.get('/api/teacher/help-center', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const { teacher_id } = req.query;
+
+    if (!teacher_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Teacher ID is required'
+      });
+    }
+
+    const messages = await query(`
+      SELECT * FROM help_center_messages 
+      WHERE teacher_id = ? 
+      ORDER BY created_at DESC
+    `, [teacher_id]);
+
+    res.json({
+      status: 'success',
+      data: messages,
+      message: `Found ${messages.length} help center messages`
+    });
+  } catch (error) {
+    console.error('Error fetching help center messages:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to fetch help center messages',
+      error: error.message
+    });
+  }
+});
+
+// Update help center message status
+app.put('/api/teacher/help-center/:id/status', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!['Pending', 'In Progress', 'Resolved', 'Closed'].includes(status)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid status value'
+      });
+    }
+
+    const result = await query(`
+      UPDATE help_center_messages 
+      SET status = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ? AND teacher_id = ?
+    `, [status, id, req.body.teacher_id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Help center message not found or unauthorized'
+      });
+    }
+
+    res.json({
+      status: 'success',
+      message: 'Help center message status updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating help center message status:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to update help center message status',
+      error: error.message
+    });
+  }
+});
+
+// Delete help center message (teacher only - can only delete their own messages)
+app.delete('/api/teacher/help-center/:id', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const { id } = req.params;
+    const { teacher_id } = req.query;
+
+    if (!teacher_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Teacher ID is required'
+      });
+    }
+
+    // Get the message details before deleting for logging and verification
+    const messageDetails = await query(`
+      SELECT * FROM help_center_messages WHERE id = ? AND teacher_id = ?
+    `, [id, teacher_id]);
+
+    if (messageDetails.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Help center message not found or unauthorized'
+      });
+    }
+
+    const message = messageDetails[0];
+
+    // Delete the message
+    const result = await query(`
+      DELETE FROM help_center_messages WHERE id = ? AND teacher_id = ?
+    `, [id, teacher_id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Help center message not found or unauthorized'
+      });
+    }
+
+    console.log(`🗑️ Teacher help center message deleted: ID ${id}, Teacher: ${message.teacher_name}`);
+
+    res.json({
+      status: 'success',
+      message: 'Help center message deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting teacher help center message:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to delete help center message',
+      error: error.message
+    });
+  }
+});
+
+// ============================================
+// HELP CENTER ADMIN API ENDPOINTS
+// ============================================
+
+// Get all help center messages for admins
+app.get('/api/admin/help-center', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const { status, category, priority } = req.query;
+
+    let whereClause = '1=1';
+    const params = [];
+
+    if (status && status !== 'All') {
+      whereClause += ' AND status = ?';
+      params.push(status);
+    }
+    if (category && category !== 'All') {
+      whereClause += ' AND category = ?';
+      params.push(category);
+    }
+    if (priority && priority !== 'All') {
+      whereClause += ' AND priority = ?';
+      params.push(priority);
+    }
+
+    const messages = await query(`
+      SELECT * FROM help_center_messages 
+      WHERE ${whereClause} 
+      ORDER BY created_at DESC
+    `, params);
+
+    res.json({
+      status: 'success',
+      data: messages,
+      message: `Found ${messages.length} help center messages`
+    });
+  } catch (error) {
+    console.error('Error fetching help center messages:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to fetch help center messages',
+      error: error.message
+    });
+  }
+});
+
+// Admin reply to help center message
+app.put('/api/admin/help-center/:id/reply', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const { id } = req.params;
+    const { admin_reply, admin_id, status } = req.body;
+
+    if (!admin_reply || !admin_id) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Admin reply and admin ID are required'
+      });
+    }
+
+    // Get the message details before updating to send email
+    const messageDetails = await query(`
+      SELECT * FROM help_center_messages WHERE id = ?
+    `, [id]);
+
+    if (messageDetails.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Help center message not found'
+      });
+    }
+
+    const message = messageDetails[0];
+    const newStatus = status || 'In Progress';
+
+    const result = await query(`
+      UPDATE help_center_messages 
+      SET admin_reply = ?, admin_id = ?, status = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `, [admin_reply, admin_id, newStatus, id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Help center message not found'
+      });
+    }
+
+    // Send email notification to teacher with admin reply
+    try {
+      await sendStatusUpdateEmail({ ...message, admin_reply }, newStatus);
+      console.log(`✅ Admin reply email sent to ${message.teacher_email}`);
+    } catch (emailError) {
+      console.warn('⚠️ Failed to send admin reply email:', emailError.message);
+      // Don't fail the request if email fails
+    }
+
+    res.json({
+      status: 'success',
+      message: 'Admin reply sent successfully'
+    });
+  } catch (error) {
+    console.error('Error sending admin reply:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to send admin reply',
+      error: error.message
+    });
+  }
+});
+
+// Update message status (admin version)
+app.put('/api/admin/help-center/:id/status', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!['Pending', 'In Progress', 'Resolved', 'Closed'].includes(status)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid status value'
+      });
+    }
+
+    // Get the message details before updating to send email
+    const messageDetails = await query(`
+      SELECT * FROM help_center_messages WHERE id = ?
+    `, [id]);
+
+    if (messageDetails.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Help center message not found'
+      });
+    }
+
+    const message = messageDetails[0];
+
+    const result = await query(`
+      UPDATE help_center_messages 
+      SET status = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `, [status, id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Help center message not found'
+      });
+    }
+
+    // Send email notification to teacher
+    try {
+      await sendStatusUpdateEmail(message, status);
+      console.log(`✅ Status update email sent to ${message.teacher_email}`);
+    } catch (emailError) {
+      console.warn('⚠️ Failed to send status update email:', emailError.message);
+      // Don't fail the request if email fails
+    }
+
+    res.json({
+      status: 'success',
+      message: 'Help center message status updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating help center message status:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to update help center message status',
+      error: error.message
+    });
+  }
+});
+
+// Delete help center message (admin only)
+app.delete('/api/admin/help-center/:id', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const { id } = req.params;
+
+    // Get the message details before deleting for logging
+    const messageDetails = await query(`
+      SELECT * FROM help_center_messages WHERE id = ?
+    `, [id]);
+
+    if (messageDetails.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Help center message not found'
+      });
+    }
+
+    const message = messageDetails[0];
+
+    // Delete the message
+    const result = await query(`
+      DELETE FROM help_center_messages WHERE id = ?
+    `, [id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Help center message not found'
+      });
+    }
+
+    console.log(`🗑️ Help center message deleted: ID ${id}, Teacher: ${message.teacher_name}`);
+
+    res.json({
+      status: 'success',
+      message: 'Help center message deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting help center message:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to delete help center message',
+      error: error.message
+    });
+  }
+});
+
+// Get help center statistics
+app.get('/api/admin/help-center/stats', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+
+    const [total, pending, inProgress, resolved, closed] = await Promise.all([
+      query('SELECT COUNT(*) as count FROM help_center_messages'),
+      query('SELECT COUNT(*) as count FROM help_center_messages WHERE status = "Pending"'),
+      query('SELECT COUNT(*) as count FROM help_center_messages WHERE status = "In Progress"'),
+      query('SELECT COUNT(*) as count FROM help_center_messages WHERE status = "Resolved"'),
+      query('SELECT COUNT(*) as count FROM help_center_messages WHERE status = "Closed"')
+    ]);
+
+    res.json({
+      status: 'success',
+      data: {
+        total: total[0].count,
+        pending: pending[0].count,
+        inProgress: inProgress[0].count,
+        resolved: resolved[0].count,
+        closed: closed[0].count
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching help center stats:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to fetch help center statistics',
+      error: error.message
+    });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
@@ -884,19 +1439,6 @@ const startServer = async () => {
           username varchar(50) NOT NULL,
           first_name varchar(100) NOT NULL,
           middle_name varchar(100) DEFAULT NULL,
-          last_name varchar(100) NOT NULL,
-          email varchar(100) NOT NULL,
-          password varchar(255) NOT NULL,
-          plain_password varchar(255) DEFAULT NULL,
-          role enum('adviser','subject_teacher') NOT NULL DEFAULT 'adviser',
-          subjects text DEFAULT NULL,
-          grade_level varchar(50) DEFAULT NULL,
-          section varchar(50) DEFAULT NULL,
-          bio text DEFAULT NULL,
-          profile_pic longtext DEFAULT NULL,
-          created_at timestamp NOT NULL DEFAULT current_timestamp(),
-          updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-          verification_status enum('pending','approved','rejected') DEFAULT 'pending',
           decline_reason text DEFAULT NULL,
           PRIMARY KEY (id),
           UNIQUE KEY username (username),
@@ -906,6 +1448,58 @@ const startServer = async () => {
       console.log('✅ Teachers table ready');
     } catch (err) {
       console.warn('⚠️ Teachers table creation error:', err.message);
+    }
+
+    // Create help_center_messages table if it doesn't exist
+    try {
+      await query(`
+        CREATE TABLE IF NOT EXISTS help_center_messages (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          teacher_id VARCHAR(255) NOT NULL,
+          teacher_name VARCHAR(255) NOT NULL,
+          teacher_email VARCHAR(255) NOT NULL,
+          grade_level VARCHAR(50) NULL,
+          section VARCHAR(50) NULL,
+          subject VARCHAR(255) NOT NULL,
+          message TEXT NOT NULL,
+          category ENUM('Technical', 'Academic', 'Account', 'Other') DEFAULT 'Other',
+          priority ENUM('Low', 'Medium', 'High', 'Urgent') DEFAULT 'Medium',
+          status ENUM('Pending', 'In Progress', 'Resolved', 'Closed') DEFAULT 'Pending',
+          admin_reply TEXT NULL,
+          admin_id VARCHAR(255) NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          
+          INDEX idx_teacher_id (teacher_id),
+          INDEX idx_status (status),
+          INDEX idx_category (category),
+          INDEX idx_priority (priority),
+          INDEX idx_created_at (created_at),
+          INDEX idx_grade_level (grade_level),
+          INDEX idx_subject (subject)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+      `);
+      console.log('✅ Help Center messages table ready');
+    } catch (err) {
+      console.warn('⚠️ Help Center messages table creation error:', err.message);
+    }
+
+    // Add missing columns to help_center_messages table if they don't exist
+    try {
+      await query(`ALTER TABLE help_center_messages ADD COLUMN IF NOT EXISTS grade_level VARCHAR(50) NULL`);
+      await query(`ALTER TABLE help_center_messages ADD COLUMN IF NOT EXISTS section VARCHAR(50) NULL`);
+      
+      // Add indexes if they don't exist
+      try {
+        await query(`ALTER TABLE help_center_messages ADD INDEX IF NOT EXISTS idx_grade_level (grade_level)`);
+        await query(`ALTER TABLE help_center_messages ADD INDEX IF NOT EXISTS idx_section (section)`);
+      } catch (indexErr) {
+        console.warn('⚠️ Index creation warning:', indexErr.message);
+      }
+      
+      console.log('✅ Help Center messages table columns updated');
+    } catch (err) {
+      console.warn('⚠️ Help Center messages table update error:', err.message);
     }
   }
 
