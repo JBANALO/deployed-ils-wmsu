@@ -1558,8 +1558,12 @@ app.post('/api/admin/test-notification', async (req, res) => {
     
     if (type === 'email') {
       const transporter = createEmailTransporter();
+      const fromEmail = process.env.SENDGRID_EMAIL_FROM || process.env.EMAIL_USER || 'admin@wmsu.edu.ph';
+      console.log('📧 Email Test - From:', fromEmail);
+      console.log('📧 Email Test - To:', recipient);
+      
       const mailOptions = {
-        from: process.env.EMAIL_USER || 'admin@wmsu.edu.ph',
+        from: fromEmail,
         to: recipient,
         subject: 'WMSU ILS - Test Notification',
         html: `
