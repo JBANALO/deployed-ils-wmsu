@@ -117,7 +117,15 @@ const sendStatusUpdateEmail = async (message, newStatus) => {
               <p><strong>Subject:</strong> ${message.subject}</p>
               <p><strong>Category:</strong> ${message.category}</p>
               <p><strong>Priority:</strong> ${message.priority}</p>
-              <p><strong>Submitted:</strong> ${new Date(message.created_at).toLocaleDateString()}</p>
+              <p><strong>Submitted:</strong> ${new Date(message.created_at).toLocaleString('en-PH', {
+                timeZone: 'Asia/Manila',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+              })}</p>
               
               ${message.grade_level || message.section ? `
               <div class="grade-info">
