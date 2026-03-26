@@ -2,7 +2,8 @@ import React, { useState, useEffect, useContext, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   BellIcon, UserCircleIcon, ChevronDownIcon, 
-  CheckCircleIcon, XCircleIcon, UserPlusIcon, ExclamationTriangleIcon 
+  CheckCircleIcon, XCircleIcon, UserPlusIcon, ExclamationTriangleIcon,
+  QuestionMarkCircleIcon
 } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
 import { toast } from 'react-toastify';
@@ -289,6 +290,15 @@ export default function AdminTopbar() {
               </div>
             )}
           </div>
+
+          {/* Help Center */}
+          <button
+            className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            onClick={() => navigate("/admin/help-center")}
+            aria-label="Help Center"
+          >
+            <QuestionMarkCircleIcon className="w-5 h-5 md:w-6 md:h-6 text-red-800 cursor-pointer hover:scale-110 transition-all shrink-0" />
+          </button>
 
           {/* User Menu */}
           <div className="relative">

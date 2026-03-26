@@ -13,7 +13,6 @@ import {
   CalendarDaysIcon,
   BookOpenIcon,
   RectangleGroupIcon,
-  ShieldCheckIcon,
 } from "@heroicons/react/24/solid";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -44,7 +43,6 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
     { name: "Assign Adviser", icon: <UsersIcon className="w-6 h-6" />, path: "/admin/assign-adviser" },
     { name: "Attendance", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, path: "/admin/admin-attendance" },
     { name: "School Year", icon: <CalendarDaysIcon className="w-6 h-6" />, path: "/admin/school-year" },
-    { name: "Super Admin", icon: <ShieldCheckIcon className="w-6 h-6" />, path: "/admin/super-admin", role: "super_admin" },
   ];
 
   return (

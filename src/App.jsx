@@ -21,7 +21,6 @@ import QRCodePortal from "./pages/teacher/QRCodePortal.jsx";
 import ReportsPage from "./pages/teacher/ReportsPage";
 import CustomerService from "./pages/teacher/CustomerService";
 import TeacherProfile from "./pages/teacher/TeacherProfile";
-import TeacherSettings from "./pages/teacher/TeacherSettings";
 
 import AdminLayout from "./layouts/admin/AdminLayout";
 import SuperAdminLayout from "./layouts/superadmin/SuperAdminLayout";
@@ -42,6 +41,7 @@ import AdminSettings from "./pages/admin/AdminSettings.jsx";
 import AdminSchoolYear from "./pages/admin/AdminSchoolYear.jsx";
 import AdminSubjects from "./pages/admin/AdminSubjects.jsx";
 import AdminSections from "./pages/admin/AdminSections.jsx";
+import AdminHelpCenter from "./pages/admin/AdminHelpCenter.jsx";
 import CreateAccount from "./pages/admin/CreateAccount";
 import SuperAdminDashboard from "./pages/superadmin/SuperAdminDashboard.jsx";
 import AdminAccounts from "./pages/superadmin/AdminAccounts.jsx";
@@ -118,7 +118,6 @@ function App() {
               <Route element={<TeacherLayout />}>
                 <Route path="/teacher/teacher-dashboard" element={<TeacherDashboard />} />
                 <Route path="/teacher/teacher-profile" element={<TeacherProfile />} />
-                <Route path="/teacher/settings" element={<TeacherSettings />} />
                 <Route path="/grade-level" element={<GradeLevel />} />
                 <Route path="/edit-grades" element={<EditGrades />} />
                 <Route path="/class-list" element={<ClassList />} />
@@ -144,6 +143,7 @@ function App() {
                 <Route path="/admin/admin-attendance" element={<AdminAttendance />} />
                 <Route path="/admin/create-teacher" element={<AdminCreateTeacher />} />
                 <Route path="/admin/settings" element={<AdminSettings />} />
+                <Route path="/admin/help-center" element={<AdminHelpCenter />} />
                 <Route path="/admin/school-year" element={<AdminSchoolYear />} />
                 <Route path="/admin/subjects" element={<AdminSubjects />} />
                 <Route path="/admin/sections" element={<AdminSections />} />
