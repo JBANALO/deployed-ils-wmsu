@@ -24,8 +24,8 @@ export default function AdminGrades() {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSection, setSelectedSection] = useState('All');
-  const [sections, setSections] = useState([]);
+  const [selectedGradeLevel, setSelectedGradeLevel] = useState('All');
+  const [gradeLevels, setGradeLevels] = useState([]);
   const [recentUpdates, setRecentUpdates] = useState([]);
   
   // Modal states
@@ -88,9 +88,13 @@ export default function AdminGrades() {
         setSubjectsByGrade(subjectMap);
       }
 
-      // Extract unique sections from ALL students (not just ones with grades)
-      const uniqueSections = [...new Set(allStudents.map(s => `${s.gradeLevel} - ${s.section}`))].filter(s => s !== 'undefined - undefined');
-      setSections(uniqueSections.sort());
+      // Extract unique grade levels from ALL students
+      const uniqueGradeLevels = [...new Set(allStudents.map(s => s.gradeLevel).filter(Boolean))];
+      setGradeLevels(uniqueGradeLevels.sort((a, b) => {
+        const gradeA = parseInt(String(a).replace(/\D/g, ''), 10);
+        const gradeB = parseInt(String(b).replace(/\D/g, ''), 10);
+        return (Number.isNaN(gradeA) ? 0 : gradeA) - (Number.isNaN(gradeB) ? 0 : gradeB);
+      }));
 
       // Generate recent updates from students with grades
       const updates = sortedStudents.slice(0, 5).map(s => ({
@@ -208,10 +212,10 @@ export default function AdminGrades() {
       student.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       student.lrn?.includes(searchQuery);
 
-    const matchesSection = selectedSection === 'All' || 
-      `${student.gradeLevel} - ${student.section}` === selectedSection;
+    const matchesGradeLevel = selectedGradeLevel === 'All' || 
+      student.gradeLevel === selectedGradeLevel;
 
-    return matchesSearch && matchesSection;
+    return matchesSearch && matchesGradeLevel;
   });
 
   return (
@@ -286,19 +290,19 @@ export default function AdminGrades() {
 
             <select
 
-              value={selectedSection}
+              value={selectedGradeLevel}
 
-              onChange={(e) => setSelectedSection(e.target.value)}
+              onChange={(e) => setSelectedGradeLevel(e.target.value)}
 
               className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-red-800"
 
             >
 
-              <option value="All">All Sections</option>
+              <option value="All">All Grade Levels</option>
 
-              {sections.map((section) => (
+              {gradeLevels.map((gradeLevel) => (
 
-                <option key={section} value={section}>{section}</option>
+                <option key={gradeLevel} value={gradeLevel}>{gradeLevel}</option>
 
               ))}
 
