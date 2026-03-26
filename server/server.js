@@ -1029,6 +1029,13 @@ app.get('/api/admin/help-center', async (req, res) => {
 // Admin reply to help center message
 app.put('/api/admin/help-center/:id/reply', async (req, res) => {
   try {
+    console.log('🔧 REPLY ENDPOINT CALLED:', {
+      id: req.params.id,
+      body: req.body,
+      emailUser: process.env.EMAIL_USER ? 'SET' : 'NOT_SET',
+      emailPass: process.env.EMAIL_PASS ? 'SET' : 'NOT_SET'
+    });
+
     const { query } = require('./config/database');
     const { id } = req.params;
     const { admin_reply, admin_id, status } = req.body;
@@ -1068,14 +1075,24 @@ app.put('/api/admin/help-center/:id/reply', async (req, res) => {
       });
     }
 
-    // Send email notification to teacher with admin reply
-    try {
-      await sendStatusUpdateEmail({ ...message, admin_reply }, newStatus);
-      console.log(`✅ Admin reply email sent to ${message.teacher_email}`);
-    } catch (emailError) {
-      console.warn('⚠️ Failed to send admin reply email:', emailError.message);
-      // Don't fail the request if email fails
-    }
+    // Send email notification to teacher with admin reply (non-blocking)
+    setImmediate(async () => {
+      try {
+        console.log('📧 Attempting to send email to:', message.teacher_email);
+        console.log('📧 Email config:', {
+          EMAIL_USER: process.env.EMAIL_USER,
+          EMAIL_PASS: process.env.EMAIL_PASS ? '***SET***' : 'NOT_SET',
+          hasAdminReply: !!admin_reply
+        });
+        
+        await sendStatusUpdateEmail({ ...message, admin_reply }, newStatus);
+        console.log(`✅ Admin reply email sent to ${message.teacher_email}`);
+      } catch (emailError) {
+        console.warn('⚠️ Failed to send admin reply email:', emailError.message);
+        console.warn('⚠️ Full email error:', emailError);
+        // Don't fail the request if email fails
+      }
+    });
 
     res.json({
       status: 'success',
