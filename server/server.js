@@ -13,22 +13,31 @@ const userRoutes = require('./routes/userRoutes');
 
 // Email configuration
 const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
+
+// Initialize SendGrid
+if (process.env.SENDGRID_API_KEY) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+}
 
 // Create email transporter (SendGrid for Railway compatibility)
 const createEmailTransporter = () => {
-  // Use SendGrid if available, fallback to Gmail
+  // Use SendGrid HTTP API if available, fallback to Gmail SMTP
   if (process.env.SENDGRID_API_KEY) {
-    return nodemailer.createTransport({
-      host: 'smtp.sendgrid.net',
-      port: 587,
-      secure: false,
-      auth: {
-        user: 'apikey',
-        pass: process.env.SENDGRID_API_KEY
+    // Return a mock transporter for compatibility
+    return {
+      sendMail: async (mailOptions) => {
+        const msg = {
+          to: mailOptions.to,
+          from: mailOptions.from,
+          subject: mailOptions.subject,
+          html: mailOptions.html,
+        };
+        await sgMail.send(msg);
       }
-    });
+    };
   } else {
-    // Fallback to Gmail (works locally)
+    // Fallback to Gmail SMTP (works locally)
     return nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -1096,6 +1105,7 @@ app.put('/api/admin/help-center/:id/reply', async (req, res) => {
         console.log('📧 Attempting to send email via:', emailService);
         console.log('📧 Email config:', {
           service: emailService,
+          SENDGRID_EMAIL_FROM: process.env.SENDGRID_EMAIL_FROM,
           EMAIL_USER: process.env.EMAIL_USER,
           SENDGRID_API_KEY: process.env.SENDGRID_API_KEY ? '***SET***' : 'NOT_SET',
           EMAIL_PASS: process.env.EMAIL_PASS ? '***SET***' : 'NOT_SET',
