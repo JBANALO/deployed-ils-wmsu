@@ -38,7 +38,7 @@ const createEmailTransporter = () => {
           console.log(' SendGrid HTTP API response:', result);
           return result;
         } catch (error) {
-          console.error(' SendGrid API error:', error);
+          console.error('SendGrid API error:', error.response?.body || error);
           throw error;
         }
       }
@@ -74,7 +74,7 @@ const sendStatusUpdateEmail = async (message, newStatus) => {
   };
 
   const mailOptions = {
-    from: process.env.HELP_EMAIL_FROM || process.env.EMAIL_USER || 'wmsu.ils.system@gmail.com',
+    from: process.env.SENDGRID_EMAIL_FROM || process.env.HELP_EMAIL_FROM || process.env.EMAIL_USER,
     to: message.teacher_email,
     subject: `Help Center Request Status Update - ${newStatus}`,
     html: `
