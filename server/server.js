@@ -1851,8 +1851,19 @@ const startServer = async () => {
 
     // Add teacher_deleted column if it doesn't exist
     try {
-      await query(`ALTER TABLE help_center_messages ADD COLUMN IF NOT EXISTS teacher_deleted BOOLEAN DEFAULT FALSE`);
-      await query(`ALTER TABLE help_center_messages ADD COLUMN IF NOT EXISTS admin_deleted BOOLEAN DEFAULT FALSE`);
+      // Check if columns exist before adding them
+      const teacherDeletedCheck = await query(`SHOW COLUMNS FROM help_center_messages LIKE 'teacher_deleted'`);
+      if (teacherDeletedCheck.length === 0) {
+        await query(`ALTER TABLE help_center_messages ADD COLUMN teacher_deleted BOOLEAN DEFAULT FALSE`);
+        console.log('✅ Added teacher_deleted column');
+      }
+
+      const adminDeletedCheck = await query(`SHOW COLUMNS FROM help_center_messages LIKE 'admin_deleted'`);
+      if (adminDeletedCheck.length === 0) {
+        await query(`ALTER TABLE help_center_messages ADD COLUMN admin_deleted BOOLEAN DEFAULT FALSE`);
+        console.log('✅ Added admin_deleted column');
+      }
+
       console.log('✅ Help Center delete columns ready');
     } catch (err) {
       console.warn('⚠️ Help Center delete columns creation warning:', err.message);
