@@ -109,7 +109,7 @@ export default function SuperAdminTopbar() {
       const token = localStorage.getItem('token');
       if (!token) return;
 
-      const response = await axios.get(`${API_BASE}/api/admin/notifications`, {
+      const response = await axios.get(`${API_BASE}/super-admin/notifications`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 

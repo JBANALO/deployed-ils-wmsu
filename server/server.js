@@ -1404,9 +1404,258 @@ app.put('/api/admin/settings', async (req, res) => {
   }
 });
 
+app.get('/api/super-admin/system-settings', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    
+    // Get settings from database or return defaults
+    let settings = {
+      schoolName: "WMSU Integrated Learning System",
+      schoolYear: "2024-2025",
+      quarter: "First Quarter",
+      systemVersion: "2.0.0",
+      maxFileSize: 10,
+      sessionTimeout: 30,
+      systemMaintenance: false,
+      allowRegistrations: true,
+      emailNotifications: true,
+      debugMode: false,
+      gradingPeriod: "Quarterly",
+      passingGrade: 75,
+      // Notification settings
+      userRegistrationAlerts: true,
+      systemErrorReports: true,
+      backupReminders: true,
+      adminEmail: "admin@wmsu.edu.ph",
+      notificationFrequency: "Daily",
+      // Backup settings
+      lastBackupDate: null,
+      nextBackupDate: null,
+      backupFrequency: "Weekly",
+      backupRetention: 30,
+      autoBackup: false
+    };
+
+    // Try to get settings from database
+    try {
+      const result = await query('SELECT settings FROM system_settings WHERE id = 1');
+      if (result.length > 0 && result[0].settings) {
+        const dbSettings = JSON.parse(result[0].settings);
+        settings = { ...settings, ...dbSettings };
+      }
+    } catch (err) {
+      console.log('Settings table not found, using defaults');
+    }
+
+    res.json(settings);
+  } catch (error) {
+    console.error('Error fetching system settings:', error);
+    res.status(500).json({ message: 'Failed to fetch settings' });
+  }
+});
+
+// Update Super Admin system settings
+app.put('/api/super-admin/system-settings', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const settings = req.body;
+
+    // Validate settings
+    if (!settings.schoolName) {
+      return res.status(400).json({ message: 'School name is required' });
+    }
+
+    // Validate numeric fields
+    if (settings.maxFileSize && (settings.maxFileSize < 1 || settings.maxFileSize > 100)) {
+      return res.status(400).json({ message: 'Max file size must be between 1 and 100 MB' });
+    }
+
+    if (settings.sessionTimeout && (settings.sessionTimeout < 5 || settings.sessionTimeout > 480)) {
+      return res.status(400).json({ message: 'Session timeout must be between 5 and 480 minutes' });
+    }
+
+    if (settings.passingGrade && (settings.passingGrade < 50 || settings.passingGrade > 100)) {
+      return res.status(400).json({ message: 'Passing grade must be between 50 and 100' });
+    }
+
+    // Create system_settings table if it doesn't exist
+    await query(`
+      CREATE TABLE IF NOT EXISTS system_settings (
+        id INT PRIMARY KEY DEFAULT 1,
+        settings JSON,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Upsert settings
+    await query(`
+      INSERT INTO system_settings (id, settings) 
+      VALUES (1, ?) 
+      ON DUPLICATE KEY UPDATE settings = VALUES(settings)
+    `, [JSON.stringify(settings)]);
+
+    console.log(' System settings updated successfully:', settings);
+    res.json({ message: 'System settings updated successfully', settings });
+  } catch (error) {
+    console.error('Error updating system settings:', error);
+    res.status(500).json({ message: 'Failed to update settings' });
+  }
+});
+
+// Super Admin password change
+app.put('/api/super-admin/change-password', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const { newPassword } = req.body;
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    
+    console.log('🔐 Password change attempt - Token exists:', !!token);
+    console.log('🔐 Password change attempt - Token length:', token?.length);
+    
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    // Get current super admin from token
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    
+    console.log('🔐 Password change - Decoded token:', decoded);
+    console.log('🔐 Password change - User role:', decoded.role);
+    
+    if (decoded.role !== 'super_admin') {
+      console.log('🔐 Password change - Access denied for role:', decoded.role);
+      return res.status(403).json({ message: 'Access denied. Super admin only.' });
+    }
+
+    // Get super admin from database
+    const users = await query('SELECT * FROM users WHERE id = ? AND role = "super_admin"', [decoded.id]);
+    
+    if (users.length === 0) {
+      console.log('🔐 Password change - Super admin not found for id:', decoded.id);
+      return res.status(404).json({ message: 'Super admin not found' });
+    }
+
+    console.log('🔐 Password change - Super admin found, updating password');
+
+    // Hash new password
+    const bcrypt = require('bcryptjs');
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password
+    await query('UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [hashedNewPassword, decoded.id]);
+
+    console.log('🔐 Password change - Password updated successfully');
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Error changing super admin password:', error);
+    if (error.name === 'JsonWebTokenError') {
+      console.log('🔐 Password change - JWT error:', error.message);
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+    res.status(500).json({ message: 'Failed to change password' });
+  }
+});
+
+// Super Admin notifications
+app.get('/api/super-admin/notifications', async (req, res) => {
+  try {
+    const { query } = require('./config/database');
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    
+    console.log('🔔 Notifications - Token exists:', !!token);
+    console.log('🔔 Notifications - Token length:', token?.length);
+    
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    // Verify token and get user ID
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    
+    console.log('🔔 Notifications - Decoded token:', decoded);
+    console.log('🔔 Notifications - User ID:', decoded.id);
+    
+    // First, ensure super admin user exists
+    const bcrypt = require('bcryptjs');
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+    
+    // Create super admin if doesn't exist
+    await query(`
+      INSERT IGNORE INTO users (id, username, email, password, role, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `, [
+      'super-admin-001',
+      'superadmin', 
+      'superadmin@wmsu.edu.ph',
+      hashedPassword,
+      'super_admin'
+    ]);
+    
+    // Get user role from database using ID
+    const users = await query('SELECT role FROM users WHERE id = ?', [decoded.id]);
+    
+    console.log('🔔 Notifications - Query result for user ID', decoded.id, ':', users);
+    
+    if (users.length === 0) {
+      console.log('🔔 Notifications - User not found for ID:', decoded.id);
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    const userRole = users[0].role;
+    console.log('🔔 Notifications - User role from database:', userRole);
+    
+    if (userRole !== 'super_admin') {
+      console.log('🔔 Notifications - Access denied for role:', userRole);
+      return res.status(403).json({ message: 'Access denied. Super admin only.' });
+    }
+
+    console.log('🔔 Notifications - Access granted for super admin');
+
+    // Return super admin specific notifications
+    const notifications = [
+      {
+        id: 1,
+        type: 'info',
+        title: 'System Update',
+        message: 'WMSU ILS system has been updated successfully',
+        read: false,
+        timestamp: new Date().toISOString()
+      },
+      {
+        id: 2,
+        type: 'warning',
+        title: 'Backup Reminder',
+        message: 'Monthly system backup is scheduled for tomorrow',
+        read: false,
+        timestamp: new Date(Date.now() - 3600000).toISOString()
+      },
+      {
+        id: 3,
+        type: 'success',
+        title: 'New Registration',
+        message: '5 new teacher registrations pending approval',
+        read: true,
+        timestamp: new Date(Date.now() - 7200000).toISOString()
+      }
+    ];
+
+    res.json({ notifications });
+  } catch (error) {
+    console.error('Error fetching super admin notifications:', error);
+    if (error.name === 'JsonWebTokenError') {
+      console.log('🔔 Notifications - JWT error:', error.message);
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+    res.status(500).json({ message: 'Failed to fetch notifications' });
+  }
+});
+
 // Create backup
 app.post('/api/admin/backup', async (req, res) => {
   try {
+    // ... (rest of the code remains the same)
     const { query } = require('./config/database');
     const fs = require('fs');
     const path = require('path');
