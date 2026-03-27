@@ -25,15 +25,13 @@ export default function AdminSettings() {
     siteName: "WMSU ILS-Elementary Department",
     siteDescription:
       "Automated Grades Portal and Students Attendance using QR Code",
-    adminEmail: adminUser?.email || "admin@wmsu.edu.ph",
+    adminEmail: adminUser?.email || "",
     allowRegistration: true,
     requireApproval: true,
     sessionTimeout: "30",
     maintenance: false,
     notifications: {
       email: true,
-      sms: false,
-      browser: true,
     },
     backup: {
       enabled: true,
@@ -69,6 +67,16 @@ export default function AdminSettings() {
     fetchSettings();
     fetchBackupHistory();
   }, []);
+
+  // Sync admin email with current logged-in admin
+  useEffect(() => {
+    if (adminUser?.email) {
+      setSettings(prev => ({
+        ...prev,
+        adminEmail: adminUser.email
+      }));
+    }
+  }, [adminUser?.email]);
 
   const fetchSettings = async () => {
     try {
@@ -142,35 +150,7 @@ export default function AdminSettings() {
         recipient: adminUser?.email || settings.adminEmail
       });
       
-      if (type === 'browser') {
-        // Request permission and show browser notification
-        if ('Notification' in window) {
-          if (Notification.permission === 'granted') {
-            new Notification('WMSU ILS - Test Browser Notification', {
-              body: 'This is a test browser notification to verify the system is working correctly.',
-              icon: '/favicon.ico'
-            });
-            toast.success('Browser notification sent successfully!');
-          } else if (Notification.permission !== 'denied') {
-            const permission = await Notification.requestPermission();
-            if (permission === 'granted') {
-              new Notification('WMSU ILS - Test Browser Notification', {
-                body: 'This is a test browser notification to verify the system is working correctly.',
-                icon: '/favicon.ico'
-              });
-              toast.success('Browser notification sent successfully!');
-            } else {
-              toast.error('Browser notification permission denied');
-            }
-          } else {
-            toast.error('Browser notifications are blocked in your browser');
-          }
-        } else {
-          toast.error('Browser notifications not supported in this browser');
-        }
-      } else {
-        toast.success(`Test ${type} notification sent successfully!`);
-      }
+      toast.success(`Test ${type} notification sent successfully!`);
     } catch (error) {
       console.error('Error sending test notification:', error);
       toast.error(error.response?.data?.message || 'Failed to send test notification');
@@ -190,12 +170,6 @@ export default function AdminSettings() {
       label: "Email Notifications",
       icon: DocumentTextIcon,
       color: "text-blue-600",
-    },
-    {
-      key: "browser",
-      label: "Browser Notifications",
-      icon: GlobeAltIcon,
-      color: "text-purple-600",
     },
   ];
 
@@ -389,8 +363,6 @@ export default function AdminSettings() {
                           <h4 className="text-sm font-medium text-gray-900">{n.label}</h4>
                           <p className="text-xs text-gray-500">
                             {n.key === 'email' && 'Receive email notifications for system events'}
-                            {n.key === 'sms' && 'Receive SMS notifications for urgent alerts'}
-                            {n.key === 'browser' && 'Receive browser notifications for real-time updates'}
                           </p>
                         </div>
                       </div>

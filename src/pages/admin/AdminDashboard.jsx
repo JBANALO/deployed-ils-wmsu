@@ -300,7 +300,16 @@ const loadDashboardStats = async () => {
     try {
       const schoolYearRes = await axios.get('/school-years/active');
       if (schoolYearRes.data?.data) {
-        setActiveSchoolYear(schoolYearRes.data.data);
+        // Format the school year label to add dash if missing
+        const schoolYear = schoolYearRes.data.data;
+        if (schoolYear.label && !schoolYear.label.includes('-')) {
+          // Convert 20262027 to 2026-2027
+          const year = schoolYear.label;
+          if (year.length === 8 && /^\d{8}$/.test(year)) {
+            schoolYear.label = `${year.slice(0, 4)}-${year.slice(4)}`;
+          }
+        }
+        setActiveSchoolYear(schoolYear);
       }
     } catch (err) {
       console.error('Error fetching active school year:', err);

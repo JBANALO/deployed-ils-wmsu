@@ -37,6 +37,7 @@ export default function SuperAdminDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRole, setSelectedRole] = useState("all");
   const [superAdminUser, setSuperAdminUser] = useState(null);
+  const [activeSchoolYear, setActiveSchoolYear] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -45,7 +46,28 @@ export default function SuperAdminDashboard() {
   useEffect(() => {
     loadAccountsData();
     fetchSuperAdminUser();
+    fetchActiveSchoolYear();
   }, []);
+
+  const fetchActiveSchoolYear = async () => {
+    try {
+      const schoolYearRes = await axios.get('/school-years/active');
+      if (schoolYearRes.data?.data) {
+        // Format the school year label to add dash if missing
+        const schoolYear = schoolYearRes.data.data;
+        if (schoolYear.label && !schoolYear.label.includes('-')) {
+          // Convert 20262027 to 2026-2027
+          const year = schoolYear.label;
+          if (year.length === 8 && /^\d{8}$/.test(year)) {
+            schoolYear.label = `${year.slice(0, 4)}-${year.slice(4)}`;
+          }
+        }
+        setActiveSchoolYear(schoolYear);
+      }
+    } catch (err) {
+      console.error('Error fetching active school year:', err);
+    }
+  };
 
   const fetchSuperAdminUser = async () => {
     try {
@@ -256,6 +278,21 @@ export default function SuperAdminDashboard() {
 
   return (
     <div className="space-y-4 md:space-y-8">
+      {/* Active School Year Banner */}
+      {activeSchoolYear && (
+        <div className="bg-gradient-to-r from-red-800 to-red-600 rounded-xl p-4 text-white shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 p-2 rounded-full">
+              <CalendarDaysIcon className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-xs text-red-100">Active School Year</p>
+              <p className="text-xl font-bold">{activeSchoolYear.label}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white rounded-lg shadow p-3 md:p-5 border border-gray-300 border-b-red-800 border-b-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 md:gap-4 mb-4">

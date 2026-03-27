@@ -35,7 +35,18 @@ export default function TeacherDashboard() {
   const fetchActiveSchoolYear = async () => {
     try {
       const res = await axios.get('/school-years/active');
-      setActiveSchoolYear(res.data?.data || res.data || null);
+      let schoolYear = res.data?.data || res.data || null;
+      
+      // Format the school year label to add dash if missing
+      if (schoolYear && schoolYear.label && !schoolYear.label.includes('-')) {
+        // Convert 20262027 to 2026-2027
+        const year = schoolYear.label;
+        if (year.length === 8 && /^\d{8}$/.test(year)) {
+          schoolYear = { ...schoolYear, label: `${year.slice(0, 4)}-${year.slice(4)}` };
+        }
+      }
+      
+      setActiveSchoolYear(schoolYear);
     } catch (e) {
       // non-critical
     }
