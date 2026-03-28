@@ -464,11 +464,10 @@ const deleteTeacher = (req, res) => {
 const permanentDeleteTeacher = deleteTeacher;
 
 // Create a new teacher
-const createTeacher = async (req, res) => {
+const createTeacher = (req, res) => {
   try {
     const {
       firstName,
-      middleName,
       lastName,
       email,
       username,
@@ -479,154 +478,6 @@ const createTeacher = async (req, res) => {
       subjects,
       bio
     } = req.body;
-
-    const teacherId = require('uuid').v4();
-    const normalizedRole = role || 'teacher';
-    const normalizedSubjects = Array.isArray(subjects)
-      ? subjects
-      : (typeof subjects === 'string' ? subjects.split(',').map(s => s.trim()).filter(Boolean) : []);
-    const subjectsValue = normalizedSubjects.length > 0 ? JSON.stringify(normalizedSubjects) : null;
-    let dbPersisted = false;
-
-    // Try database-first persistence so newly created teachers immediately appear
-    // in /teachers and dashboard lists that read from MySQL.
-    try {
-      const existingInTeachers = await query(
-        'SELECT id FROM teachers WHERE email = ? OR username = ? LIMIT 1',
-        [email, username]
-      );
-      const existingInUsers = await query(
-        'SELECT id FROM users WHERE email = ? OR username = ? LIMIT 1',
-        [email, username]
-      );
-
-      if (existingInTeachers.length > 0 || existingInUsers.length > 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Email or username already exists'
-        });
-      }
-
-      await query(
-        `INSERT INTO teachers (
-          id, first_name, middle_name, last_name, username, email, password,
-          role, grade_level, section, subjects, bio, profile_pic, verification_status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-        [
-          teacherId,
-          firstName,
-          middleName || null,
-          lastName,
-          username,
-          email,
-          password,
-          normalizedRole,
-          gradeLevel || null,
-          section || null,
-          subjectsValue,
-          bio || '',
-          req.body.profilePic || null,
-          'approved'
-        ]
-      );
-      dbPersisted = true;
-
-      // Keep users table in sync for pages that fetch teacher counts/lists via /users.
-      try {
-        const userColumns = await query('SHOW COLUMNS FROM users');
-        const fields = new Set(userColumns.map(col => col.Field));
-
-        const firstNameCol = fields.has('first_name') ? 'first_name' : (fields.has('firstName') ? 'firstName' : null);
-        const lastNameCol = fields.has('last_name') ? 'last_name' : (fields.has('lastName') ? 'lastName' : null);
-        const createdAtCol = fields.has('created_at') ? 'created_at' : (fields.has('createdAt') ? 'createdAt' : null);
-        const updatedAtCol = fields.has('updated_at') ? 'updated_at' : (fields.has('updatedAt') ? 'updatedAt' : null);
-
-        const insertCols = ['id'];
-        const insertVals = [teacherId];
-        const placeholders = ['?'];
-
-        if (firstNameCol) {
-          insertCols.push(firstNameCol);
-          insertVals.push(firstName);
-          placeholders.push('?');
-        }
-
-        if (fields.has('middle_name')) {
-          insertCols.push('middle_name');
-          insertVals.push(middleName || null);
-          placeholders.push('?');
-        }
-
-        if (lastNameCol) {
-          insertCols.push(lastNameCol);
-          insertVals.push(lastName);
-          placeholders.push('?');
-        }
-
-        if (fields.has('full_name')) {
-          insertCols.push('full_name');
-          insertVals.push(`${firstName} ${lastName}`.trim());
-          placeholders.push('?');
-        }
-
-        if (fields.has('username')) {
-          insertCols.push('username');
-          insertVals.push(username);
-          placeholders.push('?');
-        }
-
-        if (fields.has('email')) {
-          insertCols.push('email');
-          insertVals.push(email);
-          placeholders.push('?');
-        }
-
-        if (fields.has('password')) {
-          insertCols.push('password');
-          insertVals.push(password);
-          placeholders.push('?');
-        }
-
-        if (fields.has('role')) {
-          insertCols.push('role');
-          insertVals.push(normalizedRole);
-          placeholders.push('?');
-        }
-
-        if (fields.has('approval_status')) {
-          insertCols.push('approval_status');
-          insertVals.push('approved');
-          placeholders.push('?');
-        }
-
-        if (fields.has('status')) {
-          insertCols.push('status');
-          insertVals.push('approved');
-          placeholders.push('?');
-        }
-
-        if (createdAtCol) {
-          insertCols.push(createdAtCol);
-          placeholders.push('NOW()');
-        }
-
-        if (updatedAtCol) {
-          insertCols.push(updatedAtCol);
-          placeholders.push('NOW()');
-        }
-
-        if (insertCols.length > 1) {
-          await query(
-            `INSERT INTO users (${insertCols.join(', ')}) VALUES (${placeholders.join(', ')})`,
-            insertVals
-          );
-        }
-      } catch (syncError) {
-        console.log('createTeacher: users table sync skipped:', syncError.message);
-      }
-    } catch (dbError) {
-      console.log('createTeacher: database insert failed, falling back to users.json:', dbError.message);
-    }
     
     const users = readUsers();
     
@@ -641,17 +492,16 @@ const createTeacher = async (req, res) => {
     
     // Create new teacher
     const newTeacher = {
-      id: teacherId,
+      id: require('uuid').v4(),
       firstName,
-      middleName: middleName || '',
       lastName,
       email,
       username,
       password, // In production, this should be hashed
-      role: normalizedRole,
+      role: role || 'teacher',
       gradeLevel,
       section,
-      subjects: normalizedSubjects,
+      subjects: subjects || [],
       bio: bio || '',
       status: 'approved',
       archived: false,
@@ -684,35 +534,11 @@ const createTeacher = async (req, res) => {
         }
       });
     } else {
-      if (dbPersisted) {
-        console.log('Teacher saved in database; users.json sync failed.');
-        res.status(201).json({
-          success: true,
-          message: 'Teacher created successfully',
-          data: {
-            teacher: {
-              id: teacherId,
-              firstName,
-              middleName: middleName || '',
-              lastName,
-              email,
-              username,
-              role: normalizedRole,
-              gradeLevel,
-              section,
-              subjects: normalizedSubjects,
-              bio: bio || '',
-              status: 'approved'
-            }
-          }
-        });
-      } else {
-        console.error('Failed to write users to file');
-        res.status(500).json({
-          success: false,
-          message: 'Failed to save teacher data'
-        });
-      }
+      console.error('Failed to write users to file');
+      res.status(500).json({
+        success: false,
+        message: 'Failed to save teacher data'
+      });
     }
   } catch (error) {
     console.error('Error in createTeacher:', error);
