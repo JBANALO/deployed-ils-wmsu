@@ -205,8 +205,14 @@ exports.login = async (req, res) => {
     // Generate JWT
     const token = signToken(user.id);
 
-// Build userData based on role - check if user is from students table (has lrn)
+    // Build userData based on role - check if user is from students table (has lrn)
     let userData = {};
+    const resolveRole = (u, isStudent) => {
+      if (u.role && u.role.trim() !== '') return u.role;
+      if (isStudent) return 'student';
+      if (u.subjects || u.grade_level || u.section) return 'teacher';
+      return 'admin';
+    };
     if (user.lrn) {
       // Student (from MySQL students table)
       console.log('Student login successful:', user.lrn, user.first_name, user.last_name);
@@ -220,7 +226,7 @@ exports.login = async (req, res) => {
         email: user.student_email || `${user.lrn}@student.wmsu.edu.ph`,
         phone: user.parent_contact || '',
         profileImage: user.profile_pic || '',
-        role: 'student',
+        role: resolveRole(user, true),
         gradeLevel: user.grade_level,
         section: user.section
       };
@@ -235,7 +241,7 @@ exports.login = async (req, res) => {
         email: user.email,
         phone: user.phone || '',
         profileImage: user.profile_pic || user.profileImage || '',
-        role: user.role || 'admin',
+        role: resolveRole(user, false),
       };
     }
 
