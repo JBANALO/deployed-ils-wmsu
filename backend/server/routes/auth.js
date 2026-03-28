@@ -151,8 +151,14 @@ router.post('/login', async (req, res) => {
     
     console.log('✅ Login validation passed');
 
-    // Check if this is a student (has student_email or wmsu_email)
-    const isStudent = user.role === 'student' || user.student_email || user.wmsu_email;
+    // Resolve role with sensible defaults to avoid blank role in UI
+    const isStudent = user.role === 'student' || user.student_email || user.wmsu_email || user.lrn;
+    const resolvedRole = (() => {
+      if (user.role) return user.role;
+      if (isStudent) return 'student';
+      if (user.subjects_handled || user.grade_level || user.section) return 'teacher';
+      return 'admin';
+    })();
     
     // Return user data (don't return password)
     const userData = isStudent ? {
@@ -174,7 +180,7 @@ router.post('/login', async (req, res) => {
       firstName: user.firstName || user.first_name || '',
       lastName: user.lastName || user.last_name || '',
       fullName: user.fullName || user.full_name || user.firstName + ' ' + user.lastName || '',
-      role: user.role,
+      role: resolvedRole,
       profilePic: user.profilePic || user.profile_pic || null,
       subjectsHandled: user.subjectsHandled || user.subjects_handled ? (user.subjectsHandled || user.subjects_handled).split(',').map(s => s.trim()) : []
     };
