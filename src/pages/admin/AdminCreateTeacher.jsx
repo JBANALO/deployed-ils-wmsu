@@ -110,11 +110,11 @@ export default function AdminCreateTeacher() {
       // Show success modal instead of toast
       setShowSuccessModal(true);
       
-      // Redirect quickly to teacher list so new account appears immediately.
+      // Set redirect timer to admin-teachers page after 15 seconds
       const timer = setTimeout(() => {
         console.log('🔄 Redirecting to admin/admin-teachers...');
-        navigate('/admin/admin-teachers', { state: { refreshTeachers: true } });
-      }, 1500);
+        navigate('/admin/admin-teachers');
+      }, 15000);
       setRedirectTimer(timer);
       
       // Also add immediate redirect as backup
@@ -125,9 +125,9 @@ export default function AdminCreateTeacher() {
         console.log('🔄 Safeguard redirect check - should be at admin-teachers page');
         if (window.location.pathname !== '/admin/admin-teachers') {
           console.log('🚨 Not at admin-teachers page, forcing redirect...');
-          navigate('/admin/admin-teachers', { state: { refreshTeachers: true } });
+          navigate('/admin/admin-teachers');
         }
-      }, 2500); // 1 second after main redirect
+      }, 16000); // 1 second after main redirect
     } catch (err) {
       const msg = err?.response?.data?.message || err.message || "Failed to create teacher account.";
       toast.error("Registration error: " + msg);
@@ -350,7 +350,7 @@ export default function AdminCreateTeacher() {
                 ⚠️ Please save this password! It will not be shown again.
               </p>
               <p className="text-xs text-gray-500 mb-4">
-                Redirecting to Admin Teachers...
+                Redirecting to Admin Teachers in 15 seconds...
               </p>
               <button
                 onClick={() => {
@@ -360,7 +360,7 @@ export default function AdminCreateTeacher() {
                     setRedirectTimer(null);
                   }
                   setShowSuccessModal(false);
-                  navigate('/admin/admin-teachers', { state: { refreshTeachers: true } });
+                  navigate('/admin/admin-teachers');
                 }}
                 className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 font-semibold"
               >

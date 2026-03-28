@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { 
   UserGroupIcon, 
   CheckCircleIcon, 
@@ -23,7 +23,6 @@ const API_BASE = import.meta.env.VITE_API_URL;
 
 export default function AdminTeachers() {
   const navigate = useNavigate();
-  const location = useLocation();
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
@@ -77,13 +76,7 @@ export default function AdminTeachers() {
   };
 
   useEffect(() => {
-    const shouldForceRefresh = Boolean(location.state?.refreshTeachers);
-    fetchTeachers(shouldForceRefresh);
-
-    // Clear one-time navigation state so refresh behavior is not repeated.
-    if (shouldForceRefresh) {
-      navigate(location.pathname, { replace: true, state: null });
-    }
+    fetchTeachers();
   }, []);
 
   // Helper function to fix mixed up grade level and section data
