@@ -824,7 +824,7 @@ app.get('/', (req, res, next) => {
 
 // Version check endpoint
 app.get('/api/version', (req, res) => {
-  res.json({ version: '3.5', server: 'server/server.js', hasGradesEndpoint: true, deployedAt: '2026-03-08T11:00:00Z' });
+  res.json({ version: '3.6', server: 'server/server.js', hasGradesEndpoint: true, deployedAt: '2026-03-28T00:00:00Z' });
 });
 
 // Debug middleware to track all requests
