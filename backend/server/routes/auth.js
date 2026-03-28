@@ -47,9 +47,9 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Use one normalized login value for DB lookups so LRN/email/username all match
-    const loginValueRaw = (email || username || '').trim();
-    const normalizedLogin = loginValueRaw.toLowerCase();
+    // Normalize email/username to lowercase for comparison
+    const normalizedEmail = email ? email.toLowerCase() : null;
+    const normalizedUsername = username ? username.toLowerCase() : null;
 
     // Combine both sample users and in-memory users
     const allUsers = [...SAMPLE_USERS, ...inMemoryUsers];
@@ -58,23 +58,35 @@ router.post('/login', async (req, res) => {
 
     try {
       // Try to query from database (case-insensitive)
-      const userQuery = 'SELECT * FROM users WHERE LOWER(email) = ? OR LOWER(username) = ?';
-      [users] = await pool.query(userQuery, [normalizedLogin, normalizedLogin]);
+      let query = 'SELECT * FROM users WHERE ';
+      let params = [];
+
+      if (normalizedEmail) {
+        query += 'LOWER(email) = ?';
+        params.push(normalizedEmail);
+      } else {
+        query += 'LOWER(username) = ?';
+        params.push(normalizedUsername);
+      }
+
+      [users] = await pool.query(query, params);
       
-      // If no user found in users table, check students table with LRN/email/username
+      // If no user found in users table, check students table
       if (users.length === 0) {
         console.log('User not in users table, checking students table...');
-        const studentQuery = `SELECT *, "student" as role FROM students
-          WHERE LOWER(student_email) = ?
-             OR LOWER(wmsu_email) = ?
-             OR LOWER(username) = ?
-             OR lrn = ?`;
-        const [students] = await pool.query(studentQuery, [
-          normalizedLogin,
-          normalizedLogin,
-          normalizedLogin,
-          loginValueRaw
-        ]);
+        let studentQuery = 'SELECT *, "student" as role FROM students WHERE ';
+        let studentParams = [];
+        
+        if (normalizedEmail) {
+          // Check both student_email and wmsu_email columns
+          studentQuery += '(LOWER(student_email) = ? OR LOWER(wmsu_email) = ?)';
+          studentParams.push(normalizedEmail, normalizedEmail);
+        } else {
+          studentQuery += 'LOWER(username) = ?';
+          studentParams.push(normalizedUsername);
+        }
+        
+        const [students] = await pool.query(studentQuery, studentParams);
         if (students.length > 0) {
           console.log('✅ Student found in students table');
           users = students;
@@ -86,9 +98,8 @@ router.post('/login', async (req, res) => {
       
       // Use combined users array directly (case-insensitive)
       users = allUsers.filter(user => {
-        if (normalizedLogin) {
-          return user.email.toLowerCase() === normalizedLogin || user.username.toLowerCase() === normalizedLogin;
-        }
+        if (normalizedEmail) return user.email.toLowerCase() === normalizedEmail;
+        if (normalizedUsername) return user.username.toLowerCase() === normalizedUsername;
         return false;
       });
     }
