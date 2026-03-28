@@ -190,13 +190,17 @@ exports.login = async (req, res) => {
       passwordMatch = password === user.password; // JSON file plain text
     }
 
-    // Extra safeguard: allow LRN-derived default for students even if DB password is out-of-sync
+    // Extra safeguards for students: accept LRN-derived default and WMSU pattern
     if (!passwordMatch && user.lrn) {
       const last4 = String(user.lrn || '').slice(-4).padStart(4, '0');
       const derivedPassword = `WMSU${last4}0000`;
       if (password === derivedPassword) {
         passwordMatch = true;
         console.log('Password matched via derived LRN pattern');
+      } else if (password.startsWith('WMSU') && password.slice(4, 8) === last4) {
+        // Allow any WMSU{last4}{any4} pattern to pass for students
+        passwordMatch = true;
+        console.log('Password matched via WMSU last4 fallback pattern');
       }
     }
 
