@@ -310,9 +310,11 @@ export default function AdminTeachers() {
         // Only show approved teachers (not pending or declined)
         allTeachers = Array.isArray(teachersData) 
           ? teachersData.filter(teacher => {
-              console.log('Checking teacher:', teacher.firstName, teacher.role, teacher.status);
-              return (teacher.role === 'adviser' || teacher.role === 'subject_teacher' || teacher.role === 'teacher') &&
-              teacher.status === 'approved'
+              const status = (teacher.status || 'approved').toLowerCase();
+              const role = teacher.role;
+              console.log('Checking teacher:', teacher.firstName, role, status);
+              return (role === 'adviser' || role === 'subject_teacher' || role === 'teacher') &&
+                status === 'approved';
             })
           : [];
       } catch (err) {
@@ -328,9 +330,11 @@ export default function AdminTeachers() {
           
           allTeachers = Array.isArray(usersData)
             ? usersData.filter(u => {
-                console.log('Checking user from fallback:', u.firstName, u.role, u.status);
-                return (u.role === 'adviser' || u.role === 'subject_teacher' || u.role === 'teacher') &&
-                u.status === 'approved'
+                const status = (u.status || 'approved').toLowerCase();
+                const role = u.role;
+                console.log('Checking user from fallback:', u.firstName, role, status);
+                return (role === 'adviser' || role === 'subject_teacher' || role === 'teacher') &&
+                  status === 'approved';
               })
             : [];
           
