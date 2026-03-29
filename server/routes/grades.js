@@ -58,6 +58,149 @@ const canEnterGrade = async (user, student, subject) => {
   return false;
 };
 
+// GET /progress - Grade entry progress for the logged-in teacher (by class/subject)
+router.get('/progress', verifyUser, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user?.id) {
+      return res.status(401).json({ success: false, message: 'User not found in token' });
+    }
+
+    // Allow only teaching roles
+    if (!['teacher', 'adviser', 'subject_teacher', 'admin'].includes(user.role)) {
+      return res.status(403).json({ success: false, message: 'Unauthorized role' });
+    }
+
+    const allowedQuarters = ['q1', 'q2', 'q3', 'q4'];
+    const quarter = allowedQuarters.includes((req.query.quarter || '').toLowerCase())
+      ? req.query.quarter.toLowerCase()
+      : 'q1';
+
+    // Classes where the user is subject teacher
+    const subjectClasses = await query(
+      `SELECT st.class_id, st.subject, c.grade, c.section
+       FROM subject_teachers st
+       JOIN classes c ON c.id = st.class_id
+       WHERE st.teacher_id = ?`,
+      [user.id]
+    );
+
+    // If adviser, also include their advisory classes for all subjects (progress will be aggregated across subjects)
+    let adviserClasses = [];
+    if (user.role === 'adviser' || user.role === 'admin') {
+      adviserClasses = await query(
+        'SELECT id as class_id, grade, section FROM classes WHERE adviser_id = ?',
+        [user.id]
+      );
+    }
+
+    const classSubjectPairs = [];
+
+    // Subject teacher assignments (explicit subjects)
+    subjectClasses.forEach(row => {
+      classSubjectPairs.push({
+        classId: row.class_id,
+        grade: row.grade,
+        section: row.section,
+        subject: row.subject
+      });
+    });
+
+    // Adviser classes — treat each subject as "All Subjects" bucket if no explicit subject
+    adviserClasses.forEach(row => {
+      classSubjectPairs.push({
+        classId: row.class_id,
+        grade: row.grade,
+        section: row.section,
+        subject: 'All Subjects'
+      });
+    });
+
+    // Deduplicate class/subject pairs
+    const seen = new Set();
+    const uniquePairs = classSubjectPairs.filter(pair => {
+      const key = `${pair.classId}|${pair.subject}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    const items = [];
+    let totalStudentsAll = 0;
+    let gradedAll = 0;
+
+    for (const pair of uniquePairs) {
+      const { grade, section, subject } = pair;
+
+      // Total students in the class
+      const totalRows = await query(
+        'SELECT COUNT(*) as cnt FROM students WHERE grade_level = ? AND section = ?',
+        [grade, section]
+      );
+      const total = totalRows?.[0]?.cnt || 0;
+
+      // Graded students (quarter column not null/empty) for this subject
+      let graded = 0;
+      if (subject === 'All Subjects') {
+        const gradedRows = await query(
+          `SELECT COUNT(DISTINCT s.id) as cnt
+           FROM students s
+           LEFT JOIN grades g ON g.student_id = s.id
+           WHERE s.grade_level = ? AND s.section = ? AND (
+             g.${quarter} IS NOT NULL AND g.${quarter} != ''
+           )`,
+          [grade, section]
+        );
+        graded = gradedRows?.[0]?.cnt || 0;
+      } else {
+        const gradedRows = await query(
+          `SELECT COUNT(DISTINCT s.id) as cnt
+           FROM students s
+           LEFT JOIN grades g ON g.student_id = s.id AND g.subject = ?
+           WHERE s.grade_level = ? AND s.section = ? AND (
+             g.${quarter} IS NOT NULL AND g.${quarter} != ''
+           )`,
+          [subject, grade, section]
+        );
+        graded = gradedRows?.[0]?.cnt || 0;
+      }
+
+      const percent = total > 0 ? Math.round((graded / total) * 100) : 0;
+      totalStudentsAll += total;
+      gradedAll += graded;
+
+      items.push({
+        classId: pair.classId,
+        grade,
+        section,
+        subject,
+        totalStudents: total,
+        gradedStudents: graded,
+        percent,
+        quarter
+      });
+    }
+
+    const overallPercent = totalStudentsAll > 0 ? Math.round((gradedAll / totalStudentsAll) * 100) : 0;
+
+    res.json({
+      success: true,
+      data: {
+        quarter,
+        items,
+        summary: {
+          totalStudents: totalStudentsAll,
+          gradedStudents: gradedAll,
+          percent: overallPercent
+        }
+      }
+    });
+  } catch (err) {
+    console.error('Error computing grade progress:', err);
+    res.status(500).json({ success: false, message: 'Failed to compute progress', error: err.message });
+  }
+});
+
 // PUT /:id/grades - Update grades for a student (used by EditGrades page)
 router.put('/:id/grades', verifyUser, async (req, res) => {
   try {

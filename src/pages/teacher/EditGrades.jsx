@@ -35,6 +35,8 @@ export default function EditGrades() {
   const [adviserClassIds, setAdviserClassIds] = useState([]); // Classes where user is adviser
   const [subjectsByClass, setSubjectsByClass] = useState({}); // Map: classId -> [subjects]
   const [isAdviserViewingClass, setIsAdviserViewingClass] = useState(false); // adviser opened modal for their own class
+  const [progressData, setProgressData] = useState({ summary: { percent: 0, totalStudents: 0, gradedStudents: 0 }, items: [], quarter: 'q1' });
+  const [progressLoading, setProgressLoading] = useState(false);
   
   // Modal state
   const [showGradeModal, setShowGradeModal] = useState(false);
@@ -77,6 +79,10 @@ export default function EditGrades() {
   useEffect(() => {
     fetchStudents();
   }, []);
+
+  useEffect(() => {
+    fetchProgress(selectedQuarter);
+  }, [selectedQuarter]);
 
   // Update available sections when grade level changes
   useEffect(() => {
@@ -223,6 +229,9 @@ export default function EditGrades() {
         setSelectedSubject(subjects[0]);
       }
 
+      // Fetch grading progress for this teacher
+      fetchProgress(selectedQuarter);
+
       // Fetch all students
       const response = await api.get('/students');
       const allStudents = response.data.data || response.data;
@@ -265,6 +274,23 @@ export default function EditGrades() {
     } catch (error) {
       console.error('Error fetching students:', error);
       setLoading(false);
+    }
+  };
+
+  const fetchProgress = async (quarter = 'q1') => {
+    try {
+      setProgressLoading(true);
+      const response = await api.get('/grades/progress', { params: { quarter } });
+      const data = response.data?.data || {};
+      setProgressData({
+        summary: data.summary || { percent: 0, totalStudents: 0, gradedStudents: 0 },
+        items: Array.isArray(data.items) ? data.items : [],
+        quarter: data.quarter || quarter
+      });
+    } catch (error) {
+      console.error('Error fetching grade progress:', error.message || error);
+    } finally {
+      setProgressLoading(false);
     }
   };
 
@@ -664,6 +690,42 @@ export default function EditGrades() {
             <Bars3BottomLeftIcon className="w-12 h-12 text-purple-600 opacity-80" />
           </div>
         </div>
+      </div>
+
+      {/* Grading Progress */}
+      <div className="bg-white rounded-2xl shadow-xl p-6 mb-8 border border-gray-200">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-600">Grading Progress</p>
+            <p className="text-lg font-bold text-gray-900">Quarter {progressData.quarter?.toUpperCase().replace('Q','')}</p>
+            <p className="text-sm text-gray-500">Auto-updates from your assigned classes/subjects</p>
+          </div>
+          <div className="text-right">
+            <p className="text-4xl font-extrabold text-red-700">{progressData.summary.percent || 0}%</p>
+            <p className="text-sm text-gray-600">{progressData.summary.gradedStudents || 0} / {progressData.summary.totalStudents || 0} students graded</p>
+          </div>
+        </div>
+
+        {progressLoading ? (
+          <p className="text-sm text-gray-500">Loading progress…</p>
+        ) : progressData.items.length === 0 ? (
+          <p className="text-sm text-gray-500">No assigned classes found.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {progressData.items.slice(0, 6).map((item) => (
+              <div key={`${item.classId}-${item.subject}`} className="border rounded-xl p-4 bg-gray-50">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-semibold text-gray-800">{item.grade} - {item.section}</p>
+                  <span className={`text-xs font-bold px-2 py-1 rounded ${item.percent === 100 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                    {item.percent}%
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600">Subject: {item.subject}</p>
+                <p className="text-xs text-gray-500 mt-1">{item.gradedStudents} / {item.totalStudents} students graded</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Filter Section */}
