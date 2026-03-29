@@ -63,7 +63,7 @@ const getAllTeachers = async (req, res) => {
           subjectTeachers = [];
         }
 
-        const teachers = dbTeachers.map((teacher) => {
+        const dbFormatted = dbTeachers.map((teacher) => {
           const fullName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim();
           const normalizedFullName = normalizeName(fullName);
 
@@ -112,14 +112,55 @@ const getAllTeachers = async (req, res) => {
           };
         });
 
-        console.log(`getAllTeachers: Found ${teachers.length} teachers from database`);
+        // Merge DB teachers with file-based teachers (users.json) to show newly created records
+        const users = readUsers();
+        const fileTeachers = users
+          .filter(u =>
+            (u.role === 'adviser' || u.role === 'teacher' || u.role === 'subject_teacher') &&
+            !u.archived
+          )
+          .map(u => ({
+            id: u.id,
+            firstName: u.firstName || u.first_name || '',
+            middleName: u.middleName || u.middle_name || '',
+            lastName: u.lastName || u.last_name || '',
+            fullName: `${u.firstName || u.first_name || ''} ${u.lastName || u.last_name || ''}`.trim(),
+            username: u.username,
+            email: u.email,
+            role: u.role || 'teacher',
+            gradeLevel: u.gradeLevel || u.grade_level,
+            section: u.section,
+            position: u.position,
+            department: u.department,
+            subjectsHandled: u.subjectsHandled || u.subjects,
+            subjects: u.subjects || [],
+            bio: u.bio || '',
+            status: u.status || 'approved',
+            createdAt: u.createdAt
+          }));
+
+        // Avoid duplicates by email or username
+        const deduped = [...dbFormatted];
+        const existingKeys = new Set(
+          deduped.map(t => (t.email || '').toLowerCase())
+        );
+
+        fileTeachers.forEach(ft => {
+          const key = (ft.email || '').toLowerCase();
+          if (!existingKeys.has(key)) {
+            deduped.push(ft);
+            existingKeys.add(key);
+          }
+        });
+
+        console.log(`getAllTeachers: Merged ${dbFormatted.length} DB teachers with ${fileTeachers.length} file teachers => ${deduped.length} total`);
 
         return res.json({
           status: 'success',
           data: {
-            teachers
+            teachers: deduped
           },
-          teachers
+          teachers: deduped
         });
       }
     } catch (dbError) {
