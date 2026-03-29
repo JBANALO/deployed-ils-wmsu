@@ -338,7 +338,7 @@ app.get('/api', (req, res) => {
   res.json({ message: 'WMSU Portal API is running', status: 'OK' });
 });
 
-// Login route - uses JSON file
+// Login route - uses JSON file and MySQL database
 app.post('/api/auth/login', async (req, res) => {
   try {
     console.log('Login route called with body:', req.body);
@@ -350,22 +350,151 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ status: 'fail', message: 'Email/username and password are required' });
     }
 
-    // Read users from JSON file
-    const { readUsers } = require('./utils/fileStorage');
-    const users = readUsers();
+    let user = null;
     
-    // Find user by email or username
-    const user = users.find(u => 
-      u.email === loginField || u.username === loginField
+    // First, try to find in users.json (for admins, teachers, and some students)
+    const { readUsers } = require('./utils/fileStorage');
+    const jsonUsers = readUsers();
+    
+    user = jsonUsers.find(u => 
+      u.email === loginField || 
+      u.username === loginField || 
+      u.lrn === loginField
     );
+    
+    if (!user) {
+      // If not found in JSON, try MySQL students table (for LRN-based student login)
+      try {
+        const { query, isDatabaseAvailable } = require('./config/database');
+        
+        if (!isDatabaseAvailable()) {
+          console.log('❌ Database not available, skipping student lookup');
+          return res.status(500).json({ status: 'fail', message: 'Database connection not available' });
+        }
+        
+        console.log(`🔍 Searching for student in database with: ${loginField}`);
+        console.log(`🔍 LoginField type: ${typeof loginField}`);
+        console.log(`🔍 LoginField length: ${loginField?.length}`);
+        console.log(`🔍 LoginField value: "${loginField}"`);
+        
+        let students;
+        try {
+          students = await query(
+            `SELECT id, lrn, first_name as firstName, last_name as lastName, 
+             student_email as email, grade_level as gradeLevel, section, password
+             FROM students 
+             WHERE lrn = ? OR student_email = ?`,
+            [loginField, loginField]
+          );
+          console.log(`🔍 Database query executed successfully`);
+        } catch (queryError) {
+          console.error('❌ Database query failed:', queryError);
+          return res.status(500).json({ status: 'fail', message: 'Database query error' });
+        }
+        
+        console.log(`🔍 Database query result:`, students);
+        console.log(`🔍 Found ${students ? students.length : 0} students`);
+        
+        // Try a broader search to see if student exists at all
+        if (!students || students.length === 0) {
+          console.log(`🔍 Student not found with exact match, trying broader search...`);
+          const broaderStudents = await query(
+            `SELECT id, lrn, first_name as firstName, last_name as lastName, 
+             student_email as email, grade_level as gradeLevel, section, password
+             FROM students 
+             WHERE lrn LIKE ? OR student_email LIKE ? OR first_name LIKE ? OR last_name LIKE ?`,
+            [`%${loginField}%`, `%${loginField}%`, `%${loginField}%`, `%${loginField}%`]
+          );
+          console.log(`🔍 Broader search result:`, broaderStudents);
+          console.log(`🔍 Found in broader search: ${broaderStudents ? broaderStudents.length : 0} students`);
+          
+          if (broaderStudents && broaderStudents.length > 0) {
+            console.log(`🔍 Found student in broader search:`, broaderStudents[0]);
+            const studentData = broaderStudents[0];
+            console.log(`🔍 Creating user object from broader student data:`, studentData);
+            user = {
+              id: studentData.id,
+              lrn: studentData.lrn,
+              firstName: studentData.firstName,
+              lastName: studentData.lastName,
+              email: studentData.email,
+              username: studentData.lrn, // Use LRN as username
+              role: 'student',
+              gradeLevel: studentData.gradeLevel,
+              section: studentData.section,
+              password: studentData.password
+            };
+            console.log('✅ Found student in MySQL database via broader search:', user);
+          } else {
+            // If exact match didn't work but broader search found nothing, 
+            // check if we should use the exact match result
+            console.log(`🔍 No students found in broader search, checking exact match...`);
+            if (students && students.length > 0) {
+              const studentData = students[0];
+              console.log(`🔍 Creating user object from student data:`, studentData);
+              user = {
+                id: studentData.id,
+                lrn: studentData.lrn,
+                firstName: studentData.firstName,
+                lastName: studentData.lastName,
+                email: studentData.email,
+                username: studentData.lrn, // Use LRN as username
+                role: 'student',
+                gradeLevel: studentData.gradeLevel,
+                section: studentData.section,
+                password: studentData.password
+              };
+              console.log('✅ Found student in MySQL database via exact match:', user);
+            }
+          }
+        } else {
+          const studentData = students[0];
+          console.log(`🔍 Creating user object from student data:`, studentData);
+          user = {
+            id: studentData.id,
+            lrn: studentData.lrn,
+            firstName: studentData.firstName,
+            lastName: studentData.lastName,
+            email: studentData.email,
+            username: studentData.lrn, // Use LRN as username
+            role: 'student',
+            gradeLevel: studentData.gradeLevel,
+            section: studentData.section,
+            password: studentData.password
+          };
+          console.log('✅ Found student in MySQL database via exact match:', user);
+        }
+      } catch (dbError) {
+        console.error('Database error during student lookup:', dbError);
+        return res.status(500).json({ status: 'fail', message: 'Database error during student lookup' });
+      }
+    }
     
     if (!user) {
       console.log('User not found:', loginField);
       return res.status(401).json({ status: 'fail', message: 'Incorrect email or password' });
     }
     
-    // Check password (plain text comparison for JSON file)
-    if (user.password !== password) {
+    // Check password (handle both plain text and bcrypt)
+    let passwordMatch = false;
+    
+    console.log(`🔐 Password check - User password: "${user.password}"`);
+    console.log(`🔐 Password check - Input password: "${password}"`);
+    console.log(`🔐 Password check - User password type: ${typeof user.password}`);
+    console.log(`🔐 Password check - User password starts with bcrypt: ${user.password.startsWith('$2a$') || user.password.startsWith('$2b$')}`);
+    
+    if (user.password && (user.password.startsWith('$2a$') || user.password.startsWith('$2b$'))) {
+      // Password is bcrypt hashed
+      const bcrypt = require('bcryptjs');
+      passwordMatch = await bcrypt.compare(password, user.password);
+      console.log(`🔐 Password check - Using bcrypt comparison`);
+    } else {
+      // Password is plain text
+      passwordMatch = user.password === password;
+      console.log(`🔐 Password check - Using plain text comparison`);
+    }
+    
+    if (!passwordMatch) {
       console.log('Password mismatch for user:', loginField);
       return res.status(401).json({ status: 'fail', message: 'Incorrect email or password' });
     }
@@ -374,7 +503,7 @@ app.post('/api/auth/login', async (req, res) => {
     const { signToken } = require('./utils/auth');
     const token = signToken(user.id);
     
-    console.log('Login successful for user:', user.email);
+    console.log('Login successful for user:', user.email || user.lrn);
     console.log('User data:', user);
     console.log('User role:', user.role);
     
