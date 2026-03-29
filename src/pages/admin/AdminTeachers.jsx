@@ -313,8 +313,9 @@ export default function AdminTeachers() {
               const status = (teacher.status || 'approved').toLowerCase();
               const role = teacher.role;
               console.log('Checking teacher:', teacher.firstName, role, status);
-              return (role === 'adviser' || role === 'subject_teacher' || role === 'teacher') &&
-                status === 'approved';
+              const isRoleMatch = role === 'adviser' || role === 'subject_teacher' || role === 'teacher';
+              const isVisibleStatus = status === 'approved' || status === 'pending';
+              return isRoleMatch && isVisibleStatus;
             })
           : [];
       } catch (err) {
@@ -333,8 +334,9 @@ export default function AdminTeachers() {
                 const status = (u.status || 'approved').toLowerCase();
                 const role = u.role;
                 console.log('Checking user from fallback:', u.firstName, role, status);
-                return (role === 'adviser' || role === 'subject_teacher' || role === 'teacher') &&
-                  status === 'approved';
+                const isRoleMatch = role === 'adviser' || role === 'subject_teacher' || role === 'teacher';
+                const isVisibleStatus = status === 'approved' || status === 'pending';
+                return isRoleMatch && isVisibleStatus;
               })
             : [];
           
