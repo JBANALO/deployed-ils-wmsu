@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
+import html2canvas from "html2canvas";
 import axios from "../../api/axiosConfig";
 import {
   QrCodeIcon,
@@ -25,6 +26,7 @@ import {
 export default function QRCodePortal() {
   const [scannerActive, setScannerActive] = useState(false);
   const videoRef = useRef(null);
+  const idCardRef = useRef(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState("All Status");
@@ -389,6 +391,87 @@ export default function QRCodePortal() {
     } catch (error) {
       console.error('Error processing QR code:', error);
       alert('Invalid QR code format');
+    }
+  };
+
+  const handleDownloadId = async () => {
+    if (!selectedStudent) {
+      alert("Select a student first.");
+      return;
+    }
+
+    if (!selectedStudent.qrCode) {
+      alert("No QR code available for this student.");
+      return;
+    }
+
+    if (!idCardRef.current) return;
+
+    try {
+      const canvas = await html2canvas(idCardRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      });
+
+      const link = document.createElement("a");
+      link.href = canvas.toDataURL("image/png");
+      link.download = `ID_${selectedStudent.lrn || selectedStudent.id || "student"}.png`;
+      link.click();
+    } catch (error) {
+      console.error("Failed to download ID:", error);
+      alert("Failed to download ID. Please try again.");
+    }
+  };
+
+  const handlePrintId = async () => {
+    if (!selectedStudent) {
+      alert("Select a student first.");
+      return;
+    }
+
+    if (!selectedStudent.qrCode) {
+      alert("No QR code available for this student.");
+      return;
+    }
+
+    if (!idCardRef.current) return;
+
+    try {
+      const canvas = await html2canvas(idCardRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      });
+
+      const dataUrl = canvas.toDataURL("image/png");
+      const printWindow = window.open("", "_blank");
+
+      if (!printWindow) {
+        alert("Please allow popups to print the ID.");
+        return;
+      }
+
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Print ID</title>
+            <style>
+              body { margin: 0; display: flex; justify-content: center; align-items: center; background: #fff; }
+              img { width: 800px; height: auto; }
+            </style>
+          </head>
+          <body>
+            <img src="${dataUrl}" onload="window.print(); window.close();" />
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } catch (error) {
+      console.error("Failed to print ID:", error);
+      alert("Failed to print ID. Please try again.");
     }
   };
 
@@ -762,7 +845,7 @@ export default function QRCodePortal() {
               </button>
             </div>
 
-            <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200 w-[800px] h-[700px]">
+            <div ref={idCardRef} className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200 w-[800px] h-[700px]">
               <div className="bg-gradient-to-r from-red-800 to-red-900 text-white px-10 py-8 text-center">
                 <h3 className="text-2xl font-bold tracking-wide">WMSU-ILS - Elementary Department</h3>
                 <p className="text-lg opacity-90 mt-1">Integrated Learning System</p>
@@ -813,11 +896,17 @@ export default function QRCodePortal() {
                 </div>
 
                 <div className="flex justify-center gap-8 mt-10">
-                  <button className="px-8 py-4 bg-red-700 hover:bg-red-800 text-white rounded-xl font-bold text-base flex items-center gap-4 shadow-xl transition transform hover:scale-105">
+                  <button
+                    onClick={handleDownloadId}
+                    className="px-8 py-4 bg-red-700 hover:bg-red-800 text-white rounded-xl font-bold text-base flex items-center gap-4 shadow-xl transition transform hover:scale-105"
+                  >
                     <ArrowDownTrayIcon className="w-5 h-5" />
                     Download ID
                   </button>
-                  <button className="px-8 py-4 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-base flex items-center gap-4 shadow-lg transition transform hover:scale-105">
+                  <button
+                    onClick={handlePrintId}
+                    className="px-8 py-4 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-base flex items-center gap-4 shadow-lg transition transform hover:scale-105"
+                  >
                     <PrinterIcon className="w-5 h-5" />
                     Print ID
                   </button>
