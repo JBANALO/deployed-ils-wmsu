@@ -394,6 +394,48 @@ export default function QRCodePortal() {
     }
   };
 
+  const buildPrintableCard = (student) => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "700px";
+    container.style.background = "#ffffff";
+    container.style.border = "1px solid #e5e7eb";
+    container.style.borderRadius = "24px";
+    container.style.overflow = "hidden";
+    container.style.display = "flex";
+    container.style.flexDirection = "column";
+    container.style.fontFamily = "'Inter', 'Segoe UI', sans-serif";
+
+    container.innerHTML = `
+      <div style="background: linear-gradient(90deg, #7f1d1d, #991b1b); color: #fff; text-align: center; padding: 28px 12px;">
+        <div style="font-size: 26px; font-weight: 800; letter-spacing: 0.5px;">WMSU-ILS - Elementary Department</div>
+        <div style="font-size: 17px; opacity: 0.9; margin-top: 6px;">Integrated Learning System</div>
+      </div>
+      <div style="flex:1; padding: 48px; display:flex; flex-direction:column; gap:28px; background:#fff;">
+        <div style="display:flex; gap:32px; align-items:center;">
+          <div style="width:120px; height:120px; border-radius:28px; background: linear-gradient(135deg, #dbeafe, #bfdbfe); display:flex; align-items:center; justify-content:center; box-shadow: 0 10px 30px rgba(0,0,0,0.08);">
+            <svg width="80" height="80" viewBox="0 0 24 24" fill="#1d4ed8" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4Zm0 2c-2.67 0-8 1.34-8 4v1h16v-1c0-2.66-5.33-4-8-4Z"/>
+            </svg>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:6px;">
+            <div style="font-size:22px; font-weight:800; color:#111827;">${student.lastName || ''}, ${student.firstName || ''}</div>
+            <div style="font-size:16px; color:#1f2937;">LRN: <span style="font-family:'Montserrat','Segoe UI',sans-serif; font-size:18px;">${student.lrn || 'N/A'}</span></div>
+            <div style="font-size:16px; font-weight:700; color:#7f1d1d;">${student.gradeLevel || 'N/A'} - ${student.section || 'N/A'}</div>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:center;">
+          <div style="width:240px; height:240px; margin-top:0; background:#f3f4f6; border:4px dashed #9ca3af; border-radius:18px; display:flex; align-items:center; justify-content:center; box-shadow: 0 12px 30px rgba(0,0,0,0.12); overflow:hidden;">
+            <img src="${student.qrCode}" alt="QR Code" style="width:100%; height:100%; object-fit:cover;" crossorigin="anonymous" />
+          </div>
+        </div>
+      </div>
+    `;
+
+    return container;
+  };
+
   const captureIdCard = async () => {
     if (!selectedStudent) {
       alert("Select a student first.");
@@ -405,10 +447,14 @@ export default function QRCodePortal() {
       return null;
     }
 
-    if (!idCardRef.current) return null;
-
     try {
-      const canvas = await html2canvas(idCardRef.current, {
+      const tempCard = buildPrintableCard(selectedStudent);
+      tempCard.style.position = "fixed";
+      tempCard.style.top = "-2000px";
+      tempCard.style.left = "-2000px";
+      document.body.appendChild(tempCard);
+
+      const canvas = await html2canvas(tempCard, {
         scale: 2,
         useCORS: true,
         allowTaint: true,
@@ -417,6 +463,7 @@ export default function QRCodePortal() {
         logging: false,
       });
 
+      document.body.removeChild(tempCard);
       return canvas.toDataURL("image/png");
     } catch (error) {
       console.error("Failed to capture ID:", error);
