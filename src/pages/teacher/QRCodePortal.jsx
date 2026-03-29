@@ -394,59 +394,52 @@ export default function QRCodePortal() {
     }
   };
 
-  const handleDownloadId = async () => {
+  const captureIdCard = async () => {
     if (!selectedStudent) {
       alert("Select a student first.");
-      return;
+      return null;
     }
 
     if (!selectedStudent.qrCode) {
       alert("No QR code available for this student.");
-      return;
+      return null;
     }
 
-    if (!idCardRef.current) return;
+    if (!idCardRef.current) return null;
 
     try {
       const canvas = await html2canvas(idCardRef.current, {
         scale: 2,
         useCORS: true,
+        allowTaint: true,
+        imageTimeout: 15000,
         backgroundColor: "#ffffff",
         logging: false,
       });
 
-      const link = document.createElement("a");
-      link.href = canvas.toDataURL("image/png");
-      link.download = `ID_${selectedStudent.lrn || selectedStudent.id || "student"}.png`;
-      link.click();
+      return canvas.toDataURL("image/png");
     } catch (error) {
-      console.error("Failed to download ID:", error);
-      alert("Failed to download ID. Please try again.");
+      console.error("Failed to capture ID:", error);
+      alert(`Failed to capture ID. ${error?.message || "Please try again."}`);
+      return null;
     }
   };
 
+  const handleDownloadId = async () => {
+    const dataUrl = await captureIdCard();
+    if (!dataUrl) return;
+
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = `ID_${selectedStudent.lrn || selectedStudent.id || "student"}.png`;
+    link.click();
+  };
+
   const handlePrintId = async () => {
-    if (!selectedStudent) {
-      alert("Select a student first.");
-      return;
-    }
-
-    if (!selectedStudent.qrCode) {
-      alert("No QR code available for this student.");
-      return;
-    }
-
-    if (!idCardRef.current) return;
+    const dataUrl = await captureIdCard();
+    if (!dataUrl) return;
 
     try {
-      const canvas = await html2canvas(idCardRef.current, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        logging: false,
-      });
-
-      const dataUrl = canvas.toDataURL("image/png");
       const printWindow = window.open("", "_blank");
 
       if (!printWindow) {
@@ -471,7 +464,7 @@ export default function QRCodePortal() {
       printWindow.document.close();
     } catch (error) {
       console.error("Failed to print ID:", error);
-      alert("Failed to print ID. Please try again.");
+      alert(`Failed to print ID. ${error?.message || "Please try again."}`);
     }
   };
 
@@ -876,7 +869,8 @@ export default function QRCodePortal() {
                   <div className="w-60 h-60 -mt-10 bg-gray-100 border-4 border-dashed border-gray-400 rounded-2xl flex items-center justify-center shadow-2xl overflow-hidden">
                     {selectedStudent?.qrCode ? (
                       <img 
-                        src={selectedStudent.qrCode} 
+                        src={selectedStudent.qrCode}
+                        crossOrigin="anonymous"
                         alt={`QR Code for ${selectedStudent.firstName} ${selectedStudent.lastName}`}
                         className="w-full h-full object-cover"
                       />
