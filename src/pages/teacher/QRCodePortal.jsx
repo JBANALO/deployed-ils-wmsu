@@ -447,12 +447,28 @@ export default function QRCodePortal() {
       return null;
     }
 
+    let iframe = null;
     try {
+      // Render in an isolated iframe to avoid page styles (oklch) tainting the capture
+      iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.left = "-2000px";
+      iframe.style.top = "-2000px";
+      iframe.style.width = "900px";
+      iframe.style.height = "900px";
+      iframe.setAttribute("aria-hidden", "true");
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentDocument;
+      doc.open();
+      doc.write(`<!doctype html><html><head></head><body style="margin:0;padding:0;background:#ffffff;font-family:'Inter','Segoe UI',sans-serif;"></body></html>`);
+      doc.close();
+
       const tempCard = buildPrintableCard(selectedStudent);
-      tempCard.style.position = "fixed";
-      tempCard.style.top = "-2000px";
-      tempCard.style.left = "-2000px";
-      document.body.appendChild(tempCard);
+      doc.body.appendChild(tempCard);
+
+      // Give the iframe a tick to layout
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
       const canvas = await html2canvas(tempCard, {
         scale: 2,
@@ -461,14 +477,19 @@ export default function QRCodePortal() {
         imageTimeout: 15000,
         backgroundColor: "#ffffff",
         logging: false,
+        windowWidth: 900,
+        windowHeight: 900,
       });
 
-      document.body.removeChild(tempCard);
       return canvas.toDataURL("image/png");
     } catch (error) {
       console.error("Failed to capture ID:", error);
       alert(`Failed to capture ID. ${error?.message || "Please try again."}`);
       return null;
+    } finally {
+      if (iframe && iframe.parentNode) {
+        iframe.parentNode.removeChild(iframe);
+      }
     }
   };
 
