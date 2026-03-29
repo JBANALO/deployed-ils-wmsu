@@ -60,6 +60,7 @@ export const UserProvider = ({ children }) => {
       if (currentUser) {
         try {
           const parsedUser = JSON.parse(currentUser);
+          console.log('UserContext - refreshing user data on focus:', parsedUser);
           setAdminUser(parsedUser);
         } catch (error) {
           console.error('UserContext - Error parsing user on focus:', error);
@@ -75,9 +76,16 @@ export const UserProvider = ({ children }) => {
 
   // Update user helper
   const updateUser = (user) => {
+    console.log('UserContext - updateUser called with:', user);
     setAdminUser(user);
     setProfileImageFile(null); // reset file after saving
     localStorage.setItem("user", JSON.stringify(user)); // optional: keep localStorage in sync
+    
+    // Force refresh other tabs to clear stale data
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'user',
+      newValue: JSON.stringify(user)
+    }));
   };
 
   return (

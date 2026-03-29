@@ -5,6 +5,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import LoginPage from "./pages/auth/LoginPage";
 import GoogleCallbackPage from "./pages/auth/GoogleCallbackPage";
 import ForgotPassword from "./pages/auth/ForgotPassword";
+import ResetPassword from "./pages/auth/ResetPassword";
 
 import StudentTopbar from "./layouts/student/StudentTopbar.jsx";
 import StudentDashboard from "./pages/student/StudentDashboard.jsx";
@@ -99,6 +100,7 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/auth/google-callback" element={<GoogleCallbackPage />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password/:token" element={<ResetPassword />} />
 
             {/* Admin-only standalone pages */}
             <Route element={<ProtectedRoute allowedRoles={['admin', 'super_admin', 'superadmin']} />}>

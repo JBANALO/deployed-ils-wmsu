@@ -253,6 +253,7 @@ const teacherRoutes = require('./routes/teacherRoutes');
 const schoolYearRoutes = require('./routes/schoolYearRoutes');
 const subjectRoutes = require('./routes/subjectRoutes');
 const sectionRoutes = require('./routes/sectionRoutes');
+const passwordResetRoutes = require('./routes/passwordReset');
 
 const app = express();
 
@@ -931,6 +932,7 @@ app.get('/api/admin/declined-students', async (req, res) => {
 // ================= ROUTES =================
 // DEPLOYED: 2026-03-07 - includes grades routes in studentRoutes.js
 app.use('/api/auth', authRoutes);
+app.use('/api/auth', passwordResetRoutes); // Password reset routes
 app.use('/api/students', studentRoutes); // grades routes are now INSIDE studentRoutes.js
 app.use('/api/classes', classRoutes);
 app.use('/api/attendance', attendanceRoutes);

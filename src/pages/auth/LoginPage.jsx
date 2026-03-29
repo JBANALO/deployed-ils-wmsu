@@ -91,8 +91,15 @@ export default function LoginPage() {
         return;
       }
 
-      // Store user data in localStorage
+      // Clear all user data first, then store new user data
       if (user) {
+        // Clear all user-related localStorage items
+        localStorage.removeItem('user');
+        localStorage.removeItem('lastAdminEmail');
+        localStorage.removeItem('lastTeacherEmail');
+        localStorage.removeItem('lastStudentEmail');
+        
+        // Store new user data
         localStorage.setItem('user', JSON.stringify(user));
         console.log('User stored in localStorage:', user);
         

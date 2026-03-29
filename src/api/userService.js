@@ -54,6 +54,30 @@ export const authService = {
   // Get auth token
   getToken: () => {
     return localStorage.getItem('token');
+  },
+
+  // Forgot password
+  forgotPassword: async (email) => {
+    try {
+      const response = await api.post('/auth/forgot-password', { email });
+      return response.data;
+    } catch (error) {
+      const errorMsg = error?.response?.data?.message || error?.message || 'Failed to send reset email';
+      const err = new Error(errorMsg);
+      throw err;
+    }
+  },
+
+  // Reset password
+  resetPassword: async ({ token, password }) => {
+    try {
+      const response = await api.post('/auth/reset-password', { token, password });
+      return response.data;
+    } catch (error) {
+      const errorMsg = error?.response?.data?.message || error?.message || 'Failed to reset password';
+      const err = new Error(errorMsg);
+      throw err;
+    }
   }
 };
 

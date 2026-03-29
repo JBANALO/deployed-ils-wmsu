@@ -1,14 +1,26 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { authService } from "../../api/userService";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log("Password reset requested for:", email);
-    setSubmitted(true); 
+    setError("");
+    setIsLoading(true);
+
+    try {
+      await authService.forgotPassword(email);
+      setSubmitted(true);
+    } catch (err) {
+      setError(err.message || "Failed to send reset email. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -32,6 +44,12 @@ export default function ForgotPasswordPage() {
               </p>
             </div>
 
+            {error && (
+              <div className="text-red-600 text-sm font-medium mb-2 bg-red-50 px-2 py-1 rounded-md border border-red-200">
+                {error}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4 text-left">
               <div>
                 <label className="text-sm font-medium text-gray-700">
@@ -49,9 +67,10 @@ export default function ForgotPasswordPage() {
 
               <button
                 type="submit"
-                className="w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-4 px-6 rounded-md transition"
+                disabled={isLoading}
+                className={`w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-4 px-6 rounded-md transition ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
-                Send Reset Link
+                {isLoading ? 'Sending...' : 'Send Reset Link'}
               </button>
             </form>
 
