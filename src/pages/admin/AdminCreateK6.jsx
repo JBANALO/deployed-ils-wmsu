@@ -254,7 +254,7 @@ const handleSubmit = async (e) => {
 
         <div className="grid grid-cols-3 gap-4">
           <div><label className="block font-semibold mb-1">First Name</label><input type="text" name="firstName" value={formData.firstName} onChange={handleChange} className="w-full border p-3 rounded-lg" required /></div>
-          <div><label className="block font-semibold mb-1">Middle Name</label><input type="text" name="middleName" value={formData.middleName} onChange={handleChange} className="w-full border p-3 rounded-lg" required /></div>
+          <div><label className="block font-semibold mb-1">Middle Name</label><input type="text" name="middleName" value={formData.middleName} onChange={handleChange} className="w-full border p-3 rounded-lg" placeholder="(optional)" /></div>
           <div><label className="block font-semibold mb-1">Last Name</label><input type="text" name="lastName" value={formData.lastName} onChange={handleChange} className="w-full border p-3 rounded-lg" required /></div>
         </div>
 
