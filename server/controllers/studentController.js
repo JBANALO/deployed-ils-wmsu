@@ -389,32 +389,35 @@ exports.getStudent = async (req, res) => {
 
     // ======== FETCH GRADES ========
     const gradesRaw = await query(
-      'SELECT subject, quarter, grade FROM grades WHERE student_id = ? ORDER BY subject, quarter',
+      'SELECT subject, quarter, grade, created_at FROM grades WHERE student_id = ? ORDER BY subject, quarter',
       [studentId]
     );
     
     // Group grades by subject with quarters
-    const gradesMap = {};
-    const gradesMapByNormalized = {};
-    for (const g of gradesRaw) {
-      if (!gradesMap[g.subject]) {
-        gradesMap[g.subject] = { subject: g.subject, q1: null, q2: null, q3: null, q4: null };
+    // Helpers to build grade maps with optional date filtering (per promotion snapshot)
+    const buildNormalizedMap = (rows) => {
+      const map = {};
+      const byNormalized = {};
+      for (const g of rows) {
+        if (!map[g.subject]) {
+          map[g.subject] = { subject: g.subject, q1: null, q2: null, q3: null, q4: null };
+        }
+        const qKey = (g.quarter || '').toLowerCase();
+        const val = g.grade !== null && g.grade !== undefined ? parseFloat(g.grade) : null;
+        if (qKey === 'q1') map[g.subject].q1 = val;
+        if (qKey === 'q2') map[g.subject].q2 = val;
+        if (qKey === 'q3') map[g.subject].q3 = val;
+        if (qKey === 'q4') map[g.subject].q4 = val;
       }
-      const qKey = g.quarter.toLowerCase(); // Q1 -> q1
-      if (qKey === 'q1') gradesMap[g.subject].q1 = parseFloat(g.grade);
-      if (qKey === 'q2') gradesMap[g.subject].q2 = parseFloat(g.grade);
-      if (qKey === 'q3') gradesMap[g.subject].q3 = parseFloat(g.grade);
-      if (qKey === 'q4') gradesMap[g.subject].q4 = parseFloat(g.grade);
-    }
 
-    // Build normalized map for subject-name matching (e.g., English vs English (Grade 3))
-    Object.values(gradesMap).forEach((g) => {
-      const key = normalizeSubjectName(g.subject);
-      if (!key) return;
-      if (!gradesMapByNormalized[key]) {
-        gradesMapByNormalized[key] = g;
-      }
-    });
+      Object.values(map).forEach((g) => {
+        const key = normalizeSubjectName(g.subject);
+        if (!key) return;
+        if (!byNormalized[key]) byNormalized[key] = g;
+      });
+
+      return { map, byNormalized };
+    };
 
     // Fetch admin-configured subjects for current grade and ensure they are always shown (even without grades)
     const gradeKey = toGradeKey(student.grade_level);
@@ -424,10 +427,30 @@ exports.getStudent = async (req, res) => {
     );
     const currentGradeSubjects = currentGradeSubjectsRows.map(r => r.name).filter(Boolean);
 
+    // Identify last promotion into current grade to separate old vs new grades
+    let lastPromotionToCurrent = null;
+    try {
+      const [lastPromoRow] = await query(
+        `SELECT created_at FROM promotion_history
+         WHERE student_id = ? AND to_grade = ? AND status IN ('promoted','graduated')
+         ORDER BY created_at DESC LIMIT 1`,
+        [studentId, student.grade_level]
+      );
+      lastPromotionToCurrent = lastPromoRow?.created_at ? new Date(lastPromoRow.created_at) : null;
+    } catch (promoDateErr) {
+      console.log('promotion_history (current) lookup skipped:', promoDateErr.message);
+    }
+
+    const filteredCurrentGradesRaw = lastPromotionToCurrent
+      ? gradesRaw.filter(g => g.created_at && new Date(g.created_at) >= lastPromotionToCurrent)
+      : gradesRaw;
+
+    const { byNormalized: currentGradesByNormalized } = buildNormalizedMap(filteredCurrentGradesRaw);
+
     const currentGradesMap = {};
     currentGradeSubjects.forEach((subjectName) => {
       const normalizedKey = normalizeSubjectName(subjectName);
-      const matched = gradesMapByNormalized[normalizedKey] || { q1: null, q2: null, q3: null, q4: null };
+      const matched = currentGradesByNormalized[normalizedKey] || { q1: null, q2: null, q3: null, q4: null };
       currentGradesMap[subjectName] = {
         subject: subjectName,
         q1: matched.q1 ?? null,
@@ -473,8 +496,15 @@ exports.getStudent = async (req, res) => {
         );
         const prevSubjects = prevSubjectsRows.map(r => r.name).filter(Boolean);
 
+        // Use grades recorded up to the promotion date for this previous grade snapshot
+        const promoCutoff = historyRows.find(h => h.from_grade === prevGrade)?.created_at || null;
+        const gradesBeforePromotion = promoCutoff
+          ? gradesRaw.filter(g => g.created_at && new Date(g.created_at) <= new Date(promoCutoff))
+          : gradesRaw;
+        const { byNormalized: historyGradesByNormalized } = buildNormalizedMap(gradesBeforePromotion);
+
         const prevGrades = prevSubjects.map(subjectName => {
-          const matched = gradesMapByNormalized[normalizeSubjectName(subjectName)] || { q1: null, q2: null, q3: null, q4: null };
+          const matched = historyGradesByNormalized[normalizeSubjectName(subjectName)] || { q1: null, q2: null, q3: null, q4: null };
           const quarterGrades = [matched.q1, matched.q2, matched.q3, matched.q4].filter(x => x !== null && x > 0);
           const avg = quarterGrades.length > 0
             ? (quarterGrades.reduce((a, b) => a + b, 0) / quarterGrades.length).toFixed(2)
