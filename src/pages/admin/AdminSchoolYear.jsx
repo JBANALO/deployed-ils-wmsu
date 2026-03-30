@@ -982,7 +982,7 @@ export default function AdminSchoolYear() {
 
             {/* Passing grade rule */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-800">
-              <strong>Promotion Rule:</strong> Students are promoted only if they have <strong>complete grades for all required subjects in Q1-Q4</strong> and an overall average of <strong>75 or above</strong>. Otherwise, retained.
+              <strong>Promotion Rule:</strong> Students are promoted only if they have <strong>complete grades for all required subjects in Q1-Q4</strong> and an overall average of <strong>75 or above</strong>. Incomplete or failing students are retained; this applies to both manual and automatic runs.
             </div>
 
             {/* Breakdown table */}
@@ -1060,6 +1060,7 @@ export default function AdminSchoolYear() {
                         <th className="text-left py-2 px-2">Student</th>
                         <th className="text-left py-2 px-2">From</th>
                         <th className="text-left py-2 px-2">To</th>
+                        <th className="text-left py-2 px-2">Grades</th>
                         <th className="text-left py-2 px-2">Target Section / Adviser</th>
                         <th className="text-left py-2 px-2">Status</th>
                         <th className="text-left py-2 px-2">Reason</th>
@@ -1080,6 +1081,17 @@ export default function AdminSchoolYear() {
                           <td className="py-2 px-2">{cand.name}</td>
                           <td className="py-2 px-2">{cand.fromGrade}</td>
                           <td className="py-2 px-2">{cand.toGrade}</td>
+                          <td className="py-2 px-2 min-w-[220px]">
+                            <div className="flex flex-wrap gap-1 items-center">
+                              <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-800 font-semibold">Avg: {cand.average ?? '-'}</span>
+                              <span className={`px-2 py-0.5 rounded-full font-semibold ${cand.hasCompleteGrades ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                                {cand.hasCompleteGrades ? 'Q1-Q4 Complete' : 'Missing Grades'}
+                              </span>
+                              {cand.hasFailingGrade && (
+                                <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">Has Grade below 75</span>
+                              )}
+                            </div>
+                          </td>
                           <td className="py-2 px-2 min-w-[220px]">
                             {cand.toGrade === 'Graduate' ? (
                               <span className="text-gray-400">N/A (Graduate)</span>
