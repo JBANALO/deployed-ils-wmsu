@@ -23,6 +23,24 @@ async function ensureColumns(connection) {
   } catch (err) {
     // ignore if already exists
   }
+
+  // Drop any global unique index on name and replace with per-SY uniqueness
+  try {
+    const [indexes] = await connection.execute('SHOW INDEX FROM subjects');
+    const hasGlobalUnique = indexes.some((idx) => idx.Key_name === 'name' && idx.Non_unique === 0);
+    if (hasGlobalUnique) {
+      await connection.execute('ALTER TABLE subjects DROP INDEX name');
+      console.log('Dropped global unique index on name');
+    }
+  } catch (err) {
+    // ignore
+  }
+  try {
+    await connection.execute('CREATE UNIQUE INDEX idx_subjects_sy_name_grade_unique ON subjects (school_year_id, name, grade_levels)');
+    console.log('Created unique index on (school_year_id, name, grade_levels)');
+  } catch (err) {
+    // ignore if already exists
+  }
 }
 
 async function getActiveSchoolYear(connection) {
