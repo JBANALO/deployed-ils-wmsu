@@ -47,16 +47,37 @@ async function seedSubjects() {
     console.log(`Active SY: ${activeSy.label} (id=${activeSy.id})`);
 
     const catalog = [
-      { name: 'Filipino', description: 'Filipino Language', grades: ['1', '2', '3', '4', '5', '6'] },
-      { name: 'English', description: 'English Language', grades: ['1', '2', '3', '4', '5', '6'] },
-      { name: 'Mathematics', description: 'Mathematics', grades: ['1', '2', '3', '4', '5', '6'] },
-      { name: 'Science', description: 'Science', grades: ['1', '2', '3', '4', '5', '6'] },
-      { name: 'Araling Panlipunan', description: 'Social Studies', grades: ['1', '2', '3', '4', '5', '6'] },
-      { name: 'MAPEH', description: 'Music, Arts, Physical Education, Health', grades: ['1', '2', '3', '4', '5', '6'] },
-      { name: 'EsP/GMRC', description: 'Edukasyon sa Pagpapakatao / GMRC', grades: ['1', '2', '3', '4', '5', '6'] },
-      { name: 'Mother Tongue', description: 'Mother Tongue-Based Education', grades: ['1', '2', '3'] },
-      { name: 'EPP/TLE', description: 'Edukasyong Pantahanan at Pangkabuhayan / TLE', grades: ['4', '5', '6'] },
-      { name: 'Computer/ICT', description: 'Information and Communications Technology', grades: ['4', '5', '6'] },
+      // Grade 1
+      { name: 'GMRC', description: 'Good Manners and Right Conduct', grades: ['1'] },
+      { name: 'Reading', description: 'Reading and Literacy', grades: ['1'] },
+      { name: 'Math', description: 'Mathematics', grades: ['1'] },
+      { name: 'Makabansa', description: 'Nationalism / Civics', grades: ['1'] },
+      { name: 'Language', description: 'Language Arts', grades: ['1'] },
+
+      // Grade 2
+      { name: 'GMRC', description: 'Good Manners and Right Conduct', grades: ['2'] },
+      { name: 'Filipino', description: 'Filipino Language', grades: ['2'] },
+      { name: 'Makabansa', description: 'Nationalism / Civics', grades: ['2'] },
+      { name: 'Math', description: 'Mathematics', grades: ['2'] },
+      { name: 'English', description: 'English Language', grades: ['2'] },
+
+      // Grade 3
+      { name: 'GMRC', description: 'Good Manners and Right Conduct', grades: ['3'] },
+      { name: 'Filipino', description: 'Filipino Language', grades: ['3'] },
+      { name: 'Makabansa', description: 'Nationalism / Civics', grades: ['3'] },
+      { name: 'Math', description: 'Mathematics', grades: ['3'] },
+      { name: 'English', description: 'English Language', grades: ['3'] },
+      { name: 'Science', description: 'Science', grades: ['3'] },
+
+      // Grades 4-6 (shared list)
+      { name: 'GMRC', description: 'Good Manners and Right Conduct', grades: ['4', '5', '6'] },
+      { name: 'English', description: 'English Language', grades: ['4', '5', '6'] },
+      { name: 'Araling Panlipunan', description: 'Social Studies', grades: ['4', '5', '6'] },
+      { name: 'Math', description: 'Mathematics', grades: ['4', '5', '6'] },
+      { name: 'Filipino', description: 'Filipino Language', grades: ['4', '5', '6'] },
+      { name: 'EPP', description: 'Edukasyong Pantahanan at Pangkabuhayan', grades: ['4', '5', '6'] },
+      { name: 'Science', description: 'Science', grades: ['4', '5', '6'] },
+      { name: 'MAPEH', description: 'Music, Arts, Physical Education, Health', grades: ['4', '5', '6'] },
     ];
 
     let inserted = 0;
