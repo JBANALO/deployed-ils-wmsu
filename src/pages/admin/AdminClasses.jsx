@@ -5,6 +5,7 @@ import { BuildingLibraryIcon, ChevronDownIcon, UserGroupIcon, ArrowPathIcon, XMa
 import { useNavigate } from "react-router-dom";
 
 import { API_BASE_URL } from "../../api/config";
+import axios from "../../api/axiosConfig";
 
 import { toast } from 'react-toastify';
 
@@ -43,12 +44,11 @@ export default function AdminClasses() {
       // Fetch active sections (to limit which classes display)
       let fetchedSections = [];
       try {
-        const sectionsRes = await fetch(`${API_BASE_URL}/sections`);
-        if (sectionsRes.ok) {
-          const sectionsJson = await sectionsRes.json();
-          fetchedSections = sectionsJson?.data || [];
-          setSections(fetchedSections);
-        }
+        const sectionsRes = await axios.get('/sections');
+        const sectionsJson = sectionsRes.data;
+        fetchedSections = sectionsJson?.data || sectionsJson?.sections || [];
+        setSections(fetchedSections);
+        console.log('Sections fetched for classes:', fetchedSections.length);
       } catch (err) {
         console.log('Could not fetch sections:', err.message);
       }
@@ -76,21 +76,19 @@ export default function AdminClasses() {
       // Fetch classes from backend (includes adviser_name)
       let backendClasses = [];
       try {
-        const classesResponse = await fetch(`${API_BASE_URL}/classes`);
-        if (classesResponse.ok) {
-          const classesResult = await classesResponse.json();
-          backendClasses = Array.isArray(classesResult) ? classesResult : (classesResult.data || []);
-          backendClasses = filterBySections(backendClasses);
-          console.log('Classes fetched from backend:', backendClasses);
-        }
+        const classesResponse = await axios.get('/classes');
+        const classesResult = classesResponse.data;
+        backendClasses = Array.isArray(classesResult) ? classesResult : (classesResult.data || []);
+        backendClasses = filterBySections(backendClasses);
+        console.log('Classes fetched from backend:', backendClasses);
       } catch (err) {
         console.log('Could not fetch classes from backend:', err.message);
       }
 
       // Fetch students for enrollment count
-      const studentsResponse = await fetch(`${API_BASE_URL}/students`);
-      if (studentsResponse.ok) {
-        const result = await studentsResponse.json();
+      const studentsResponse = await axios.get('/students');
+      if (studentsResponse.status === 200) {
+        const result = studentsResponse.data;
         const students = result.data ? result.data : (Array.isArray(result) ? result : []);
         setAllStudents(students);
         console.log('Students fetched:', students.length);
@@ -130,11 +128,11 @@ export default function AdminClasses() {
 
       // Fetch teachers
       try {
-        const teachersResponse = await fetch(`${API_BASE_URL}/users`);
-        if (teachersResponse.ok) {
-          const data = await teachersResponse.json();
-          const allUsers = data.data?.users || data.users || [];
-          console.log('All Users fetched:', allUsers.length);
+        const teachersResponse = await axios.get('/users');
+        if (teachersResponse.status === 200) {
+          const data = teachersResponse.data;
+          const allUsers = data.data?.users || data.users || data.data || [];
+          console.log('All Users fetched:', Array.isArray(allUsers) ? allUsers.length : 0);
           const teachersList = Array.isArray(allUsers) 
             ? allUsers.filter(user => ['teacher', 'subject_teacher', 'adviser'].includes(user.role))
             : [];
