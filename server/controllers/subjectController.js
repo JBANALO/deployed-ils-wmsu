@@ -1,11 +1,51 @@
 // Subject Controller - CRUD operations for subjects with grade level support
 const { query } = require('../config/database');
 
+let subjectSyEnsured = false;
+
+const ensureSubjectSchoolYearColumn = async () => {
+  if (subjectSyEnsured) return;
+  const columns = await query('SHOW COLUMNS FROM subjects');
+  const hasSy = columns.some((c) => c.Field === 'school_year_id');
+  if (!hasSy) {
+    await query('ALTER TABLE subjects ADD COLUMN school_year_id INT NULL');
+    await query('CREATE INDEX idx_subjects_school_year ON subjects (school_year_id)');
+  }
+  subjectSyEnsured = true;
+};
+
+const getActiveSchoolYear = async () => {
+  const rows = await query('SELECT id, label, start_date FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+  if (!rows.length) throw new Error('No active school year found');
+  return rows[0];
+};
+
+const getPreviousSchoolYear = async (activeStartDate) => {
+  const rows = await query(
+    'SELECT id, label FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
+    [activeStartDate]
+  );
+  return rows[0] || null;
+};
+
+const formatDuplicateCheck = async ({ name, grade_levels, school_year_id, excludeId = null }) => {
+  const params = [name.trim(), grade_levels, school_year_id];
+  let sql = 'SELECT id FROM subjects WHERE name = ? AND grade_levels = ? AND school_year_id = ?';
+  if (excludeId) {
+    sql += ' AND id != ?';
+    params.push(excludeId);
+  }
+  return query(sql, params);
+};
+
 // Get all subjects (excluding archived), grouped by grade level
 const getAllSubjects = async (req, res) => {
   try {
+    await ensureSubjectSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
     const subjects = await query(
-      'SELECT * FROM subjects WHERE is_archived = FALSE ORDER BY grade_levels, name'
+      'SELECT * FROM subjects WHERE is_archived = FALSE AND school_year_id = ? ORDER BY grade_levels, name',
+      [activeSy.id]
     );
     res.json({ success: true, data: subjects });
   } catch (error) {
@@ -17,10 +57,12 @@ const getAllSubjects = async (req, res) => {
 // Get subjects by grade level
 const getSubjectsByGrade = async (req, res) => {
   try {
+    await ensureSubjectSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
     const { grade } = req.params;
     const subjects = await query(
-      'SELECT * FROM subjects WHERE is_archived = FALSE AND FIND_IN_SET(?, grade_levels) ORDER BY name',
-      [grade]
+      'SELECT * FROM subjects WHERE is_archived = FALSE AND school_year_id = ? AND FIND_IN_SET(?, grade_levels) ORDER BY name',
+      [activeSy.id, grade]
     );
     res.json({ success: true, data: subjects });
   } catch (error) {
@@ -32,7 +74,9 @@ const getSubjectsByGrade = async (req, res) => {
 // Get all subjects including archived
 const getAllSubjectsWithArchived = async (req, res) => {
   try {
-    const subjects = await query('SELECT * FROM subjects ORDER BY is_archived, name');
+    await ensureSubjectSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
+    const subjects = await query('SELECT * FROM subjects WHERE school_year_id = ? ORDER BY is_archived, name', [activeSy.id]);
     res.json({ success: true, data: subjects });
   } catch (error) {
     console.error('Error fetching subjects:', error);
@@ -43,8 +87,11 @@ const getAllSubjectsWithArchived = async (req, res) => {
 // Get archived subjects only
 const getArchivedSubjects = async (req, res) => {
   try {
+    await ensureSubjectSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
     const subjects = await query(
-      'SELECT * FROM subjects WHERE is_archived = TRUE ORDER BY name'
+      'SELECT * FROM subjects WHERE is_archived = TRUE AND school_year_id = ? ORDER BY name',
+      [activeSy.id]
     );
     res.json({ success: true, data: subjects });
   } catch (error) {
@@ -56,7 +103,10 @@ const getArchivedSubjects = async (req, res) => {
 // Get single subject by ID
 const getSubjectById = async (req, res) => {
   try {
+    await ensureSubjectSchoolYearColumn();
+    await ensureSubjectSchoolYearColumn();
     const { id } = req.params;
+    await ensureSubjectSchoolYearColumn();
     const subjects = await query('SELECT * FROM subjects WHERE id = ?', [id]);
     
     if (subjects.length === 0) {
@@ -73,6 +123,8 @@ const getSubjectById = async (req, res) => {
 // Create new subject
 const createSubject = async (req, res) => {
   try {
+    await ensureSubjectSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
     const { name, description, grade_levels } = req.body;
     
     if (!name || !name.trim()) {
@@ -84,20 +136,20 @@ const createSubject = async (req, res) => {
     }
 
     // Check if subject already exists for same grade levels
-    const existing = await query('SELECT id FROM subjects WHERE name = ? AND grade_levels = ?', [name.trim(), grade_levels]);
+    const existing = await formatDuplicateCheck({ name, grade_levels, school_year_id: activeSy.id });
     if (existing.length > 0) {
       return res.status(400).json({ success: false, message: 'Subject already exists for these grade levels' });
     }
 
     const result = await query(
-      'INSERT INTO subjects (name, description, grade_levels) VALUES (?, ?, ?)',
-      [name.trim(), description?.trim() || null, grade_levels]
+      'INSERT INTO subjects (name, description, grade_levels, school_year_id) VALUES (?, ?, ?, ?)',
+      [name.trim(), description?.trim() || null, grade_levels, activeSy.id]
     );
 
     res.status(201).json({ 
       success: true, 
       message: 'Subject created successfully',
-      data: { id: result.insertId, name: name.trim(), description: description?.trim() || null, grade_levels }
+      data: { id: result.insertId, name: name.trim(), description: description?.trim() || null, grade_levels, school_year_id: activeSy.id }
     });
   } catch (error) {
     console.error('Error creating subject:', error);
@@ -108,6 +160,7 @@ const createSubject = async (req, res) => {
 // Update subject
 const updateSubject = async (req, res) => {
   try {
+    await ensureSubjectSchoolYearColumn();
     const { id } = req.params;
     const { name, description, grade_levels } = req.body;
     
@@ -116,13 +169,13 @@ const updateSubject = async (req, res) => {
     }
 
     // Check if subject exists
-    const existing = await query('SELECT id FROM subjects WHERE id = ?', [id]);
+    const existing = await query('SELECT id, school_year_id FROM subjects WHERE id = ?', [id]);
     if (existing.length === 0) {
       return res.status(404).json({ success: false, message: 'Subject not found' });
     }
 
     // Check if name already exists for another subject with same grade levels
-    const duplicate = await query('SELECT id FROM subjects WHERE name = ? AND grade_levels = ? AND id != ?', [name.trim(), grade_levels, id]);
+    const duplicate = await formatDuplicateCheck({ name, grade_levels, school_year_id: existing[0].school_year_id, excludeId: id });
     if (duplicate.length > 0) {
       return res.status(400).json({ success: false, message: 'Another subject with this name already exists for these grade levels' });
     }
@@ -200,6 +253,76 @@ const deleteSubject = async (req, res) => {
   }
 };
 
+// List subjects from previous school year (for optional fetch)
+const getPreviousYearSubjects = async (req, res) => {
+  try {
+    await ensureSubjectSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
+    const prevSy = await getPreviousSchoolYear(activeSy.start_date);
+    if (!prevSy) return res.json({ success: true, data: [] });
+
+    const subjects = await query(
+      'SELECT * FROM subjects WHERE is_archived = FALSE AND school_year_id = ? ORDER BY grade_levels, name',
+      [prevSy.id]
+    );
+
+    res.json({ success: true, data: subjects, meta: { sourceSchoolYearId: prevSy.id } });
+  } catch (error) {
+    console.error('Error fetching previous year subjects:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch previous year subjects' });
+  }
+};
+
+// Copy selected subjects from previous school year into active school year
+const fetchSubjectsFromPreviousYear = async (req, res) => {
+  try {
+    await ensureSubjectSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
+    const prevSy = await getPreviousSchoolYear(activeSy.start_date);
+    if (!prevSy) {
+      return res.status(400).json({ success: false, message: 'No previous school year found to fetch from' });
+    }
+
+    const { ids } = req.body || {};
+    const idList = Array.isArray(ids) && ids.length > 0 ? ids : null;
+
+    const prevSubjects = await query(
+      `SELECT * FROM subjects WHERE is_archived = FALSE AND school_year_id = ? ${idList ? 'AND id IN (?)' : ''}`,
+      idList ? [prevSy.id, idList] : [prevSy.id]
+    );
+
+    if (!prevSubjects.length) {
+      return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0 } });
+    }
+
+    let inserted = 0;
+    let skipped = 0;
+
+    for (const subj of prevSubjects) {
+      const dup = await formatDuplicateCheck({
+        name: subj.name,
+        grade_levels: subj.grade_levels,
+        school_year_id: activeSy.id
+      });
+      if (dup.length) {
+        skipped += 1;
+        continue;
+      }
+
+      await query(
+        'INSERT INTO subjects (name, description, grade_levels, school_year_id, is_archived) VALUES (?, ?, ?, ?, FALSE)',
+        [subj.name, subj.description, subj.grade_levels, activeSy.id]
+      );
+      inserted += 1;
+    }
+
+    res.json({ success: true, message: 'Fetch complete', data: { inserted, skipped, sourceSchoolYearId: prevSy.id, targetSchoolYearId: activeSy.id } });
+  } catch (error) {
+    console.error('Error fetching subjects from previous year:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch subjects from previous year' });
+  }
+};
+
 module.exports = {
   getAllSubjects,
   getSubjectsByGrade,
@@ -210,5 +333,7 @@ module.exports = {
   updateSubject,
   archiveSubject,
   restoreSubject,
-  deleteSubject
+  deleteSubject,
+  getPreviousYearSubjects,
+  fetchSubjectsFromPreviousYear
 };

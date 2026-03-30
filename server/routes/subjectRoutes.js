@@ -6,6 +6,12 @@ const subjectController = require('../controllers/subjectController');
 // GET all subjects (active only)
 router.get('/', subjectController.getAllSubjects);
 
+// Get subjects from previous school year (for optional fetch)
+router.get('/previous-year', subjectController.getPreviousYearSubjects);
+
+// Fetch/copy subjects from previous school year into active school year
+router.post('/fetch-from-previous', subjectController.fetchSubjectsFromPreviousYear);
+
 // GET subjects by grade level
 router.get('/grade/:grade', subjectController.getSubjectsByGrade);
 

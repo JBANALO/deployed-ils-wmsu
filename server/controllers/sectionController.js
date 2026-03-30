@@ -1,11 +1,41 @@
 // Section Controller - CRUD operations for sections
 const { query } = require('../config/database');
 
+let sectionSyEnsured = false;
+
+const ensureSectionSchoolYearColumn = async () => {
+  if (sectionSyEnsured) return;
+  const columns = await query('SHOW COLUMNS FROM sections');
+  const hasSy = columns.some((c) => c.Field === 'school_year_id');
+  if (!hasSy) {
+    await query('ALTER TABLE sections ADD COLUMN school_year_id INT NULL');
+    await query('CREATE INDEX idx_sections_school_year ON sections (school_year_id)');
+  }
+  sectionSyEnsured = true;
+};
+
+const getActiveSchoolYear = async () => {
+  const rows = await query('SELECT id, label, start_date FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+  if (!rows.length) throw new Error('No active school year found');
+  return rows[0];
+};
+
+const getPreviousSchoolYear = async (activeStartDate) => {
+  const rows = await query(
+    'SELECT id, label FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
+    [activeStartDate]
+  );
+  return rows[0] || null;
+};
+
 // Get all sections (excluding archived)
 const getAllSections = async (req, res) => {
   try {
+    await ensureSectionSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
     const sections = await query(
-      'SELECT * FROM sections WHERE is_archived = FALSE ORDER BY name'
+      'SELECT * FROM sections WHERE is_archived = FALSE AND school_year_id = ? ORDER BY name',
+      [activeSy.id]
     );
     res.json({ success: true, data: sections });
   } catch (error) {
@@ -17,7 +47,9 @@ const getAllSections = async (req, res) => {
 // Get all sections including archived
 const getAllSectionsWithArchived = async (req, res) => {
   try {
-    const sections = await query('SELECT * FROM sections ORDER BY is_archived, name');
+    await ensureSectionSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
+    const sections = await query('SELECT * FROM sections WHERE school_year_id = ? ORDER BY is_archived, name', [activeSy.id]);
     res.json({ success: true, data: sections });
   } catch (error) {
     console.error('Error fetching sections:', error);
@@ -28,8 +60,11 @@ const getAllSectionsWithArchived = async (req, res) => {
 // Get archived sections only
 const getArchivedSections = async (req, res) => {
   try {
+    await ensureSectionSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
     const sections = await query(
-      'SELECT * FROM sections WHERE is_archived = TRUE ORDER BY name'
+      'SELECT * FROM sections WHERE is_archived = TRUE AND school_year_id = ? ORDER BY name',
+      [activeSy.id]
     );
     res.json({ success: true, data: sections });
   } catch (error) {
@@ -41,6 +76,8 @@ const getArchivedSections = async (req, res) => {
 // Get single section by ID
 const getSectionById = async (req, res) => {
   try {
+    await ensureSectionSchoolYearColumn();
+    await ensureSectionSchoolYearColumn();
     const { id } = req.params;
     const sections = await query('SELECT * FROM sections WHERE id = ?', [id]);
     
@@ -58,6 +95,8 @@ const getSectionById = async (req, res) => {
 // Create new section
 const createSection = async (req, res) => {
   try {
+    await ensureSectionSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
     const { name, description } = req.body;
     
     if (!name || !name.trim()) {
@@ -65,20 +104,20 @@ const createSection = async (req, res) => {
     }
 
     // Check if section already exists
-    const existing = await query('SELECT id FROM sections WHERE name = ?', [name.trim()]);
+    const existing = await query('SELECT id FROM sections WHERE name = ? AND school_year_id = ?', [name.trim(), activeSy.id]);
     if (existing.length > 0) {
       return res.status(400).json({ success: false, message: 'Section already exists' });
     }
 
     const result = await query(
-      'INSERT INTO sections (name, description) VALUES (?, ?)',
-      [name.trim(), description?.trim() || null]
+      'INSERT INTO sections (name, description, school_year_id) VALUES (?, ?, ?)',
+      [name.trim(), description?.trim() || null, activeSy.id]
     );
 
     res.status(201).json({ 
       success: true, 
       message: 'Section created successfully',
-      data: { id: result.insertId, name: name.trim(), description: description?.trim() || null }
+      data: { id: result.insertId, name: name.trim(), description: description?.trim() || null, school_year_id: activeSy.id }
     });
   } catch (error) {
     console.error('Error creating section:', error);
@@ -89,6 +128,7 @@ const createSection = async (req, res) => {
 // Update section
 const updateSection = async (req, res) => {
   try {
+    await ensureSectionSchoolYearColumn();
     const { id } = req.params;
     const { name, description } = req.body;
     
@@ -97,13 +137,13 @@ const updateSection = async (req, res) => {
     }
 
     // Check if section exists
-    const existing = await query('SELECT id FROM sections WHERE id = ?', [id]);
+    const existing = await query('SELECT id, school_year_id FROM sections WHERE id = ?', [id]);
     if (existing.length === 0) {
       return res.status(404).json({ success: false, message: 'Section not found' });
     }
 
     // Check if name already exists for another section
-    const duplicate = await query('SELECT id FROM sections WHERE name = ? AND id != ?', [name.trim(), id]);
+    const duplicate = await query('SELECT id FROM sections WHERE name = ? AND id != ? AND school_year_id = ?', [name.trim(), id, existing[0].school_year_id]);
     if (duplicate.length > 0) {
       return res.status(400).json({ success: false, message: 'Another section with this name already exists' });
     }
@@ -181,18 +221,89 @@ const deleteSection = async (req, res) => {
   }
 };
 
+// List sections from previous school year (for optional fetch)
+const getPreviousYearSections = async (req, res) => {
+  try {
+    await ensureSectionSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
+    const prevSy = await getPreviousSchoolYear(activeSy.start_date);
+    if (!prevSy) return res.json({ success: true, data: [] });
+
+    const sections = await query(
+      'SELECT * FROM sections WHERE is_archived = FALSE AND school_year_id = ? ORDER BY name',
+      [prevSy.id]
+    );
+
+    res.json({ success: true, data: sections, meta: { sourceSchoolYearId: prevSy.id } });
+  } catch (error) {
+    console.error('Error fetching previous year sections:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch previous year sections' });
+  }
+};
+
+// Copy selected sections from previous school year into active school year
+const fetchSectionsFromPreviousYear = async (req, res) => {
+  try {
+    await ensureSectionSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
+    const prevSy = await getPreviousSchoolYear(activeSy.start_date);
+    if (!prevSy) {
+      return res.status(400).json({ success: false, message: 'No previous school year found to fetch from' });
+    }
+
+    const { ids } = req.body || {};
+    const idList = Array.isArray(ids) && ids.length > 0 ? ids : null;
+
+    const prevSections = await query(
+      `SELECT * FROM sections WHERE is_archived = FALSE AND school_year_id = ? ${idList ? 'AND id IN (?)' : ''}`,
+      idList ? [prevSy.id, idList] : [prevSy.id]
+    );
+
+    if (!prevSections.length) {
+      return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0 } });
+    }
+
+    let inserted = 0;
+    let skipped = 0;
+
+    for (const sec of prevSections) {
+      const dup = await query(
+        'SELECT id FROM sections WHERE name = ? AND school_year_id = ?',
+        [sec.name, activeSy.id]
+      );
+      if (dup.length) {
+        skipped += 1;
+        continue;
+      }
+
+      await query(
+        'INSERT INTO sections (name, description, school_year_id, is_archived) VALUES (?, ?, ?, FALSE)',
+        [sec.name, sec.description, activeSy.id]
+      );
+      inserted += 1;
+    }
+
+    res.json({ success: true, message: 'Fetch complete', data: { inserted, skipped, sourceSchoolYearId: prevSy.id, targetSchoolYearId: activeSy.id } });
+  } catch (error) {
+    console.error('Error fetching sections from previous year:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch sections from previous year' });
+  }
+};
+
 // Get section usage stats (how many classes use each section)
 const getSectionStats = async (req, res) => {
   try {
+    await ensureSectionSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
     const stats = await query(`
       SELECT s.id, s.name, s.description, s.is_archived,
              COUNT(c.id) as class_count
       FROM sections s
       LEFT JOIN classes c ON c.section = s.name COLLATE utf8mb4_general_ci
-      WHERE s.is_archived = FALSE
+      WHERE s.is_archived = FALSE AND s.school_year_id = ?
       GROUP BY s.id, s.name, s.description, s.is_archived
       ORDER BY s.name
-    `);
+    `, [activeSy.id]);
     res.json({ success: true, data: stats });
   } catch (error) {
     console.error('Error fetching section stats:', error);
@@ -210,5 +321,7 @@ module.exports = {
   archiveSection,
   restoreSection,
   deleteSection,
-  getSectionStats
+  getSectionStats,
+  getPreviousYearSections,
+  fetchSectionsFromPreviousYear
 };

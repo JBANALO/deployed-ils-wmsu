@@ -53,10 +53,28 @@ export default function AdminSubjects() {
     grade_levels: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showFetchModal, setShowFetchModal] = useState(false);
+  const [prevSubjects, setPrevSubjects] = useState([]);
+  const [selectedPrevIds, setSelectedPrevIds] = useState(new Set());
+  const [fetchLoading, setFetchLoading] = useState(false);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  const loadPrevSubjects = async () => {
+    try {
+      setFetchLoading(true);
+      const res = await axios.get('/subjects/previous-year');
+      setPrevSubjects(res.data?.data || []);
+      setSelectedPrevIds(new Set());
+    } catch (error) {
+      console.error('Error loading previous year subjects:', error);
+      toast.error('Failed to load previous year subjects');
+    } finally {
+      setFetchLoading(false);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -177,6 +195,40 @@ export default function AdminSubjects() {
     setShowAddModal(true);
   };
 
+  const togglePrevSelection = (id) => {
+    setSelectedPrevIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllPrev = () => {
+    if (selectedPrevIds.size === prevSubjects.length) {
+      setSelectedPrevIds(new Set());
+    } else {
+      setSelectedPrevIds(new Set(prevSubjects.map((s) => s.id)));
+    }
+  };
+
+  const handleFetchFromPrevious = async () => {
+    try {
+      setFetchLoading(true);
+      const ids = Array.from(selectedPrevIds);
+      const res = await axios.post('/subjects/fetch-from-previous', { ids });
+      toast.success(`Fetched subjects: inserted ${res.data?.data?.inserted || 0}, skipped ${res.data?.data?.skipped || 0}`);
+      setShowFetchModal(false);
+      setSelectedPrevIds(new Set());
+      loadData();
+    } catch (error) {
+      console.error('Error fetching from previous year:', error);
+      toast.error(error.response?.data?.message || 'Failed to fetch subjects');
+    } finally {
+      setFetchLoading(false);
+    }
+  };
+
   // Filter subjects based on tab and search
   const filteredSubjects = subjects.filter(subject => {
     const matchesSearch = subject.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -246,6 +298,13 @@ export default function AdminSubjects() {
           >
             <PlusIcon className="w-5 h-5" />
             Add Subject
+          </button>
+          <button
+            onClick={() => { setShowFetchModal(true); loadPrevSubjects(); }}
+            className="flex items-center gap-2 bg-white/20 text-white px-4 py-2 rounded-lg font-semibold hover:bg-white/30 transition"
+          >
+            <ArrowPathIcon className="w-5 h-5" />
+            Fetch from Previous Year
           </button>
         </div>
       </div>
@@ -552,6 +611,84 @@ export default function AdminSubjects() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Fetch from Previous Year Modal */}
+      {showFetchModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-3xl mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-800">Fetch Subjects from Previous School Year</h3>
+              <button
+                onClick={() => setShowFetchModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm text-gray-600">Select subjects to copy into the current school year. Existing subjects with the same name and grade levels are skipped.</p>
+              <button
+                onClick={toggleSelectAllPrev}
+                className="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                {selectedPrevIds.size === prevSubjects.length ? 'Deselect All' : 'Select All'}
+              </button>
+            </div>
+
+            <div className="border rounded-lg max-h-[420px] overflow-y-auto">
+              {fetchLoading ? (
+                <div className="flex items-center justify-center py-10 text-gray-500">Loading previous year subjects...</div>
+              ) : prevSubjects.length === 0 ? (
+                <div className="flex items-center justify-center py-10 text-gray-500">No subjects found in previous year.</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="p-3 text-left">Select</th>
+                      <th className="p-3 text-left">Subject</th>
+                      <th className="p-3 text-left">Grade Levels</th>
+                      <th className="p-3 text-left">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {prevSubjects.map((subj) => (
+                      <tr key={subj.id} className="border-b">
+                        <td className="p-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedPrevIds.has(subj.id)}
+                            onChange={() => togglePrevSelection(subj.id)}
+                          />
+                        </td>
+                        <td className="p-3 font-medium text-gray-800">{subj.name}</td>
+                        <td className="p-3 text-gray-600">{subj.grade_levels}</td>
+                        <td className="p-3 text-gray-500">{subj.description || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                onClick={() => setShowFetchModal(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFetchFromPrevious}
+                disabled={fetchLoading || selectedPrevIds.size === 0}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+              >
+                {fetchLoading ? 'Fetching...' : `Fetch ${selectedPrevIds.size || ''}`}
+              </button>
+            </div>
           </div>
         </div>
       )}

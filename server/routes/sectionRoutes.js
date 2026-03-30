@@ -6,6 +6,12 @@ const sectionController = require('../controllers/sectionController');
 // GET all sections (active only)
 router.get('/', sectionController.getAllSections);
 
+// GET sections from previous school year (for optional fetch)
+router.get('/previous-year', sectionController.getPreviousYearSections);
+
+// Copy sections from previous school year into active school year
+router.post('/fetch-from-previous', sectionController.fetchSectionsFromPreviousYear);
+
 // GET all sections including archived
 router.get('/all', sectionController.getAllSectionsWithArchived);
 
