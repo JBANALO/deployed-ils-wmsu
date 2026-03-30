@@ -20,6 +20,8 @@ export default function AdminClasses() {
 
   const [teachers, setTeachers] = useState([]);
 
+  const [sections, setSections] = useState([]);
+
   const [loading, setLoading] = useState(true);
 
   const [gradeFilter, setGradeFilter] = useState("All");
@@ -38,6 +40,25 @@ export default function AdminClasses() {
 
   const fetchAndOrganizeClasses = async () => {
     try {
+      // Fetch active sections (to limit which classes display)
+      let fetchedSections = [];
+      try {
+        const sectionsRes = await fetch(`${API_BASE_URL}/sections`);
+        if (sectionsRes.ok) {
+          const sectionsJson = await sectionsRes.json();
+          fetchedSections = sectionsJson?.data || [];
+          setSections(fetchedSections);
+        }
+      } catch (err) {
+        console.log('Could not fetch sections:', err.message);
+      }
+
+      const filterBySections = (classes) => {
+        if (!fetchedSections || fetchedSections.length === 0) return classes;
+        const allowed = new Set(fetchedSections.map((s) => `${s.grade_level || s.grade || ''}-${s.name || s.section || ''}`));
+        return classes.filter((cls) => allowed.has(`${cls.grade}-${cls.section}`));
+      };
+
       // Fetch classes from backend (includes adviser_name)
       let backendClasses = [];
       try {
@@ -45,6 +66,7 @@ export default function AdminClasses() {
         if (classesResponse.ok) {
           const classesResult = await classesResponse.json();
           backendClasses = Array.isArray(classesResult) ? classesResult : (classesResult.data || []);
+          backendClasses = filterBySections(backendClasses);
           console.log('Classes fetched from backend:', backendClasses);
         }
       } catch (err) {
@@ -73,11 +95,11 @@ export default function AdminClasses() {
               adviser_name: backendClass?.adviser_name || null,
               adviser_id: backendClass?.adviser_id || null
             };
-          });
+          }).filter(filterBySections);
           console.log('Merged classes with adviser info:', mergedClasses);
           setClassesData(mergedClasses);
         } else {
-          setClassesData(studentClasses);
+          setClassesData(filterBySections(studentClasses));
         }
       } else {
         if (backendClasses.length > 0) {
