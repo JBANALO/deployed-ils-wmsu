@@ -12,6 +12,9 @@ router.get('/previous-year', sectionController.getPreviousYearSections);
 // Copy sections from previous school year into active school year
 router.post('/fetch-from-previous', sectionController.fetchSectionsFromPreviousYear);
 
+// Sync sections from students (distinct gradeLevel/section) into active school year
+router.post('/sync-from-students', sectionController.syncSectionsFromStudents);
+
 // GET all sections including archived
 router.get('/all', sectionController.getAllSectionsWithArchived);
 

@@ -35,6 +35,7 @@ export default function AdminSections() {
   const [prevSections, setPrevSections] = useState([]);
   const [selectedPrevIds, setSelectedPrevIds] = useState(new Set());
   const [fetchLoading, setFetchLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -200,6 +201,22 @@ export default function AdminSections() {
     }
   };
 
+  const handleSyncFromStudents = async () => {
+    try {
+      setSyncLoading(true);
+      const res = await axios.post('/sections/sync-from-students');
+      const inserted = res.data?.data?.inserted ?? 0;
+      const skipped = res.data?.data?.skipped ?? 0;
+      toast.success(`Synced sections from students: inserted ${inserted}, skipped ${skipped}`);
+      loadData();
+    } catch (error) {
+      console.error('Error syncing sections from students:', error);
+      toast.error(error.response?.data?.message || 'Failed to sync sections');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
   // Get class count for a section
   const getClassCount = (sectionName) => {
     const stat = sectionStats.find(s => s.name === sectionName);
@@ -245,6 +262,14 @@ export default function AdminSections() {
               <ArrowPathIcon className="w-5 h-5" />
               Fetch from Previous Year
             </button>
+              <button
+                onClick={handleSyncFromStudents}
+                disabled={syncLoading}
+                className="flex items-center gap-2 bg-white/20 text-white px-4 py-2 rounded-lg font-semibold hover:bg-white/30 transition disabled:opacity-60"
+              >
+                <ArrowPathIcon className={`w-5 h-5 ${syncLoading ? 'animate-spin' : ''}`} />
+                Sync from Students
+              </button>
             <button
               onClick={() => setShowAddModal(true)}
               className="flex items-center gap-2 bg-white text-emerald-800 px-4 py-2 rounded-lg font-semibold hover:bg-emerald-50 transition"

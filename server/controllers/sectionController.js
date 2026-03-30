@@ -340,6 +340,45 @@ const fetchSectionsFromPreviousYear = async (req, res) => {
   }
 };
 
+// Sync sections from distinct student gradeLevel/section pairs into the active school year
+const syncSectionsFromStudents = async (req, res) => {
+  try {
+    await ensureSectionColumns();
+    const activeSy = await getActiveSchoolYear();
+
+    const students = await query(
+      "SELECT DISTINCT TRIM(gradeLevel) AS gradeLevel, TRIM(section) AS section FROM students WHERE gradeLevel IS NOT NULL AND section IS NOT NULL AND gradeLevel <> '' AND section <> ''"
+    );
+
+    let inserted = 0;
+    let skipped = 0;
+
+    for (const row of students) {
+      const gradeLevel = row.gradeLevel;
+      const sectionName = row.section;
+      const dup = await query(
+        'SELECT id FROM sections WHERE school_year_id = ? AND name = ? LIMIT 1',
+        [activeSy.id, sectionName]
+      );
+      if (dup.length) {
+        skipped += 1;
+        continue;
+      }
+
+      await query(
+        'INSERT INTO sections (name, description, grade_level, school_year_id, is_archived) VALUES (?, NULL, ?, ?, FALSE)',
+        [sectionName, gradeLevel, activeSy.id]
+      );
+      inserted += 1;
+    }
+
+    res.json({ success: true, message: 'Sync complete', data: { inserted, skipped } });
+  } catch (error) {
+    console.error('Error syncing sections from students:', error);
+    res.status(500).json({ success: false, message: 'Failed to sync sections from students' });
+  }
+};
+
 // Get section usage stats (how many classes use each section)
 const getSectionStats = async (req, res) => {
   try {
@@ -373,5 +412,6 @@ module.exports = {
   deleteSection,
   getSectionStats,
   getPreviousYearSections,
-  fetchSectionsFromPreviousYear
+  fetchSectionsFromPreviousYear,
+  syncSectionsFromStudents
 };
