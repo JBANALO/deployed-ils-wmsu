@@ -254,7 +254,7 @@ exports.setActiveSchoolYear = async (req, res) => {
 
     // Activate the selected one
     const result = await query(
-      'UPDATE school_years SET is_active = 1, updated_at = NOW() WHERE id = ? AND is_archived = 0',
+      'UPDATE school_years SET is_active = 1, is_archived = 0, updated_at = NOW() WHERE id = ?',
       [id]
     );
 
