@@ -10,7 +10,8 @@ import {
   CheckCircleIcon,
   XMarkIcon,
   ExclamationTriangleIcon,
-  ArrowUpIcon
+  ArrowUpIcon,
+  TrashIcon
 } from "@heroicons/react/24/solid";
 import { toast } from 'react-toastify';
 import axios from "../../api/axiosConfig";
