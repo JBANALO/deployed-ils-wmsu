@@ -11,6 +11,12 @@ router.get('/active', schoolYearController.getActiveSchoolYear);
 // Get archived school years
 router.get('/archived', schoolYearController.getArchivedSchoolYears);
 
+// Get leadership from previous year (principal, assistant principal)
+router.get('/previous-year/leadership', schoolYearController.getPreviousYearLeadership);
+
+// Copy leadership from previous year into active year
+router.post('/fetch-leadership-from-previous', schoolYearController.fetchLeadershipFromPrevious);
+
 // Get students by grade (for chart)
 router.get('/students-by-grade', schoolYearController.getStudentsByGrade);
 

@@ -34,6 +34,71 @@ exports.getAllSchoolYears = async (req, res) => {
   }
 };
 
+// Get principal/assistant from previous school year (for optional fetch)
+exports.getPreviousYearLeadership = async (req, res) => {
+  try {
+    await ensureSchoolYearLeadershipColumns();
+    const active = await getActiveSchoolYearMeta();
+    if (!active) return res.json({ success: true, data: null });
+    const prev = await getPreviousSchoolYear(active.start_date);
+    if (!prev) return res.json({ success: true, data: null });
+
+    const [rows] = await pool.query(
+      'SELECT principal_name, assistant_principal_name FROM school_years WHERE id = ? LIMIT 1',
+      [prev.id]
+    );
+    const leadership = rows[0] || null;
+    res.json({ success: true, data: leadership, meta: { sourceSchoolYearId: prev.id } });
+  } catch (error) {
+    console.error('Error fetching previous year leadership:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch previous year leadership' });
+  }
+};
+
+// Copy principal/assistant from previous school year into active school year
+exports.fetchLeadershipFromPrevious = async (req, res) => {
+  let connection;
+  try {
+    await ensureSchoolYearLeadershipColumns();
+    const active = await getActiveSchoolYearMeta();
+    if (!active) return res.status(400).json({ success: false, message: 'No active school year found' });
+    const prev = await getPreviousSchoolYear(active.start_date);
+    if (!prev) return res.status(400).json({ success: false, message: 'No previous school year found to fetch from' });
+
+    connection = await pool.getConnection();
+
+    const [rows] = await connection.query(
+      'SELECT principal_name, assistant_principal_name FROM school_years WHERE id = ? LIMIT 1',
+      [prev.id]
+    );
+    const leadership = rows[0] || {};
+
+    await connection.query(
+      `UPDATE school_years
+       SET principal_name = ?, assistant_principal_name = ?
+       WHERE id = ?`,
+      [leadership.principal_name || null, leadership.assistant_principal_name || null, active.id]
+    );
+
+    res.json({
+      success: true,
+      message: 'Leadership copied from previous school year',
+      data: {
+        sourceSchoolYearId: prev.id,
+        targetSchoolYearId: active.id,
+        principal_name: leadership.principal_name || null,
+        assistant_principal_name: leadership.assistant_principal_name || null
+      }
+    });
+  } catch (error) {
+    if (connection) connection.release();
+    console.error('Error fetching leadership from previous year:', error);
+    res.status(500).json({ success: false, message: 'Failed to copy leadership from previous year' });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
 // Get active school year
 exports.getActiveSchoolYear = async (req, res) => {
   try {

@@ -58,6 +58,7 @@ export default function AdminSchoolYear() {
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showPromoteModal, setShowPromoteModal] = useState(false);
   const [showArchivedList, setShowArchivedList] = useState(false);
+  const [leadershipFetching, setLeadershipFetching] = useState(false);
   const [selectedSchoolYear, setSelectedSchoolYear] = useState(null);
   const [formData, setFormData] = useState({
     label: '',
@@ -407,6 +408,31 @@ export default function AdminSchoolYear() {
           >
             <PlusIcon className="w-5 h-5" />
             Add School Year
+          </button>
+          <button
+            onClick={async () => {
+              setLeadershipFetching(true);
+              try {
+                const prevRes = await axios.get('/school-years/previous-year/leadership');
+                const hasData = prevRes.data?.data && (prevRes.data.data.principal_name || prevRes.data.data.assistant_principal_name);
+                if (!hasData) {
+                  toast.info('No principal/assistant found in previous year');
+                } else {
+                  await axios.post('/school-years/fetch-leadership-from-previous');
+                  toast.success('Copied principal/assistant from previous year');
+                  await loadData();
+                }
+              } catch (e) {
+                toast.error(e.response?.data?.message || 'Failed to fetch leadership from previous year');
+              } finally {
+                setLeadershipFetching(false);
+              }
+            }}
+            disabled={leadershipFetching}
+            className="flex items-center gap-2 bg-white/20 text-white px-4 py-2 rounded-lg font-semibold hover:bg-white/30 transition disabled:opacity-60"
+          >
+            <ArrowPathIcon className={`w-5 h-5 ${leadershipFetching ? 'animate-spin' : ''}`} />
+            Fetch Principal (Prev SY)
           </button>
         </div>
       </div>
