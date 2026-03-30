@@ -192,6 +192,16 @@ exports.updateSchoolYear = async (req, res) => {
     const { id } = req.params;
     const { label, start_date, end_date, is_active, principal_name, assistant_principal_name } = req.body;
 
+    // Disallow edits on non-active school years unless the request is activating it
+    const [currentActive] = await query('SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+    const activeId = currentActive?.id || null;
+    const targetId = Number(id);
+    const isActivating = Boolean(is_active);
+
+    if (!isActivating && activeId && targetId !== activeId) {
+      return res.status(403).json({ success: false, message: 'Editing past school years is not allowed (view only). Activate this school year first if you need to edit it.' });
+    }
+
     // If setting as active, deactivate others first
     if (is_active) {
       await query('UPDATE school_years SET is_active = 0 WHERE id != ?', [id]);

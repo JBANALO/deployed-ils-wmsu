@@ -301,6 +301,10 @@ export default function AdminSchoolYear() {
   };
 
   const openEditModal = (sy) => {
+    if (activeSchoolYear && sy.id !== activeSchoolYear.id) {
+      toast.info('Viewing past school year — read only. Activate it first to edit.');
+      return;
+    }
     setSelectedSchoolYear(sy);
     setFormData({
       label: sy.label,
@@ -346,6 +350,10 @@ export default function AdminSchoolYear() {
   };
 
   const openArchiveModal = (sy) => {
+    if (activeSchoolYear && sy.id !== activeSchoolYear.id) {
+      toast.info('Viewing past school year — read only. Activate it first to archive.');
+      return;
+    }
     setSelectedSchoolYear(sy);
     setShowArchiveModal(true);
   };
@@ -492,16 +500,18 @@ export default function AdminSchoolYear() {
                     )}
                     <button
                       onClick={() => openEditModal(sy)}
-                      className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition"
-                      title="Edit"
+                      disabled={activeSchoolYear && sy.id !== activeSchoolYear.id}
+                      className={`p-2 rounded-lg transition ${activeSchoolYear && sy.id !== activeSchoolYear.id ? 'text-gray-400 cursor-not-allowed' : 'text-blue-600 hover:bg-blue-100'}`}
+                      title={activeSchoolYear && sy.id !== activeSchoolYear.id ? 'View only — activate to edit' : 'Edit'}
                     >
                       <PencilSquareIcon className="w-5 h-5" />
                     </button>
                     {!sy.is_active && (
                       <button
                         onClick={() => openArchiveModal(sy)}
-                        className="p-2 text-orange-600 hover:bg-orange-100 rounded-lg transition"
-                        title="Archive"
+                        disabled={activeSchoolYear && sy.id !== activeSchoolYear.id}
+                        className={`p-2 rounded-lg transition ${activeSchoolYear && sy.id !== activeSchoolYear.id ? 'text-gray-400 cursor-not-allowed' : 'text-orange-600 hover:bg-orange-100'}`}
+                        title={activeSchoolYear && sy.id !== activeSchoolYear.id ? 'View only — activate to archive' : 'Archive'}
                       >
                         <ArchiveBoxIcon className="w-5 h-5" />
                       </button>
