@@ -225,6 +225,17 @@ export default function AdminSchoolYear() {
     }
   };
 
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this school year permanently?')) return;
+    try {
+      await axios.delete(`/school-years/${id}`);
+      toast.success('School year deleted permanently.');
+      loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to delete school year');
+    }
+  };
+
   const handleSetActive = async (id) => {
     try {
       await axios.put(`/school-years/${id}/activate`);
@@ -598,6 +609,14 @@ export default function AdminSchoolYear() {
                     >
                       <ArrowPathIcon className="w-4 h-4" />
                       Restore
+                    </button>
+                    <button
+                      onClick={() => handleDelete(sy.id)}
+                      className="flex items-center gap-1 text-sm text-red-600 hover:text-red-800"
+                      title="Delete permanently"
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                      Delete
                     </button>
                   </div>
                 ))}
