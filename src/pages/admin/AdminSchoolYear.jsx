@@ -1052,6 +1052,7 @@ export default function AdminSchoolYear() {
                         <th className="text-left py-2 px-2">To</th>
                         <th className="text-left py-2 px-2">Target Section / Adviser</th>
                         <th className="text-left py-2 px-2">Status</th>
+                        <th className="text-left py-2 px-2">Reason</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1063,6 +1064,7 @@ export default function AdminSchoolYear() {
                               checked={selectedCandidateIds.has(cand.id)}
                               onChange={() => toggleCandidate(cand.id)}
                               disabled={!cand.canPromote}
+                              title={cand.canPromote ? 'Eligible to promote' : (cand.reason || 'Not eligible')}
                             />
                           </td>
                           <td className="py-2 px-2">{cand.name}</td>
@@ -1091,6 +1093,9 @@ export default function AdminSchoolYear() {
                             <span className={`px-2 py-0.5 rounded-full font-semibold ${cand.canPromote ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
                               {cand.canPromote ? 'Eligible' : 'Not Eligible'}
                             </span>
+                          </td>
+                          <td className="py-2 px-2 text-gray-600 min-w-[200px]">
+                            {cand.reason || (cand.canPromote ? 'Eligible for promotion' : 'Not eligible')}
                           </td>
                         </tr>
                       ))}
