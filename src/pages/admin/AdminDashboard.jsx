@@ -136,9 +136,33 @@ export default function AdminDashboard() {
 
 const loadDashboardStats = async (overrideSyId) => {
   try {
+    setLoading(true);
     console.log('Loading dashboard stats...');
-    const syParam = overrideSyId || selectedSchoolYearId || '';
-    const querySuffix = syParam ? `?schoolYearId=${syParam}` : '';
+
+    // Ensure we have a target school year (prefer override -> selected -> active)
+    let targetSyId = overrideSyId || selectedSchoolYearId || '';
+
+    if (!targetSyId) {
+      try {
+        const activeRes = await axios.get('/school-years/active');
+        const activeSy = activeRes.data?.data || null;
+        if (!activeSy) {
+          toast.error('No active school year found. Please activate one in School Year.');
+          setLoading(false);
+          return;
+        }
+        targetSyId = String(activeSy.id);
+        setActiveSchoolYear({ ...activeSy, label: formatSchoolYearLabel(activeSy.label) });
+        setSelectedSchoolYearId(String(activeSy.id));
+      } catch (syErr) {
+        console.error('Error fetching active school year for dashboard:', syErr);
+        toast.error('Failed to fetch active school year');
+        setLoading(false);
+        return;
+      }
+    }
+
+    const querySuffix = targetSyId ? `?schoolYearId=${targetSyId}` : '';
     
     // =========================
     // FETCH STUDENTS
