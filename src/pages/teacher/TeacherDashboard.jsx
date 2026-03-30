@@ -17,12 +17,15 @@ export default function TeacherDashboard() {
   const [recentActivity, setRecentActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeSchoolYear, setActiveSchoolYear] = useState(null);
+  const [schoolYears, setSchoolYears] = useState([]);
+  const [selectedSchoolYearId, setSelectedSchoolYearId] = useState('');
   const [promotionHistory, setPromotionHistory] = useState([]);
   const [assignedClassKeys, setAssignedClassKeys] = useState([]);
 
   useEffect(() => {
     loadDashboardData();
     fetchActiveSchoolYear();
+    fetchSchoolYears();
     
     // Auto-refresh every 15 seconds to reflect admin changes immediately
     const interval = setInterval(() => {
@@ -31,6 +34,22 @@ export default function TeacherDashboard() {
     
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (selectedSchoolYearId) {
+      loadDashboardData(selectedSchoolYearId);
+    }
+  }, [selectedSchoolYearId]);
+
+  const fetchSchoolYears = async () => {
+    try {
+      const res = await axios.get('/school-years');
+      const list = res.data?.data || [];
+      setSchoolYears(list.map((sy) => ({ ...sy, label: sy.label?.includes('-') ? sy.label : `${String(sy.label).slice(0,4)}-${String(sy.label).slice(4)}` })));
+    } catch (err) {
+      // non-critical
+    }
+  };
 
   const fetchActiveSchoolYear = async () => {
     try {
@@ -47,6 +66,9 @@ export default function TeacherDashboard() {
       }
       
       setActiveSchoolYear(schoolYear);
+      if (schoolYear?.id && !selectedSchoolYearId) {
+        setSelectedSchoolYearId(String(schoolYear.id));
+      }
     } catch (e) {
       // non-critical
     }
@@ -54,7 +76,8 @@ export default function TeacherDashboard() {
 
   const fetchPromotionHistory = async (classKeys) => {
     try {
-      const res = await axios.get('/school-years/promotion-history');
+      const syQuery = selectedSchoolYearId ? `?schoolYearId=${selectedSchoolYearId}` : '';
+      const res = await axios.get(`/school-years/promotion-history${syQuery}`);
       const all = Array.isArray(res.data?.data) ? res.data.data : [];
       if (classKeys.length === 0) {
         setPromotionHistory([]);
@@ -75,9 +98,11 @@ export default function TeacherDashboard() {
     }
   };
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (overrideSyId) => {
     try {
       setLoading(true);
+      const syParam = overrideSyId || selectedSchoolYearId || '';
+      const querySuffix = syParam ? `?schoolYearId=${syParam}` : '';
       
       // Get current user from localStorage
       let user = null;
@@ -124,7 +149,7 @@ export default function TeacherDashboard() {
       }
 
       // Fetch students — send teacherId so backend filters, then JS-filter as safety net
-      const studentsUrl = user?.id ? `/students?teacherId=${user.id}` : '/students';
+      const studentsUrl = user?.id ? `/students?teacherId=${user.id}${syParam ? `&schoolYearId=${syParam}` : ''}` : `/students${querySuffix}`;
       const studentsResponse = await axios.get(studentsUrl);
       let students = Array.isArray(studentsResponse.data.data) 
         ? studentsResponse.data.data 
@@ -144,7 +169,7 @@ export default function TeacherDashboard() {
       }
 
       // Fetch attendance
-      const attendanceResponse = await axios.get('/attendance');
+      const attendanceResponse = await axios.get(`/attendance${querySuffix}`);
       const allAttendance = Array.isArray(attendanceResponse.data.data) 
         ? attendanceResponse.data.data 
         : Array.isArray(attendanceResponse.data) 
@@ -215,12 +240,30 @@ export default function TeacherDashboard() {
   return (
     <div className="space-y-8">
       <div className="bg-white rounded-lg shadow p-5 border border-gray-300 border-b-red-800 border-b-4">
-        <div className="flex items-center gap-4 mb-4">
-          <UserCircleIcon className="w-30 h-30 text-red-800 transition-transform duration-300 hover:scale-105 translate-x-[5px]" />
-          <div className="pl-5">
-            <h2 className="text-6xl font-bold text-gray-900">Dashboard</h2>
-            {activeSchoolYear?.label && (
-              <p className="text-sm text-gray-500 mt-1">School Year: <span className="font-semibold text-red-800">{activeSchoolYear.label}</span></p>
+        <div className="flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
+          <div className="flex items-center gap-4">
+            <UserCircleIcon className="w-30 h-30 text-red-800 transition-transform duration-300 hover:scale-105 translate-x-[5px]" />
+            <div className="pl-5">
+              <h2 className="text-6xl font-bold text-gray-900">Dashboard</h2>
+              {activeSchoolYear?.label && (
+                <p className="text-sm text-gray-500 mt-1">Active SY: <span className="font-semibold text-red-800">{activeSchoolYear.label}</span></p>
+              )}
+            </div>
+          </div>
+          <div className="w-full lg:w-64">
+            <label className="text-xs text-gray-500">View School Year</label>
+            <select
+              value={selectedSchoolYearId}
+              onChange={(e) => setSelectedSchoolYearId(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+            >
+              <option value="">Select school year</option>
+              {schoolYears.map((sy) => (
+                <option key={sy.id} value={sy.id}>{sy.label}</option>
+              ))}
+            </select>
+            {selectedSchoolYearId && activeSchoolYear?.id && Number(selectedSchoolYearId) !== Number(activeSchoolYear.id) && (
+              <p className="text-xs text-orange-700 bg-orange-100 px-2 py-1 rounded mt-1">View-only: past school year</p>
             )}
           </div>
         </div>

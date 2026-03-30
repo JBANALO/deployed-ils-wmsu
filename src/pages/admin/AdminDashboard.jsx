@@ -47,6 +47,8 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [showSF2Modal, setShowSF2Modal] = useState(false);
   const [activeSchoolYear, setActiveSchoolYear] = useState(null);
+  const [schoolYears, setSchoolYears] = useState([]);
+  const [selectedSchoolYearId, setSelectedSchoolYearId] = useState('');
   const navigate = useNavigate();
 
   const formatSchoolYearLabel = (label = '') => {
@@ -60,6 +62,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     loadDashboardStats();
+    fetchSchoolYears();
     
     // Fetch admin user data
     const fetchAdminUser = async () => {
@@ -101,6 +104,22 @@ export default function AdminDashboard() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (selectedSchoolYearId) {
+      loadDashboardStats(selectedSchoolYearId);
+    }
+  }, [selectedSchoolYearId]);
+
+  const fetchSchoolYears = async () => {
+    try {
+      const res = await axios.get('/school-years');
+      const list = res.data?.data || [];
+      setSchoolYears(list.map((sy) => ({ ...sy, label: formatSchoolYearLabel(sy.label) })));
+    } catch (err) {
+      console.error('Error fetching school years:', err);
+    }
+  };
+
   // Function to add real-time activity
   const logActivity = (type, title, subtitle, color = 'blue') => {
     const newActivity = {
@@ -115,15 +134,17 @@ export default function AdminDashboard() {
     setRecentActivity(prev => [newActivity, ...prev].slice(0, 3)); // Show latest 3 in dashboard
   };
 
-const loadDashboardStats = async () => {
+const loadDashboardStats = async (overrideSyId) => {
   try {
     console.log('Loading dashboard stats...');
+    const syParam = overrideSyId || selectedSchoolYearId || '';
+    const querySuffix = syParam ? `?schoolYearId=${syParam}` : '';
     
     // =========================
     // FETCH STUDENTS
     // =========================
     console.log('Fetching students...');
-    const studentsRes = await axios.get('/students');
+    const studentsRes = await axios.get(`/students${querySuffix}`);
     console.log('Students response:', studentsRes.data);
     const studentsList = studentsRes.data?.data || [];
     setStudents(studentsList);
@@ -177,7 +198,7 @@ const loadDashboardStats = async () => {
     // =========================
     // FETCH ATTENDANCE
     // =========================
-    const attendanceRes = await axios.get('/attendance');
+    const attendanceRes = await axios.get(`/attendance${querySuffix}`);
     const attendanceList =
       Array.isArray(attendanceRes.data?.data)
         ? attendanceRes.data.data
@@ -192,7 +213,7 @@ const loadDashboardStats = async () => {
     // =========================
     let grades = [];
     try {
-      const gradesRes = await axios.get('/grades');
+      const gradesRes = await axios.get(`/grades${querySuffix}`);
       grades =
         Array.isArray(gradesRes.data?.data)
           ? gradesRes.data.data
@@ -311,6 +332,9 @@ const loadDashboardStats = async () => {
       if (schoolYearRes.data?.data) {
         const schoolYear = schoolYearRes.data.data;
         setActiveSchoolYear({ ...schoolYear, label: formatSchoolYearLabel(schoolYear.label) });
+        if (!selectedSchoolYearId) {
+          setSelectedSchoolYearId(String(schoolYear.id));
+        }
       }
     } catch (err) {
       console.error('Error fetching active school year:', err);
@@ -533,6 +557,22 @@ const loadDashboardStats = async () => {
             <p className="text-xs md:text-sm text-gray-400 mt-2">
               Welcome, {adminUser ? adminUser.username || adminUser.email : 'Admin'}!
             </p>
+          </div>
+          <div className="w-full sm:w-64">
+            <label className="text-xs text-gray-500">View School Year</label>
+            <select
+              value={selectedSchoolYearId}
+              onChange={(e) => setSelectedSchoolYearId(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+            >
+              <option value="">Select school year</option>
+              {schoolYears.map((sy) => (
+                <option key={sy.id} value={sy.id}>{sy.label}</option>
+              ))}
+            </select>
+            {selectedSchoolYearId && activeSchoolYear?.id && Number(selectedSchoolYearId) !== Number(activeSchoolYear.id) && (
+              <p className="text-xs text-orange-700 bg-orange-100 px-2 py-1 rounded mt-1">View-only: past school year</p>
+            )}
           </div>
         </div>
       </div>

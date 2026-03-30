@@ -3,9 +3,54 @@ const router = express.Router();
 const { sendAttendanceEmail } = require('../utils/emailService');
 const { query } = require('../config/database');
 
+// School-year helpers
+let attendanceSyEnsured = false;
+let studentsSyChecked = false;
+
+const getActiveSchoolYear = async () => {
+  const rows = await query('SELECT id, label FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+  return rows[0] || null;
+};
+
+const getSchoolYearById = async (id) => {
+  if (!id) return null;
+  const rows = await query('SELECT id, label FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1', [id]);
+  return rows[0] || null;
+};
+
+const resolveTargetSchoolYear = async (requestedId) => {
+  const sy = requestedId ? await getSchoolYearById(Number(requestedId)) : await getActiveSchoolYear();
+  if (!sy) throw new Error('No active school year found');
+  return sy;
+};
+
+const ensureAttendanceSchoolYearColumn = async () => {
+  if (attendanceSyEnsured) return;
+  const cols = await query('SHOW COLUMNS FROM attendance');
+  const hasSy = cols.some(c => c.Field === 'school_year_id');
+  if (!hasSy) {
+    await query('ALTER TABLE attendance ADD COLUMN school_year_id INT NULL');
+    await query('CREATE INDEX idx_attendance_school_year ON attendance (school_year_id)');
+  }
+  attendanceSyEnsured = true;
+};
+
+const ensureStudentsSchoolYearColumnExists = async () => {
+  if (studentsSyChecked) return;
+  const cols = await query('SHOW COLUMNS FROM students');
+  const hasSy = cols.some(c => c.Field === 'school_year_id');
+  if (!hasSy) {
+    await query('ALTER TABLE students ADD COLUMN school_year_id INT NULL');
+    await query('CREATE INDEX idx_students_school_year ON students (school_year_id)');
+  }
+  studentsSyChecked = true;
+};
+
 // POST /api/attendance - Record attendance via QR scan
 router.post('/', async (req, res) => {
   try {
+    await ensureAttendanceSchoolYearColumn();
+    await ensureStudentsSchoolYearColumnExists();
     console.log('Attendance POST request body:', req.body);
     
     const { 
@@ -31,7 +76,7 @@ router.post('/', async (req, res) => {
 
     // Look up student in the students table by lrn or id
     const studentRows = await query(
-      'SELECT * FROM students WHERE lrn = ? OR id = ?',
+      'SELECT * FROM students WHERE (lrn = ? OR id = ?)',
       [studentId, studentId]
     );
     
@@ -42,12 +87,15 @@ router.post('/', async (req, res) => {
     let parentEmail = null;
     let studentLRN = studentId;
 
+    let targetSyId = null;
+
     if (student) {
       studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim();
       studentGradeLevel = student.grade_level || 'N/A';
       studentSection = student.section || 'N/A';
       parentEmail = student.parent_email || null;
       studentLRN = student.lrn || studentId;
+      targetSyId = student.school_year_id || null;
       console.log(`Found student in students table: ${studentName}, Parent Email: ${parentEmail}`);
     } else {
       // Fallback: check users table
@@ -67,6 +115,13 @@ router.post('/', async (req, res) => {
       }
     }
 
+    let targetSy;
+    try {
+      targetSy = targetSyId ? await getSchoolYearById(targetSyId) : await resolveTargetSchoolYear(req.body.schoolYearId);
+    } catch (syErr) {
+      return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
+    }
+
     const today = date || new Date().toISOString().split('T')[0];
     const currentPeriod = period || 'morning';
     const currentStatus = status || 'present';
@@ -80,17 +135,17 @@ router.post('/', async (req, res) => {
 
     // Check if already recorded for this student + date + period
     const existingRecords = await query(
-      'SELECT * FROM attendance WHERE studentId = ? AND date = ? AND period = ?',
-      [studentId, today, currentPeriod]
+      'SELECT * FROM attendance WHERE studentId = ? AND date = ? AND period = ? AND school_year_id = ?',
+      [studentId, today, currentPeriod, targetSy.id]
     );
 
     // If record exists, update it (override)
     if (existingRecords.length > 0) {
       await query(
-        'UPDATE attendance SET status = ?, time = ?, timestamp = ?, teacherId = ?, teacherName = ? WHERE studentId = ? AND date = ? AND period = ?',
-        [currentStatus, currentTime, currentTimestamp, teacherId || null, teacherName || null, studentId, today, currentPeriod]
+        'UPDATE attendance SET status = ?, time = ?, timestamp = ?, teacherId = ?, teacherName = ? WHERE studentId = ? AND date = ? AND period = ? AND school_year_id = ?',
+        [currentStatus, currentTime, currentTimestamp, teacherId || null, teacherName || null, studentId, today, currentPeriod, targetSy.id]
       );
-      const updated = await query('SELECT * FROM attendance WHERE studentId = ? AND date = ? AND period = ?', [studentId, today, currentPeriod]);
+      const updated = await query('SELECT * FROM attendance WHERE studentId = ? AND date = ? AND period = ? AND school_year_id = ?', [studentId, today, currentPeriod, targetSy.id]);
       const rec = updated[0];
       console.log('Updated attendance record:', rec);
 
@@ -143,8 +198,8 @@ router.post('/', async (req, res) => {
       `INSERT INTO attendance (
         id, studentId, studentName, gradeLevel, section,
         date, timestamp, time, status, period,
-        location, teacherId, teacherName, deviceInfo, qrData
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        location, teacherId, teacherName, deviceInfo, qrData, school_year_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         attendanceId,
         studentId,
@@ -160,7 +215,8 @@ router.post('/', async (req, res) => {
         teacherId || null,
         teacherName || null,
         JSON.stringify(deviceInfo || {}),
-        JSON.stringify(qrData || {})
+        JSON.stringify(qrData || {}),
+        targetSy.id
       ]
     );
 
@@ -236,10 +292,17 @@ router.post('/', async (req, res) => {
 // GET /api/attendance - Get attendance records
 router.get('/', async (req, res) => {
   try {
-    const { date, studentId, gradeLevel, section } = req.query;
+    await ensureAttendanceSchoolYearColumn();
+    const { date, studentId, gradeLevel, section, schoolYearId } = req.query;
+    let targetSy;
+    try {
+      targetSy = await resolveTargetSchoolYear(schoolYearId);
+    } catch (syErr) {
+      return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
+    }
     
-    let sqlQuery = 'SELECT * FROM attendance WHERE 1=1';
-    const params = [];
+    let sqlQuery = 'SELECT * FROM attendance WHERE school_year_id = ?';
+    const params = [targetSy.id];
     
     if (date) {
       sqlQuery += ' AND date = ?';
@@ -304,8 +367,16 @@ router.get('/', async (req, res) => {
 // GET /api/attendance/today - Get today's attendance
 router.get('/today', async (req, res) => {
   try {
+    await ensureAttendanceSchoolYearColumn();
+    let targetSy;
+    try {
+      targetSy = await resolveTargetSchoolYear(req.query.schoolYearId);
+    } catch (syErr) {
+      return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
+    }
+
     const today = new Date().toISOString().split('T')[0];
-    const records = await query('SELECT * FROM attendance WHERE date = ? ORDER BY timestamp DESC', [today]);
+    const records = await query('SELECT * FROM attendance WHERE date = ? AND school_year_id = ? ORDER BY timestamp DESC', [today, targetSy.id]);
     
     // Columns are already camelCase in the attendance table
     const transformedRecords = records.map(record => ({
@@ -346,8 +417,16 @@ router.get('/today', async (req, res) => {
 // GET /api/attendance/student/:id - Get attendance for specific student
 router.get('/student/:id', async (req, res) => {
   try {
+    await ensureAttendanceSchoolYearColumn();
     const { id } = req.params;
-    const records = await query('SELECT * FROM attendance WHERE studentId = ? ORDER BY date DESC', [id]);
+    let targetSy;
+    try {
+      targetSy = await resolveTargetSchoolYear(req.query.schoolYearId);
+    } catch (syErr) {
+      return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
+    }
+
+    const records = await query('SELECT * FROM attendance WHERE studentId = ? AND school_year_id = ? ORDER BY date DESC', [id, targetSy.id]);
     
     // Columns are already camelCase in the attendance table
     const transformedRecords = records.map(record => ({
