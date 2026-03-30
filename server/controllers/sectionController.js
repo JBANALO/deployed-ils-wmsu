@@ -18,6 +18,19 @@ const ensureSectionColumns = async () => {
     await query('ALTER TABLE sections ADD COLUMN grade_level VARCHAR(50) NULL AFTER description');
   }
 
+  // Ensure uniqueness is per school year + name, not globally by name
+  const indexes = await query('SHOW INDEX FROM sections');
+  const hasGlobalUniqueName = indexes.some((idx) => idx.Key_name === 'name' && idx.Non_unique === 0);
+  const hasSyNameUnique = indexes.some((idx) => idx.Key_name === 'idx_sections_sy_name' && idx.Non_unique === 0);
+
+  if (hasGlobalUniqueName) {
+    await query('ALTER TABLE sections DROP INDEX name');
+  }
+
+  if (!hasSyNameUnique) {
+    await query('CREATE UNIQUE INDEX idx_sections_sy_name ON sections (school_year_id, name)');
+  }
+
   sectionColumnsEnsured = true;
 };
 
