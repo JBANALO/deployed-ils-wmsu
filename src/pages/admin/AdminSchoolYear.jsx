@@ -106,6 +106,20 @@ export default function AdminSchoolYear() {
         // Sort newest to oldest by start_date
         const sorted = [...list].sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
         setSchoolYears(sorted.map((sy) => ({ ...sy, label: formatSchoolYearLabel(sy.label) })));
+        // Auto-set newest as active if current active is older
+        const newest = sorted[0] || null;
+        const activeRaw = activeRes.status === 'fulfilled' ? (activeRes.value.data?.data || null) : null;
+        if (newest && (!activeRaw || activeRaw.id !== newest.id)) {
+          try {
+            await axios.put(`/school-years/${newest.id}/activate`);
+            toast.success(`${formatSchoolYearLabel(newest.label)} set as active (older years locked).`);
+            // Reload after activation to refresh badges/state
+            await loadData();
+            return;
+          } catch (e) {
+            console.error('Auto-activate newest failed:', e.message);
+          }
+        }
       }
 
       if (activeRes.status === 'fulfilled') {
