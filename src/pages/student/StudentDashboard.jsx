@@ -947,6 +947,7 @@ const StudentPortal = () => {
                 <h2 className="text-2xl font-bold">{profile.gradeLevel} - {profile.section}</h2>
                 <p className="text-red-100">Welcome back, <strong>{profile.fullName}</strong></p>
                 <p className="text-red-100">LRN: {profile.lrn}</p>
+                <p className="text-red-100">School Year: {reportCardSchoolYearLabel}</p>
               </div>
             </div>
           </div>
