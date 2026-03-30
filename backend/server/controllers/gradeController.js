@@ -2,7 +2,8 @@
 const pool = require('../config/db');
 
 // Check if teacher/adviser can enter grades for this student and subject
-const canEnterGrade = async (user, student, subject, pool) => {
+const canEnterGrade = async (user, student, subject, pool, schoolYearId) => {
+  const syId = schoolYearId || student.school_year_id || null;
   if (!user || !user.role) return false;
   
   // Admin can enter grades for anyone
@@ -17,8 +18,8 @@ const canEnterGrade = async (user, student, subject, pool) => {
     
     // Check if user is adviser for this class
     const [adviserClasses] = await pool.query(
-      'SELECT * FROM classes WHERE adviser_id = ? AND grade = ? AND section = ?',
-      [user.id, studentGrade, studentSection]
+      'SELECT * FROM classes WHERE adviser_id = ? AND grade = ? AND section = ? AND (school_year_id IS NULL OR school_year_id = ?)',
+      [user.id, studentGrade, studentSection, syId]
     );
     
     if (adviserClasses.length > 0) {
@@ -28,8 +29,8 @@ const canEnterGrade = async (user, student, subject, pool) => {
     
     // Check if user is subject teacher for this class and subject
     const [subjectTeacherRecords] = await pool.query(
-      'SELECT * FROM subject_teachers WHERE teacher_id = ? AND class_id = ?',
-      [user.id, `${studentGrade.toLowerCase().replace(/\s+/g, '-')}-${studentSection.toLowerCase()}`]
+      'SELECT * FROM subject_teachers WHERE teacher_id = ? AND class_id = ? AND (school_year_id IS NULL OR school_year_id = ?)',
+      [user.id, `${studentGrade.toLowerCase().replace(/\s+/g, '-')}-${studentSection.toLowerCase()}`, syId]
     );
     
     if (subjectTeacherRecords.length > 0) {
@@ -54,9 +55,17 @@ const updateGrades = async (req, res) => {
     const [[student]] = await pool.query('SELECT * FROM students WHERE id = ?', [id]);
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
+    const [[activeSy]] = await pool.query('SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+    if (!activeSy) {
+      return res.status(400).json({ error: 'No active school year found' });
+    }
+    if (student.school_year_id !== activeSy.id) {
+      return res.status(403).json({ error: 'view_only', message: 'Grades can only be edited in the active school year.' });
+    }
+
     // Check authorization for each subject
     for (const subject of Object.keys(grades)) {
-      const canEdit = await canEnterGrade(user, student, subject, pool);
+      const canEdit = await canEnterGrade(user, student, subject, pool, student.school_year_id);
       if (!canEdit) {
         return res.status(403).json({ 
           error: 'Unauthorized', 
@@ -72,22 +81,22 @@ const updateGrades = async (req, res) => {
 
       // Check if grade record exists
       const [[existingGrade]] = await pool.query(
-        'SELECT id FROM grades WHERE student_id = ? AND subject = ?',
-        [id, subject]
+        'SELECT id FROM grades WHERE student_id = ? AND subject = ? AND school_year_id = ?',
+        [id, subject, student.school_year_id]
       );
 
       if (existingGrade) {
         if (isAllQuarters && typeof gradeValue === 'object') {
           // Update all four quarters at once
           await pool.query(
-            `UPDATE grades SET q1 = ?, q2 = ?, q3 = ?, q4 = ? WHERE student_id = ? AND subject = ?`,
-            [gradeValue.q1 || 0, gradeValue.q2 || 0, gradeValue.q3 || 0, gradeValue.q4 || 0, id, subject]
+            `UPDATE grades SET q1 = ?, q2 = ?, q3 = ?, q4 = ? WHERE student_id = ? AND subject = ? AND school_year_id = ?`,
+            [gradeValue.q1 || 0, gradeValue.q2 || 0, gradeValue.q3 || 0, gradeValue.q4 || 0, id, subject, student.school_year_id]
           );
         } else {
           // Update only the specified quarter (gradeValue is a number)
           await pool.query(
-            `UPDATE grades SET ${quarterCol} = ? WHERE student_id = ? AND subject = ?`,
-            [gradeValue, id, subject]
+            `UPDATE grades SET ${quarterCol} = ? WHERE student_id = ? AND subject = ? AND school_year_id = ?`,
+            [gradeValue, id, subject, student.school_year_id]
           );
         }
       } else {
@@ -102,10 +111,12 @@ const updateGrades = async (req, res) => {
           newGrade[quarterCol] = gradeValue;
         }
 
+        const schoolYearId = student.school_year_id; // Added to capture school_year_id
+        
         await pool.query(
-          `INSERT INTO grades (student_id, subject, q1, q2, q3, q4)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [id, subject, newGrade.q1, newGrade.q2, newGrade.q3, newGrade.q4]
+          `INSERT INTO grades (student_id, subject, q1, q2, q3, q4, school_year_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [id, subject, newGrade.q1, newGrade.q2, newGrade.q3, newGrade.q4, schoolYearId]
         );
       }
     }
@@ -123,7 +134,16 @@ const getStudentGrades = async (req, res) => {
   try {
     const { id } = req.params;
     const { quarter } = req.query; // Optional: filter by quarter
-    const [rows] = await pool.query('SELECT * FROM grades WHERE student_id = ?', [id]);
+    const [[student]] = await pool.query('SELECT id, school_year_id FROM students WHERE id = ?', [id]);
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const [[activeSy]] = await pool.query('SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+    if (!activeSy) return res.status(400).json({ error: 'No active school year found' });
+    if (student.school_year_id !== activeSy.id) {
+      return res.status(403).json({ error: 'view_only', message: 'Grades can only be viewed for the active school year via this endpoint.' });
+    }
+
+    const [rows] = await pool.query('SELECT * FROM grades WHERE student_id = ? AND school_year_id = ?', [id, student.school_year_id]);
 
     const result = {};
     rows.forEach(r => {

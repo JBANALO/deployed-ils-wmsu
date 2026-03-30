@@ -162,6 +162,12 @@ exports.createStudent = async (req, res) => {
       return res.status(400).json({ status: 'fail', message: syErr.message || 'No active school year found' });
     }
 
+    // New students may only be created in the active school year
+    const activeSy = await getActiveSchoolYear();
+    if (!activeSy || targetSy.id !== activeSy.id) {
+      return res.status(403).json({ status: 'fail', message: 'Creating students in past school years is not allowed (view only).' });
+    }
+
     console.log('=== STUDENT CREATION DEBUG ===');
     console.log('req.body keys:', Object.keys(req.body));
     console.log('profilePic in req.body:', req.body.profilePic);
@@ -824,6 +830,18 @@ exports.getDeclinedStudents = async (req, res) => {
 exports.approveStudent = async (req, res) => {
   try {
     const { id } = req.params;
+
+    await ensureStudentSchoolYearColumn();
+    const existing = await query('SELECT * FROM students WHERE id = ?', [id]);
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    const activeSy = await getActiveSchoolYear();
+    if (!activeSy || existing[0].school_year_id !== activeSy.id) {
+      return res.status(403).json({ message: 'Approving students from past school years is not allowed (view only).' });
+    }
+
     const result = await query(
       'UPDATE students SET status = "approved", updated_at = NOW() WHERE id = ?',
       [id]
@@ -854,6 +872,17 @@ exports.declineStudent = async (req, res) => {
     const { id } = req.params;
     const { reason } = req.body;
 
+    await ensureStudentSchoolYearColumn();
+    const existing = await query('SELECT * FROM students WHERE id = ?', [id]);
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    const activeSy = await getActiveSchoolYear();
+    if (!activeSy || existing[0].school_year_id !== activeSy.id) {
+      return res.status(403).json({ message: 'Declining students from past school years is not allowed (view only).' });
+    }
+
     const result = await query(
       'UPDATE students SET status = "declined", decline_reason = ?, updated_at = NOW() WHERE id = ?',
       [reason || null, id]
@@ -881,6 +910,17 @@ exports.declineStudent = async (req, res) => {
 exports.restoreStudent = async (req, res) => {
   try {
     const { id } = req.params;
+
+    await ensureStudentSchoolYearColumn();
+    const existing = await query('SELECT * FROM students WHERE id = ?', [id]);
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    const activeSy = await getActiveSchoolYear();
+    if (!activeSy || existing[0].school_year_id !== activeSy.id) {
+      return res.status(403).json({ message: 'Restoring students from past school years is not allowed (view only).' });
+    }
 
     const result = await query(
       'UPDATE students SET status = "pending", decline_reason = NULL, updated_at = NOW() WHERE id = ?',
@@ -960,10 +1000,17 @@ exports.updateStudent = async (req, res) => {
     console.log('updateStudent called with id:', id);
     console.log('Update data:', req.body);
 
+    await ensureStudentSchoolYearColumn();
+
     // Check if student exists
     const existingStudents = await query('SELECT * FROM students WHERE id = ?', [id]);
     if (!existingStudents || existingStudents.length === 0) {
       return res.status(404).json({ status: 'fail', message: 'Student not found' });
+    }
+
+    const activeSy = await getActiveSchoolYear();
+    if (!activeSy || existingStudents[0].school_year_id !== activeSy.id) {
+      return res.status(403).json({ status: 'fail', message: 'Editing past school years is not allowed (view only).' });
     }
 
     // Build update query dynamically based on provided fields
@@ -1027,10 +1074,17 @@ exports.deleteStudent = async (req, res) => {
 
     console.log('deleteStudent called with id:', id);
 
+    await ensureStudentSchoolYearColumn();
+
     // Check if student exists
     const existingStudents = await query('SELECT * FROM students WHERE id = ?', [id]);
     if (!existingStudents || existingStudents.length === 0) {
       return res.status(404).json({ status: 'fail', message: 'Student not found' });
+    }
+
+    const activeSy = await getActiveSchoolYear();
+    if (!activeSy || existingStudents[0].school_year_id !== activeSy.id) {
+      return res.status(403).json({ status: 'fail', message: 'Deleting past school years is not allowed (view only).' });
     }
 
     // Delete the student
