@@ -71,6 +71,27 @@ export default function AdminClasses() {
         return classes.filter((cls) => allowed.has(sectionKey(cls.grade, cls.section)));
       };
 
+      const mergeClasses = (lists) => {
+        const map = new Map();
+        lists.filter(Boolean).forEach((list) => {
+          list.forEach((cls) => {
+            const key = sectionKey(cls.grade, cls.section);
+            if (!map.has(key)) {
+              map.set(key, { ...cls });
+            } else {
+              const prev = map.get(key);
+              map.set(key, {
+                ...prev,
+                ...cls,
+                students: Math.max(prev.students || 0, cls.students || 0),
+                studentList: [...(prev.studentList || []), ...(cls.studentList || [])]
+              });
+            }
+          });
+        });
+        return Array.from(map.values());
+      };
+
       const baseClasses = filterBySections(
         fetchedSections.map((s) => ({
           grade: s.grade_level || s.grade || '',
@@ -86,7 +107,11 @@ export default function AdminClasses() {
         const classesResponse = await axios.get('/classes');
         const classesResult = classesResponse.data;
         backendClasses = Array.isArray(classesResult) ? classesResult : (classesResult.data || []);
-        backendClasses = filterBySections(backendClasses);
+        backendClasses = backendClasses.map((bc) => ({
+          ...bc,
+          grade: bc.grade || bc.grade_level || bc.gradeLevel || '',
+          section: bc.section || '',
+        }));
         console.log('Classes fetched from backend:', backendClasses);
       } catch (err) {
         console.log('Could not fetch classes from backend:', err.message);
@@ -106,60 +131,36 @@ export default function AdminClasses() {
         // Organize students by grade/section
         const studentClasses = organizeByGradeAndSection(students);
 
-        // Merge adviser info from backend classes
-        const filteredStudents = filterBySections(studentClasses);
-        const filteredBackend = filterBySections(backendClasses);
+        // Merge adviser info from backend classes into student classes
+        const studentPlusAdviser = studentClasses.map((studentClass) => {
+          const backendClass = backendClasses.find(
+            (bc) => sectionKey(bc.grade, bc.section) === sectionKey(studentClass.grade, studentClass.section)
+          );
+          return {
+            ...studentClass,
+            adviser_name: backendClass?.adviser_name || null,
+            adviser_id: backendClass?.adviser_id || null,
+          };
+        });
 
-        if (backendClasses.length > 0 && studentClasses.length > 0) {
-          const mergedClasses = studentClasses.map(studentClass => {
-            const backendClass = backendClasses.find(bc => 
-              bc.grade === studentClass.grade && bc.section === studentClass.section
-            );
-            return {
-              ...studentClass,
-              adviser_name: backendClass?.adviser_name || null,
-              adviser_id: backendClass?.adviser_id || null
-            };
-          }).filter((cls) => {
-            // Prefer to keep even if section list is empty/mismatched
-            if (!fetchedSections || fetchedSections.length === 0) return true;
-            return filterBySections([cls]).length > 0;
-          });
-          console.log('Merged classes with adviser info:', mergedClasses);
-          if (mergedClasses.length === 0 && studentClasses.length > 0) {
-            toast.info('Showing classes directly from students (no matching sections)');
-            setClassesData(studentClasses);
-          } else {
-            setClassesData(mergedClasses);
-          }
-        } else if (studentClasses.length > 0) {
-          if (filteredStudents.length === 0) {
-            toast.info('Showing classes from students (section mismatch)');
-            setClassesData(studentClasses);
-          } else {
-            setClassesData(filteredStudents);
-          }
-        } else if (backendClasses.length > 0) {
-          if (filteredBackend.length === 0) {
-            toast.info('Showing classes from backend (section mismatch)');
-            setClassesData(backendClasses);
-          } else {
-            setClassesData(filteredBackend);
-          }
+        // Build union of sections, students, backend
+        const union = mergeClasses([baseClasses, studentPlusAdviser, backendClasses]);
+        const filteredUnion = filterBySections(union);
+
+        if (filteredUnion.length > 0) {
+          setClassesData(filteredUnion);
         } else {
-          setClassesData(baseClasses);
+          toast.info('Showing all classes/sections (bypassing filter)');
+          setClassesData(union);
         }
       } else {
-        if (backendClasses.length > 0) {
-          const filteredBackend = filterBySections(backendClasses);
-          if (filteredBackend.length === 0) {
-            toast.info('Showing classes from backend (no students, section mismatch)');
-            setClassesData(backendClasses);
-          } else {
-            setClassesData(filteredBackend);
-          }
+        const union = mergeClasses([baseClasses, backendClasses]);
+        const filteredUnion = filterBySections(union);
+        if (filteredUnion.length > 0) {
+          setClassesData(filteredUnion);
         } else {
-          setClassesData(baseClasses);
+          toast.info('Showing sections only (no students)');
+          setClassesData(union);
         }
         setAllStudents([]);
       }
