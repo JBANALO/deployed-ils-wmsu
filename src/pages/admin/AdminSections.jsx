@@ -30,10 +30,28 @@ export default function AdminSections() {
     description: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showFetchModal, setShowFetchModal] = useState(false);
+  const [prevSections, setPrevSections] = useState([]);
+  const [selectedPrevIds, setSelectedPrevIds] = useState(new Set());
+  const [fetchLoading, setFetchLoading] = useState(false);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  const loadPrevSections = async () => {
+    try {
+      setFetchLoading(true);
+      const res = await axios.get('/sections/previous-year');
+      setPrevSections(res.data?.data || []);
+      setSelectedPrevIds(new Set());
+    } catch (error) {
+      console.error('Error loading previous year sections:', error);
+      toast.error('Failed to load previous year sections');
+    } finally {
+      setFetchLoading(false);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -146,6 +164,40 @@ export default function AdminSections() {
     setShowDeleteModal(true);
   };
 
+  const togglePrevSelection = (id) => {
+    setSelectedPrevIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllPrev = () => {
+    if (selectedPrevIds.size === prevSections.length) {
+      setSelectedPrevIds(new Set());
+    } else {
+      setSelectedPrevIds(new Set(prevSections.map((s) => s.id)));
+    }
+  };
+
+  const handleFetchFromPrevious = async () => {
+    try {
+      setFetchLoading(true);
+      const ids = Array.from(selectedPrevIds);
+      const res = await axios.post('/sections/fetch-from-previous', { ids });
+      toast.success(`Fetched sections: inserted ${res.data?.data?.inserted || 0}, skipped ${res.data?.data?.skipped || 0}`);
+      setShowFetchModal(false);
+      setSelectedPrevIds(new Set());
+      loadData();
+    } catch (error) {
+      console.error('Error fetching sections from previous year:', error);
+      toast.error(error.response?.data?.message || 'Failed to fetch sections');
+    } finally {
+      setFetchLoading(false);
+    }
+  };
+
   // Get class count for a section
   const getClassCount = (sectionName) => {
     const stat = sectionStats.find(s => s.name === sectionName);
@@ -183,13 +235,22 @@ export default function AdminSections() {
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 bg-white text-emerald-800 px-4 py-2 rounded-lg font-semibold hover:bg-emerald-50 transition"
-          >
-            <PlusIcon className="w-5 h-5" />
-            Add Section
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { setShowFetchModal(true); loadPrevSections(); }}
+              className="flex items-center gap-2 bg-white/20 text-white px-4 py-2 rounded-lg font-semibold hover:bg-white/30 transition"
+            >
+              <ArrowPathIcon className="w-5 h-5" />
+              Fetch from Previous Year
+            </button>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 bg-white text-emerald-800 px-4 py-2 rounded-lg font-semibold hover:bg-emerald-50 transition"
+            >
+              <PlusIcon className="w-5 h-5" />
+              Add Section
+            </button>
+          </div>
         </div>
       </div>
 
@@ -309,6 +370,82 @@ export default function AdminSections() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Fetch from Previous Year Modal */}
+      {showFetchModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-3xl mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-800">Fetch Sections from Previous School Year</h3>
+              <button
+                onClick={() => setShowFetchModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm text-gray-600">Select sections to copy into the current school year. Existing sections with the same name are skipped.</p>
+              <button
+                onClick={toggleSelectAllPrev}
+                className="text-sm px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                {selectedPrevIds.size === prevSections.length ? 'Deselect All' : 'Select All'}
+              </button>
+            </div>
+
+            <div className="border rounded-lg max-h-[420px] overflow-y-auto">
+              {fetchLoading ? (
+                <div className="flex items-center justify-center py-10 text-gray-500">Loading previous year sections...</div>
+              ) : prevSections.length === 0 ? (
+                <div className="flex items-center justify-center py-10 text-gray-500">No sections found in previous year.</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="p-3 text-left">Select</th>
+                      <th className="p-3 text-left">Section</th>
+                      <th className="p-3 text-left">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {prevSections.map((sec) => (
+                      <tr key={sec.id} className="border-b">
+                        <td className="p-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedPrevIds.has(sec.id)}
+                            onChange={() => togglePrevSelection(sec.id)}
+                          />
+                        </td>
+                        <td className="p-3 font-medium text-gray-800">{sec.name}</td>
+                        <td className="p-3 text-gray-600">{sec.description || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                onClick={() => setShowFetchModal(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFetchFromPrevious}
+                disabled={fetchLoading || selectedPrevIds.size === 0}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition disabled:opacity-50"
+              >
+                {fetchLoading ? 'Fetching...' : `Fetch ${selectedPrevIds.size || ''}`}
+              </button>
+            </div>
           </div>
         </div>
       )}
