@@ -6,6 +6,37 @@ const jwt = require('jsonwebtoken');
 const { readUsers } = require('../utils/fileStorage');
 const { sendGradeReportEmail } = require('../utils/emailService');
 
+// Ensure grades and students are school-year scoped
+let gradesSyEnsured = false;
+let studentSyEnsured = false;
+
+const ensureGradesSchoolYearColumn = async () => {
+  if (gradesSyEnsured) return;
+  const cols = await query('SHOW COLUMNS FROM grades');
+  const hasSy = cols.some(c => c.Field === 'school_year_id');
+  if (!hasSy) {
+    await query('ALTER TABLE grades ADD COLUMN school_year_id INT NULL');
+    await query('CREATE INDEX idx_grades_school_year ON grades (school_year_id)');
+  }
+  gradesSyEnsured = true;
+};
+
+const ensureStudentSchoolYearColumn = async () => {
+  if (studentSyEnsured) return;
+  const cols = await query('SHOW COLUMNS FROM students');
+  const hasSy = cols.some(c => c.Field === 'school_year_id');
+  if (!hasSy) {
+    await query('ALTER TABLE students ADD COLUMN school_year_id INT NULL');
+    await query('CREATE INDEX idx_students_school_year ON students (school_year_id)');
+  }
+  studentSyEnsured = true;
+};
+
+const getActiveSchoolYear = async () => {
+  const rows = await query('SELECT id, label FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+  return rows[0] || null;
+};
+
 const router = express.Router();
 
 // Middleware to verify user for grades - checks DB and JSON file
@@ -60,7 +91,7 @@ const verifyUserForGrades = async (req, res, next) => {
 };
 
 // Check if teacher can enter grades
-const canEnterGrade = async (user, student, subject) => {
+const canEnterGrade = async (user, student, subject, schoolYearId) => {
   console.log('canEnterGrade check:', { userId: user?.id, userRole: user?.role, subject });
   
   if (!user || !user.role) return false;
@@ -73,8 +104,8 @@ const canEnterGrade = async (user, student, subject) => {
     
     // Check if user is adviser for this class (classes table uses 'grade' not 'grade_level')
     const adviserClasses = await query(
-      'SELECT * FROM classes WHERE adviser_id = ? AND grade = ? AND section = ?',
-      [user.id, studentGrade, studentSection]
+      'SELECT * FROM classes WHERE adviser_id = ? AND grade = ? AND section = ? AND school_year_id = ?',
+      [user.id, studentGrade, studentSection, schoolYearId]
     );
     console.log('Adviser check:', { userId: user.id, studentGrade, studentSection, found: adviserClasses?.length });
     if (adviserClasses && adviserClasses.length > 0) return true;
@@ -84,8 +115,8 @@ const canEnterGrade = async (user, student, subject) => {
     console.log('Subject teacher check - classId:', classId, 'subject:', subject);
     
     const subjectTeacherRecords = await query(
-      'SELECT * FROM subject_teachers WHERE teacher_id = ? AND class_id = ?',
-      [user.id, classId]
+      'SELECT * FROM subject_teachers WHERE teacher_id = ? AND class_id = ? AND school_year_id = ?',
+      [user.id, classId, schoolYearId]
     );
     console.log('Subject teacher records:', subjectTeacherRecords);
     
@@ -104,6 +135,8 @@ const canEnterGrade = async (user, student, subject) => {
 // PUT /:id/grades - Update grades for a student - MUST be before /:id route
 router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
   try {
+    await ensureStudentSchoolYearColumn();
+    await ensureGradesSchoolYearColumn();
     const { id } = req.params;
     const { grades, average, quarter } = req.body;
     const user = req.user;
@@ -113,6 +146,10 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Student not found' });
     }
     const student = students[0];
+    const targetSyId = student.school_year_id || (await getActiveSchoolYear())?.id;
+    if (!targetSyId) {
+      return res.status(400).json({ success: false, error: 'No active school year found for grading' });
+    }
 
     // Filter out subjects that don't have any actual grades (skip 0, null, undefined)
     const subjectsWithGrades = Object.entries(grades).filter(([subject, gradeValue]) => {
@@ -127,7 +164,7 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
 
     // Check authorization only for subjects that have actual grades
     for (const subject of subjectsWithGrades) {
-      const canEdit = await canEnterGrade(user, student, subject);
+      const canEdit = await canEnterGrade(user, student, subject, targetSyId);
       if (!canEdit) {
         return res.status(403).json({ 
           success: false,
@@ -151,19 +188,19 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
           const quarterName = qKey.toUpperCase();
           
           const existingGrade = await query(
-            'SELECT id FROM grades WHERE student_id = ? AND subject = ? AND quarter = ?',
-            [id, subject, quarterName]
+            'SELECT id FROM grades WHERE student_id = ? AND subject = ? AND quarter = ? AND school_year_id = ?',
+            [id, subject, quarterName, targetSyId]
           );
 
           if (existingGrade && existingGrade.length > 0) {
             await query(
-              'UPDATE grades SET grade = ?, teacher_id = ?, updated_at = NOW() WHERE student_id = ? AND subject = ? AND quarter = ?',
-              [gValue, user.id, id, subject, quarterName]
+              'UPDATE grades SET grade = ?, teacher_id = ?, updated_at = NOW() WHERE student_id = ? AND subject = ? AND quarter = ? AND school_year_id = ?',
+              [gValue, user.id, id, subject, quarterName, targetSyId]
             );
           } else {
             await query(
-              'INSERT INTO grades (student_id, subject, quarter, grade, teacher_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
-              [id, subject, quarterName, gValue, user.id]
+              'INSERT INTO grades (student_id, subject, quarter, grade, teacher_id, school_year_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())',
+              [id, subject, quarterName, gValue, user.id, targetSyId]
             );
           }
         }
@@ -175,19 +212,19 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
         const quarterName = (quarter || 'q1').toUpperCase();
         
         const existingGrade = await query(
-          'SELECT id FROM grades WHERE student_id = ? AND subject = ? AND quarter = ?',
-          [id, subject, quarterName]
+          'SELECT id FROM grades WHERE student_id = ? AND subject = ? AND quarter = ? AND school_year_id = ?',
+          [id, subject, quarterName, targetSyId]
         );
 
         if (existingGrade && existingGrade.length > 0) {
           await query(
-            'UPDATE grades SET grade = ?, teacher_id = ?, updated_at = NOW() WHERE student_id = ? AND subject = ? AND quarter = ?',
-            [gradeValue, user.id, id, subject, quarterName]
+            'UPDATE grades SET grade = ?, teacher_id = ?, updated_at = NOW() WHERE student_id = ? AND subject = ? AND quarter = ? AND school_year_id = ?',
+            [gradeValue, user.id, id, subject, quarterName, targetSyId]
           );
         } else {
           await query(
-            'INSERT INTO grades (student_id, subject, quarter, grade, teacher_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
-            [id, subject, quarterName, gradeValue, user.id]
+            'INSERT INTO grades (student_id, subject, quarter, grade, teacher_id, school_year_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())',
+            [id, subject, quarterName, gradeValue, user.id, targetSyId]
           );
         }
       }
@@ -205,8 +242,12 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
 // GET /:id/grades - Get grades for a student - MUST be before /:id route
 router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
   try {
+    await ensureStudentSchoolYearColumn();
+    await ensureGradesSchoolYearColumn();
     const { id } = req.params;
-    const grades = await query('SELECT * FROM grades WHERE student_id = ?', [id]);
+    const [studentRow] = await query('SELECT school_year_id FROM students WHERE id = ?', [id]);
+    const targetSyId = studentRow?.school_year_id || (await getActiveSchoolYear())?.id;
+    const grades = await query('SELECT * FROM grades WHERE student_id = ? AND (school_year_id = ? OR school_year_id IS NULL)', [id, targetSyId]);
 
     // grades table: each row is one subject + quarter combo
     // Need to restructure: { "Filipino": { q1: 90, q2: 85, ... }, "English": { q1: 88, ... } }

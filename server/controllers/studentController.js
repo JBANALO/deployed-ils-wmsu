@@ -5,6 +5,78 @@ const path = require('path');
 const QRCode = require('qrcode');
 const bcrypt = require('bcryptjs');
 
+// Ensure school year isolation for students/grades
+let studentSyEnsured = false;
+let gradesSyEnsured = false;
+
+async function getActiveSchoolYear() {
+  const rows = await query('SELECT id, label FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+  return rows[0] || null;
+}
+
+async function getSchoolYearById(id) {
+  if (!id) return null;
+  const rows = await query('SELECT id, label FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1', [id]);
+  return rows[0] || null;
+}
+
+async function resolveTargetSchoolYear(requestedId) {
+  const sy = requestedId ? await getSchoolYearById(Number(requestedId)) : await getActiveSchoolYear();
+  if (!sy) throw new Error('No active school year found');
+  return sy;
+}
+
+async function ensureStudentSchoolYearColumn() {
+  if (studentSyEnsured) return;
+  const cols = await query('SHOW COLUMNS FROM students');
+  const hasSy = cols.some(c => c.Field === 'school_year_id');
+  if (!hasSy) {
+    await query('ALTER TABLE students ADD COLUMN school_year_id INT NULL');
+    await query('CREATE INDEX idx_students_school_year ON students (school_year_id)');
+  }
+
+  // Backfill nulls to active school year if available
+  try {
+    const activeSy = await getActiveSchoolYear();
+    if (activeSy) {
+      await query('UPDATE students SET school_year_id = ? WHERE school_year_id IS NULL', [activeSy.id]);
+    }
+  } catch (backfillErr) {
+    console.log('students school_year_id backfill skipped:', backfillErr.message);
+  }
+
+  studentSyEnsured = true;
+}
+
+async function ensureGradesSchoolYearColumn() {
+  if (gradesSyEnsured) return;
+  const cols = await query('SHOW COLUMNS FROM grades');
+  const hasSy = cols.some(c => c.Field === 'school_year_id');
+  if (!hasSy) {
+    await query('ALTER TABLE grades ADD COLUMN school_year_id INT NULL');
+    await query('CREATE INDEX idx_grades_school_year ON grades (school_year_id)');
+  }
+
+  // Backfill: align grades to student school year when possible, else active SY
+  try {
+    await query(
+      `UPDATE grades g
+       JOIN students s ON g.student_id = s.id AND s.school_year_id IS NOT NULL
+       SET g.school_year_id = s.school_year_id
+       WHERE g.school_year_id IS NULL`
+    );
+
+    const activeSy = await getActiveSchoolYear();
+    if (activeSy) {
+      await query('UPDATE grades SET school_year_id = ? WHERE school_year_id IS NULL', [activeSy.id]);
+    }
+  } catch (backfillErr) {
+    console.log('grades school_year_id backfill skipped:', backfillErr.message);
+  }
+
+  gradesSyEnsured = true;
+}
+
 // -----------------------------
 // HELPER: Format student object
 // -----------------------------
@@ -81,6 +153,15 @@ exports.createStudent = async (req, res) => {
   let qrCodePath = null;
 
   try {
+    await ensureStudentSchoolYearColumn();
+    await ensureGradesSchoolYearColumn();
+    let targetSy;
+    try {
+      targetSy = await resolveTargetSchoolYear(req.body.schoolYearId);
+    } catch (syErr) {
+      return res.status(400).json({ status: 'fail', message: syErr.message || 'No active school year found' });
+    }
+
     console.log('=== STUDENT CREATION DEBUG ===');
     console.log('req.body keys:', Object.keys(req.body));
     console.log('profilePic in req.body:', req.body.profilePic);
@@ -181,12 +262,12 @@ exports.createStudent = async (req, res) => {
         lrn, first_name, middle_name, last_name, age, sex,
         grade_level, section, parent_first_name, parent_last_name,
         parent_email, parent_contact, student_email, password,
-        profile_pic, qr_code, status, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        profile_pic, qr_code, status, created_by, school_year_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [lrn, firstName, middleName || null, lastName, age, sex || 'N/A',
         gradeLevel, section, parentFirstName || null, parentLastName || null,
         parentEmail || null, parentContact || null, studentEmail || null, hashedPassword,
-        safeProfilePic, safeQRCode, reqStatus || 'Active', 'admin']
+        safeProfilePic, safeQRCode, reqStatus || 'Active', 'admin', targetSy.id]
     );
 
     const createdStudent = {
@@ -229,7 +310,16 @@ exports.createStudent = async (req, res) => {
 // -----------------------------
 exports.getStudents = async (req, res) => {
   try {
-    const { teacherId, gradeLevel, section } = req.query;
+    await ensureStudentSchoolYearColumn();
+    await ensureGradesSchoolYearColumn();
+
+    const { teacherId, gradeLevel, section, schoolYearId } = req.query;
+    let targetSy;
+    try {
+      targetSy = await resolveTargetSchoolYear(schoolYearId);
+    } catch (syErr) {
+      return res.status(400).json({ status: 'fail', message: syErr.message || 'No active school year found' });
+    }
 
     // If teacherId provided, filter to only that teacher's assigned classes
     if (teacherId) {
@@ -238,8 +328,8 @@ exports.getStudents = async (req, res) => {
       // 1. Check classes table for adviser assignments
       try {
         const classesRows = await query(
-          'SELECT grade, section FROM classes WHERE adviser_id = ?',
-          [teacherId]
+          'SELECT grade, section FROM classes WHERE adviser_id = ? AND school_year_id = ?',
+          [teacherId, targetSy.id]
         );
         classesRows.forEach(row => {
           assignedClasses.push({ gradeLevel: row.grade, section: row.section });
@@ -274,8 +364,8 @@ exports.getStudents = async (req, res) => {
       // 3. Check subject_teachers table for subject teacher assignments
       try {
         const subjectTeacherRows = await query(
-          'SELECT DISTINCT c.grade, c.section FROM subject_teachers st JOIN classes c ON st.class_id = c.id WHERE st.teacher_id = ?',
-          [teacherId]
+          'SELECT DISTINCT c.grade, c.section FROM subject_teachers st JOIN classes c ON st.class_id = c.id WHERE st.teacher_id = ? AND st.school_year_id = ? AND c.school_year_id = ?',
+          [teacherId, targetSy.id, targetSy.id]
         );
         subjectTeacherRows.forEach(row => {
           const exists = assignedClasses.some(c => c.gradeLevel === row.grade && c.section === row.section);
@@ -294,8 +384,8 @@ exports.getStudents = async (req, res) => {
       if (assignedClasses.length === 0) {
         try {
           const teacherRows = await query(
-            'SELECT grade_level, section FROM teachers WHERE id = ? AND grade_level IS NOT NULL AND section IS NOT NULL LIMIT 1',
-            [teacherId]
+            'SELECT grade_level, section FROM teachers WHERE id = ? AND grade_level IS NOT NULL AND section IS NOT NULL AND school_year_id = ? LIMIT 1',
+            [teacherId, targetSy.id]
           );
           if (teacherRows.length > 0) {
             assignedClasses.push({ gradeLevel: teacherRows[0].grade_level, section: teacherRows[0].section });
@@ -314,13 +404,13 @@ exports.getStudents = async (req, res) => {
         
         const filteredStudents = await query(
           `SELECT s.*,
-            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.grade > 0) AS live_average,
-            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q1' AND g.grade > 0) AS q1_avg,
-            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q2' AND g.grade > 0) AS q2_avg,
-            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q3' AND g.grade > 0) AS q3_avg,
-            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q4' AND g.grade > 0) AS q4_avg
-           FROM students s WHERE (${conditions}) ORDER BY s.grade_level, s.section, s.last_name ASC`,
-          params
+            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.grade > 0 AND g.school_year_id = ?) AS live_average,
+            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q1' AND g.grade > 0 AND g.school_year_id = ?) AS q1_avg,
+            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q2' AND g.grade > 0 AND g.school_year_id = ?) AS q2_avg,
+            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q3' AND g.grade > 0 AND g.school_year_id = ?) AS q3_avg,
+            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q4' AND g.grade > 0 AND g.school_year_id = ?) AS q4_avg
+           FROM students s WHERE (${conditions}) AND s.school_year_id = ? ORDER BY s.grade_level, s.section, s.last_name ASC`,
+          [targetSy.id, targetSy.id, targetSy.id, targetSy.id, targetSy.id, ...params, targetSy.id]
         );
         console.log(`[getStudents] Returning ${filteredStudents.length} students from ${assignedClasses.length} assigned class(es)`);
         return res.status(200).json({ status: 'success', data: filteredStudents.map(formatStudent) });
@@ -333,12 +423,13 @@ exports.getStudents = async (req, res) => {
 
     // No teacherId — return all students (admin/web use)
     const allDbStudents = await query(`SELECT s.*,
-      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.grade > 0) AS live_average,
-      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q1' AND g.grade > 0) AS q1_avg,
-      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q2' AND g.grade > 0) AS q2_avg,
-      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q3' AND g.grade > 0) AS q3_avg,
-      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'q4' AND g.grade > 0) AS q4_avg
-     FROM students s ORDER BY s.created_at DESC`);
+      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.grade > 0 AND g.school_year_id = ?) AS live_average,
+      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q1' AND g.grade > 0 AND g.school_year_id = ?) AS q1_avg,
+      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q2' AND g.grade > 0 AND g.school_year_id = ?) AS q2_avg,
+      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q3' AND g.grade > 0 AND g.school_year_id = ?) AS q3_avg,
+      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q4' AND g.grade > 0 AND g.school_year_id = ?) AS q4_avg
+     FROM students s WHERE s.school_year_id = ? ORDER BY s.created_at DESC`,
+     [targetSy.id, targetSy.id, targetSy.id, targetSy.id, targetSy.id, targetSy.id]);
     const formattedStudents = allDbStudents.map(formatStudent);
     res.status(200).json({ status: 'success', data: formattedStudents });
   } catch (error) {
@@ -349,6 +440,15 @@ exports.getStudents = async (req, res) => {
 
 exports.getStudent = async (req, res) => {
   try {
+    await ensureStudentSchoolYearColumn();
+    await ensureGradesSchoolYearColumn();
+
+    let targetSy;
+    try {
+      targetSy = await resolveTargetSchoolYear(req.query.schoolYearId);
+    } catch (syErr) {
+      return res.status(400).json({ status: 'fail', message: syErr.message || 'No active school year found' });
+    }
     // Handle both query parameter (studentId) and URL parameter (id)
     const studentId = req.query.studentId || req.params.id;
     
@@ -364,7 +464,7 @@ exports.getStudent = async (req, res) => {
     }
     
     console.log('🔍 Querying database for student ID:', studentId);
-    const students = await query('SELECT * FROM students WHERE id = ?', [studentId]);
+    const students = await query('SELECT * FROM students WHERE id = ? AND school_year_id = ?', [studentId, targetSy.id]);
     console.log('🔍 Database result:', {
       found: students.length,
       student: students[0] || 'none'
@@ -389,8 +489,8 @@ exports.getStudent = async (req, res) => {
 
     // ======== FETCH GRADES ========
     const gradesRaw = await query(
-      'SELECT subject, quarter, grade, created_at FROM grades WHERE student_id = ? ORDER BY subject, quarter',
-      [studentId]
+      'SELECT subject, quarter, grade, created_at FROM grades WHERE student_id = ? AND school_year_id = ? ORDER BY subject, quarter',
+      [studentId, targetSy.id]
     );
     
     // Group grades by subject with quarters
@@ -422,8 +522,8 @@ exports.getStudent = async (req, res) => {
     // Fetch admin-configured subjects for current grade and ensure they are always shown (even without grades)
     const gradeKey = toGradeKey(student.grade_level);
     const currentGradeSubjectsRows = await query(
-      'SELECT name FROM subjects WHERE is_archived = 0 AND FIND_IN_SET(?, grade_levels) ORDER BY name',
-      [gradeKey]
+      'SELECT name FROM subjects WHERE is_archived = 0 AND school_year_id = ? AND FIND_IN_SET(?, grade_levels) ORDER BY name',
+      [targetSy.id, gradeKey]
     );
     const currentGradeSubjects = currentGradeSubjectsRows.map(r => r.name).filter(Boolean);
 
@@ -491,8 +591,8 @@ exports.getStudent = async (req, res) => {
       for (const prevGrade of previousGrades) {
         const prevKey = toGradeKey(prevGrade);
         const prevSubjectsRows = await query(
-          'SELECT name FROM subjects WHERE is_archived = 0 AND FIND_IN_SET(?, grade_levels) ORDER BY name',
-          [prevKey]
+          'SELECT name FROM subjects WHERE is_archived = 0 AND school_year_id = ? AND FIND_IN_SET(?, grade_levels) ORDER BY name',
+          [targetSy.id, prevKey]
         );
         const prevSubjects = prevSubjectsRows.map(r => r.name).filter(Boolean);
 
@@ -573,11 +673,11 @@ exports.getStudent = async (req, res) => {
     const scheduleRaw = await query(
       `SELECT subject, teacher_name, day, start_time, end_time 
        FROM subject_teachers 
-       WHERE class_id = ? 
+       WHERE class_id = ? AND school_year_id = ?
        ORDER BY 
          FIELD(day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'),
          start_time`,
-      [classId]
+      [classId, targetSy.id]
     );
 
     // Previous schedule snapshots (captured at promotion time)
@@ -625,8 +725,8 @@ exports.getStudent = async (req, res) => {
 
     try {
       const classInfoById = await query(
-        'SELECT adviser_name FROM classes WHERE id = ? LIMIT 1',
-        [classId]
+        'SELECT adviser_name FROM classes WHERE id = ? AND school_year_id = ? LIMIT 1',
+        [classId, targetSy.id]
       );
       adviserName = classInfoById[0]?.adviser_name || null;
     } catch (classIdErr) {
@@ -639,9 +739,9 @@ exports.getStudent = async (req, res) => {
           `SELECT adviser_name
            FROM classes
            WHERE (grade = ? OR grade = ? OR REPLACE(LOWER(grade), 'grade ', '') = LOWER(?))
-             AND section = ?
+             AND section = ? AND school_year_id = ?
            LIMIT 1`,
-          [student.grade_level, toGradeKey(student.grade_level), toGradeKey(student.grade_level), student.section]
+          [student.grade_level, toGradeKey(student.grade_level), toGradeKey(student.grade_level), student.section, targetSy.id]
         );
         adviserName = classInfoByGradeSection[0]?.adviser_name || null;
       } catch (classGradeErr) {
@@ -657,9 +757,9 @@ exports.getStudent = async (req, res) => {
            JOIN classes c ON ca.class_id = c.id
            JOIN teachers t ON ca.teacher_id = t.id
            WHERE (c.grade = ? OR c.grade = ? OR REPLACE(LOWER(c.grade), 'grade ', '') = LOWER(?))
-             AND c.section = ?
+             AND c.section = ? AND c.school_year_id = ?
            LIMIT 1`,
-          [student.grade_level, toGradeKey(student.grade_level), toGradeKey(student.grade_level), student.section]
+          [student.grade_level, toGradeKey(student.grade_level), toGradeKey(student.grade_level), student.section, targetSy.id]
         );
         adviserName = adviserFromAssignment[0]?.adviser_name || null;
       } catch (assignmentErr) {
