@@ -107,6 +107,9 @@ export default function AdminClasses() {
         const studentClasses = organizeByGradeAndSection(students);
 
         // Merge adviser info from backend classes
+        const filteredStudents = filterBySections(studentClasses);
+        const filteredBackend = filterBySections(backendClasses);
+
         if (backendClasses.length > 0 && studentClasses.length > 0) {
           const mergedClasses = studentClasses.map(studentClass => {
             const backendClass = backendClasses.find(bc => 
@@ -117,19 +120,44 @@ export default function AdminClasses() {
               adviser_name: backendClass?.adviser_name || null,
               adviser_id: backendClass?.adviser_id || null
             };
-          }).filter(filterBySections);
+          }).filter((cls) => {
+            // Prefer to keep even if section list is empty/mismatched
+            if (!fetchedSections || fetchedSections.length === 0) return true;
+            return filterBySections([cls]).length > 0;
+          });
           console.log('Merged classes with adviser info:', mergedClasses);
-          setClassesData(mergedClasses);
+          if (mergedClasses.length === 0 && studentClasses.length > 0) {
+            toast.info('Showing classes directly from students (no matching sections)');
+            setClassesData(studentClasses);
+          } else {
+            setClassesData(mergedClasses);
+          }
         } else if (studentClasses.length > 0) {
-          setClassesData(filterBySections(studentClasses));
+          if (filteredStudents.length === 0) {
+            toast.info('Showing classes from students (section mismatch)');
+            setClassesData(studentClasses);
+          } else {
+            setClassesData(filteredStudents);
+          }
         } else if (backendClasses.length > 0) {
-          setClassesData(filterBySections(backendClasses));
+          if (filteredBackend.length === 0) {
+            toast.info('Showing classes from backend (section mismatch)');
+            setClassesData(backendClasses);
+          } else {
+            setClassesData(filteredBackend);
+          }
         } else {
           setClassesData(baseClasses);
         }
       } else {
         if (backendClasses.length > 0) {
-          setClassesData(filterBySections(backendClasses));
+          const filteredBackend = filterBySections(backendClasses);
+          if (filteredBackend.length === 0) {
+            toast.info('Showing classes from backend (no students, section mismatch)');
+            setClassesData(backendClasses);
+          } else {
+            setClassesData(filteredBackend);
+          }
         } else {
           setClassesData(baseClasses);
         }
