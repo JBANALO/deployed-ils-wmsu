@@ -59,6 +59,16 @@ const getPreviousSchoolYear = async (activeStartDate) => {
   return rows[0] || null;
 };
 
+const assertActiveTargetSchoolYear = async (targetSy) => {
+  const active = await getActiveSchoolYear();
+  if (!targetSy || targetSy.id !== active.id) {
+    const err = new Error('Edits are only allowed in the active school year');
+    err.statusCode = 400;
+    throw err;
+  }
+  return active;
+};
+
 exports.createClass = async (req, res) => {
   try {
     await ensureClassSchoolYearColumn();
@@ -73,7 +83,8 @@ exports.createClass = async (req, res) => {
 
     res.status(201).json({ message: 'Class created', classId });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const status = error.statusCode || 500;
+    res.status(status).json({ error: error.message });
   }
 };
 
@@ -321,35 +332,47 @@ exports.getClassById = async (req, res) => {
 
     res.json(classes[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const status = error.statusCode || 500;
+    res.status(status).json({ error: error.message });
   }
 };
 
 exports.updateClass = async (req, res) => {
   try {
     await ensureClassSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
     const { id } = req.params;
     const { grade, section, adviserId } = req.body;
 
-    await query(
-      'UPDATE classes SET grade = ?, section = ?, adviser_id = ? WHERE id = ?',
-      [grade, section, adviserId || null, id]
+    const result = await query(
+      'UPDATE classes SET grade = ?, section = ?, adviser_id = ? WHERE id = ? AND school_year_id = ?',
+      [grade, section, adviserId || null, id, activeSy.id]
     );
+
+    if (result.affectedRows === 0) {
+      return res.status(403).json({ message: 'Cannot edit class in a non-active school year' });
+    }
 
     res.json({ message: 'Class updated' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const status = error.statusCode || 500;
+    res.status(status).json({ error: error.message });
   }
 };
 
 exports.deleteClass = async (req, res) => {
   try {
     await ensureClassSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
     const { id } = req.params;
-    await query('DELETE FROM classes WHERE id = ?', [id]);
+    const result = await query('DELETE FROM classes WHERE id = ? AND school_year_id = ?', [id, activeSy.id]);
+    if (result.affectedRows === 0) {
+      return res.status(403).json({ message: 'Cannot delete class in a non-active school year' });
+    }
     res.json({ message: 'Class deleted' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const status = error.statusCode || 500;
+    res.status(status).json({ error: error.message });
   }
 };
 
@@ -374,6 +397,11 @@ exports.addSubjectTeacher = async (req, res) => {
     const activeSy = await getActiveSchoolYear();
     const { classId } = req.params;
     const { teacherId, subject } = req.body;
+
+    const owningClass = await query('SELECT id FROM classes WHERE id = ? AND school_year_id = ?', [classId, activeSy.id]);
+    if (!owningClass.length) {
+      return res.status(403).json({ success: false, message: 'Cannot modify a class outside the active school year' });
+    }
 
     try {
       await query(
@@ -409,10 +437,14 @@ exports.assignAdviserToClass = async (req, res) => {
     console.log('assignAdviserToClass - classId:', classId, 'adviser_id:', adviser_id, 'adviser_name:', adviser_name);
 
     // Update only adviser_id for now (skip adviser_name due to database issues)
-    await query(
+    const result = await query(
       'UPDATE classes SET adviser_id = ? WHERE id = ? AND school_year_id = ?',
       [adviser_id, classId, activeSy.id]
     );
+
+    if (result.affectedRows === 0) {
+      return res.status(403).json({ success: false, message: 'Cannot edit adviser for a non-active school year' });
+    }
 
     res.json({ 
       success: true, 
@@ -433,10 +465,14 @@ exports.unassignAdviser = async (req, res) => {
 
     console.log('unassignAdviser - classId:', classId);
 
-    await query(
+    const result = await query(
       'UPDATE classes SET adviser_id = NULL WHERE id = ? AND school_year_id = ?',
       [classId, activeSy.id]
     );
+
+    if (result.affectedRows === 0) {
+      return res.status(403).json({ success: false, message: 'Cannot edit adviser for a non-active school year' });
+    }
 
     res.json({ success: true, message: 'Adviser unassigned successfully' });
   } catch (error) {
@@ -451,6 +487,11 @@ exports.assignSubjectTeacherToClass = async (req, res) => {
     const activeSy = await getActiveSchoolYear();
     const { classId } = req.params;
     const { teacher_id, teacher_name, subject, day, start_time, end_time } = req.body;
+
+    const owningClass = await query('SELECT id FROM classes WHERE id = ? AND school_year_id = ?', [classId, activeSy.id]);
+    if (!owningClass.length) {
+      return res.status(403).json({ success: false, message: 'Cannot modify a class outside the active school year' });
+    }
 
     console.log('assignSubjectTeacherToClass - classId:', classId, 'teacher_id:', teacher_id, 'subject:', subject, 'day:', day);
 
@@ -500,10 +541,14 @@ exports.unassignSubjectTeacher = async (req, res) => {
 
     console.log('unassignSubjectTeacher - classId:', classId, 'teacherId:', teacherId);
 
-    await query(
+    const result = await query(
       'DELETE FROM subject_teachers WHERE class_id = ? AND teacher_id = ? AND school_year_id = ?',
       [classId, teacherId, activeSy.id]
     );
+
+    if (result.affectedRows === 0) {
+      return res.status(403).json({ success: false, message: 'Cannot modify a class outside the active school year' });
+    }
 
     res.json({ success: true, message: 'Subject teacher unassigned successfully' });
   } catch (error) {
@@ -554,6 +599,7 @@ exports.fetchClassesFromPreviousYear = async (req, res) => {
     await ensureClassSchoolYearColumn();
     await ensureSubjectTeacherSchoolYearColumn();
     const targetSy = await resolveSchoolYear(req);
+    await assertActiveTargetSchoolYear(targetSy);
     const prevSy = await getPreviousSchoolYear(targetSy.start_date);
     if (!prevSy) {
       return res.status(400).json({ success: false, message: 'No previous school year found to fetch from' });

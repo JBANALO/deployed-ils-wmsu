@@ -212,6 +212,10 @@ export default function AdminTeachers() {
 
   // Function to restore archived teacher
   const handleRestoreTeacher = async (teacherId) => {
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to edit.');
+      return;
+    }
     // Find the teacher to restore
     const teacher = archivedTeachers.find(t => t.id === teacherId);
     setTeacherToRestore(teacher);
@@ -220,6 +224,11 @@ export default function AdminTeachers() {
 
   const confirmRestoreTeacher = async () => {
     if (!teacherToRestore) return;
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to edit.');
+      setShowRestoreModal(false);
+      return;
+    }
     
     try {
       await api.put(`/teachers/${teacherToRestore.id}/restore`);
@@ -241,6 +250,10 @@ export default function AdminTeachers() {
 
   // Function to permanently delete archived teacher
   const handlePermanentDelete = async (teacherId) => {
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to edit.');
+      return;
+    }
     // Find the teacher to permanently delete
     const teacher = archivedTeachers.find(t => t.id === teacherId);
     setTeacherToPermanentDelete(teacher);
@@ -249,6 +262,11 @@ export default function AdminTeachers() {
 
   const confirmPermanentDelete = async () => {
     if (!teacherToPermanentDelete) return;
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to edit.');
+      setShowPermanentDeleteModal(false);
+      return;
+    }
     
     try {
       await api.delete(`/teachers/${teacherToPermanentDelete.id}/permanent`);
@@ -270,6 +288,10 @@ export default function AdminTeachers() {
   // Bulk permanent delete for archived teachers
   const handleBulkPermanentDelete = async () => {
     if (selectedArchivedTeachers.size === 0) return;
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to edit.');
+      return;
+    }
     
     const confirmed = window.confirm(`Are you sure you want to PERMANENTLY DELETE ${selectedArchivedTeachers.size} archived teacher(s)? This cannot be undone.`);
     
@@ -419,6 +441,10 @@ export default function AdminTeachers() {
 
   // Fetch teachers from previous school year (listing only)
   const loadPrevTeachers = async () => {
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to fetch teachers.');
+      return;
+    }
     if (!selectedSchoolYearId) {
       toast.error('Select a school year first');
       return;
@@ -443,6 +469,10 @@ export default function AdminTeachers() {
   // Copy selected teachers from previous school year into active school year
   const handleFetchTeachersFromPrevious = async () => {
     if (selectedPrevTeacherIds.size === 0) return;
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to copy teachers.');
+      return;
+    }
     if (!selectedSchoolYearId) {
       toast.error('Select a school year first');
       return;
@@ -600,6 +630,10 @@ export default function AdminTeachers() {
   };
 
   const handleBulkDelete = async () => {
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to edit.');
+      return;
+    }
     // Combine all selected teachers from both tables
     const allSelectedTeachers = new Set([...selectedAdvisers, ...selectedSubjectTeachers]);
     
@@ -655,6 +689,10 @@ export default function AdminTeachers() {
   };
 
   const handleDeleteTeacher = async (teacherId) => {
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to edit.');
+      return;
+    }
     // Find the teacher to delete
     const teacher = filteredTeachers.find(t => t.id === teacherId);
     setTeacherToDelete(teacher);
@@ -663,6 +701,11 @@ export default function AdminTeachers() {
 
   const confirmDeleteTeacher = async () => {
     if (!teacherToDelete) return;
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to edit.');
+      setShowDeleteModal(false);
+      return;
+    }
     
     try {
       // Archive teacher instead of permanent deletion
@@ -859,6 +902,11 @@ export default function AdminTeachers() {
   };
 
   const handleSaveEdit = async () => {
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to edit.');
+      setShowEditModal(false);
+      return;
+    }
     try {
       console.log('Saving teacher with data:', editFormData);
       
@@ -993,21 +1041,24 @@ export default function AdminTeachers() {
               setShowFetchModal(true);
               loadPrevTeachers();
             }}
-            className="bg-emerald-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-emerald-700 font-semibold flex items-center justify-center gap-2 text-xs md:text-base h-fit"
+            disabled={isViewOnly}
+            className="bg-emerald-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-emerald-700 font-semibold flex items-center justify-center gap-2 text-xs md:text-base h-fit disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <ArrowPathIcon className="w-4 md:w-5 h-4 md:h-5" />
             Fetch Prev Year
           </button>
           <button
             onClick={() => navigate('/admin/create-teacher')}
-            className="bg-blue-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-blue-700 font-semibold flex items-center justify-center gap-2 text-xs md:text-base h-fit"
+            disabled={isViewOnly}
+            className="bg-blue-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-blue-700 font-semibold flex items-center justify-center gap-2 text-xs md:text-base h-fit disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="text-lg">+</span>
             Add Teacher
           </button>
           <button
             onClick={() => setShowBulkImportModal(true)}
-            className="bg-green-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-green-700 font-semibold flex items-center justify-center gap-2 text-xs md:text-base h-fit"
+            disabled={isViewOnly}
+            className="bg-green-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-green-700 font-semibold flex items-center justify-center gap-2 text-xs md:text-base h-fit disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <ArrowUpTrayIcon className="w-4 md:w-5 h-4 md:h-5" />
             Bulk Import

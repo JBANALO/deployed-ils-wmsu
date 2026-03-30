@@ -233,6 +233,10 @@ export default function AdminClasses() {
 
 
   const loadPrevClasses = async () => {
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to fetch classes.');
+      return;
+    }
     if (!selectedSchoolYearId) {
       toast.error('Select a school year first');
       return;
@@ -367,6 +371,11 @@ export default function AdminClasses() {
 
 
   const handleFetchFromPrevious = async () => {
+
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to copy classes.');
+      return;
+    }
 
     if (!selectedSchoolYearId) {
       toast.error('Select a school year first');
@@ -537,7 +546,9 @@ export default function AdminClasses() {
 
               onClick={() => { setShowFetchModal(true); loadPrevClasses(); }}
 
-              className="flex items-center gap-2 bg-red-800 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-700 transition"
+              disabled={isViewOnly}
+
+              className="flex items-center gap-2 bg-red-800 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
 
             >
 

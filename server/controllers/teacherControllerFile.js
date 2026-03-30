@@ -44,6 +44,16 @@ const getPreviousSchoolYear = async (activeStartDate) => {
   return rows[0] || null;
 };
 
+const assertActiveTargetSchoolYear = async (targetSy) => {
+  const active = await getActiveSchoolYear();
+  if (!targetSy || targetSy.id !== active.id) {
+    const err = new Error('Edits are only allowed in the active school year');
+    err.statusCode = 400;
+    throw err;
+  }
+  return active;
+};
+
 const resolveSchoolYear = async (req) => {
   const requestedId = req?.query?.schoolYearId || req?.body?.schoolYearId;
   if (requestedId) {
@@ -550,6 +560,7 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
   try {
     await ensureTeacherSchoolYearColumn();
     const targetSy = await resolveSchoolYear(req);
+    await assertActiveTargetSchoolYear(targetSy);
     const prevSy = await getPreviousSchoolYear(targetSy.start_date);
     if (!prevSy) {
       return res.status(400).json({ success: false, message: 'No previous school year found to fetch from' });
@@ -614,7 +625,8 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching teachers from previous year:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch teachers from previous year' });
+    const status = error.statusCode || 500;
+    res.status(status).json({ success: false, message: error.message || 'Failed to fetch teachers from previous year' });
   }
 };
 
