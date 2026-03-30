@@ -143,25 +143,12 @@ export default function AdminClasses() {
           };
         });
 
-        // Build union of sections, students, backend
+        // Build union of sections, students, backend (no filtering so new sections always show)
         const union = mergeClasses([baseClasses, studentPlusAdviser, backendClasses]);
-        const filteredUnion = filterBySections(union);
-
-        if (filteredUnion.length > 0) {
-          setClassesData(filteredUnion);
-        } else {
-          toast.info('Showing all classes/sections (bypassing filter)');
-          setClassesData(union);
-        }
+        setClassesData(union);
       } else {
         const union = mergeClasses([baseClasses, backendClasses]);
-        const filteredUnion = filterBySections(union);
-        if (filteredUnion.length > 0) {
-          setClassesData(filteredUnion);
-        } else {
-          toast.info('Showing sections only (no students)');
-          setClassesData(union);
-        }
+        setClassesData(union);
         setAllStudents([]);
       }
 
