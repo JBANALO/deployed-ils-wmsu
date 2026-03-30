@@ -242,17 +242,11 @@ exports.setActiveSchoolYear = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Only allow activating the newest (latest start_date) school year; older years stay locked
-    const [targetRows] = await query('SELECT id, start_date, is_archived FROM school_years WHERE id = ? LIMIT 1', [id]);
+    // Allow activating any non-archived school year; older ones become locked automatically
+    const [targetRows] = await query('SELECT id, is_archived FROM school_years WHERE id = ? LIMIT 1', [id]);
     const target = targetRows[0];
     if (!target || target.is_archived) {
       return res.status(404).json({ success: false, message: 'School year not found or archived' });
-    }
-
-    const [newestRows] = await query('SELECT id FROM school_years WHERE is_archived = 0 ORDER BY start_date DESC LIMIT 1');
-    const newest = newestRows[0];
-    if (newest && newest.id !== target.id) {
-      return res.status(403).json({ success: false, message: 'Locked — only the newest school year can be activated. Past years are view-only.' });
     }
 
     // Deactivate all school years first
