@@ -484,6 +484,20 @@ const StudentPortal = () => {
     }
   };
 
+  // Format SY even if stored without dash (e.g., 20262027 -> 2026-2027)
+  const formatSchoolYearLabel = (label) => {
+    const clean = (label || '').trim();
+    if (!clean) {
+      const year = new Date().getFullYear();
+      return `${year}-${year + 1}`;
+    }
+    if (clean.includes('-')) return clean;
+
+    const digits = clean.replace(/\D/g, '');
+    if (digits.length === 8) return `${digits.slice(0, 4)}-${digits.slice(4, 8)}`;
+    return clean;
+  };
+
   // Helper function to compute general average
   const computeGeneralAverage = () => {
     if (grades.length === 0) return "";
@@ -494,7 +508,7 @@ const StudentPortal = () => {
   const reportCardAdviserName = profile.adviserName?.trim() || '_______________';
   const reportCardPrincipalName = profile.principalName?.trim() || 'MA. NORA D. LAI, Ed.D, JD';
   const reportCardAssistantPrincipalName = profile.assistantPrincipalName?.trim() || '_______________';
-  const reportCardSchoolYearLabel = profile.schoolYearLabel?.trim() || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
+  const reportCardSchoolYearLabel = formatSchoolYearLabel(profile.schoolYearLabel);
 
   const formatReportCardSubject = (subject = '') => String(subject)
     .replace(/\s*\(Grade\s+\d+\)\s*$/i, '')
