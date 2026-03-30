@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 
-import { BuildingLibraryIcon, ChevronDownIcon, UserGroupIcon } from "@heroicons/react/24/solid";
+import { BuildingLibraryIcon, ChevronDownIcon, UserGroupIcon, ArrowPathIcon, XMarkIcon } from "@heroicons/react/24/solid";
 
 import { useNavigate } from "react-router-dom";
 
@@ -26,89 +26,115 @@ export default function AdminClasses() {
 
   const [expandedClass, setExpandedClass] = useState(null);
 
+  const [showFetchModal, setShowFetchModal] = useState(false);
 
+  const [prevClasses, setPrevClasses] = useState([]);
+
+  const [selectedPrevIds, setSelectedPrevIds] = useState(new Set());
+
+  const [fetchLoading, setFetchLoading] = useState(false);
+
+
+
+  const fetchAndOrganizeClasses = async () => {
+    try {
+      // Fetch classes from backend (includes adviser_name)
+      let backendClasses = [];
+      try {
+        const classesResponse = await fetch(`${API_BASE_URL}/classes`);
+        if (classesResponse.ok) {
+          const classesResult = await classesResponse.json();
+          backendClasses = Array.isArray(classesResult) ? classesResult : (classesResult.data || []);
+          console.log('Classes fetched from backend:', backendClasses);
+        }
+      } catch (err) {
+        console.log('Could not fetch classes from backend:', err.message);
+      }
+
+      // Fetch students for enrollment count
+      const studentsResponse = await fetch(`${API_BASE_URL}/students`);
+      if (studentsResponse.ok) {
+        const result = await studentsResponse.json();
+        const students = result.data ? result.data : (Array.isArray(result) ? result : []);
+        setAllStudents(students);
+        console.log('Students fetched:', students.length);
+        
+        // Organize students by grade/section
+        const studentClasses = organizeByGradeAndSection(students);
+        
+        // Merge adviser info from backend classes
+        if (backendClasses.length > 0) {
+          const mergedClasses = studentClasses.map(studentClass => {
+            const backendClass = backendClasses.find(bc => 
+              bc.grade === studentClass.grade && bc.section === studentClass.section
+            );
+            return {
+              ...studentClass,
+              adviser_name: backendClass?.adviser_name || null,
+              adviser_id: backendClass?.adviser_id || null
+            };
+          });
+          console.log('Merged classes with adviser info:', mergedClasses);
+          setClassesData(mergedClasses);
+        } else {
+          setClassesData(studentClasses);
+        }
+      } else {
+        if (backendClasses.length > 0) {
+          setClassesData(backendClasses);
+        }
+        setAllStudents([]);
+      }
+
+      // Fetch teachers
+      try {
+        const teachersResponse = await fetch(`${API_BASE_URL}/users`);
+        if (teachersResponse.ok) {
+          const data = await teachersResponse.json();
+          const allUsers = data.data?.users || data.users || [];
+          console.log('All Users fetched:', allUsers.length);
+          const teachersList = Array.isArray(allUsers) 
+            ? allUsers.filter(user => ['teacher', 'subject_teacher', 'adviser'].includes(user.role))
+            : [];
+          console.log('Teachers filtered:', teachersList.length);
+          setTeachers(teachersList);
+        } else {
+          console.log('Teachers response not ok');
+          setTeachers([]);
+        }
+      } catch (teacherError) {
+        console.error('Error fetching teachers:', teacherError);
+        setTeachers([]);
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    }
+
+    setLoading(false);
+  };
 
   // Fetch classes from backend with adviser info
   useEffect(() => {
-    const fetchAndOrganizeClasses = async () => {
-      try {
-        // Fetch classes from backend (includes adviser_name)
-        let backendClasses = [];
-        try {
-          const classesResponse = await fetch(`${API_BASE_URL}/classes`);
-          if (classesResponse.ok) {
-            const classesResult = await classesResponse.json();
-            backendClasses = Array.isArray(classesResult) ? classesResult : (classesResult.data || []);
-            console.log('Classes fetched from backend:', backendClasses);
-          }
-        } catch (err) {
-          console.log('Could not fetch classes from backend:', err.message);
-        }
-
-        // Fetch students for enrollment count
-        const studentsResponse = await fetch(`${API_BASE_URL}/students`);
-        if (studentsResponse.ok) {
-          const result = await studentsResponse.json();
-          const students = result.data ? result.data : (Array.isArray(result) ? result : []);
-          setAllStudents(students);
-          console.log('Students fetched:', students.length);
-          
-          // Organize students by grade/section
-          const studentClasses = organizeByGradeAndSection(students);
-          
-          // Merge adviser info from backend classes
-          if (backendClasses.length > 0) {
-            const mergedClasses = studentClasses.map(studentClass => {
-              const backendClass = backendClasses.find(bc => 
-                bc.grade === studentClass.grade && bc.section === studentClass.section
-              );
-              return {
-                ...studentClass,
-                adviser_name: backendClass?.adviser_name || null,
-                adviser_id: backendClass?.adviser_id || null
-              };
-            });
-            console.log('Merged classes with adviser info:', mergedClasses);
-            setClassesData(mergedClasses);
-          } else {
-            setClassesData(studentClasses);
-          }
-        } else {
-          if (backendClasses.length > 0) {
-            setClassesData(backendClasses);
-          }
-          setAllStudents([]);
-        }
-
-        // Fetch teachers
-        try {
-          const teachersResponse = await fetch(`${API_BASE_URL}/users`);
-          if (teachersResponse.ok) {
-            const data = await teachersResponse.json();
-            const allUsers = data.data?.users || data.users || [];
-            console.log('All Users fetched:', allUsers.length);
-            const teachersList = Array.isArray(allUsers) 
-              ? allUsers.filter(user => ['teacher', 'subject_teacher', 'adviser'].includes(user.role))
-              : [];
-            console.log('Teachers filtered:', teachersList.length);
-            setTeachers(teachersList);
-          } else {
-            console.log('Teachers response not ok');
-            setTeachers([]);
-          }
-        } catch (teacherError) {
-          console.error('Error fetching teachers:', teacherError);
-          setTeachers([]);
-        }
-      } catch (error) {
-        console.error('Error fetching data:', error);
-      }
-
-      setLoading(false);
-    };
-
     fetchAndOrganizeClasses();
   }, []);
+
+
+  const loadPrevClasses = async () => {
+    try {
+      setFetchLoading(true);
+      const res = await fetch(`${API_BASE_URL}/classes/previous-year`);
+      if (!res.ok) throw new Error('Failed to load previous classes');
+      const data = await res.json();
+      const list = data?.data || [];
+      setPrevClasses(list);
+      setSelectedPrevIds(new Set());
+    } catch (error) {
+      console.error('Error loading previous year classes:', error);
+      toast.error('Failed to load previous year classes');
+    } finally {
+      setFetchLoading(false);
+    }
+  };
 
 
 
@@ -187,6 +213,93 @@ export default function AdminClasses() {
     ? classesData 
 
     : classesData.filter(cls => cls.grade === gradeFilter);
+
+
+  const togglePrevSelection = (id) => {
+
+    setSelectedPrevIds((prev) => {
+
+      const next = new Set(prev);
+
+      if (next.has(id)) next.delete(id);
+
+      else next.add(id);
+
+      return next;
+
+    });
+
+  };
+
+
+
+  const toggleSelectAllPrev = () => {
+
+    if (selectedPrevIds.size === prevClasses.length) {
+
+      setSelectedPrevIds(new Set());
+
+    } else {
+
+      setSelectedPrevIds(new Set(prevClasses.map((c) => c.id)));
+
+    }
+
+  };
+
+
+
+  const handleFetchFromPrevious = async () => {
+
+    try {
+
+      setFetchLoading(true);
+
+      const ids = Array.from(selectedPrevIds);
+
+      const res = await fetch(`${API_BASE_URL}/classes/fetch-from-previous`, {
+
+        method: 'POST',
+
+        headers: { 'Content-Type': 'application/json' },
+
+        body: JSON.stringify({ ids })
+
+      });
+
+      if (!res.ok) {
+
+        const err = await res.json().catch(() => ({}));
+
+        throw new Error(err.message || 'Failed to fetch classes');
+
+      }
+
+      const payload = await res.json();
+
+      toast.success(`Fetched classes: inserted ${payload?.data?.inserted || 0}, skipped ${payload?.data?.skipped || 0}`);
+
+      setShowFetchModal(false);
+
+      setSelectedPrevIds(new Set());
+      setLoading(true);
+      await fetchAndOrganizeClasses();
+
+    } catch (error) {
+
+      console.error('Error fetching classes from previous year:', error);
+
+      toast.error(error.message || 'Failed to fetch classes');
+
+    } finally {
+
+      setFetchLoading(false);
+
+      setLoading(false);
+
+    }
+
+  };
 
 
 
@@ -272,7 +385,21 @@ export default function AdminClasses() {
 
           {/* Grade Filter */}
 
-          <div>
+          <div className="flex items-center gap-3">
+
+            <button
+
+              onClick={() => { setShowFetchModal(true); loadPrevClasses(); }}
+
+              className="flex items-center gap-2 bg-red-800 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-700 transition"
+
+            >
+
+              <ArrowPathIcon className="w-5 h-5" />
+
+              Fetch from Previous Year
+
+            </button>
 
             <label className="text-sm font-medium text-gray-700 mr-2">Filter by Grade:</label>
 
@@ -497,6 +624,84 @@ export default function AdminClasses() {
         )}
 
       </div>
+
+      {/* Fetch from Previous Year Modal */}
+      {showFetchModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-3xl mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-800">Fetch Classes from Previous School Year</h3>
+              <button
+                onClick={() => setShowFetchModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm text-gray-600">Select classes to copy into the current school year. Grade/Section duplicates are skipped. Subject-teacher assignments are copied with each class.</p>
+              <button
+                onClick={toggleSelectAllPrev}
+                className="text-sm px-3 py-1.5 rounded bg-red-800 text-white hover:bg-red-700"
+              >
+                {selectedPrevIds.size === prevClasses.length ? 'Deselect All' : 'Select All'}
+              </button>
+            </div>
+
+            <div className="border rounded-lg max-h-[420px] overflow-y-auto">
+              {fetchLoading ? (
+                <div className="flex items-center justify-center py-10 text-gray-500">Loading previous year classes...</div>
+              ) : prevClasses.length === 0 ? (
+                <div className="flex items-center justify-center py-10 text-gray-500">No classes found in previous year.</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="p-3 text-left">Select</th>
+                      <th className="p-3 text-left">Grade & Section</th>
+                      <th className="p-3 text-left">Adviser</th>
+                      <th className="p-3 text-left">Subject Teachers</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {prevClasses.map((cls) => (
+                      <tr key={cls.id} className="border-b">
+                        <td className="p-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedPrevIds.has(cls.id)}
+                            onChange={() => togglePrevSelection(cls.id)}
+                          />
+                        </td>
+                        <td className="p-3 font-medium text-gray-800">{cls.grade} – {cls.section}</td>
+                        <td className="p-3 text-gray-600">{cls.adviser_name || '—'}</td>
+                        <td className="p-3 text-gray-600">{cls.subject_teachers?.length || 0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                onClick={() => setShowFetchModal(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFetchFromPrevious}
+                disabled={fetchLoading || selectedPrevIds.size === 0}
+                className="px-4 py-2 bg-red-800 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+              >
+                {fetchLoading ? 'Fetching...' : `Fetch ${selectedPrevIds.size || ''}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
 
