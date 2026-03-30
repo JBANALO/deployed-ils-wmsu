@@ -49,8 +49,12 @@ export default function AdminClasses() {
         fetchedSections = sectionsJson?.data || sectionsJson?.sections || [];
         setSections(fetchedSections);
         console.log('Sections fetched for classes:', fetchedSections.length);
+        if (!Array.isArray(fetchedSections) || fetchedSections.length === 0) {
+          toast.warning('No sections returned from server');
+        }
       } catch (err) {
         console.log('Could not fetch sections:', err.message);
+        toast.error('Failed to load sections for classes');
       }
 
       const normalize = (value) => (value || '').toString().trim().toLowerCase();
@@ -92,6 +96,9 @@ export default function AdminClasses() {
         const students = result.data ? result.data : (Array.isArray(result) ? result : []);
         setAllStudents(students);
         console.log('Students fetched:', students.length);
+        if (!Array.isArray(students) || students.length === 0) {
+          toast.info('No students returned from server');
+        }
         
         // Organize students by grade/section
         const studentClasses = organizeByGradeAndSection(students);
