@@ -118,6 +118,10 @@ router.post('/', async (req, res) => {
     let targetSy;
     try {
       targetSy = targetSyId ? await getSchoolYearById(targetSyId) : await resolveTargetSchoolYear(req.body.schoolYearId);
+      const activeSy = await getActiveSchoolYear();
+      if (!activeSy || targetSy.id !== activeSy.id) {
+        return res.status(403).json({ success: false, message: 'Attendance can only be recorded in the active school year (view-only for past years).' });
+      }
     } catch (syErr) {
       return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
     }
