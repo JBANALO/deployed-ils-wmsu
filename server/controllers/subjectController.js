@@ -174,6 +174,11 @@ const updateSubject = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Subject not found' });
     }
 
+    const activeSy = await getActiveSchoolYear();
+    if (existing[0].school_year_id !== activeSy.id) {
+      return res.status(403).json({ success: false, message: 'Editing past school years is not allowed (view only).' });
+    }
+
     // Check if name already exists for another subject with same grade levels
     const duplicate = await formatDuplicateCheck({ name, grade_levels, school_year_id: existing[0].school_year_id, excludeId: id });
     if (duplicate.length > 0) {
@@ -202,6 +207,12 @@ const archiveSubject = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Subject not found' });
     }
 
+    const activeSy = await getActiveSchoolYear();
+    const subjSy = await query('SELECT school_year_id FROM subjects WHERE id = ?', [id]);
+    if (subjSy[0]?.school_year_id !== activeSy.id) {
+      return res.status(403).json({ success: false, message: 'Cannot archive subjects from previous school years (view only).' });
+    }
+
     await query('UPDATE subjects SET is_archived = TRUE WHERE id = ?', [id]);
 
     res.json({ success: true, message: `Subject "${existing[0].name}" archived successfully` });
@@ -221,6 +232,12 @@ const restoreSubject = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Subject not found' });
     }
 
+    const activeSy = await getActiveSchoolYear();
+    const subjSy = await query('SELECT school_year_id FROM subjects WHERE id = ?', [id]);
+    if (subjSy[0]?.school_year_id !== activeSy.id) {
+      return res.status(403).json({ success: false, message: 'Cannot restore subjects from previous school years (view only).' });
+    }
+
     await query('UPDATE subjects SET is_archived = FALSE WHERE id = ?', [id]);
 
     res.json({ success: true, message: `Subject "${existing[0].name}" restored successfully` });
@@ -234,6 +251,12 @@ const restoreSubject = async (req, res) => {
 const deleteSubject = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const activeSy = await getActiveSchoolYear();
+    const subjSy = await query('SELECT school_year_id FROM subjects WHERE id = ?', [id]);
+    if (subjSy[0]?.school_year_id !== activeSy.id) {
+      return res.status(403).json({ success: false, message: 'Cannot delete subjects from previous school years (view only).' });
+    }
 
     // Check if subject is in use
     const inUse = await query('SELECT COUNT(*) as count FROM subject_teachers WHERE subject = (SELECT name FROM subjects WHERE id = ?)', [id]);

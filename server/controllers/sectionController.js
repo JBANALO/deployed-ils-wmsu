@@ -168,6 +168,12 @@ const updateSection = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Section not found' });
     }
 
+    // Only allow edits in the active school year
+    const activeSy = await getActiveSchoolYear();
+    if (existing[0].school_year_id !== activeSy.id) {
+      return res.status(403).json({ success: false, message: 'Editing past school years is not allowed (view only).' });
+    }
+
     // Check if name already exists for another section
     const duplicate = await query('SELECT id FROM sections WHERE name = ? AND id != ? AND school_year_id = ?', [name.trim(), id, existing[0].school_year_id]);
     if (duplicate.length > 0) {
@@ -196,6 +202,12 @@ const archiveSection = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Section not found' });
     }
 
+    const activeSy = await getActiveSchoolYear();
+    const sectionSy = await query('SELECT school_year_id FROM sections WHERE id = ?', [id]);
+    if (sectionSy[0]?.school_year_id !== activeSy.id) {
+      return res.status(403).json({ success: false, message: 'Cannot archive sections from previous school years (view only).' });
+    }
+
     await query('UPDATE sections SET is_archived = TRUE WHERE id = ?', [id]);
 
     res.json({ success: true, message: `Section "${existing[0].name}" archived successfully` });
@@ -215,6 +227,12 @@ const restoreSection = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Section not found' });
     }
 
+    const activeSy = await getActiveSchoolYear();
+    const sectionSy = await query('SELECT school_year_id FROM sections WHERE id = ?', [id]);
+    if (sectionSy[0]?.school_year_id !== activeSy.id) {
+      return res.status(403).json({ success: false, message: 'Cannot restore sections from previous school years (view only).' });
+    }
+
     await query('UPDATE sections SET is_archived = FALSE WHERE id = ?', [id]);
 
     res.json({ success: true, message: `Section "${existing[0].name}" restored successfully` });
@@ -228,6 +246,12 @@ const restoreSection = async (req, res) => {
 const deleteSection = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const activeSy = await getActiveSchoolYear();
+    const sectionSy = await query('SELECT school_year_id FROM sections WHERE id = ?', [id]);
+    if (sectionSy[0]?.school_year_id !== activeSy.id) {
+      return res.status(403).json({ success: false, message: 'Cannot delete sections from previous school years (view only).' });
+    }
 
     // Check if section is in use in any class
     const inUse = await query('SELECT COUNT(*) as count FROM classes WHERE section = (SELECT name FROM sections WHERE id = ?)', [id]);
