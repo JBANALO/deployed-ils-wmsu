@@ -1,8 +1,43 @@
 // server/controllers/classControllerWithRoleFilter.js
-// MySQL-based class controller with role-based filtering
+// MySQL-based class controller with role-based filtering and school-year scoping
 // Returns ONLY the classes a teacher is assigned to (as adviser or subject teacher)
 
 const { pool } = require('../config/database');
+const { v4: uuidv4 } = require('uuid');
+
+const getActiveSchoolYear = async () => {
+  const [rows] = await pool.query(
+    'SELECT id, label, start_date FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1'
+  );
+  if (!rows.length) throw new Error('No active school year found');
+  return rows[0];
+};
+
+const getSchoolYearById = async (schoolYearId) => {
+  if (!schoolYearId) return null;
+  const [rows] = await pool.query(
+    'SELECT id, label, start_date FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1',
+    [schoolYearId]
+  );
+  return rows[0] || null;
+};
+
+const resolveSchoolYear = async (req) => {
+  const requestedId = req?.query?.schoolYearId || req?.body?.schoolYearId;
+  if (requestedId) {
+    const sy = await getSchoolYearById(requestedId);
+    if (sy) return sy;
+  }
+  return getActiveSchoolYear();
+};
+
+const getPreviousSchoolYear = async (activeStartDate) => {
+  const [rows] = await pool.query(
+    'SELECT id, label, start_date FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
+    [activeStartDate]
+  );
+  return rows[0] || null;
+};
 
 /**
  * Get classes visible to a specific teacher based on their role
@@ -25,6 +60,7 @@ const getTeacherVisibleClasses = async (req, res) => {
 
     // Try to get from database first
     try {
+      const targetSy = await resolveSchoolYear(req);
       // Get the user to check their role
       const [userRows] = await pool.query(
         `SELECT id, firstName, lastName, role, gradeLevel, section FROM users WHERE id = ?`,
@@ -47,8 +83,8 @@ const getTeacherVisibleClasses = async (req, res) => {
       // If adviser: get the class they advise
       if (user.role === 'adviser' || user.role === 'teacher') {
         const [adviserClasses] = await pool.query(
-          `SELECT c.* FROM classes c WHERE c.adviser_id = ?`,
-          [userId]
+          `SELECT c.* FROM classes c WHERE c.adviser_id = ? AND c.school_year_id = ?`,
+          [userId, targetSy.id]
         );
 
         visibleClasses = adviserClasses.map(cls => ({
@@ -66,9 +102,9 @@ const getTeacherVisibleClasses = async (req, res) => {
                   GROUP_CONCAT(DISTINCT st.subject) as subjects_teaching
            FROM classes c
            JOIN subject_teachers st ON c.id = st.class_id
-           WHERE st.teacher_id = ?
+           WHERE st.teacher_id = ? AND st.school_year_id = ?
            GROUP BY c.id`,
-          [userId]
+          [userId, targetSy.id]
         );
 
         const subjectTeacherClasses = teacherClasses.map(cls => ({
@@ -86,8 +122,8 @@ const getTeacherVisibleClasses = async (req, res) => {
       for (let i = 0; i < visibleClasses.length; i++) {
         try {
           const [stRows] = await pool.query(
-            `SELECT teacher_id, teacher_name, subject, day, start_time, end_time FROM subject_teachers WHERE class_id = ?`,
-            [visibleClasses[i].id]
+            `SELECT teacher_id, teacher_name, subject, day, start_time, end_time FROM subject_teachers WHERE class_id = ? AND school_year_id = ?`,
+            [visibleClasses[i].id, targetSy.id]
           );
           visibleClasses[i].subject_teachers = stRows;
         } catch (e) {
@@ -134,9 +170,11 @@ const getAllClasses = async (req, res) => {
     console.log('getAllClasses - attempting database connection');
 
     try {
+      const targetSy = await resolveSchoolYear(req);
       // Try database first - query classes table with subject_teachers
       const [rows] = await pool.query(
-        `SELECT c.* FROM classes c ORDER BY c.grade, c.section`
+        `SELECT c.* FROM classes c WHERE c.school_year_id = ? ORDER BY c.grade, c.section`,
+        [targetSy.id]
       );
 
       console.log(`Database: Found ${rows.length} classes`);
@@ -147,7 +185,8 @@ const getAllClasses = async (req, res) => {
         let subjectTeachersMap = {};
         try {
           const [stRows] = await pool.query(
-            `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time FROM subject_teachers`
+            `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time FROM subject_teachers WHERE school_year_id = ?`,
+            [targetSy.id]
           );
           stRows.forEach(st => {
             if (!subjectTeachersMap[st.class_id]) {
@@ -177,15 +216,18 @@ const getAllClasses = async (req, res) => {
       
       // Fallback: generate classes from students table
       try {
+        const targetSy = await resolveSchoolYear(req);
         const [studentRows] = await pool.query(
-          `SELECT grade_level, section, COUNT(*) as student_count FROM students GROUP BY grade_level, section ORDER BY grade_level, section`
+          `SELECT grade_level, section, COUNT(*) as student_count FROM students WHERE school_year_id = ? GROUP BY grade_level, section ORDER BY grade_level, section`,
+          [targetSy.id]
         );
 
         // Fetch advisers from teachers table (has grade_level + section columns)
         let adviserRows = [];
         try {
           const [ar] = await pool.query(
-            `SELECT id, first_name, last_name, grade_level, section FROM teachers WHERE role IN ('adviser', 'Adviser') AND grade_level IS NOT NULL AND section IS NOT NULL`
+            `SELECT id, first_name, last_name, grade_level, section FROM teachers WHERE role IN ('adviser', 'Adviser') AND grade_level IS NOT NULL AND section IS NOT NULL AND school_year_id = ?`,
+            [targetSy.id]
           );
           adviserRows = ar;
         } catch (e) {
@@ -195,7 +237,7 @@ const getAllClasses = async (req, res) => {
         // Also fetch from class_assignments (stores UUID-based assignments from file system advisers)
         let caRows = [];
         try {
-          const [ca] = await pool.query(`SELECT grade_level, section, adviser_id, adviser_name FROM class_assignments`);
+          const [ca] = await pool.query(`SELECT grade_level, section, adviser_id, adviser_name FROM class_assignments WHERE school_year_id = ?`, [targetSy.id]);
           caRows = ca;
         } catch (e) { /* table may not exist yet */ }
         
@@ -275,6 +317,7 @@ const getAdviserClasses = async (req, res) => {
       if (teachers.length > 0) {
         const teacher = teachers[0];
         console.log(`Found teacher: ${teacher.first_name} ${teacher.last_name}, grade_level: ${teacher.grade_level}, section: ${teacher.section}`);
+          const targetSy = await resolveSchoolYear(req);
 
         if (teacher.grade_level && teacher.section) {
           const [classRows] = await pool.query(
@@ -304,9 +347,9 @@ const getAdviserClasses = async (req, res) => {
           `SELECT id, first_name, last_name FROM teachers WHERE id = ?`,
           [adviserId]
         );
-        if (teacherRows.length > 0) {
-          const t = teacherRows[0];
-          const fullName = `${t.first_name || ''} ${t.last_name || ''}`.trim();
+            await pool.query(
+              `UPDATE classes SET adviser_id = ? WHERE id = ? AND school_year_id = ?`,
+              [adviser_id, classId, targetSy.id]
           const [nameMatchRows] = await pool.query(
             `SELECT c.* FROM classes c WHERE c.adviser_name LIKE ? OR c.adviser_name LIKE ?`,
             [`%${t.first_name}%${t.last_name}%`, `%${t.last_name}%${t.first_name}%`]
@@ -659,6 +702,91 @@ const unassignSubjectTeacher = async (req, res) => {
   }
 };
 
+// List classes from the previous (non-archived) school year
+const getPreviousYearClasses = async (req, res) => {
+  try {
+    const targetSy = await resolveSchoolYear(req);
+    const prevSy = await getPreviousSchoolYear(targetSy.start_date);
+    if (!prevSy) {
+      return res.json({ success: true, data: [], meta: { sourceSchoolYearId: null, targetSchoolYearId: targetSy.id } });
+    }
+
+    const [prevClasses] = await pool.query(
+      'SELECT id, grade, section, adviser_id FROM classes WHERE school_year_id = ? ORDER BY grade, section',
+      [prevSy.id]
+    );
+
+    res.json({
+      success: true,
+      data: prevClasses,
+      meta: { sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id }
+    });
+  } catch (error) {
+    console.error('Error fetching previous year classes:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch previous year classes' });
+  }
+};
+
+// Copy selected classes from previous school year into the active year
+const fetchClassesFromPreviousYear = async (req, res) => {
+  try {
+    const targetSy = await resolveSchoolYear(req);
+    const activeSy = await getActiveSchoolYear();
+    if (!targetSy || targetSy.id !== activeSy.id) {
+      return res.status(400).json({ success: false, message: 'Edits are only allowed in the active school year' });
+    }
+
+    const prevSy = await getPreviousSchoolYear(targetSy.start_date);
+    if (!prevSy) {
+      return res.status(400).json({ success: false, message: 'No previous school year found to fetch from' });
+    }
+
+    const { ids } = req.body || {};
+    const idList = Array.isArray(ids) && ids.length > 0 ? ids : null;
+
+    const [prevClasses] = await pool.query(
+      `SELECT * FROM classes WHERE school_year_id = ? ${idList ? 'AND id IN (?)' : ''}`,
+      idList ? [prevSy.id, idList] : [prevSy.id]
+    );
+
+    if (!prevClasses.length) {
+      return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0 } });
+    }
+
+    let inserted = 0;
+    let skipped = 0;
+
+    for (const cls of prevClasses) {
+      // Skip if a class with the same grade + section already exists in the target SY
+      const [dup] = await pool.query(
+        'SELECT id FROM classes WHERE grade = ? AND section = ? AND school_year_id = ? LIMIT 1',
+        [cls.grade, cls.section, targetSy.id]
+      );
+      if (dup.length) {
+        skipped += 1;
+        continue;
+      }
+
+      const newId = uuidv4();
+      await pool.query(
+        'INSERT INTO classes (id, grade, section, adviser_id, school_year_id, createdAt) VALUES (?, ?, ?, ?, ?, NOW())',
+        [newId, cls.grade, cls.section, null, targetSy.id]
+      );
+
+      inserted += 1;
+    }
+
+    res.json({
+      success: true,
+      message: 'Classes fetched from previous year',
+      data: { inserted, skipped, sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id }
+    });
+  } catch (error) {
+    console.error('Error fetching classes from previous year:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to fetch classes from previous year' });
+  }
+};
+
 module.exports = {
   getTeacherVisibleClasses,
   getAllClasses,
@@ -667,5 +795,7 @@ module.exports = {
   assignAdviserToClass,
   unassignAdviserFromClass,
   assignSubjectTeacher,
-  unassignSubjectTeacher
+  unassignSubjectTeacher,
+  getPreviousYearClasses,
+  fetchClassesFromPreviousYear
 };

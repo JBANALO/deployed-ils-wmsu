@@ -17,6 +17,10 @@ router.get('/adviser/:adviserId', classControllerWithRoleFilter.getAdviserClasse
 // Get classes for a specific subject teacher
 router.get('/subject-teacher/:userId', classControllerWithRoleFilter.getSubjectTeacherClasses);
 
+// Previous-year helpers (admin only)
+router.get('/previous-year', classControllerWithRoleFilter.getPreviousYearClasses);
+router.post('/fetch-from-previous', classControllerWithRoleFilter.fetchClassesFromPreviousYear);
+
 // Assign adviser to a class
 router.put('/:classId/assign', classControllerWithRoleFilter.assignAdviserToClass);
 
