@@ -198,6 +198,92 @@ exports.getAllClasses = async (req, res) => {
   }
 };
 
+// List classes from the previous (non-archived) school year
+exports.getPreviousYearClasses = async (req, res) => {
+  try {
+    await ensureClassSchoolYearColumn();
+    const targetSy = await resolveSchoolYear(req);
+    const prevSy = await getPreviousSchoolYear(targetSy.start_date);
+    if (!prevSy) {
+      return res.json({ success: true, data: [], meta: { sourceSchoolYearId: null, targetSchoolYearId: targetSy.id } });
+    }
+
+    const prevClasses = await query(
+      'SELECT id, grade, section, adviser_id FROM classes WHERE school_year_id = ? ORDER BY grade, section',
+      [prevSy.id]
+    );
+
+    res.json({
+      success: true,
+      data: prevClasses,
+      meta: { sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id }
+    });
+  } catch (error) {
+    console.error('Error fetching previous year classes:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch previous year classes' });
+  }
+};
+
+// Copy selected classes from previous school year into the active year
+exports.fetchClassesFromPreviousYear = async (req, res) => {
+  try {
+    await ensureClassSchoolYearColumn();
+    await ensureSubjectTeacherSchoolYearColumn();
+
+    const targetSy = await resolveSchoolYear(req);
+    await assertActiveTargetSchoolYear(targetSy);
+    const prevSy = await getPreviousSchoolYear(targetSy.start_date);
+    if (!prevSy) {
+      return res.status(400).json({ success: false, message: 'No previous school year found to fetch from' });
+    }
+
+    const { ids } = req.body || {};
+    const idList = Array.isArray(ids) && ids.length > 0 ? ids : null;
+
+    const prevClasses = await query(
+      `SELECT * FROM classes WHERE school_year_id = ? ${idList ? 'AND id IN (?)' : ''}`,
+      idList ? [prevSy.id, idList] : [prevSy.id]
+    );
+
+    if (!prevClasses.length) {
+      return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0 } });
+    }
+
+    let inserted = 0;
+    let skipped = 0;
+
+    for (const cls of prevClasses) {
+      // Skip if a class with the same grade + section already exists in the target SY
+      const dup = await query(
+        'SELECT id FROM classes WHERE grade = ? AND section = ? AND school_year_id = ? LIMIT 1',
+        [cls.grade, cls.section, targetSy.id]
+      );
+      if (dup.length) {
+        skipped += 1;
+        continue;
+      }
+
+      const newId = uuidv4();
+      await query(
+        'INSERT INTO classes (id, grade, section, adviser_id, school_year_id, createdAt) VALUES (?, ?, ?, ?, ?, NOW())',
+        [newId, cls.grade, cls.section, null, targetSy.id]
+      );
+
+      inserted += 1;
+    }
+
+    res.json({
+      success: true,
+      message: 'Classes fetched from previous year',
+      data: { inserted, skipped, sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id }
+    });
+  } catch (error) {
+    console.error('Error fetching classes from previous year:', error);
+    const status = error.statusCode || 500;
+    res.status(status).json({ success: false, message: error.message || 'Failed to fetch classes from previous year' });
+  }
+};
+
 exports.getSubjectTeacherClasses = async (req, res) => {
   try {
     await ensureClassSchoolYearColumn();
