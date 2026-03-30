@@ -50,6 +50,7 @@ export default function AdminSchoolYear() {
   const [classes, setClasses] = useState([]);
   const [selectedPromotionSchoolYearId, setSelectedPromotionSchoolYearId] = useState('');
   const [promotionAssignments, setPromotionAssignments] = useState({});
+  const [viewingSchoolYear, setViewingSchoolYear] = useState(null);
   const [historyGradeFilter, setHistoryGradeFilter] = useState('All Grades');
   const [historySectionFilter, setHistorySectionFilter] = useState('All Sections');
   const [loading, setLoading] = useState(true);
@@ -102,13 +103,21 @@ export default function AdminSchoolYear() {
 
       if (syRes.status === 'fulfilled') {
         const list = syRes.value.data?.data || [];
-        setSchoolYears(list.map((sy) => ({ ...sy, label: formatSchoolYearLabel(sy.label) })));
+        // Sort newest to oldest by start_date
+        const sorted = [...list].sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+        setSchoolYears(sorted.map((sy) => ({ ...sy, label: formatSchoolYearLabel(sy.label) })));
       }
 
       if (activeRes.status === 'fulfilled') {
         const activeRaw = activeRes.value.data?.data || null;
         const formattedActive = activeRaw ? { ...activeRaw, label: formatSchoolYearLabel(activeRaw.label) } : null;
         setActiveSchoolYear(formattedActive);
+        // Default viewing year to the active year unless user was already viewing another
+        setViewingSchoolYear((prev) => {
+          if (!formattedActive) return prev;
+          if (prev && prev.id === formattedActive.id) return prev;
+          return formattedActive;
+        });
       }
       if (gradeRes.status === 'fulfilled') setStudentsByGrade(gradeRes.value.data?.data || []);
       if (previewRes.status === 'fulfilled') setPromotionPreview(previewRes.value.data?.data || []);
@@ -470,55 +479,90 @@ export default function AdminSchoolYear() {
             {schoolYears.length === 0 ? (
               <p className="text-gray-500 text-center py-4">No school years found</p>
             ) : (
-              schoolYears.map((sy) => (
-                <div
-                  key={sy.id}
-                  className={`flex items-center justify-between p-4 rounded-lg border ${
-                    sy.is_active ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-gray-50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    {sy.is_active && (
-                      <CheckCircleIcon className="w-5 h-5 text-green-600" />
-                    )}
-                    <div>
-                      <p className="font-semibold text-gray-800">{sy.label}</p>
-                      <p className="text-sm text-gray-500">
-                        {new Date(sy.start_date).toLocaleDateString()} - {new Date(sy.end_date).toLocaleDateString()}
-                      </p>
+              schoolYears.map((sy, idx) => {
+                const isActive = sy.is_active === 1;
+                const isViewing = viewingSchoolYear && viewingSchoolYear.id === sy.id;
+                const newestStart = schoolYears[0]?.start_date;
+                const isNewest = newestStart && new Date(sy.start_date).getTime() === new Date(newestStart).getTime();
+                const canActivate = !isActive && isNewest; // Only newest (latest) non-active year can be activated
+
+                return (
+                  <button
+                    key={sy.id}
+                    onClick={() => setViewingSchoolYear(sy)}
+                    className={`w-full text-left flex items-center justify-between p-4 rounded-lg border transition ${
+                      isActive ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-gray-50'
+                    } ${isViewing ? 'ring-2 ring-orange-200' : ''}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`w-3 h-3 rounded-full inline-block ${
+                          isActive ? 'bg-green-500' : 'bg-gray-400'
+                        }`}
+                        aria-hidden
+                      />
+                      <div>
+                        <p className="font-semibold text-gray-800 flex items-center gap-2">
+                          {sy.label}
+                          {isActive && (
+                            <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-700 border border-green-200">Active</span>
+                          )}
+                          {isViewing && (
+                            <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 border border-blue-200">Viewing</span>
+                          )}
+                          {!isActive && (
+                            <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600 border border-gray-200">Locked</span>
+                          )}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {new Date(sy.start_date).toLocaleDateString()} - {new Date(sy.end_date).toLocaleDateString()}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {!sy.is_active && (
+                    <div className="flex items-center gap-2">
+                      {canActivate && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSetActive(sy.id);
+                          }}
+                          className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition"
+                          title="Set as Active (locks previous year)"
+                        >
+                          <CheckCircleIcon className="w-5 h-5" />
+                        </button>
+                      )}
                       <button
-                        onClick={() => handleSetActive(sy.id)}
-                        className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition"
-                        title="Set as Active"
-                      >
-                        <CheckCircleIcon className="w-5 h-5" />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => openEditModal(sy)}
-                      disabled={activeSchoolYear && sy.id !== activeSchoolYear.id}
-                      className={`p-2 rounded-lg transition ${activeSchoolYear && sy.id !== activeSchoolYear.id ? 'text-gray-400 cursor-not-allowed' : 'text-blue-600 hover:bg-blue-100'}`}
-                      title={activeSchoolYear && sy.id !== activeSchoolYear.id ? 'View only — activate to edit' : 'Edit'}
-                    >
-                      <PencilSquareIcon className="w-5 h-5" />
-                    </button>
-                    {!sy.is_active && (
-                      <button
-                        onClick={() => openArchiveModal(sy)}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditModal(sy);
+                        }}
                         disabled={activeSchoolYear && sy.id !== activeSchoolYear.id}
-                        className={`p-2 rounded-lg transition ${activeSchoolYear && sy.id !== activeSchoolYear.id ? 'text-gray-400 cursor-not-allowed' : 'text-orange-600 hover:bg-orange-100'}`}
-                        title={activeSchoolYear && sy.id !== activeSchoolYear.id ? 'View only — activate to archive' : 'Archive'}
+                        className={`p-2 rounded-lg transition ${activeSchoolYear && sy.id !== activeSchoolYear.id ? 'text-gray-400 cursor-not-allowed' : 'text-blue-600 hover:bg-blue-100'}`}
+                        title={activeSchoolYear && sy.id !== activeSchoolYear.id ? 'View only — activate to edit' : 'Edit'}
                       >
-                        <ArchiveBoxIcon className="w-5 h-5" />
+                        <PencilSquareIcon className="w-5 h-5" />
                       </button>
-                    )}
-                  </div>
-                </div>
-              ))
+                      {!sy.is_active && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openArchiveModal(sy);
+                          }}
+                          disabled={activeSchoolYear && sy.id !== activeSchoolYear.id}
+                          className={`p-2 rounded-lg transition ${activeSchoolYear && sy.id !== activeSchoolYear.id ? 'text-gray-400 cursor-not-allowed' : 'text-orange-600 hover:bg-orange-100'}`}
+                          title={activeSchoolYear && sy.id !== activeSchoolYear.id ? 'View only — activate to archive' : 'Archive'}
+                        >
+                          <ArchiveBoxIcon className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
+                  </button>
+                );
+              })
             )}
 
             {/* Archived School Years */}
