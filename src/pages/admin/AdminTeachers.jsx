@@ -8,8 +8,10 @@ import {
   EyeIcon, 
   TrashIcon,
   ArrowUpTrayIcon,
+  ArrowPathIcon,
   UsersIcon,
-  KeyIcon 
+  KeyIcon,
+  XMarkIcon
 } from "@heroicons/react/24/solid";
 import { API_BASE_URL } from "../../api/config";
 import api from "../../api/axiosConfig";
@@ -27,6 +29,7 @@ export default function AdminTeachers() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [showFetchModal, setShowFetchModal] = useState(false);
   const [showArchives, setShowArchives] = useState(false);
   const [archivedTeachers, setArchivedTeachers] = useState([]);
   const [archivesLoading, setArchivesLoading] = useState(false);
@@ -51,6 +54,10 @@ export default function AdminTeachers() {
   const [credentialsLoading, setCredentialsLoading] = useState(false);
   const [selectedArchivedTeachers, setSelectedArchivedTeachers] = useState(new Set());
   const [selectAllArchived, setSelectAllArchived] = useState(false);
+  const [prevTeachers, setPrevTeachers] = useState([]);
+  const [selectedPrevTeacherIds, setSelectedPrevTeacherIds] = useState(new Set());
+  const [fetchPrevLoading, setFetchPrevLoading] = useState(false);
+  const [fetchPrevSubmitting, setFetchPrevSubmitting] = useState(false);
 
   // Subjects by grade level (Official DepEd K-12 Curriculum)
   const subjectsByGradeLevel = {
@@ -367,6 +374,61 @@ export default function AdminTeachers() {
     } finally {
       setLoading(false);
       setRefreshLoading(false);
+    }
+  };
+
+  // Fetch teachers from previous school year (listing only)
+  const loadPrevTeachers = async () => {
+    setFetchPrevLoading(true);
+    try {
+      const res = await api.get('/teachers/previous-year');
+      const list = res.data?.data || [];
+      setPrevTeachers(Array.isArray(list) ? list : []);
+      setSelectedPrevTeacherIds(new Set(list.map((t) => t.id)));
+    } catch (error) {
+      console.error('Error loading previous year teachers:', error);
+      setPrevTeachers([]);
+      toast.error(error.response?.data?.message || 'Failed to load previous year teachers');
+    } finally {
+      setFetchPrevLoading(false);
+    }
+  };
+
+  // Copy selected teachers from previous school year into active school year
+  const handleFetchTeachersFromPrevious = async () => {
+    if (selectedPrevTeacherIds.size === 0) return;
+    setFetchPrevSubmitting(true);
+    try {
+      const ids = Array.from(selectedPrevTeacherIds);
+      const res = await api.post('/teachers/fetch-from-previous', { ids });
+      const inserted = res.data?.data?.inserted ?? 0;
+      const skipped = res.data?.data?.skipped ?? 0;
+      toast.success(`Fetched ${inserted} teacher(s), skipped ${skipped}`);
+      await fetchTeachers(true);
+      setShowFetchModal(false);
+    } catch (error) {
+      console.error('Error fetching teachers from previous year:', error);
+      toast.error(error.response?.data?.message || 'Failed to fetch teachers from previous year');
+    } finally {
+      setFetchPrevSubmitting(false);
+    }
+  };
+
+  const togglePrevTeacherSelection = (id) => {
+    const next = new Set(selectedPrevTeacherIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    setSelectedPrevTeacherIds(next);
+  };
+
+  const toggleSelectAllPrevTeachers = () => {
+    if (selectedPrevTeacherIds.size === prevTeachers.length) {
+      setSelectedPrevTeacherIds(new Set());
+    } else {
+      setSelectedPrevTeacherIds(new Set(prevTeachers.map((t) => t.id)));
     }
   };
 
@@ -855,6 +917,16 @@ export default function AdminTeachers() {
         </div>
         <div className="flex flex-col sm:flex-row gap-2 md:gap-3">
           <button
+            onClick={() => {
+              setShowFetchModal(true);
+              loadPrevTeachers();
+            }}
+            className="bg-emerald-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-emerald-700 font-semibold flex items-center justify-center gap-2 text-xs md:text-base h-fit"
+          >
+            <ArrowPathIcon className="w-4 md:w-5 h-4 md:h-5" />
+            Fetch Prev Year
+          </button>
+          <button
             onClick={() => navigate('/admin/create-teacher')}
             className="bg-blue-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-blue-700 font-semibold flex items-center justify-center gap-2 text-xs md:text-base h-fit"
           >
@@ -1303,6 +1375,110 @@ export default function AdminTeachers() {
           </div>
         </div>
       </div>
+
+      {/* Fetch from Previous Year Modal */}
+      {showFetchModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 sm:p-6">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Fetch Teachers from Previous School Year</h3>
+                <p className="text-sm text-gray-600">Selected teachers are copied into the active school year. Existing email/username in the active year are skipped.</p>
+              </div>
+              <button
+                onClick={() => setShowFetchModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <XMarkIcon className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-3">
+              <div className="text-sm text-gray-700">
+                {fetchPrevLoading ? 'Loading previous year teachers...' : `${prevTeachers.length} teacher(s) available from previous year`}
+              </div>
+              <button
+                onClick={toggleSelectAllPrevTeachers}
+                className="text-sm px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                disabled={fetchPrevLoading || prevTeachers.length === 0}
+              >
+                {selectedPrevTeacherIds.size === prevTeachers.length ? 'Deselect All' : 'Select All'}
+              </button>
+            </div>
+
+            <div className="px-6 pb-4 flex-1 overflow-y-auto">
+              <div className="border rounded-lg overflow-hidden">
+                {fetchPrevLoading ? (
+                  <div className="py-10 text-center text-gray-500">Loading...</div>
+                ) : prevTeachers.length === 0 ? (
+                  <div className="py-10 text-center text-gray-500">No teachers found in previous school year.</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="p-3 text-left w-16">Select</th>
+                        <th className="p-3 text-left">Name</th>
+                        <th className="p-3 text-left">Email</th>
+                        <th className="p-3 text-left">Role</th>
+                        <th className="p-3 text-left">Class/Section</th>
+                        <th className="p-3 text-left">Subjects</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {prevTeachers.map((teacher) => {
+                        const fixed = fixGradeAndSection({
+                          ...teacher,
+                          grade_level: teacher.grade_level || teacher.gradeLevel,
+                          firstName: teacher.first_name,
+                          lastName: teacher.last_name,
+                        });
+                        return (
+                          <tr key={teacher.id} className="border-t hover:bg-gray-50">
+                            <td className="p-3">
+                              <input
+                                type="checkbox"
+                                checked={selectedPrevTeacherIds.has(teacher.id)}
+                                onChange={() => togglePrevTeacherSelection(teacher.id)}
+                                className="w-4 h-4 cursor-pointer"
+                              />
+                            </td>
+                            <td className="p-3 font-medium text-gray-900">
+                              {teacher.first_name || teacher.firstName} {teacher.last_name || teacher.lastName}
+                            </td>
+                            <td className="p-3 text-gray-700">{teacher.email}</td>
+                            <td className="p-3">
+                              <span className="text-xs font-semibold px-2 py-1 rounded bg-gray-100 text-gray-700 capitalize">{teacher.role?.replace('_', ' ') || 'teacher'}</span>
+                            </td>
+                            <td className="p-3 text-gray-700">{fixed.actualGradeLevel && fixed.actualSection ? `${fixed.actualGradeLevel} - ${fixed.actualSection}` : '-'}</td>
+                            <td className="p-3 text-gray-700">{fixed.actualSubjects?.length ? fixed.actualSubjects.join(', ') : '-'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t">
+              <button
+                onClick={() => setShowFetchModal(false)}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+                disabled={fetchPrevSubmitting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFetchTeachersFromPrevious}
+                disabled={fetchPrevSubmitting || fetchPrevLoading || selectedPrevTeacherIds.size === 0}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {fetchPrevSubmitting ? 'Fetching...' : `Fetch ${selectedPrevTeacherIds.size || ''}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* BULK IMPORT MODAL */}
       <TeacherBulkImportModal 

@@ -27,7 +27,8 @@ export default function AdminSections() {
   const [selectedSection, setSelectedSection] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
-    description: ''
+    description: '',
+    gradeLevel: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showFetchModal, setShowFetchModal] = useState(false);
@@ -79,7 +80,7 @@ export default function AdminSections() {
       await axios.post('/sections', formData);
       toast.success('Section created successfully!');
       setShowAddModal(false);
-      setFormData({ name: '', description: '' });
+      setFormData({ name: '', description: '', gradeLevel: '' });
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to create section');
@@ -96,7 +97,7 @@ export default function AdminSections() {
       toast.success('Section updated successfully!');
       setShowEditModal(false);
       setSelectedSection(null);
-      setFormData({ name: '', description: '' });
+      setFormData({ name: '', description: '', gradeLevel: '' });
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update section');
@@ -149,7 +150,8 @@ export default function AdminSections() {
     setSelectedSection(section);
     setFormData({
       name: section.name,
-      description: section.description || ''
+      description: section.description || '',
+      gradeLevel: section.grade_level || section.grade || ''
     });
     setShowEditModal(true);
   };
@@ -298,6 +300,9 @@ export default function AdminSections() {
                   </div>
                   <div>
                     <h4 className="font-semibold text-gray-800">{section.name}</h4>
+                    {section.grade_level && (
+                      <p className="text-xs text-emerald-700 font-semibold">{section.grade_level}</p>
+                    )}
                     {section.description && (
                       <p className="text-sm text-gray-500 mt-1">{section.description}</p>
                     )}
@@ -347,6 +352,9 @@ export default function AdminSections() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="font-medium text-gray-600">{section.name}</h4>
+                    {section.grade_level && (
+                      <p className="text-xs text-emerald-700 font-semibold">{section.grade_level}</p>
+                    )}
                     {section.description && (
                       <p className="text-sm text-gray-400">{section.description}</p>
                     )}
@@ -479,6 +487,26 @@ export default function AdminSections() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Grade Level *
+                </label>
+                <select
+                  value={formData.gradeLevel}
+                  onChange={(e) => setFormData({ ...formData, gradeLevel: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  required
+                >
+                  <option value="" disabled>Select grade level</option>
+                  <option value="Kindergarten">Kindergarten</option>
+                  <option value="Grade 1">Grade 1</option>
+                  <option value="Grade 2">Grade 2</option>
+                  <option value="Grade 3">Grade 3</option>
+                  <option value="Grade 4">Grade 4</option>
+                  <option value="Grade 5">Grade 5</option>
+                  <option value="Grade 6">Grade 6</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Description
                 </label>
                 <input
@@ -535,6 +563,26 @@ export default function AdminSections() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                   required
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Grade Level *
+                </label>
+                <select
+                  value={formData.gradeLevel}
+                  onChange={(e) => setFormData({ ...formData, gradeLevel: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  required
+                >
+                  <option value="" disabled>Select grade level</option>
+                  <option value="Kindergarten">Kindergarten</option>
+                  <option value="Grade 1">Grade 1</option>
+                  <option value="Grade 2">Grade 2</option>
+                  <option value="Grade 3">Grade 3</option>
+                  <option value="Grade 4">Grade 4</option>
+                  <option value="Grade 5">Grade 5</option>
+                  <option value="Grade 6">Grade 6</option>
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

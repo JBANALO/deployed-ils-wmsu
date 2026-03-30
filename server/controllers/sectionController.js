@@ -1,17 +1,24 @@
 // Section Controller - CRUD operations for sections
 const { query } = require('../config/database');
 
-let sectionSyEnsured = false;
+let sectionColumnsEnsured = false;
 
-const ensureSectionSchoolYearColumn = async () => {
-  if (sectionSyEnsured) return;
+const ensureSectionColumns = async () => {
+  if (sectionColumnsEnsured) return;
   const columns = await query('SHOW COLUMNS FROM sections');
   const hasSy = columns.some((c) => c.Field === 'school_year_id');
+  const hasGradeLevel = columns.some((c) => c.Field === 'grade_level');
+
   if (!hasSy) {
     await query('ALTER TABLE sections ADD COLUMN school_year_id INT NULL');
     await query('CREATE INDEX idx_sections_school_year ON sections (school_year_id)');
   }
-  sectionSyEnsured = true;
+
+  if (!hasGradeLevel) {
+    await query('ALTER TABLE sections ADD COLUMN grade_level VARCHAR(50) NULL AFTER description');
+  }
+
+  sectionColumnsEnsured = true;
 };
 
 const getActiveSchoolYear = async () => {
@@ -31,7 +38,7 @@ const getPreviousSchoolYear = async (activeStartDate) => {
 // Get all sections (excluding archived)
 const getAllSections = async (req, res) => {
   try {
-    await ensureSectionSchoolYearColumn();
+    await ensureSectionColumns();
     const activeSy = await getActiveSchoolYear();
     const sections = await query(
       'SELECT * FROM sections WHERE is_archived = FALSE AND school_year_id = ? ORDER BY name',
@@ -47,7 +54,7 @@ const getAllSections = async (req, res) => {
 // Get all sections including archived
 const getAllSectionsWithArchived = async (req, res) => {
   try {
-    await ensureSectionSchoolYearColumn();
+    await ensureSectionColumns();
     const activeSy = await getActiveSchoolYear();
     const sections = await query('SELECT * FROM sections WHERE school_year_id = ? ORDER BY is_archived, name', [activeSy.id]);
     res.json({ success: true, data: sections });
@@ -60,7 +67,7 @@ const getAllSectionsWithArchived = async (req, res) => {
 // Get archived sections only
 const getArchivedSections = async (req, res) => {
   try {
-    await ensureSectionSchoolYearColumn();
+    await ensureSectionColumns();
     const activeSy = await getActiveSchoolYear();
     const sections = await query(
       'SELECT * FROM sections WHERE is_archived = TRUE AND school_year_id = ? ORDER BY name',
@@ -76,8 +83,8 @@ const getArchivedSections = async (req, res) => {
 // Get single section by ID
 const getSectionById = async (req, res) => {
   try {
-    await ensureSectionSchoolYearColumn();
-    await ensureSectionSchoolYearColumn();
+    await ensureSectionColumns();
+    await ensureSectionColumns();
     const { id } = req.params;
     const sections = await query('SELECT * FROM sections WHERE id = ?', [id]);
     
@@ -95,12 +102,15 @@ const getSectionById = async (req, res) => {
 // Create new section
 const createSection = async (req, res) => {
   try {
-    await ensureSectionSchoolYearColumn();
+    await ensureSectionColumns();
     const activeSy = await getActiveSchoolYear();
-    const { name, description } = req.body;
+    const { name, description, gradeLevel } = req.body;
     
     if (!name || !name.trim()) {
       return res.status(400).json({ success: false, message: 'Section name is required' });
+    }
+    if (!gradeLevel || !gradeLevel.trim()) {
+      return res.status(400).json({ success: false, message: 'Grade level is required' });
     }
 
     // Check if section already exists
@@ -110,14 +120,14 @@ const createSection = async (req, res) => {
     }
 
     const result = await query(
-      'INSERT INTO sections (name, description, school_year_id) VALUES (?, ?, ?)',
-      [name.trim(), description?.trim() || null, activeSy.id]
+      'INSERT INTO sections (name, description, grade_level, school_year_id) VALUES (?, ?, ?, ?)',
+      [name.trim(), description?.trim() || null, gradeLevel?.trim() || null, activeSy.id]
     );
 
     res.status(201).json({ 
       success: true, 
       message: 'Section created successfully',
-      data: { id: result.insertId, name: name.trim(), description: description?.trim() || null, school_year_id: activeSy.id }
+      data: { id: result.insertId, name: name.trim(), description: description?.trim() || null, grade_level: gradeLevel?.trim() || null, school_year_id: activeSy.id }
     });
   } catch (error) {
     console.error('Error creating section:', error);
@@ -128,12 +138,15 @@ const createSection = async (req, res) => {
 // Update section
 const updateSection = async (req, res) => {
   try {
-    await ensureSectionSchoolYearColumn();
+    await ensureSectionColumns();
     const { id } = req.params;
-    const { name, description } = req.body;
+    const { name, description, gradeLevel } = req.body;
     
     if (!name || !name.trim()) {
       return res.status(400).json({ success: false, message: 'Section name is required' });
+    }
+    if (!gradeLevel || !gradeLevel.trim()) {
+      return res.status(400).json({ success: false, message: 'Grade level is required' });
     }
 
     // Check if section exists
@@ -149,8 +162,8 @@ const updateSection = async (req, res) => {
     }
 
     await query(
-      'UPDATE sections SET name = ?, description = ? WHERE id = ?',
-      [name.trim(), description?.trim() || null, id]
+      'UPDATE sections SET name = ?, description = ?, grade_level = ? WHERE id = ?',
+      [name.trim(), description?.trim() || null, gradeLevel?.trim() || null, id]
     );
 
     res.json({ success: true, message: 'Section updated successfully' });
@@ -224,7 +237,7 @@ const deleteSection = async (req, res) => {
 // List sections from previous school year (for optional fetch)
 const getPreviousYearSections = async (req, res) => {
   try {
-    await ensureSectionSchoolYearColumn();
+    await ensureSectionColumns();
     const activeSy = await getActiveSchoolYear();
     const prevSy = await getPreviousSchoolYear(activeSy.start_date);
     if (!prevSy) return res.json({ success: true, data: [] });
@@ -244,7 +257,7 @@ const getPreviousYearSections = async (req, res) => {
 // Copy selected sections from previous school year into active school year
 const fetchSectionsFromPreviousYear = async (req, res) => {
   try {
-    await ensureSectionSchoolYearColumn();
+    await ensureSectionColumns();
     const activeSy = await getActiveSchoolYear();
     const prevSy = await getPreviousSchoolYear(activeSy.start_date);
     if (!prevSy) {
@@ -277,8 +290,8 @@ const fetchSectionsFromPreviousYear = async (req, res) => {
       }
 
       await query(
-        'INSERT INTO sections (name, description, school_year_id, is_archived) VALUES (?, ?, ?, FALSE)',
-        [sec.name, sec.description, activeSy.id]
+        'INSERT INTO sections (name, description, grade_level, school_year_id, is_archived) VALUES (?, ?, ?, ?, FALSE)',
+        [sec.name, sec.description, sec.grade_level || null, activeSy.id]
       );
       inserted += 1;
     }
@@ -293,7 +306,7 @@ const fetchSectionsFromPreviousYear = async (req, res) => {
 // Get section usage stats (how many classes use each section)
 const getSectionStats = async (req, res) => {
   try {
-    await ensureSectionSchoolYearColumn();
+    await ensureSectionColumns();
     const activeSy = await getActiveSchoolYear();
     const stats = await query(`
       SELECT s.id, s.name, s.description, s.is_archived,

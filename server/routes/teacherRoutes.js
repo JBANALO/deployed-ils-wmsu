@@ -22,6 +22,10 @@ const generateWmsuPassword = (teacher = {}) => {
 
 // Teacher routes
 router.get('/', teacherController.getAllTeachers);
+
+// Previous-year fetch endpoints
+router.get('/previous-year', teacherController.getPreviousYearTeachers);
+router.post('/fetch-from-previous', teacherController.fetchTeachersFromPreviousYear);
 router.get('/pending', teacherController.getPendingTeachers);
 router.get('/declined', teacherController.getDeclinedTeachers);
 router.get('/advisers', teacherController.getAdvisers);

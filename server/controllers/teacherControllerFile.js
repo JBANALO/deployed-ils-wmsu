@@ -4,6 +4,37 @@
 const { readUsers, writeUsers } = require('../utils/fileStorage');
 const { query } = require('../config/database');
 
+let teacherSyEnsured = false;
+
+const ensureTeacherSchoolYearColumn = async () => {
+  if (teacherSyEnsured) return;
+  try {
+    const cols = await query('SHOW COLUMNS FROM teachers');
+    const hasSy = cols.some((c) => c.Field === 'school_year_id');
+    if (!hasSy) {
+      await query('ALTER TABLE teachers ADD COLUMN school_year_id INT NULL');
+      await query('CREATE INDEX idx_teachers_school_year ON teachers (school_year_id)');
+    }
+    teacherSyEnsured = true;
+  } catch (err) {
+    console.log('ensureTeacherSchoolYearColumn skipped:', err.message);
+  }
+};
+
+const getActiveSchoolYear = async () => {
+  const rows = await query('SELECT id, label, start_date FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+  if (!rows.length) throw new Error('No active school year found');
+  return rows[0];
+};
+
+const getPreviousSchoolYear = async (activeStartDate) => {
+  const rows = await query(
+    'SELECT id, label FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
+    [activeStartDate]
+  );
+  return rows[0] || null;
+};
+
 const normalizeName = (value = '') => value.toString().trim().toLowerCase().replace(/\s+/g, ' ');
 
 const parseSubjects = (subjects) => {
@@ -27,11 +58,16 @@ const parseSubjects = (subjects) => {
 const getAllTeachers = async (req, res) => {
   try {
     try {
+      await ensureTeacherSchoolYearColumn();
+      const activeSy = await getActiveSchoolYear();
+
       const dbTeachers = await query(
         `SELECT id, first_name, middle_name, last_name, username, email, role,
                 grade_level, section, subjects, bio, profile_pic, verification_status, created_at
          FROM teachers
-         ORDER BY first_name, last_name`
+         WHERE (school_year_id IS NULL OR school_year_id = ?)
+         ORDER BY first_name, last_name`,
+        [activeSy.id]
       );
 
       if (dbTeachers.length > 0) {
@@ -504,6 +540,108 @@ const deleteTeacher = (req, res) => {
 // Permanent delete (alias for deleteTeacher)
 const permanentDeleteTeacher = deleteTeacher;
 
+// List teachers from previous school year (for optional fetch)
+const getPreviousYearTeachers = async (req, res) => {
+  try {
+    await ensureTeacherSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
+    const prevSy = await getPreviousSchoolYear(activeSy.start_date);
+    if (!prevSy) return res.json({ success: true, data: [] });
+
+    const teachers = await query(
+      `SELECT id, first_name, middle_name, last_name, username, email, role,
+              grade_level, section, subjects, bio, profile_pic, verification_status, created_at
+       FROM teachers
+       WHERE school_year_id = ?
+       ORDER BY first_name, last_name`,
+      [prevSy.id]
+    );
+
+    const formatted = teachers.map((t) => ({
+      ...t,
+      subjects: t.subjects,
+    }));
+
+    res.json({ success: true, data: formatted, meta: { sourceSchoolYearId: prevSy.id } });
+  } catch (error) {
+    console.error('Error fetching previous year teachers:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch previous year teachers' });
+  }
+};
+
+// Copy selected teachers from previous school year into active school year
+const fetchTeachersFromPreviousYear = async (req, res) => {
+  try {
+    await ensureTeacherSchoolYearColumn();
+    const activeSy = await getActiveSchoolYear();
+    const prevSy = await getPreviousSchoolYear(activeSy.start_date);
+    if (!prevSy) {
+      return res.status(400).json({ success: false, message: 'No previous school year found to fetch from' });
+    }
+
+    const { ids } = req.body || {};
+    const idList = Array.isArray(ids) && ids.length > 0 ? ids : null;
+
+    const prevTeachers = await query(
+      `SELECT * FROM teachers WHERE school_year_id = ? ${idList ? 'AND id IN (?)' : ''}`,
+      idList ? [prevSy.id, idList] : [prevSy.id]
+    );
+
+    if (!prevTeachers.length) {
+      return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0 } });
+    }
+
+    let inserted = 0;
+    let skipped = 0;
+
+    for (const t of prevTeachers) {
+      // Skip duplicates in current school year by email or username
+      const dup = await query(
+        'SELECT id FROM teachers WHERE (email = ? OR username = ?) AND school_year_id = ?',
+        [t.email, t.username, activeSy.id]
+      );
+      if (dup.length) {
+        skipped += 1;
+        continue;
+      }
+
+      await query(
+        `INSERT INTO teachers (first_name, middle_name, last_name, username, email, password, role,
+                               grade_level, section, subjects, bio, profile_pic, verification_status,
+                               school_year_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        [
+          t.first_name,
+          t.middle_name,
+          t.last_name,
+          t.username,
+          t.email,
+          t.password,
+          t.role,
+          t.grade_level,
+          t.section,
+          t.subjects,
+          t.bio,
+          t.profile_pic,
+          t.verification_status || 'approved',
+          activeSy.id
+        ]
+      );
+
+      inserted += 1;
+    }
+
+    res.json({
+      success: true,
+      message: 'Fetch complete',
+      data: { inserted, skipped, sourceSchoolYearId: prevSy.id, targetSchoolYearId: activeSy.id }
+    });
+  } catch (error) {
+    console.error('Error fetching teachers from previous year:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch teachers from previous year' });
+  }
+};
+
 // Create a new teacher
 const createTeacher = (req, res) => {
   try {
@@ -795,5 +933,7 @@ module.exports = {
   createTeacher,
   approveTeacher,
   declineTeacher,
-  updateTeacher
+  updateTeacher,
+  getPreviousYearTeachers,
+  fetchTeachersFromPreviousYear
 };

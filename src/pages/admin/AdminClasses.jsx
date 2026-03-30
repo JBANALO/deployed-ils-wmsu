@@ -53,11 +53,25 @@ export default function AdminClasses() {
         console.log('Could not fetch sections:', err.message);
       }
 
+      const normalize = (value) => (value || '').toString().trim().toLowerCase();
+      const sectionKey = (grade, section) => `${normalize(grade)}-${normalize(section)}`;
+
       const filterBySections = (classes) => {
         if (!fetchedSections || fetchedSections.length === 0) return classes;
-        const allowed = new Set(fetchedSections.map((s) => `${s.grade_level || s.grade || ''}-${s.name || s.section || ''}`));
-        return classes.filter((cls) => allowed.has(`${cls.grade}-${cls.section}`));
+        const allowed = new Set(
+          fetchedSections.map((s) => sectionKey(s.grade_level || s.grade, s.name || s.section))
+        );
+        return classes.filter((cls) => allowed.has(sectionKey(cls.grade, cls.section)));
       };
+
+      const baseClasses = filterBySections(
+        fetchedSections.map((s) => ({
+          grade: s.grade_level || s.grade || '',
+          section: s.name || s.section || '',
+          students: 0,
+          studentList: [],
+        }))
+      );
 
       // Fetch classes from backend (includes adviser_name)
       let backendClasses = [];
@@ -83,9 +97,9 @@ export default function AdminClasses() {
         
         // Organize students by grade/section
         const studentClasses = organizeByGradeAndSection(students);
-        
+
         // Merge adviser info from backend classes
-        if (backendClasses.length > 0) {
+        if (backendClasses.length > 0 && studentClasses.length > 0) {
           const mergedClasses = studentClasses.map(studentClass => {
             const backendClass = backendClasses.find(bc => 
               bc.grade === studentClass.grade && bc.section === studentClass.section
@@ -98,12 +112,18 @@ export default function AdminClasses() {
           }).filter(filterBySections);
           console.log('Merged classes with adviser info:', mergedClasses);
           setClassesData(mergedClasses);
-        } else {
+        } else if (studentClasses.length > 0) {
           setClassesData(filterBySections(studentClasses));
+        } else if (backendClasses.length > 0) {
+          setClassesData(filterBySections(backendClasses));
+        } else {
+          setClassesData(baseClasses);
         }
       } else {
         if (backendClasses.length > 0) {
-          setClassesData(backendClasses);
+          setClassesData(filterBySections(backendClasses));
+        } else {
+          setClassesData(baseClasses);
         }
         setAllStudents([]);
       }
