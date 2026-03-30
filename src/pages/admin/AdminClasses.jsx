@@ -21,6 +21,10 @@ export default function AdminClasses() {
 
   const [teachers, setTeachers] = useState([]);
 
+  const [schoolYears, setSchoolYears] = useState([]);
+  const [selectedSchoolYearId, setSelectedSchoolYearId] = useState('');
+  const [activeSchoolYear, setActiveSchoolYear] = useState(null);
+
   const [sections, setSections] = useState([]);
 
   const [loading, setLoading] = useState(true);
@@ -38,13 +42,39 @@ export default function AdminClasses() {
   const [fetchLoading, setFetchLoading] = useState(false);
 
 
+  const fetchSchoolYears = async () => {
+    try {
+      const res = await axios.get('/school-years');
+      const list = res.data?.data || res.data || [];
+      setSchoolYears(Array.isArray(list) ? list : []);
+      const active = Array.isArray(list) ? list.find((sy) => sy.is_active) : null;
+      if (active) {
+        setActiveSchoolYear(active);
+        if (!selectedSchoolYearId) {
+          setSelectedSchoolYearId(String(active.id));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load school years:', error);
+      toast.error('Failed to load school years');
+    }
+  };
+
+
 
   const fetchAndOrganizeClasses = async () => {
     try {
+      if (!selectedSchoolYearId) {
+        setClassesData([]);
+        setAllStudents([]);
+        return;
+      }
       // Fetch active sections (to limit which classes display)
       let fetchedSections = [];
       try {
-        const sectionsRes = await axios.get('/sections');
+        const sectionsRes = await axios.get('/sections', {
+          params: { schoolYearId: selectedSchoolYearId }
+        });
         const sectionsJson = sectionsRes.data;
         fetchedSections = sectionsJson?.data || sectionsJson?.sections || [];
         setSections(fetchedSections);
@@ -104,7 +134,9 @@ export default function AdminClasses() {
       // Fetch classes from backend (includes adviser_name)
       let backendClasses = [];
       try {
-        const classesResponse = await axios.get('/classes');
+        const classesResponse = await axios.get('/classes', {
+          params: { schoolYearId: selectedSchoolYearId }
+        });
         const classesResult = classesResponse.data;
         backendClasses = Array.isArray(classesResult) ? classesResult : (classesResult.data || []);
         backendClasses = backendClasses.map((bc) => ({
@@ -118,7 +150,9 @@ export default function AdminClasses() {
       }
 
       // Fetch students for enrollment count
-      const studentsResponse = await axios.get('/students');
+      const studentsResponse = await axios.get('/students', {
+        params: { schoolYearId: selectedSchoolYearId }
+      });
       if (studentsResponse.status === 200) {
         const result = studentsResponse.data;
         const students = result.data ? result.data : (Array.isArray(result) ? result : []);
@@ -154,7 +188,9 @@ export default function AdminClasses() {
 
       // Fetch teachers
       try {
-        const teachersResponse = await axios.get('/users');
+        const teachersResponse = await axios.get('/users', {
+          params: { schoolYearId: selectedSchoolYearId }
+        });
         if (teachersResponse.status === 200) {
           const data = teachersResponse.data;
           const allUsers = data.data?.users || data.users || data.data || [];
@@ -179,6 +215,17 @@ export default function AdminClasses() {
     setLoading(false);
   };
 
+  useEffect(() => {
+    fetchSchoolYears();
+  }, []);
+
+  useEffect(() => {
+    if (selectedSchoolYearId) {
+      setLoading(true);
+      fetchAndOrganizeClasses();
+    }
+  }, [selectedSchoolYearId]);
+
   // Fetch classes from backend with adviser info
   useEffect(() => {
     fetchAndOrganizeClasses();
@@ -186,9 +233,13 @@ export default function AdminClasses() {
 
 
   const loadPrevClasses = async () => {
+    if (!selectedSchoolYearId) {
+      toast.error('Select a school year first');
+      return;
+    }
     try {
       setFetchLoading(true);
-      const res = await fetch(`${API_BASE_URL}/classes/previous-year`);
+      const res = await fetch(`${API_BASE_URL}/classes/previous-year?schoolYearId=${selectedSchoolYearId}`);
       if (!res.ok) throw new Error('Failed to load previous classes');
       const data = await res.json();
       const list = data?.data || [];
@@ -317,13 +368,18 @@ export default function AdminClasses() {
 
   const handleFetchFromPrevious = async () => {
 
+    if (!selectedSchoolYearId) {
+      toast.error('Select a school year first');
+      return;
+    }
+
     try {
 
       setFetchLoading(true);
 
       const ids = Array.from(selectedPrevIds);
 
-      const res = await fetch(`${API_BASE_URL}/classes/fetch-from-previous`, {
+      const res = await fetch(`${API_BASE_URL}/classes/fetch-from-previous?schoolYearId=${selectedSchoolYearId}`, {
 
         method: 'POST',
 
@@ -375,6 +431,8 @@ export default function AdminClasses() {
 
   const uniqueSections = [...new Set(classesData.map(cls => cls.section))];
 
+  const isViewOnly = activeSchoolYear && selectedSchoolYearId && Number(selectedSchoolYearId) !== Number(activeSchoolYear.id);
+
 
 
   return (
@@ -404,6 +462,28 @@ export default function AdminClasses() {
         Manage class sections, subjects, and teacher assignments.
 
       </p>
+
+      <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-sm font-semibold text-gray-700">School Year</label>
+          <select
+            value={selectedSchoolYearId}
+            onChange={(e) => setSelectedSchoolYearId(e.target.value)}
+            className="border border-gray-300 rounded px-3 py-2 text-sm"
+          >
+            <option value="">Select school year</option>
+            {schoolYears.map((sy) => (
+              <option key={sy.id} value={sy.id}>{sy.label}</option>
+            ))}
+          </select>
+          {isViewOnly && (
+            <span className="text-xs text-orange-700 bg-orange-100 px-2 py-1 rounded">View-only for previous year</span>
+          )}
+        </div>
+        {!selectedSchoolYearId && (
+          <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded px-3 py-2">Select a school year to load classes.</p>
+        )}
+      </div>
 
 
 

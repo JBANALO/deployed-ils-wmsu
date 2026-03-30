@@ -27,12 +27,30 @@ const getActiveSchoolYear = async () => {
   return rows[0];
 };
 
+const getSchoolYearById = async (schoolYearId) => {
+  if (!schoolYearId) return null;
+  const rows = await query(
+    'SELECT id, label, start_date FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1',
+    [schoolYearId]
+  );
+  return rows[0] || null;
+};
+
 const getPreviousSchoolYear = async (activeStartDate) => {
   const rows = await query(
     'SELECT id, label FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
     [activeStartDate]
   );
   return rows[0] || null;
+};
+
+const resolveSchoolYear = async (req) => {
+  const requestedId = req?.query?.schoolYearId || req?.body?.schoolYearId;
+  if (requestedId) {
+    const sy = await getSchoolYearById(requestedId);
+    if (sy) return sy;
+  }
+  return getActiveSchoolYear();
 };
 
 const normalizeName = (value = '') => value.toString().trim().toLowerCase().replace(/\s+/g, ' ');
@@ -59,146 +77,104 @@ const getAllTeachers = async (req, res) => {
   try {
     try {
       await ensureTeacherSchoolYearColumn();
-      const activeSy = await getActiveSchoolYear();
+      const targetSy = await resolveSchoolYear(req);
 
       const dbTeachers = await query(
         `SELECT id, first_name, middle_name, last_name, username, email, role,
                 grade_level, section, subjects, bio, profile_pic, verification_status, created_at
          FROM teachers
-         WHERE (school_year_id IS NULL OR school_year_id = ?)
+         WHERE school_year_id = ?
          ORDER BY first_name, last_name`,
-        [activeSy.id]
+        [targetSy.id]
       );
 
-      if (dbTeachers.length > 0) {
-        let classAssignments = [];
-        let classesWithAdvisers = [];
-        let subjectTeachers = [];
+      let classAssignments = [];
+      let classesWithAdvisers = [];
+      let subjectTeachers = [];
 
-        try {
-          classAssignments = await query(
-            `SELECT grade_level, section, adviser_id, adviser_name FROM class_assignments`
-          );
-        } catch (error) {
-          classAssignments = [];
-        }
+      try {
+        classAssignments = await query(
+          `SELECT grade_level, section, adviser_id, adviser_name FROM class_assignments`
+        );
+      } catch (error) {
+        classAssignments = [];
+      }
 
-        try {
-          classesWithAdvisers = await query(
-            `SELECT grade, section, adviser_id, adviser_name FROM classes WHERE adviser_id IS NOT NULL OR adviser_name IS NOT NULL`
-          );
-        } catch (error) {
-          classesWithAdvisers = [];
-        }
+      try {
+        classesWithAdvisers = await query(
+          `SELECT grade, section, adviser_id, adviser_name FROM classes WHERE adviser_id IS NOT NULL OR adviser_name IS NOT NULL`
+        );
+      } catch (error) {
+        classesWithAdvisers = [];
+      }
 
-        try {
-          subjectTeachers = await query(
-            `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time FROM subject_teachers`
-          );
-        } catch (error) {
-          subjectTeachers = [];
-        }
+      try {
+        subjectTeachers = await query(
+          `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time FROM subject_teachers`
+        );
+      } catch (error) {
+        subjectTeachers = [];
+      }
 
-        const dbFormatted = dbTeachers.map((teacher) => {
-          const fullName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim();
-          const normalizedFullName = normalizeName(fullName);
+      const dbFormatted = dbTeachers.map((teacher) => {
+        const fullName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim();
+        const normalizedFullName = normalizeName(fullName);
 
-          const adviserMatch = classesWithAdvisers.find((item) =>
-            String(item.adviser_id) === String(teacher.id) || normalizeName(item.adviser_name) === normalizedFullName
-          );
-
-          const assignmentMatch = classAssignments.find((item) =>
-            String(item.adviser_id) === String(teacher.id) || normalizeName(item.adviser_name) === normalizedFullName
-          );
-
-          const subjectMatches = subjectTeachers.filter((item) =>
-            String(item.teacher_id) === String(teacher.id) || normalizeName(item.teacher_name) === normalizedFullName
-          );
-
-          const derivedRole = adviserMatch || assignmentMatch
-            ? 'adviser'
-            : subjectMatches.length > 0
-              ? 'subject_teacher'
-              : (teacher.role || 'teacher');
-
-          const derivedGradeLevel = adviserMatch?.grade || assignmentMatch?.grade_level || teacher.grade_level || '';
-          const derivedSection = adviserMatch?.section || assignmentMatch?.section || teacher.section || '';
-          const derivedSubjects = subjectMatches.length > 0
-            ? [...new Set(subjectMatches.map((item) => item.subject).filter(Boolean))]
-            : parseSubjects(teacher.subjects);
-
-          return {
-            id: teacher.id,
-            firstName: teacher.first_name || '',
-            middleName: teacher.middle_name || '',
-            lastName: teacher.last_name || '',
-            fullName,
-            username: teacher.username,
-            email: teacher.email,
-            role: derivedRole,
-            gradeLevel: derivedGradeLevel,
-            section: derivedSection,
-            position: teacher.role,
-            subjectsHandled: derivedSubjects,
-            subjects: derivedSubjects,
-            bio: teacher.bio || '',
-            profilePic: teacher.profile_pic || '',
-            status: teacher.verification_status || 'approved',
-            createdAt: teacher.created_at
-          };
-        });
-
-        // Merge DB teachers with file-based teachers (users.json) to show newly created records
-        const users = readUsers();
-        const fileTeachers = users
-          .filter(u =>
-            (u.role === 'adviser' || u.role === 'teacher' || u.role === 'subject_teacher') &&
-            !u.archived
-          )
-          .map(u => ({
-            id: u.id,
-            firstName: u.firstName || u.first_name || '',
-            middleName: u.middleName || u.middle_name || '',
-            lastName: u.lastName || u.last_name || '',
-            fullName: `${u.firstName || u.first_name || ''} ${u.lastName || u.last_name || ''}`.trim(),
-            username: u.username,
-            email: u.email,
-            role: u.role || 'teacher',
-            gradeLevel: u.gradeLevel || u.grade_level,
-            section: u.section,
-            position: u.position,
-            department: u.department,
-            subjectsHandled: u.subjectsHandled || u.subjects,
-            subjects: u.subjects || [],
-            bio: u.bio || '',
-            status: u.status || 'approved',
-            createdAt: u.createdAt
-          }));
-
-        // Avoid duplicates by email or username
-        const deduped = [...dbFormatted];
-        const existingKeys = new Set(
-          deduped.map(t => (t.email || '').toLowerCase())
+        const adviserMatch = classesWithAdvisers.find((item) =>
+          String(item.adviser_id) === String(teacher.id) || normalizeName(item.adviser_name) === normalizedFullName
         );
 
-        fileTeachers.forEach(ft => {
-          const key = (ft.email || '').toLowerCase();
-          if (!existingKeys.has(key)) {
-            deduped.push(ft);
-            existingKeys.add(key);
-          }
-        });
+        const assignmentMatch = classAssignments.find((item) =>
+          String(item.adviser_id) === String(teacher.id) || normalizeName(item.adviser_name) === normalizedFullName
+        );
 
-        console.log(`getAllTeachers: Merged ${dbFormatted.length} DB teachers with ${fileTeachers.length} file teachers => ${deduped.length} total`);
+        const subjectMatches = subjectTeachers.filter((item) =>
+          String(item.teacher_id) === String(teacher.id) || normalizeName(item.teacher_name) === normalizedFullName
+        );
 
-        return res.json({
-          status: 'success',
-          data: {
-            teachers: deduped
-          },
-          teachers: deduped
-        });
-      }
+        const derivedRole = adviserMatch || assignmentMatch
+          ? 'adviser'
+          : subjectMatches.length > 0
+            ? 'subject_teacher'
+            : (teacher.role || 'teacher');
+
+        const derivedGradeLevel = adviserMatch?.grade || assignmentMatch?.grade_level || teacher.grade_level || '';
+        const derivedSection = adviserMatch?.section || assignmentMatch?.section || teacher.section || '';
+        const derivedSubjects = subjectMatches.length > 0
+          ? [...new Set(subjectMatches.map((item) => item.subject).filter(Boolean))]
+          : parseSubjects(teacher.subjects);
+
+        return {
+          id: teacher.id,
+          firstName: teacher.first_name || '',
+          middleName: teacher.middle_name || '',
+          lastName: teacher.last_name || '',
+          fullName,
+          username: teacher.username,
+          email: teacher.email,
+          role: derivedRole,
+          gradeLevel: derivedGradeLevel,
+          section: derivedSection,
+          position: teacher.role,
+          subjectsHandled: derivedSubjects,
+          subjects: derivedSubjects,
+          bio: teacher.bio || '',
+          profilePic: teacher.profile_pic || '',
+          status: teacher.verification_status || 'approved',
+          createdAt: teacher.created_at
+        };
+      });
+
+      console.log(`getAllTeachers: Returning ${dbFormatted.length} teachers for school year ${targetSy.id}`);
+
+      return res.json({
+        status: 'success',
+        data: {
+          teachers: dbFormatted
+        },
+        teachers: dbFormatted,
+        meta: { schoolYearId: targetSy.id }
+      });
     } catch (dbError) {
       console.log('getAllTeachers DB lookup failed, falling back to users.json:', dbError.message);
     }
@@ -544,8 +520,8 @@ const permanentDeleteTeacher = deleteTeacher;
 const getPreviousYearTeachers = async (req, res) => {
   try {
     await ensureTeacherSchoolYearColumn();
-    const activeSy = await getActiveSchoolYear();
-    const prevSy = await getPreviousSchoolYear(activeSy.start_date);
+    const targetSy = await resolveSchoolYear(req);
+    const prevSy = await getPreviousSchoolYear(targetSy.start_date);
     if (!prevSy) return res.json({ success: true, data: [] });
 
     const teachers = await query(
@@ -562,7 +538,7 @@ const getPreviousYearTeachers = async (req, res) => {
       subjects: t.subjects,
     }));
 
-    res.json({ success: true, data: formatted, meta: { sourceSchoolYearId: prevSy.id } });
+    res.json({ success: true, data: formatted, meta: { sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id } });
   } catch (error) {
     console.error('Error fetching previous year teachers:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch previous year teachers' });
@@ -573,8 +549,8 @@ const getPreviousYearTeachers = async (req, res) => {
 const fetchTeachersFromPreviousYear = async (req, res) => {
   try {
     await ensureTeacherSchoolYearColumn();
-    const activeSy = await getActiveSchoolYear();
-    const prevSy = await getPreviousSchoolYear(activeSy.start_date);
+    const targetSy = await resolveSchoolYear(req);
+    const prevSy = await getPreviousSchoolYear(targetSy.start_date);
     if (!prevSy) {
       return res.status(400).json({ success: false, message: 'No previous school year found to fetch from' });
     }
@@ -598,7 +574,7 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
       // Skip duplicates in current school year by email or username
       const dup = await query(
         'SELECT id FROM teachers WHERE (email = ? OR username = ?) AND school_year_id = ?',
-        [t.email, t.username, activeSy.id]
+        [t.email, t.username, targetSy.id]
       );
       if (dup.length) {
         skipped += 1;
@@ -624,7 +600,7 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
           t.bio,
           t.profile_pic,
           t.verification_status || 'approved',
-          activeSy.id
+          targetSy.id
         ]
       );
 
@@ -634,7 +610,7 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
     res.json({
       success: true,
       message: 'Fetch complete',
-      data: { inserted, skipped, sourceSchoolYearId: prevSy.id, targetSchoolYearId: activeSy.id }
+      data: { inserted, skipped, sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id }
     });
   } catch (error) {
     console.error('Error fetching teachers from previous year:', error);

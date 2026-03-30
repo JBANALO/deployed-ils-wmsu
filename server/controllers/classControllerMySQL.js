@@ -27,15 +27,33 @@ const ensureSubjectTeacherSchoolYearColumn = async () => {
   subjectTeacherSyEnsured = true;
 };
 
+const getSchoolYearById = async (schoolYearId) => {
+  if (!schoolYearId) return null;
+  const rows = await query(
+    'SELECT id, label, start_date FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1',
+    [schoolYearId]
+  );
+  return rows[0] || null;
+};
+
 const getActiveSchoolYear = async () => {
   const rows = await query('SELECT id, label, start_date FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
   if (!rows.length) throw new Error('No active school year found');
   return rows[0];
 };
 
+const resolveSchoolYear = async (req) => {
+  const requestedId = req?.query?.schoolYearId || req?.body?.schoolYearId;
+  if (requestedId) {
+    const sy = await getSchoolYearById(requestedId);
+    if (sy) return sy;
+  }
+  return getActiveSchoolYear();
+};
+
 const getPreviousSchoolYear = async (activeStartDate) => {
   const rows = await query(
-    'SELECT id, label FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
+    'SELECT id, label, start_date FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
     [activeStartDate]
   );
   return rows[0] || null;
@@ -63,8 +81,8 @@ exports.getAllClasses = async (req, res) => {
   try {
     await ensureClassSchoolYearColumn();
     await ensureSubjectTeacherSchoolYearColumn();
-    const activeSy = await getActiveSchoolYear();
-    const classes = await query('SELECT * FROM classes WHERE school_year_id = ? ORDER BY grade, section', [activeSy.id]);
+    const targetSy = await resolveSchoolYear(req);
+    const classes = await query('SELECT * FROM classes WHERE school_year_id = ? ORDER BY grade, section', [targetSy.id]);
     
     // Fetch subject teachers and adviser info for each class
     const classesWithTeachers = await Promise.all(classes.map(async (cls) => {
@@ -74,8 +92,8 @@ exports.getAllClasses = async (req, res) => {
           `SELECT st.*, u.firstName, u.lastName 
            FROM subject_teachers st 
            LEFT JOIN users u ON st.teacher_id = u.id COLLATE utf8mb4_unicode_ci
-           WHERE st.class_id = ? AND st.school_year_id = ?`,
-          [cls.id, activeSy.id]
+           WHERE st.class_id = ? AND st.school_year_id = ?` ,
+          [cls.id, targetSy.id]
         );
         
         // Fetch adviser info - check both adviser_id in classes table and gradeLevel/section in users/teachers tables
@@ -160,7 +178,8 @@ exports.getAllClasses = async (req, res) => {
     res.json({
       status: 'success',
       data: classesWithTeachers,
-      classes: classesWithTeachers  // For backward compatibility
+      classes: classesWithTeachers,  // For backward compatibility
+      meta: { schoolYearId: targetSy.id }
     });
   } catch (error) {
     console.error('Error in getAllClasses:', error);
@@ -172,7 +191,7 @@ exports.getSubjectTeacherClasses = async (req, res) => {
   try {
     await ensureClassSchoolYearColumn();
     await ensureSubjectTeacherSchoolYearColumn();
-    const activeSy = await getActiveSchoolYear();
+    const activeSy = await resolveSchoolYear(req);
     const { userId } = req.params;
     console.log('Fetching classes for subject teacher:', userId);
 
@@ -214,7 +233,7 @@ exports.getAdviserClasses = async (req, res) => {
   try {
     await ensureClassSchoolYearColumn();
     await ensureSubjectTeacherSchoolYearColumn();
-    const activeSy = await getActiveSchoolYear();
+    const activeSy = await resolveSchoolYear(req);
     const { adviserId } = req.params;
     console.log('Fetching classes for adviser:', adviserId);
 
@@ -292,7 +311,7 @@ exports.getAdviserClasses = async (req, res) => {
 exports.getClassById = async (req, res) => {
   try {
     await ensureClassSchoolYearColumn();
-    const activeSy = await getActiveSchoolYear();
+    const activeSy = await resolveSchoolYear(req);
     const { id } = req.params;
     const classes = await query('SELECT * FROM classes WHERE id = ? AND school_year_id = ?', [id, activeSy.id]);
     
@@ -498,8 +517,8 @@ exports.getPreviousYearClasses = async (req, res) => {
   try {
     await ensureClassSchoolYearColumn();
     await ensureSubjectTeacherSchoolYearColumn();
-    const activeSy = await getActiveSchoolYear();
-    const prevSy = await getPreviousSchoolYear(activeSy.start_date);
+    const targetSy = await resolveSchoolYear(req);
+    const prevSy = await getPreviousSchoolYear(targetSy.start_date);
     if (!prevSy) return res.json({ success: true, data: [] });
 
     const classes = await query(
@@ -522,7 +541,7 @@ exports.getPreviousYearClasses = async (req, res) => {
       subject_teachers: subjectTeachers.filter((st) => st.class_id === cls.id)
     }));
 
-    res.json({ success: true, data: classesWithTeachers, meta: { sourceSchoolYearId: prevSy.id } });
+    res.json({ success: true, data: classesWithTeachers, meta: { sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id } });
   } catch (error) {
     console.error('Error fetching previous year classes:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch previous year classes' });
@@ -534,8 +553,8 @@ exports.fetchClassesFromPreviousYear = async (req, res) => {
   try {
     await ensureClassSchoolYearColumn();
     await ensureSubjectTeacherSchoolYearColumn();
-    const activeSy = await getActiveSchoolYear();
-    const prevSy = await getPreviousSchoolYear(activeSy.start_date);
+    const targetSy = await resolveSchoolYear(req);
+    const prevSy = await getPreviousSchoolYear(targetSy.start_date);
     if (!prevSy) {
       return res.status(400).json({ success: false, message: 'No previous school year found to fetch from' });
     }
@@ -568,7 +587,7 @@ exports.fetchClassesFromPreviousYear = async (req, res) => {
     for (const cls of prevClasses) {
       const dup = await query(
         'SELECT id FROM classes WHERE grade = ? AND section = ? AND school_year_id = ?',
-        [cls.grade, cls.section, activeSy.id]
+        [cls.grade, cls.section, targetSy.id]
       );
       if (dup.length) {
         skipped += 1;
@@ -578,7 +597,7 @@ exports.fetchClassesFromPreviousYear = async (req, res) => {
       const newId = uuidv4();
       await query(
         'INSERT INTO classes (id, grade, section, adviser_id, adviser_name, school_year_id, createdAt) VALUES (?, ?, ?, ?, ?, ?, NOW())',
-        [newId, cls.grade, cls.section, cls.adviser_id || null, cls.adviser_name || null, activeSy.id]
+        [newId, cls.grade, cls.section, cls.adviser_id || null, cls.adviser_name || null, targetSy.id]
       );
 
       const teachersForClass = prevSubjectTeachers.filter((st) => st.class_id === cls.id);
@@ -586,13 +605,13 @@ exports.fetchClassesFromPreviousYear = async (req, res) => {
         try {
           await query(
             'INSERT INTO subject_teachers (class_id, teacher_id, teacher_name, subject, day, start_time, end_time, school_year_id, assignedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-            [newId, st.teacher_id, st.teacher_name, st.subject, st.day || null, st.start_time || null, st.end_time || null, activeSy.id]
+            [newId, st.teacher_id, st.teacher_name, st.subject, st.day || null, st.start_time || null, st.end_time || null, targetSy.id]
           );
         } catch (err) {
           if (err.message && err.message.includes('Unknown column')) {
             await query(
               'INSERT INTO subject_teachers (class_id, teacher_id, teacher_name, subject, school_year_id, assignedAt) VALUES (?, ?, ?, ?, ?, NOW())',
-              [newId, st.teacher_id, st.teacher_name, st.subject, activeSy.id]
+              [newId, st.teacher_id, st.teacher_name, st.subject, targetSy.id]
             );
           } else {
             throw err;
@@ -606,7 +625,7 @@ exports.fetchClassesFromPreviousYear = async (req, res) => {
     res.json({
       success: true,
       message: 'Fetch complete',
-      data: { inserted, skipped, sourceSchoolYearId: prevSy.id, targetSchoolYearId: activeSy.id }
+      data: { inserted, skipped, sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id }
     });
   } catch (error) {
     console.error('Error fetching classes from previous year:', error);

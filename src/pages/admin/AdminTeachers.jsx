@@ -59,6 +59,10 @@ export default function AdminTeachers() {
   const [fetchPrevLoading, setFetchPrevLoading] = useState(false);
   const [fetchPrevSubmitting, setFetchPrevSubmitting] = useState(false);
 
+  const [schoolYears, setSchoolYears] = useState([]);
+  const [selectedSchoolYearId, setSelectedSchoolYearId] = useState('');
+  const [activeSchoolYear, setActiveSchoolYear] = useState(null);
+
   // Subjects by grade level (Official DepEd K-12 Curriculum)
   const subjectsByGradeLevel = {
     "Kindergarten": ["Mother Tongue", "Filipino", "English", "Mathematics", "Edukasyon sa Pagpapakatao (EsP)", "Music", "Arts", "Physical Education", "Health"],
@@ -68,6 +72,24 @@ export default function AdminTeachers() {
     "Grade 4": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "EPP", "Music", "Arts", "Physical Education", "Health"],
     "Grade 5": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "EPP", "Music", "Arts", "Physical Education", "Health"],
     "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "EPP", "Music", "Arts", "Physical Education", "Health"]
+  };
+
+  const fetchSchoolYears = async () => {
+    try {
+      const res = await api.get('/school-years');
+      const list = res.data?.data || res.data || [];
+      setSchoolYears(Array.isArray(list) ? list : []);
+      const active = Array.isArray(list) ? list.find((sy) => sy.is_active) : null;
+      if (active) {
+        setActiveSchoolYear(active);
+        if (!selectedSchoolYearId) {
+          setSelectedSchoolYearId(String(active.id));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load school years:', error);
+      toast.error('Failed to load school years');
+    }
   };
 
   // Handle select all subjects
@@ -83,8 +105,14 @@ export default function AdminTeachers() {
   };
 
   useEffect(() => {
-    fetchTeachers();
+    fetchSchoolYears();
   }, []);
+
+  useEffect(() => {
+    if (selectedSchoolYearId) {
+      fetchTeachers();
+    }
+  }, [selectedSchoolYearId]);
 
   // Helper function to fix mixed up grade level and section data
   const fixGradeAndSection = (teacher) => {
@@ -291,8 +319,16 @@ export default function AdminTeachers() {
     setShowArchives(!showArchives);
   };
 
+  const isViewOnly = activeSchoolYear && selectedSchoolYearId && Number(selectedSchoolYearId) !== Number(activeSchoolYear.id);
+
   const fetchTeachers = async (isRefresh = false) => {
     try {
+      if (!selectedSchoolYearId) {
+        setTeachers([]);
+        setLoading(false);
+        setRefreshLoading(false);
+        return;
+      }
       console.log('Fetching teachers...');
       if (isRefresh) {
         setRefreshLoading(true);
@@ -306,7 +342,9 @@ export default function AdminTeachers() {
       // Fetch teachers using the same pattern as assignadviser page
       let allTeachers = [];
       try {
-        const response = await api.get('/teachers');
+        const response = await api.get('/teachers', {
+          params: { schoolYearId: selectedSchoolYearId }
+        });
         const teachersData = response.data?.data?.teachers || response.data?.teachers || [];
         console.log('Teachers fetched from /teachers:', teachersData);
         console.log('Teachers data type:', typeof teachersData);
@@ -332,7 +370,9 @@ export default function AdminTeachers() {
       // If /teachers didn't work, try the fallback pattern from assignadviser
       if (allTeachers.length === 0) {
         try {
-          const usersResponse = await api.get('/users');
+          const usersResponse = await api.get('/users', {
+            params: { schoolYearId: selectedSchoolYearId }
+          });
           const usersData = usersResponse.data?.data || usersResponse.data?.users || [];
           console.log('Users fetched from /users:', usersData);
           
@@ -379,9 +419,15 @@ export default function AdminTeachers() {
 
   // Fetch teachers from previous school year (listing only)
   const loadPrevTeachers = async () => {
+    if (!selectedSchoolYearId) {
+      toast.error('Select a school year first');
+      return;
+    }
     setFetchPrevLoading(true);
     try {
-      const res = await api.get('/teachers/previous-year');
+      const res = await api.get('/teachers/previous-year', {
+        params: { schoolYearId: selectedSchoolYearId }
+      });
       const list = res.data?.data || [];
       setPrevTeachers(Array.isArray(list) ? list : []);
       setSelectedPrevTeacherIds(new Set(list.map((t) => t.id)));
@@ -397,10 +443,14 @@ export default function AdminTeachers() {
   // Copy selected teachers from previous school year into active school year
   const handleFetchTeachersFromPrevious = async () => {
     if (selectedPrevTeacherIds.size === 0) return;
+    if (!selectedSchoolYearId) {
+      toast.error('Select a school year first');
+      return;
+    }
     setFetchPrevSubmitting(true);
     try {
       const ids = Array.from(selectedPrevTeacherIds);
-      const res = await api.post('/teachers/fetch-from-previous', { ids });
+      const res = await api.post(`/teachers/fetch-from-previous?schoolYearId=${selectedSchoolYearId}`, { ids });
       const inserted = res.data?.data?.inserted ?? 0;
       const skipped = res.data?.data?.skipped ?? 0;
       toast.success(`Fetched ${inserted} teacher(s), skipped ${skipped}`);
@@ -883,6 +933,28 @@ export default function AdminTeachers() {
       <p className="text-xs md:text-base text-gray-600 mb-4">
         View, verify, edit, or archive teacher accounts. 
       </p>
+
+      <div className="bg-white border border-gray-200 rounded-lg p-3 md:p-4 flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-sm font-semibold text-gray-700">School Year</label>
+          <select
+            value={selectedSchoolYearId}
+            onChange={(e) => setSelectedSchoolYearId(e.target.value)}
+            className="border border-gray-300 rounded px-3 py-2 text-sm"
+          >
+            <option value="">Select school year</option>
+            {schoolYears.map((sy) => (
+              <option key={sy.id} value={sy.id}>{sy.label}</option>
+            ))}
+          </select>
+          {isViewOnly && (
+            <span className="text-xs text-orange-700 bg-orange-100 px-2 py-1 rounded">View-only for previous year</span>
+          )}
+        </div>
+        {!selectedSchoolYearId && (
+          <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded px-3 py-2">Select a school year to load teachers.</p>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <div className="p-3 md:p-4 bg-red-50 rounded-lg text-center shadow-sm border border-red-100">
