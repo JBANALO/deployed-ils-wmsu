@@ -51,6 +51,9 @@ export default function AdminClasses() {
         console.log('Sections fetched for classes:', fetchedSections.length);
         if (!Array.isArray(fetchedSections) || fetchedSections.length === 0) {
           toast.warning('No sections returned from server');
+        } else {
+          const sample = fetchedSections.slice(0, 3).map((s) => `${s.grade_level || s.grade || ''} - ${s.name || s.section || ''}`).join(', ');
+          toast.success(`Sections loaded: ${fetchedSections.length}${sample ? ` (e.g. ${sample})` : ''}`);
         }
       } catch (err) {
         console.log('Could not fetch sections:', err.message);
