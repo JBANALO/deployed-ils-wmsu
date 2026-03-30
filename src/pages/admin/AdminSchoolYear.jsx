@@ -279,6 +279,10 @@ export default function AdminSchoolYear() {
     });
   };
 
+  const eligibleCount = promotionCandidates.filter(c => c.canPromote).length;
+  const incompleteCount = promotionCandidates.filter(c => !c.hasCompleteGrades).length;
+  const failingCount = promotionCandidates.filter(c => c.hasFailingGrade).length;
+
   const toggleSelectAllEligible = () => {
     const eligibleIds = promotionCandidates.filter(c => c.canPromote).map(c => c.id);
     const allSelected = eligibleIds.length > 0 && eligibleIds.every(id => selectedCandidateIds.has(id));
@@ -1038,6 +1042,12 @@ export default function AdminSchoolYear() {
                 >
                   {promotionCandidates.filter(c => c.canPromote).every(c => selectedCandidateIds.has(c.id)) ? 'Clear Selection' : 'Select All Eligible'}
                 </button>
+              </div>
+              <div className="flex flex-wrap gap-2 mb-2 text-xs">
+                <span className="px-2 py-1 rounded-full bg-green-100 text-green-700 font-semibold">Eligible: {eligibleCount}</span>
+                <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-700 font-semibold">Complete Q1-Q4: {promotionCandidates.length - incompleteCount}</span>
+                <span className="px-2 py-1 rounded-full bg-orange-100 text-orange-700 font-semibold">Incomplete: {incompleteCount}</span>
+                <span className="px-2 py-1 rounded-full bg-red-100 text-red-700 font-semibold">With Failing Grade: {failingCount}</span>
               </div>
               <div className="max-h-[46vh] overflow-auto border border-gray-200 rounded bg-white">
                 {promotionCandidates.length === 0 ? (
