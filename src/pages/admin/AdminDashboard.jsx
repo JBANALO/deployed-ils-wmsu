@@ -49,6 +49,15 @@ export default function AdminDashboard() {
   const [activeSchoolYear, setActiveSchoolYear] = useState(null);
   const navigate = useNavigate();
 
+  const formatSchoolYearLabel = (label = '') => {
+    const clean = String(label).trim();
+    if (!clean) return clean;
+    if (clean.includes('-')) return clean;
+    const digits = clean.replace(/\D/g, '');
+    if (digits.length === 8) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+    return clean;
+  };
+
   useEffect(() => {
     loadDashboardStats();
     
@@ -300,16 +309,8 @@ const loadDashboardStats = async () => {
     try {
       const schoolYearRes = await axios.get('/school-years/active');
       if (schoolYearRes.data?.data) {
-        // Format the school year label to add dash if missing
         const schoolYear = schoolYearRes.data.data;
-        if (schoolYear.label && !schoolYear.label.includes('-')) {
-          // Convert 20262027 to 2026-2027
-          const year = schoolYear.label;
-          if (year.length === 8 && /^\d{8}$/.test(year)) {
-            schoolYear.label = `${year.slice(0, 4)}-${year.slice(4)}`;
-          }
-        }
-        setActiveSchoolYear(schoolYear);
+        setActiveSchoolYear({ ...schoolYear, label: formatSchoolYearLabel(schoolYear.label) });
       }
     } catch (err) {
       console.error('Error fetching active school year:', err);

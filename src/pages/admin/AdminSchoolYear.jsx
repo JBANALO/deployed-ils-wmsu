@@ -71,6 +71,16 @@ export default function AdminSchoolYear() {
   const [showReportCard, setShowReportCard] = useState(false);
   const [reportCardStudent, setReportCardStudent] = useState(null);
 
+  // Normalize SY labels to dashed format (e.g., 20262027 -> 2026-2027)
+  const formatSchoolYearLabel = (label = '') => {
+    const clean = String(label).trim();
+    if (!clean) return clean;
+    if (clean.includes('-')) return clean;
+    const digits = clean.replace(/\D/g, '');
+    if (digits.length === 8) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+    return clean;
+  };
+
   useEffect(() => {
     loadData();
   }, []);
@@ -89,11 +99,22 @@ export default function AdminSchoolYear() {
         axios.get('/classes')
       ]);
 
-      if (syRes.status === 'fulfilled') setSchoolYears(syRes.value.data?.data || []);
-      if (activeRes.status === 'fulfilled') setActiveSchoolYear(activeRes.value.data?.data || null);
+      if (syRes.status === 'fulfilled') {
+        const list = syRes.value.data?.data || [];
+        setSchoolYears(list.map((sy) => ({ ...sy, label: formatSchoolYearLabel(sy.label) })));
+      }
+
+      if (activeRes.status === 'fulfilled') {
+        const activeRaw = activeRes.value.data?.data || null;
+        const formattedActive = activeRaw ? { ...activeRaw, label: formatSchoolYearLabel(activeRaw.label) } : null;
+        setActiveSchoolYear(formattedActive);
+      }
       if (gradeRes.status === 'fulfilled') setStudentsByGrade(gradeRes.value.data?.data || []);
       if (previewRes.status === 'fulfilled') setPromotionPreview(previewRes.value.data?.data || []);
-      if (archivedRes.status === 'fulfilled') setArchivedSchoolYears(archivedRes.value.data?.data || []);
+      if (archivedRes.status === 'fulfilled') {
+        const archived = archivedRes.value.data?.data || [];
+        setArchivedSchoolYears(archived.map((sy) => ({ ...sy, label: formatSchoolYearLabel(sy.label) })));
+      }
       if (historyRes.status === 'fulfilled') setPromotionHistory(historyRes.value.data?.data || []);
       if (candidatesRes.status === 'fulfilled') setPromotionCandidates(candidatesRes.value.data?.data || []);
       if (classesRes.status === 'fulfilled') {
