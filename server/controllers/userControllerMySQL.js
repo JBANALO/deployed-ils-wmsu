@@ -130,6 +130,8 @@ exports.signupBatch = async (req, res) => {
 // Get all users (admin only)
 exports.getAllUsers = async (req, res) => {
   try {
+    const { schoolYearId } = req.query;
+    
     // Check what columns exist in database
     const columns = await query('SHOW COLUMNS FROM users');
     const hasFirstName = columns.some(col => col.Field === 'firstName');
@@ -142,9 +144,28 @@ exports.getAllUsers = async (req, res) => {
     const lastNameCol = hasFirstName ? 'lastName' : 'last_name';
     const createdAtCol = hasCreatedAt ? 'createdAt' : 'created_at';
 
-    const users = await query(
-      `SELECT id, ${firstNameCol}, ${lastNameCol}, username, email, role, ${createdAtCol} FROM users ORDER BY ${createdAtCol} DESC`
-    );
+    let users;
+    
+    // If schoolYearId provided, filter teachers by school year assignments
+    if (schoolYearId) {
+      // Get all users first
+      const allUsers = await query(
+        `SELECT DISTINCT u.id, u.${firstNameCol}, u.${lastNameCol}, u.username, u.email, u.role, u.${createdAtCol} 
+         FROM users u
+         LEFT JOIN subject_teachers st ON u.id = st.teacher_id AND st.school_year_id = ?
+         LEFT JOIN class_assignments ca ON u.id = ca.adviser_id AND ca.school_year_id = ?
+         WHERE u.role IN ('teacher', 'subject_teacher', 'adviser') 
+         AND (st.id IS NOT NULL OR ca.id IS NOT NULL OR u.role = 'teacher')
+         ORDER BY u.${createdAtCol} DESC`,
+        [schoolYearId, schoolYearId]
+      );
+      users = allUsers;
+    } else {
+      // Get all users without school year filtering
+      users = await query(
+        `SELECT id, ${firstNameCol}, ${lastNameCol}, username, email, role, ${createdAtCol} FROM users ORDER BY ${createdAtCol} DESC`
+      );
+    }
     
     // Format users to match expected structure
     const formattedUsers = users.map(user => ({

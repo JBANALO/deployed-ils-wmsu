@@ -177,7 +177,7 @@ const loadDashboardStats = async (overrideSyId) => {
     // FETCH TEACHERS
     // =========================
     console.log('Fetching users...');
-    const usersRes = await axios.get('/users');
+    const usersRes = await axios.get(`/users${querySuffix}`);
     console.log('Users response:', usersRes.data);
     const allUsers = usersRes.data?.users || [];
     const teachers = allUsers.filter(u =>
