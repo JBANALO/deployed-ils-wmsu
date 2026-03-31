@@ -63,6 +63,12 @@ const runFirstSuccessfulQuery = async (queries = []) => {
   return [];
 };
 
+const normalizeClassKey = (grade = '', section = '') =>
+  `${String(grade).trim().toLowerCase()}|${String(section).trim().toLowerCase()}`;
+
+const normalizeClassId = (value = '') =>
+  String(value).trim().toLowerCase().replace(/\s+/g, '-');
+
 const getPreviousSchoolYear = async (activeStartDate) => {
   const rows = await query(
     'SELECT id, label, start_date FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
@@ -106,6 +112,35 @@ exports.getAllClasses = async (req, res) => {
     await ensureSubjectTeacherSchoolYearColumn();
     const targetSy = await resolveSchoolYear(req);
     const classes = await query('SELECT * FROM classes WHERE school_year_id = ? ORDER BY grade, section', [targetSy.id]);
+
+    const classAssignments = await runFirstSuccessfulQuery([
+      {
+        sql: `SELECT class_id, grade_level, section, adviser_id, adviser_name
+              FROM class_assignments
+              WHERE school_year_id = ? OR school_year_id IS NULL`,
+        params: [targetSy.id]
+      },
+      {
+        sql: `SELECT NULL AS class_id, grade_level, section, adviser_id, adviser_name
+              FROM class_assignments
+              WHERE school_year_id = ? OR school_year_id IS NULL`,
+        params: [targetSy.id]
+      }
+    ]);
+
+    const assignmentByClassId = new Map();
+    const assignmentByGradeSection = new Map();
+    classAssignments.forEach((assignment) => {
+      if (assignment.class_id) {
+        assignmentByClassId.set(normalizeClassId(assignment.class_id), assignment);
+      }
+      if (assignment.grade_level && assignment.section) {
+        assignmentByGradeSection.set(
+          normalizeClassKey(assignment.grade_level, assignment.section),
+          assignment
+        );
+      }
+    });
     
     // Fetch subject teachers and adviser info for each class
     const classesWithTeachers = await Promise.all(classes.map(async (cls) => {
@@ -120,10 +155,13 @@ exports.getAllClasses = async (req, res) => {
         );
         
         // Fetch adviser info - check both adviser_id in classes table and gradeLevel/section in users/teachers tables
-        let adviserName = null;
-        let adviserId = cls.adviser_id;
+        const classAssignment = assignmentByClassId.get(normalizeClassId(cls.id))
+          || assignmentByGradeSection.get(normalizeClassKey(cls.grade, cls.section));
+
+        let adviserName = cls.adviser_name || classAssignment?.adviser_name || null;
+        let adviserId = cls.adviser_id || classAssignment?.adviser_id || null;
         
-        if (cls.adviser_id) {
+        if (adviserId) {
           // Check users table first (support both firstName/lastName and first_name/last_name schemas)
           const userAdvisers = await runFirstSuccessfulQuery([
             {
@@ -131,14 +169,14 @@ exports.getAllClasses = async (req, res) => {
                     FROM users
                     WHERE id = ? AND role = 'adviser'
                     LIMIT 1`,
-              params: [cls.adviser_id]
+              params: [adviserId]
             },
             {
               sql: `SELECT id, first_name, last_name
                     FROM users
                     WHERE id = ? AND role = 'adviser'
                     LIMIT 1`,
-              params: [cls.adviser_id]
+              params: [adviserId]
             }
           ]);
 
@@ -156,7 +194,7 @@ exports.getAllClasses = async (req, res) => {
                       WHERE id = ? AND role = 'adviser' AND (school_year_id = ? OR school_year_id IS NULL)
                       ORDER BY school_year_id DESC
                       LIMIT 1`,
-                params: [cls.adviser_id, targetSy.id]
+                params: [adviserId, targetSy.id]
               }
             ]);
 
