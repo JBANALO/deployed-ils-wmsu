@@ -7,6 +7,7 @@ import api from "../../api/axiosConfig";
 export default function AdminAssignAdviser() {
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
+  const [activeSchoolYearId, setActiveSchoolYearId] = useState("");
   const [selectedClass, setSelectedClass] = useState(null);
   const [selectedAdviser, setSelectedAdviser] = useState("");
   const [loading, setLoading] = useState(true);
@@ -26,8 +27,29 @@ export default function AdminAssignAdviser() {
   const [selectedAdviserSubjects, setSelectedAdviserSubjects] = useState([]); // checked subjects
 
   useEffect(() => {
-    fetchData();
+    const fetchActiveSchoolYear = async () => {
+      try {
+        const response = await api.get('/school-years');
+        const list = response.data?.data || response.data || [];
+        const active = Array.isArray(list) ? list.find((item) => item.is_active) : null;
+        if (active?.id) {
+          setActiveSchoolYearId(String(active.id));
+          return;
+        }
+        setLoading(false);
+      } catch (error) {
+        console.error('Failed to load active school year:', error.message);
+        setLoading(false);
+      }
+    };
+
+    fetchActiveSchoolYear();
   }, []);
+
+  useEffect(() => {
+    if (!activeSchoolYearId) return;
+    fetchData(activeSchoolYearId);
+  }, [activeSchoolYearId]);
 
   const normalizeId = (value) => String(value ?? "");
   const findTeacherById = (teacherId) => teachers.find((teacher) => normalizeId(teacher.id) === normalizeId(teacherId));
@@ -49,10 +71,19 @@ export default function AdminAssignAdviser() {
     fetchAdviserSubjects();
   }, [selectedClass]);
 
-  const fetchData = async () => {
+  const fetchData = async (schoolYearId = activeSchoolYearId) => {
     try {
+      if (!schoolYearId) {
+        setClasses([]);
+        setTeachers([]);
+        setLoading(false);
+        return;
+      }
+
+      const schoolYearQuery = `schoolYearId=${encodeURIComponent(String(schoolYearId))}`;
+
       // Fetch classes with adviser info
-      const classesResponse = await fetch(`${API_BASE_URL}/classes`);
+      const classesResponse = await fetch(`${API_BASE_URL}/classes?${schoolYearQuery}`);
       if (classesResponse.ok) {
         const classesData = await classesResponse.json();
         console.log('Raw classes response:', classesData);
@@ -84,7 +115,7 @@ export default function AdminAssignAdviser() {
       // Fetch teachers/advisers - try /teachers first, fall back to /users if it fails
       let allTeachers = [];
       try {
-        const teachersResponse = await fetch(`${API_BASE_URL}/teachers`);
+        const teachersResponse = await fetch(`${API_BASE_URL}/teachers?${schoolYearQuery}`);
         if (teachersResponse.ok) {
           const data = await teachersResponse.json();
           allTeachers = data.data?.teachers || data.teachers || [];
@@ -163,7 +194,7 @@ export default function AdminAssignAdviser() {
       toast.info(`Assigning ${adviserName} to ${selectedClass.grade} - ${selectedClass.section}`);
       
       const response = await fetch(
-        `${API_BASE_URL}/classes/${classId}/assign`,
+        `${API_BASE_URL}/classes/${classId}/assign?schoolYearId=${encodeURIComponent(activeSchoolYearId)}`,
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -171,7 +202,8 @@ export default function AdminAssignAdviser() {
             adviser_id: adviser.id,
             adviser_name: adviserName,
             grade: selectedClass.grade,
-            section: selectedClass.section
+            section: selectedClass.section,
+            schoolYearId: activeSchoolYearId
           })
         }
       );
@@ -192,7 +224,8 @@ export default function AdminAssignAdviser() {
               subject: item.subject,
               day: item.day,
               start_time: item.startTime,
-              end_time: item.endTime
+              end_time: item.endTime,
+              schoolYearId: activeSchoolYearId
             });
           } catch (subjectErr) {
             const subjectMessage = subjectErr.response?.data?.message || subjectErr.response?.data?.error || subjectErr.message;
@@ -229,7 +262,7 @@ export default function AdminAssignAdviser() {
   const handleUnassignAdviser = async (classItem) => {
     try {
       const response = await fetch(
-        `${API_BASE_URL}/classes/${classItem.id}/unassign`,
+        `${API_BASE_URL}/classes/${classItem.id}/unassign?schoolYearId=${encodeURIComponent(activeSchoolYearId)}`,
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -288,7 +321,8 @@ export default function AdminAssignAdviser() {
         subject: selectedSubject,
         day: selectedDay,
         start_time: startTime,
-        end_time: endTime
+        end_time: endTime,
+        schoolYearId: activeSchoolYearId
       });
       setMessage(`✅ ${teacher.firstName} ${teacher.lastName} assigned to teach ${selectedSubject} in ${selectedClassForSubject.grade} - ${selectedClassForSubject.section}`);
       setMessageType("success");
@@ -304,7 +338,7 @@ export default function AdminAssignAdviser() {
 
   const handleRemoveSubjectTeacher = async (classId, teacherId) => {
     try {
-      await api.put(`/classes/${classId}/unassign-subject-teacher/${teacherId}`);
+      await api.put(`/classes/${classId}/unassign-subject-teacher/${teacherId}?schoolYearId=${encodeURIComponent(activeSchoolYearId)}`);
       setMessage("Subject teacher removed successfully");
       setMessageType("success");
       await fetchData();

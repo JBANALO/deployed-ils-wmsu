@@ -31,6 +31,31 @@ const resolveSchoolYear = async (req) => {
   return getActiveSchoolYear();
 };
 
+const ensureClassAssignmentsTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS class_assignments (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      grade_level VARCHAR(50) NOT NULL,
+      section VARCHAR(100) NOT NULL,
+      adviser_id VARCHAR(255) NOT NULL,
+      adviser_name VARCHAR(255) DEFAULT '',
+      school_year_id INT NULL,
+      INDEX idx_class_assignments_school_year (school_year_id)
+    )
+  `);
+
+  try {
+    const [columns] = await pool.query('SHOW COLUMNS FROM class_assignments');
+    const hasSchoolYearId = columns.some((column) => column.Field === 'school_year_id');
+    if (!hasSchoolYearId) {
+      await pool.query('ALTER TABLE class_assignments ADD COLUMN school_year_id INT NULL');
+      await pool.query('CREATE INDEX idx_class_assignments_school_year ON class_assignments (school_year_id)');
+    }
+  } catch (error) {
+    console.log('ensureClassAssignmentsTable schema update skipped:', error.message);
+  }
+};
+
 const getPreviousSchoolYear = async (activeStartDate) => {
   const [rows] = await pool.query(
     'SELECT id, label, start_date FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
@@ -293,13 +318,14 @@ const getAllClasses = async (req, res) => {
 const getAdviserClasses = async (req, res) => {
   try {
     const { adviserId } = req.params;
+    const targetSy = await resolveSchoolYear(req);
     console.log(`getAdviserClasses - adviserId: ${adviserId}`);
 
     try {
       // First try direct match on classes.adviser_id
       const [rows] = await pool.query(
-        `SELECT c.* FROM classes c WHERE c.adviser_id = ?`,
-        [adviserId]
+        `SELECT c.* FROM classes c WHERE c.adviser_id = ? AND c.school_year_id = ?`,
+        [adviserId, targetSy.id]
       );
 
       console.log(`Database: Found ${rows.length} classes for adviser ${adviserId} (direct match)`);
@@ -317,12 +343,11 @@ const getAdviserClasses = async (req, res) => {
       if (teachers.length > 0) {
         const teacher = teachers[0];
         console.log(`Found teacher: ${teacher.first_name} ${teacher.last_name}, grade_level: ${teacher.grade_level}, section: ${teacher.section}`);
-          const targetSy = await resolveSchoolYear(req);
 
         if (teacher.grade_level && teacher.section) {
           const [classRows] = await pool.query(
-            `SELECT c.* FROM classes c WHERE c.grade = ? AND c.section = ?`,
-            [teacher.grade_level, teacher.section]
+            `SELECT c.* FROM classes c WHERE c.grade = ? AND c.section = ? AND c.school_year_id = ?`,
+            [teacher.grade_level, teacher.section, targetSy.id]
           );
 
           console.log(`Matched ${classRows.length} class(es) by grade_level+section for teacher ${adviserId}`);
@@ -347,19 +372,19 @@ const getAdviserClasses = async (req, res) => {
           `SELECT id, first_name, last_name FROM teachers WHERE id = ?`,
           [adviserId]
         );
-            await pool.query(
-              `UPDATE classes SET adviser_id = ? WHERE id = ? AND school_year_id = ?`,
-              [adviser_id, classId, targetSy.id]
+        if (teacherRows.length > 0) {
+          const t = teacherRows[0];
+          const fullName = `${t.first_name || ''} ${t.last_name || ''}`.trim();
           const [nameMatchRows] = await pool.query(
-            `SELECT c.* FROM classes c WHERE c.adviser_name LIKE ? OR c.adviser_name LIKE ?`,
-            [`%${t.first_name}%${t.last_name}%`, `%${t.last_name}%${t.first_name}%`]
+            `SELECT c.* FROM classes c WHERE (c.adviser_name LIKE ? OR c.adviser_name LIKE ?) AND c.school_year_id = ?`,
+            [`%${t.first_name}%${t.last_name}%`, `%${t.last_name}%${t.first_name}%`, targetSy.id]
           );
           if (nameMatchRows.length > 0) {
             console.log(`Name fallback matched ${nameMatchRows.length} class(es) for adviser '${fullName}'`);
             // Also fix the stale adviser_id in classes table so future lookups work by ID
             await pool.query(
-              `UPDATE classes SET adviser_id = ? WHERE adviser_name LIKE ? OR adviser_name LIKE ?`,
-              [String(adviserId), `%${t.first_name}%${t.last_name}%`, `%${t.last_name}%${t.first_name}%`]
+              `UPDATE classes SET adviser_id = ? WHERE (adviser_name LIKE ? OR adviser_name LIKE ?) AND school_year_id = ?`,
+              [String(adviserId), `%${t.first_name}%${t.last_name}%`, `%${t.last_name}%${t.first_name}%`, targetSy.id]
             );
             const enriched = nameMatchRows.map(cls => ({ ...cls, adviser_id: String(adviserId), adviser_name: fullName }));
             return res.json({ success: true, data: enriched });
@@ -391,6 +416,7 @@ const getAdviserClasses = async (req, res) => {
 const getSubjectTeacherClasses = async (req, res) => {
   try {
     const { userId } = req.params;
+    const targetSy = await resolveSchoolYear(req);
     console.log(`getSubjectTeacherClasses - userId: ${userId}`);
 
     try {
@@ -399,9 +425,9 @@ const getSubjectTeacherClasses = async (req, res) => {
                 GROUP_CONCAT(DISTINCT st.subject) as subjects_teaching
          FROM classes c
          JOIN subject_teachers st ON c.id = st.class_id
-         WHERE st.teacher_id = ?
+         WHERE st.teacher_id = ? AND st.school_year_id = ? AND c.school_year_id = ?
          GROUP BY c.id`,
-        [userId]
+        [userId, targetSy.id, targetSy.id]
       );
 
       console.log(`Database: Found ${rows.length} classes for subject teacher ${userId}`);
@@ -429,6 +455,7 @@ const assignAdviserToClass = async (req, res) => {
   try {
     const { classId } = req.params;
     const { adviser_id, adviser_name, grade, section } = req.body;
+    const targetSy = await resolveSchoolYear(req);
     const gradeLevel = grade;
     const classSection = section;
 
@@ -438,31 +465,35 @@ const assignAdviserToClass = async (req, res) => {
       return res.status(400).json({ success: false, message: 'adviser_id, grade, and section are required' });
     }
 
-    // Ensure class_assignments table exists with correct schema
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS class_assignments (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        grade_level VARCHAR(50) NOT NULL,
-        section VARCHAR(100) NOT NULL,
-        adviser_id VARCHAR(255) NOT NULL,
-        adviser_name VARCHAR(255) DEFAULT '',
-        UNIQUE KEY unique_class (grade_level, section)
-      )
-    `);
+    await ensureClassAssignmentsTable();
 
-    // Upsert into class_assignments
-    await pool.query(
-      `INSERT INTO class_assignments (grade_level, section, adviser_id, adviser_name)
-       VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE adviser_id = VALUES(adviser_id), adviser_name = VALUES(adviser_name)`,
-      [gradeLevel, classSection, String(adviser_id), adviser_name || '']
+    const [existingAssignmentRows] = await pool.query(
+      `SELECT id FROM class_assignments
+       WHERE grade_level = ? AND section = ? AND (school_year_id = ? OR school_year_id IS NULL)
+       ORDER BY id DESC LIMIT 1`,
+      [gradeLevel, classSection, targetSy.id]
     );
+
+    if (existingAssignmentRows.length > 0) {
+      await pool.query(
+        `UPDATE class_assignments
+         SET adviser_id = ?, adviser_name = ?, school_year_id = ?
+         WHERE id = ?`,
+        [String(adviser_id), adviser_name || '', targetSy.id, existingAssignmentRows[0].id]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO class_assignments (grade_level, section, adviser_id, adviser_name, school_year_id)
+         VALUES (?, ?, ?, ?, ?)`,
+        [gradeLevel, classSection, String(adviser_id), adviser_name || '', targetSy.id]
+      );
+    }
 
     // ALSO update the classes table (critical for frontend display)
     try {
       await pool.query(
-        `UPDATE classes SET adviser_id = ?, adviser_name = ? WHERE grade = ? AND section = ?`,
-        [String(adviser_id), adviser_name || '', gradeLevel, classSection]
+        `UPDATE classes SET adviser_id = ?, adviser_name = ? WHERE grade = ? AND section = ? AND school_year_id = ?`,
+        [String(adviser_id), adviser_name || '', gradeLevel, classSection, targetSy.id]
       );
       console.log('✅ Updated classes table');
     } catch(e) { 
@@ -474,8 +505,8 @@ const assignAdviserToClass = async (req, res) => {
     if (!isNaN(numericId) && String(numericId) === String(adviser_id)) {
       try {
         await pool.query(
-          `UPDATE teachers SET grade_level = ?, section = ? WHERE id = ?`,
-          [gradeLevel, classSection, numericId]
+          `UPDATE teachers SET grade_level = ?, section = ? WHERE id = ? AND school_year_id = ?`,
+          [gradeLevel, classSection, numericId, targetSy.id]
         );
       } catch(e) { console.log('Could not update teachers table:', e.message); }
     }
@@ -502,26 +533,35 @@ const unassignAdviserFromClass = async (req, res) => {
   try {
     const { classId } = req.params;
     const { adviser_id, grade, section } = req.body;
+    const targetSy = await resolveSchoolYear(req);
 
     console.log(`unassignAdviserFromClass - classId: ${classId}, adviser_id: ${adviser_id}, grade: ${grade}, section: ${section}`);
 
     if (adviser_id) {
       // Remove from class_assignments
       try {
-        await pool.query(`DELETE FROM class_assignments WHERE adviser_id = ?`, [String(adviser_id)]);
+        await ensureClassAssignmentsTable();
+        await pool.query(
+          `DELETE FROM class_assignments WHERE adviser_id = ? AND (school_year_id = ? OR school_year_id IS NULL)`,
+          [String(adviser_id), targetSy.id]
+        );
       } catch(e) { /* table may not exist */ }
       // Also clear from teachers table if numeric ID
       const numericId = parseInt(adviser_id);
       if (!isNaN(numericId) && String(numericId) === String(adviser_id)) {
         try {
-          await pool.query(`UPDATE teachers SET grade_level = NULL, section = NULL WHERE id = ?`, [numericId]);
+          await pool.query(
+            `UPDATE teachers SET grade_level = NULL, section = NULL WHERE id = ? AND school_year_id = ?`,
+            [numericId, targetSy.id]
+          );
         } catch(e) { /* ignore */ }
       }
     } else {
       try {
+        await ensureClassAssignmentsTable();
         await pool.query(
-          `DELETE FROM class_assignments WHERE LOWER(REPLACE(CONCAT(grade_level, '-', section), ' ', '-')) = ?`,
-          [classId]
+          `DELETE FROM class_assignments WHERE LOWER(REPLACE(CONCAT(grade_level, '-', section), ' ', '-')) = ? AND (school_year_id = ? OR school_year_id IS NULL)`,
+          [classId, targetSy.id]
         );
       } catch(e) { /* table may not exist */ }
     }
@@ -530,14 +570,14 @@ const unassignAdviserFromClass = async (req, res) => {
     try {
       if (grade && section) {
         await pool.query(
-          `UPDATE classes SET adviser_id = NULL, adviser_name = NULL WHERE grade = ? AND section = ?`,
-          [grade, section]
+          `UPDATE classes SET adviser_id = NULL, adviser_name = NULL WHERE grade = ? AND section = ? AND school_year_id = ?`,
+          [grade, section, targetSy.id]
         );
       } else if (classId) {
         // Parse classId to get grade and section
         await pool.query(
-          `UPDATE classes SET adviser_id = NULL, adviser_name = NULL WHERE id = ?`,
-          [classId]
+          `UPDATE classes SET adviser_id = NULL, adviser_name = NULL WHERE id = ? AND school_year_id = ?`,
+          [classId, targetSy.id]
         );
       }
       console.log('✅ Cleared adviser from classes table');
@@ -563,6 +603,7 @@ const assignSubjectTeacher = async (req, res) => {
   try {
     const { classId } = req.params;
     const { teacher_id, teacher_name, subject, day, start_time, end_time } = req.body;
+    const targetSy = await resolveSchoolYear(req);
     const assignmentDay = day || 'Monday';
     const assignmentStart = start_time || '08:00';
     const assignmentEnd = end_time || '09:00';
@@ -591,22 +632,33 @@ const assignSubjectTeacher = async (req, res) => {
         teacher_id VARCHAR(255) NOT NULL,
         teacher_name VARCHAR(255),
         subject VARCHAR(100) NOT NULL,
+        school_year_id INT NULL,
         day VARCHAR(20) DEFAULT 'Monday',
         start_time VARCHAR(10) DEFAULT '08:00',
         end_time VARCHAR(10) DEFAULT '09:00',
         assignedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY unique_assignment (class_id, teacher_id, subject)
+        UNIQUE KEY unique_assignment (class_id, teacher_id, subject, school_year_id)
       )
     `);
+
+    try {
+      const [columns] = await pool.query('SHOW COLUMNS FROM subject_teachers');
+      const hasSchoolYearId = columns.some((column) => column.Field === 'school_year_id');
+      if (!hasSchoolYearId) {
+        await pool.query('ALTER TABLE subject_teachers ADD COLUMN school_year_id INT NULL');
+      }
+    } catch (columnError) {
+      console.log('subject_teachers school_year_id check skipped:', columnError.message);
+    }
 
     // Check for class-level schedule conflict on the same day/time
     const [classConflicts] = await pool.query(
       `SELECT c.grade, c.section, st.teacher_name, st.subject, st.day, st.start_time, st.end_time
        FROM subject_teachers st
        JOIN classes c ON st.class_id = c.id
-       WHERE st.class_id = ? AND st.day = ?
+       WHERE st.class_id = ? AND st.day = ? AND st.school_year_id = ? AND c.school_year_id = ?
        AND NOT (st.end_time <= ? OR st.start_time >= ?)`,
-      [classId, assignmentDay, assignmentStart, assignmentEnd]
+      [classId, assignmentDay, targetSy.id, targetSy.id, assignmentStart, assignmentEnd]
     );
 
     if (classConflicts.length > 0) {
@@ -622,9 +674,9 @@ const assignSubjectTeacher = async (req, res) => {
       `SELECT c.grade, c.section, st.subject, st.day, st.start_time, st.end_time
        FROM subject_teachers st
        JOIN classes c ON st.class_id = c.id
-       WHERE st.teacher_id = ? AND st.day = ?
+       WHERE st.teacher_id = ? AND st.day = ? AND st.school_year_id = ? AND c.school_year_id = ?
        AND NOT (st.end_time <= ? OR st.start_time >= ?)`,
-      [teacher_id, assignmentDay, assignmentStart, assignmentEnd]
+      [teacher_id, assignmentDay, targetSy.id, targetSy.id, assignmentStart, assignmentEnd]
     );
 
     if (teacherConflicts.length > 0) {
@@ -637,8 +689,8 @@ const assignSubjectTeacher = async (req, res) => {
 
     // Check if already assigned
     const [existing] = await pool.query(
-      `SELECT id FROM subject_teachers WHERE class_id = ? AND teacher_id = ? AND subject = ?`,
-      [classId, teacher_id, subject]
+      `SELECT id FROM subject_teachers WHERE class_id = ? AND teacher_id = ? AND subject = ? AND school_year_id = ?`,
+      [classId, teacher_id, subject, targetSy.id]
     );
 
     if (existing.length > 0) {
@@ -650,9 +702,9 @@ const assignSubjectTeacher = async (req, res) => {
 
     // Insert new assignment
     await pool.query(
-      `INSERT INTO subject_teachers (class_id, teacher_id, teacher_name, subject, day, start_time, end_time)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [classId, teacher_id, teacher_name || '', subject, assignmentDay, assignmentStart, assignmentEnd]
+      `INSERT INTO subject_teachers (class_id, teacher_id, teacher_name, subject, school_year_id, day, start_time, end_time)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [classId, teacher_id, teacher_name || '', subject, targetSy.id, assignmentDay, assignmentStart, assignmentEnd]
     );
 
     console.log('✅ Subject teacher assigned successfully');
@@ -678,12 +730,13 @@ const assignSubjectTeacher = async (req, res) => {
 const unassignSubjectTeacher = async (req, res) => {
   try {
     const { classId, teacherId } = req.params;
+    const targetSy = await resolveSchoolYear(req);
 
     console.log(`unassignSubjectTeacher - classId: ${classId}, teacherId: ${teacherId}`);
 
     await pool.query(
-      `DELETE FROM subject_teachers WHERE class_id = ? AND teacher_id = ?`,
-      [classId, teacherId]
+      `DELETE FROM subject_teachers WHERE class_id = ? AND teacher_id = ? AND school_year_id = ?`,
+      [classId, teacherId, targetSy.id]
     );
 
     console.log('✅ Subject teacher unassigned successfully');

@@ -104,7 +104,10 @@ const getAllTeachers = async (req, res) => {
 
       try {
         classAssignments = await query(
-          `SELECT grade_level, section, adviser_id, adviser_name FROM class_assignments`
+          `SELECT grade_level, section, adviser_id, adviser_name
+           FROM class_assignments
+           WHERE school_year_id = ?`,
+          [targetSy.id]
         );
       } catch (error) {
         classAssignments = [];
@@ -112,7 +115,10 @@ const getAllTeachers = async (req, res) => {
 
       try {
         classesWithAdvisers = await query(
-          `SELECT grade, section, adviser_id, adviser_name FROM classes WHERE adviser_id IS NOT NULL OR adviser_name IS NOT NULL`
+          `SELECT grade, section, adviser_id, adviser_name
+           FROM classes
+           WHERE school_year_id = ? AND (adviser_id IS NOT NULL OR adviser_name IS NOT NULL)`,
+          [targetSy.id]
         );
       } catch (error) {
         classesWithAdvisers = [];
@@ -120,7 +126,10 @@ const getAllTeachers = async (req, res) => {
 
       try {
         subjectTeachers = await query(
-          `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time FROM subject_teachers`
+          `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time
+           FROM subject_teachers
+           WHERE school_year_id = ?`,
+          [targetSy.id]
         );
       } catch (error) {
         subjectTeachers = [];
