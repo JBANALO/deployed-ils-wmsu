@@ -174,6 +174,22 @@ export default function AdminAssignAdviser() {
 
       const normalizeGrade = (value) => String(value || '').trim().toLowerCase().replace(/^grade\s+/i, '');
       const normalizeSection = (value) => String(value || '').trim().toLowerCase();
+      const parseTeacherSubjects = (teacher) => {
+        const raw = teacher.subjectsHandled ?? teacher.subjects ?? [];
+        if (Array.isArray(raw)) return raw.filter(Boolean);
+        if (typeof raw === 'string') {
+          if (raw.trim().startsWith('[')) {
+            try {
+              const parsed = JSON.parse(raw);
+              return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+            } catch {
+              return raw.split(',').map((s) => s.trim()).filter(Boolean);
+            }
+          }
+          return raw.split(',').map((s) => s.trim()).filter(Boolean);
+        }
+        return [];
+      };
 
       const classesWithFallbackAdviser = classesArray.map((cls) => {
         if (cls.adviser_name) return cls;
@@ -194,7 +210,41 @@ export default function AdminAssignAdviser() {
         };
       });
 
-      setClasses(classesWithFallbackAdviser);
+      const classesWithTeacherFallback = classesWithFallbackAdviser.map((cls) => {
+        const existingSubjectTeachers = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
+        if (existingSubjectTeachers.length > 0) return cls;
+
+        const classGrade = normalizeGrade(cls.grade || '');
+        const classSection = normalizeSection(cls.section || '');
+
+        const matchedTeachers = allTeachers.filter((teacher) => {
+          const teacherGrade = normalizeGrade(teacher.gradeLevel || teacher.grade_level || '');
+          const teacherSection = normalizeSection(teacher.section || '');
+          if (!teacherGrade || !teacherSection) return false;
+          return teacherGrade === classGrade && teacherSection === classSection;
+        });
+
+        const fallbackSubjectTeachers = matchedTeachers.flatMap((teacher) => {
+          const teacherName = `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim();
+          return parseTeacherSubjects(teacher).map((subject, index) => ({
+            id: `fallback-${cls.id}-${teacher.id}-${index}`,
+            teacher_id: teacher.id,
+            teacher_name: teacherName || 'Unknown',
+            subject,
+            day: 'Monday - Friday',
+            start_time: '08:00',
+            end_time: '09:00'
+          }));
+        });
+
+        if (fallbackSubjectTeachers.length === 0) return cls;
+        return {
+          ...cls,
+          subject_teachers: fallbackSubjectTeachers
+        };
+      });
+
+      setClasses(classesWithTeacherFallback);
       setTeachers(allTeachers);
     } catch (error) {
       toast.error('Error loading data: ' + error.message);
