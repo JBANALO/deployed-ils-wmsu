@@ -161,27 +161,36 @@ exports.getAllClasses = async (req, res) => {
     // Fetch subject teachers and adviser info for each class
     const classesWithTeachers = await Promise.all(classes.map(async (cls) => {
       try {
+        const legacyClassId = `${String(cls.grade || '').trim().toLowerCase().replace(/\s+/g, '-')}-${String(cls.section || '').trim().toLowerCase().replace(/\s+/g, '-')}`;
+
         // Fetch subject teachers
         const subjectTeachers = await runFirstSuccessfulQuery([
           {
-            sql: `SELECT st.*, u.firstName AS first_name, u.lastName AS last_name
+            sql: `SELECT st.*, u.firstName AS first_name, u.lastName AS last_name,
+                         t.first_name AS teacher_first_name, t.last_name AS teacher_last_name
                   FROM subject_teachers st
                   LEFT JOIN users u ON st.teacher_id = u.id COLLATE utf8mb4_unicode_ci
-                  WHERE st.class_id = ? AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
-            params: [cls.id, targetSy.id]
+                  LEFT JOIN teachers t ON st.teacher_id = t.id
+                  WHERE (st.class_id = ? OR st.class_id = ?)
+                    AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
+            params: [cls.id, legacyClassId, targetSy.id]
           },
           {
-            sql: `SELECT st.*, u.first_name, u.last_name
+            sql: `SELECT st.*, u.first_name, u.last_name,
+                         t.first_name AS teacher_first_name, t.last_name AS teacher_last_name
                   FROM subject_teachers st
                   LEFT JOIN users u ON st.teacher_id = u.id COLLATE utf8mb4_unicode_ci
-                  WHERE st.class_id = ? AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
-            params: [cls.id, targetSy.id]
+                  LEFT JOIN teachers t ON st.teacher_id = t.id
+                  WHERE (st.class_id = ? OR st.class_id = ?)
+                    AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
+            params: [cls.id, legacyClassId, targetSy.id]
           },
           {
             sql: `SELECT st.*
                   FROM subject_teachers st
-                  WHERE st.class_id = ? AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
-            params: [cls.id, targetSy.id]
+                  WHERE (st.class_id = ? OR st.class_id = ?)
+                    AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
+            params: [cls.id, legacyClassId, targetSy.id]
           }
         ]);
         
@@ -300,7 +309,10 @@ exports.getAllClasses = async (req, res) => {
           subject_teachers: subjectTeachers.map(st => ({
             id: st.id,
             teacher_id: st.teacher_id,
-            teacher_name: st.teacher_name || (st.first_name && st.last_name ? `${st.first_name} ${st.last_name}` : 'Unknown'),
+            teacher_name:
+              st.teacher_name
+              || (st.first_name && st.last_name ? `${st.first_name} ${st.last_name}` : null)
+              || (st.teacher_first_name && st.teacher_last_name ? `${st.teacher_first_name} ${st.teacher_last_name}` : 'Unknown'),
             subject: st.subject,
             day: st.day || 'Monday - Friday',
             start_time: st.start_time || '08:00',
