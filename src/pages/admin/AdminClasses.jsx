@@ -43,6 +43,10 @@ export default function AdminClasses() {
 
   const [fetchLoading, setFetchLoading] = useState(false);
 
+  const normalizeGrade = (value) => String(value || '').trim().toLowerCase().replace(/^grade\s+/i, '');
+  const normalizeSection = (value) => String(value || '').trim().toLowerCase();
+  const sectionKey = (grade, section) => `${normalizeGrade(grade)}-${normalizeSection(section)}`;
+
 
   const fetchSchoolYears = async () => {
     try {
@@ -95,9 +99,6 @@ export default function AdminClasses() {
         console.log('Could not fetch sections:', err.message);
         toast.error('Failed to load sections for classes');
       }
-
-      const normalize = (value) => (value || '').toString().trim().toLowerCase();
-      const sectionKey = (grade, section) => `${normalize(grade)}-${normalize(section)}`;
 
       const filterBySections = (classes) => {
         if (!fetchedSections || fetchedSections.length === 0) return classes;
@@ -331,10 +332,9 @@ export default function AdminClasses() {
 
   const getTeacherForClass = (grade, section) => {
 
-    return teachers.find(teacher => 
-
-      teacher.gradeLevel === grade && teacher.section === section
-
+    return teachers.find(teacher =>
+      sectionKey(teacher.gradeLevel || teacher.grade_level, teacher.section)
+      === sectionKey(grade, section)
     );
 
   };
