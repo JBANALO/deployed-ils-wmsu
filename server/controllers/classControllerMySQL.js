@@ -130,6 +130,16 @@ exports.getAllClasses = async (req, res) => {
               FROM class_assignments
               WHERE school_year_id = ? OR school_year_id IS NULL`,
         params: [targetSy.id]
+      },
+      {
+        sql: `SELECT class_id, grade_level, section, adviser_id, adviser_name
+              FROM class_assignments`,
+        params: []
+      },
+      {
+        sql: `SELECT NULL AS class_id, grade_level, section, adviser_id, adviser_name
+              FROM class_assignments`,
+        params: []
       }
     ]);
 
@@ -139,9 +149,10 @@ exports.getAllClasses = async (req, res) => {
       if (assignment.class_id) {
         assignmentByClassId.set(normalizeClassId(assignment.class_id), assignment);
       }
-      if (assignment.grade_level && assignment.section) {
+      const assignmentGrade = assignment.grade_level || assignment.grade || '';
+      if (assignmentGrade && assignment.section) {
         assignmentByGradeSection.set(
-          normalizeClassKey(assignment.grade_level, assignment.section),
+          normalizeClassKey(assignmentGrade, assignment.section),
           assignment
         );
       }
@@ -151,13 +162,28 @@ exports.getAllClasses = async (req, res) => {
     const classesWithTeachers = await Promise.all(classes.map(async (cls) => {
       try {
         // Fetch subject teachers
-        const subjectTeachers = await query(
-          `SELECT st.*, u.firstName, u.lastName 
-           FROM subject_teachers st 
-           LEFT JOIN users u ON st.teacher_id = u.id COLLATE utf8mb4_unicode_ci
-           WHERE st.class_id = ? AND (st.school_year_id = ? OR st.school_year_id IS NULL)` ,
-          [cls.id, targetSy.id]
-        );
+        const subjectTeachers = await runFirstSuccessfulQuery([
+          {
+            sql: `SELECT st.*, u.firstName AS first_name, u.lastName AS last_name
+                  FROM subject_teachers st
+                  LEFT JOIN users u ON st.teacher_id = u.id COLLATE utf8mb4_unicode_ci
+                  WHERE st.class_id = ? AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
+            params: [cls.id, targetSy.id]
+          },
+          {
+            sql: `SELECT st.*, u.first_name, u.last_name
+                  FROM subject_teachers st
+                  LEFT JOIN users u ON st.teacher_id = u.id COLLATE utf8mb4_unicode_ci
+                  WHERE st.class_id = ? AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
+            params: [cls.id, targetSy.id]
+          },
+          {
+            sql: `SELECT st.*
+                  FROM subject_teachers st
+                  WHERE st.class_id = ? AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
+            params: [cls.id, targetSy.id]
+          }
+        ]);
         
         // Fetch adviser info - check both adviser_id in classes table and gradeLevel/section in users/teachers tables
         const classAssignment = assignmentByClassId.get(normalizeClassId(cls.id))
@@ -274,7 +300,7 @@ exports.getAllClasses = async (req, res) => {
           subject_teachers: subjectTeachers.map(st => ({
             id: st.id,
             teacher_id: st.teacher_id,
-            teacher_name: st.teacher_name || (st.firstName && st.lastName ? `${st.firstName} ${st.lastName}` : 'Unknown'),
+            teacher_name: st.teacher_name || (st.first_name && st.last_name ? `${st.first_name} ${st.last_name}` : 'Unknown'),
             subject: st.subject,
             day: st.day || 'Monday - Friday',
             start_time: st.start_time || '08:00',
