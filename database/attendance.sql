@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS `attendance` (
   `date` DATE NOT NULL,
   `time` VARCHAR(20),
   `timestamp` DATETIME NOT NULL,
-  `status` ENUM('Present', 'Absent', 'Late', 'present', 'absent', 'late') NOT NULL,
+  `status` ENUM('Present', 'Absent', 'Late') NOT NULL,
   `period` VARCHAR(50) COMMENT 'morning/afternoon',
   `location` VARCHAR(100) COMMENT 'QR Portal/Mobile App',
   `teacherId` VARCHAR(255),

@@ -46,6 +46,15 @@ const ensureStudentsSchoolYearColumnExists = async () => {
   studentsSyChecked = true;
 };
 
+// Helper to normalize status values to valid ENUM values
+const normalizeStatus = (status) => {
+  const normalized = String(status || 'Present').toLowerCase().trim();
+  if (normalized === 'present') return 'Present';
+  if (normalized === 'absent') return 'Absent';
+  if (normalized === 'late') return 'Late';
+  return 'Present'; // Default fallback
+};
+
 // POST /api/attendance - Record attendance via QR scan
 router.post('/', async (req, res) => {
   try {
@@ -128,7 +137,7 @@ router.post('/', async (req, res) => {
 
     const today = date || new Date().toISOString().split('T')[0];
     const currentPeriod = period || 'morning';
-    const currentStatus = status || 'present';
+    const currentStatus = normalizeStatus(status); // Normalize to valid ENUM value
     // MySQL datetime requires 'YYYY-MM-DD HH:MM:SS' — convert ISO string if needed
     const toMySQLDatetime = (isoStr) => {
       const d = new Date(isoStr || Date.now());
@@ -330,7 +339,34 @@ router.get('/', async (req, res) => {
     
     sqlQuery += ' ORDER BY timestamp DESC';
     
-    const records = await query(sqlQuery, params);
+    let records;
+    try {
+      records = await query(sqlQuery, params);
+    } catch (queryError) {
+      // Check if it's the ENUM error and attempt auto-fix
+      if (queryError.message && queryError.message.includes("has duplicated value")) {
+        console.warn('⚠️ Detected ENUM error, attempting auto-fix...');
+        try {
+          // Normalize all lowercase values to proper case
+          await query(`UPDATE attendance SET status = 'Present' WHERE LOWER(status) = 'present'`);
+          await query(`UPDATE attendance SET status = 'Absent' WHERE LOWER(status) = 'absent'`);
+          await query(`UPDATE attendance SET status = 'Late' WHERE LOWER(status) = 'late'`);
+          console.log('✅ Auto-fixed status values');
+          
+          // Retry the query
+          records = await query(sqlQuery, params);
+        } catch (fixError) {
+          console.error('❌ Auto-fix failed:', fixError.message);
+          return res.status(500).json({
+            success: false,
+            message: 'Database schema error detected. Please run: node fix-attendance-enum.cjs',
+            error: fixError.message
+          });
+        }
+      } else {
+        throw queryError;
+      }
+    }
     
     // Columns are already camelCase in the attendance table
     const transformedRecords = records.map(record => ({
