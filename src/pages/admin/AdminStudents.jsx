@@ -55,7 +55,7 @@ const getAlternativeQRUrls = (qrCode) => {
 
 export default function AdminStudents() {
   const navigate = useNavigate();
-  const { isViewingLocked } = useSchoolYear();
+  const { viewingSchoolYear, activeSchoolYear, isViewingLocked } = useSchoolYear();
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -78,16 +78,18 @@ export default function AdminStudents() {
   const [selectAllG4to6, setSelectAllG4to6] = useState(false);
 
   const isViewOnly = isViewingLocked;
+  const targetSchoolYearId = viewingSchoolYear?.id || activeSchoolYear?.id || '';
 
   // Fetch students from API
   useEffect(() => {
     fetchStudents();
-  }, []);
+  }, [targetSchoolYearId]);
 
   const fetchStudents = async () => {
     try {
+      const schoolYearQuery = targetSchoolYearId ? `?schoolYearId=${encodeURIComponent(String(targetSchoolYearId))}` : '';
       // Try the new backend API first
-      const response = await fetch(`${API_BASE_URL}/students`);
+      const response = await fetch(`${API_BASE_URL}/students${schoolYearQuery}`);
       if (response.ok) {
         const data = await response.json();
         const studentsArray = Array.isArray(data) ? data : data.data || [];
@@ -112,7 +114,8 @@ export default function AdminStudents() {
       toast.error('Error fetching students: ' + error.message);
       // Try alternative endpoint if primary fails
       try {
-        const altResponse = await fetch(`${API_BASE_URL}/students`);
+        const schoolYearQuery = targetSchoolYearId ? `?schoolYearId=${encodeURIComponent(String(targetSchoolYearId))}` : '';
+        const altResponse = await fetch(`${API_BASE_URL}/students${schoolYearQuery}`);
         if (altResponse.ok) {
           const data = await altResponse.json();
           // Filter for valid (non-rejected) students

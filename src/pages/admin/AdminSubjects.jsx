@@ -37,7 +37,7 @@ const GRADE_COLORS = {
 };
 
 export default function AdminSubjects() {
-    const { isViewingLocked } = useSchoolYear();
+  const { viewingSchoolYear, activeSchoolYear, isViewingLocked } = useSchoolYear();
   const [subjects, setSubjects] = useState([]);
   const [archivedSubjects, setArchivedSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -59,15 +59,18 @@ export default function AdminSubjects() {
   const [prevSubjects, setPrevSubjects] = useState([]);
   const [selectedPrevIds, setSelectedPrevIds] = useState(new Set());
   const [fetchLoading, setFetchLoading] = useState(false);
+  const targetSchoolYearId = viewingSchoolYear?.id || activeSchoolYear?.id || '';
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [targetSchoolYearId]);
 
   const loadPrevSubjects = async () => {
     try {
       setFetchLoading(true);
-      const res = await axios.get('/subjects/previous-year');
+      const res = await axios.get('/subjects/previous-year', {
+        params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
+      });
       setPrevSubjects(res.data?.data || []);
       setSelectedPrevIds(new Set());
     } catch (error) {
@@ -82,8 +85,12 @@ export default function AdminSubjects() {
     setLoading(true);
     try {
       const [activeRes, archivedRes] = await Promise.all([
-        axios.get('/subjects'),
-        axios.get('/subjects/archived')
+        axios.get('/subjects', {
+          params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
+        }),
+        axios.get('/subjects/archived', {
+          params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
+        })
       ]);
       setSubjects(activeRes.data?.data || []);
       setArchivedSubjects(archivedRes.data?.data || []);

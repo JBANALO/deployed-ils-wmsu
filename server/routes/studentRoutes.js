@@ -245,8 +245,9 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
     await ensureStudentSchoolYearColumn();
     await ensureGradesSchoolYearColumn();
     const { id } = req.params;
+    const { schoolYearId } = req.query;
     const [studentRow] = await query('SELECT school_year_id FROM students WHERE id = ?', [id]);
-    const targetSyId = studentRow?.school_year_id || (await getActiveSchoolYear())?.id;
+    const targetSyId = schoolYearId || studentRow?.school_year_id || (await getActiveSchoolYear())?.id;
     const grades = await query('SELECT * FROM grades WHERE student_id = ? AND (school_year_id = ? OR school_year_id IS NULL)', [id, targetSyId]);
 
     // grades table: each row is one subject + quarter combo

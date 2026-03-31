@@ -142,10 +142,11 @@ export default function AdminAssignAdviser() {
       // If /teachers didn't work, fall back to /users
       if (allTeachers.length === 0) {
         try {
-          const usersResponse = await fetch(`${API_BASE_URL.replace('/api', '')}/api/users`);
+          const usersResponse = await fetch(`${API_BASE_URL.replace('/api', '')}/api/users?${schoolYearQuery}`);
           if (usersResponse.ok) {
             const data = await usersResponse.json();
-            allTeachers = (data.data || data.users || [])
+            const users = data.data?.users || data.users || data.data || [];
+            allTeachers = users
               .filter(u => u.role === 'adviser' || u.role === 'teacher')
               .map(u => ({
                 id: u.id,

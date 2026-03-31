@@ -15,7 +15,7 @@ import { useSchoolYear } from "../../context/SchoolYearContext";
 import axios from "../../api/axiosConfig";
 
 export default function AdminSections() {
-    const { isViewingLocked } = useSchoolYear();
+  const { viewingSchoolYear, activeSchoolYear, isViewingLocked } = useSchoolYear();
   const [sections, setSections] = useState([]);
   const [archivedSections, setArchivedSections] = useState([]);
   const [sectionStats, setSectionStats] = useState([]);
@@ -38,15 +38,18 @@ export default function AdminSections() {
   const [selectedPrevIds, setSelectedPrevIds] = useState(new Set());
   const [fetchLoading, setFetchLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
+  const targetSchoolYearId = viewingSchoolYear?.id || activeSchoolYear?.id || '';
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [targetSchoolYearId]);
 
   const loadPrevSections = async () => {
     try {
       setFetchLoading(true);
-      const res = await axios.get('/sections/previous-year');
+      const res = await axios.get('/sections/previous-year', {
+        params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
+      });
       setPrevSections(res.data?.data || []);
       setSelectedPrevIds(new Set());
     } catch (error) {
@@ -61,9 +64,15 @@ export default function AdminSections() {
     setLoading(true);
     try {
       const [activeRes, archivedRes, statsRes] = await Promise.all([
-        axios.get('/sections'),
-        axios.get('/sections/archived'),
-        axios.get('/sections/stats')
+        axios.get('/sections', {
+          params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
+        }),
+        axios.get('/sections/archived', {
+          params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
+        }),
+        axios.get('/sections/stats', {
+          params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
+        })
       ]);
       setSections(activeRes.data?.data || []);
       setArchivedSections(archivedRes.data?.data || []);

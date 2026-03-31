@@ -208,6 +208,7 @@ const getAllClasses = async (req, res) => {
       if (rows.length > 0) {
         // Try to fetch subject_teachers
         let subjectTeachersMap = {};
+        let classAssignmentsMap = {};
         try {
           const [stRows] = await pool.query(
             `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time FROM subject_teachers WHERE school_year_id = ?`,
@@ -223,8 +224,30 @@ const getAllClasses = async (req, res) => {
           console.log('Could not fetch subject_teachers:', stError.message);
         }
 
+        // Merge adviser assignment history for the selected school year
+        try {
+          const [caRows] = await pool.query(
+            `SELECT class_id, grade_level, section, adviser_id, adviser_name
+             FROM class_assignments
+             WHERE school_year_id = ?`,
+            [targetSy.id]
+          );
+          caRows.forEach((ca) => {
+            if (ca.class_id) {
+              classAssignmentsMap[`id:${ca.class_id}`] = ca;
+            }
+            if (ca.grade_level && ca.section) {
+              classAssignmentsMap[`gs:${ca.grade_level}::${ca.section}`] = ca;
+            }
+          });
+        } catch (caError) {
+          console.log('Could not fetch class_assignments:', caError.message);
+        }
+
         const classesWithST = rows.map(cls => ({
           ...cls,
+          adviser_id: cls.adviser_id || classAssignmentsMap[`id:${cls.id}`]?.adviser_id || classAssignmentsMap[`gs:${cls.grade}::${cls.section}`]?.adviser_id || null,
+          adviser_name: cls.adviser_name || classAssignmentsMap[`id:${cls.id}`]?.adviser_name || classAssignmentsMap[`gs:${cls.grade}::${cls.section}`]?.adviser_name || '',
           subject_teachers: subjectTeachersMap[cls.id] || []
         }));
 

@@ -22,7 +22,7 @@ const normalizeSubjectName = (value) => String(value || '')
   .toLowerCase();
 
 export default function AdminGrades() {
-    const { isViewingLocked } = useSchoolYear();
+  const { viewingSchoolYear, activeSchoolYear, isViewingLocked } = useSchoolYear();
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -39,19 +39,22 @@ export default function AdminGrades() {
   const [selectedQuarter, setSelectedQuarter] = useState('q1');
   const [saving, setSaving] = useState(false);
   const [subjectsByGrade, setSubjectsByGrade] = useState({});
+  const targetSchoolYearId = viewingSchoolYear?.id || activeSchoolYear?.id || '';
 
 
 
   useEffect(() => {
     loadGradesData();
-  }, []);
+  }, [targetSchoolYearId]);
 
   const loadGradesData = async () => {
     try {
       setLoading(true);
 
       // Fetch ALL students (with and without grades)
-      const studentsRes = await axios.get('/students');
+      const studentsRes = await axios.get('/students', {
+        params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
+      });
       const studentsData = Array.isArray(studentsRes.data.data) ? studentsRes.data.data : 
                            Array.isArray(studentsRes.data) ? studentsRes.data : [];
 
@@ -117,7 +120,9 @@ export default function AdminGrades() {
   // Fetch grades for a specific student
   const fetchStudentGrades = async (student) => {
     try {
-      const response = await axios.get(`/students/${student.id}/grades`);
+      const response = await axios.get(`/students/${student.id}/grades`, {
+        params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
+      });
       return response.data || {};
     } catch (error) {
       console.error('Error fetching student grades:', error);

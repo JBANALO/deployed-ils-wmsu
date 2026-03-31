@@ -184,14 +184,93 @@ const getAllTeachers = async (req, res) => {
         };
       });
 
-      console.log(`getAllTeachers: Returning ${dbFormatted.length} teachers for school year ${targetSy.id}`);
+      // Include assignment-only teachers (e.g., historical SY data where teacher row is missing in teachers table for that SY)
+      const existingKeys = new Set(
+        dbFormatted.map((t) => String(t.id || '').trim() || normalizeName(t.fullName))
+      );
+
+      const supplementalByKey = new Map();
+      const upsertSupplemental = ({ id, name, role, gradeLevel = '', section = '', subject = '' }) => {
+        const trimmedName = String(name || '').trim();
+        if (!trimmedName) return;
+        const key = String(id || '').trim() || normalizeName(trimmedName);
+        if (existingKeys.has(key)) return;
+
+        if (!supplementalByKey.has(key)) {
+          const parts = trimmedName.split(/\s+/);
+          const firstName = parts.shift() || trimmedName;
+          const lastName = parts.join(' ');
+          supplementalByKey.set(key, {
+            id: id || `assignment-${key}`,
+            firstName,
+            middleName: '',
+            lastName,
+            fullName: trimmedName,
+            username: '',
+            email: '',
+            role: role || 'teacher',
+            gradeLevel: gradeLevel || '',
+            section: section || '',
+            position: role || 'teacher',
+            subjectsHandled: [],
+            subjects: [],
+            bio: '',
+            profilePic: '',
+            status: 'approved',
+            createdAt: null
+          });
+        }
+
+        const existing = supplementalByKey.get(key);
+        if (role === 'adviser') existing.role = 'adviser';
+        if (subject && !existing.subjects.includes(subject)) {
+          existing.subjects.push(subject);
+          existing.subjectsHandled = existing.subjects;
+          if (existing.role !== 'adviser') existing.role = 'subject_teacher';
+        }
+        if (!existing.gradeLevel && gradeLevel) existing.gradeLevel = gradeLevel;
+        if (!existing.section && section) existing.section = section;
+      };
+
+      classAssignments.forEach((item) => {
+        upsertSupplemental({
+          id: item.adviser_id,
+          name: item.adviser_name,
+          role: 'adviser',
+          gradeLevel: item.grade_level,
+          section: item.section
+        });
+      });
+
+      classesWithAdvisers.forEach((item) => {
+        upsertSupplemental({
+          id: item.adviser_id,
+          name: item.adviser_name,
+          role: 'adviser',
+          gradeLevel: item.grade,
+          section: item.section
+        });
+      });
+
+      subjectTeachers.forEach((item) => {
+        upsertSupplemental({
+          id: item.teacher_id,
+          name: item.teacher_name,
+          role: 'subject_teacher',
+          subject: item.subject
+        });
+      });
+
+      const mergedTeachers = [...dbFormatted, ...Array.from(supplementalByKey.values())];
+
+      console.log(`getAllTeachers: Returning ${mergedTeachers.length} teachers for school year ${targetSy.id}`);
 
       return res.json({
         status: 'success',
         data: {
-          teachers: dbFormatted
+          teachers: mergedTeachers
         },
-        teachers: dbFormatted,
+        teachers: mergedTeachers,
         meta: { schoolYearId: targetSy.id }
       });
     } catch (dbError) {
