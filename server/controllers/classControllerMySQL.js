@@ -63,8 +63,13 @@ const runFirstSuccessfulQuery = async (queries = []) => {
   return [];
 };
 
+const normalizeGradeValue = (grade = '') => {
+  const normalized = String(grade).trim().toLowerCase().replace(/^grade\s+/i, '');
+  return normalized;
+};
+
 const normalizeClassKey = (grade = '', section = '') =>
-  `${String(grade).trim().toLowerCase()}|${String(section).trim().toLowerCase()}`;
+  `${normalizeGradeValue(grade)}|${String(section).trim().toLowerCase()}`;
 
 const normalizeClassId = (value = '') =>
   String(value).trim().toLowerCase().replace(/\s+/g, '-');
@@ -207,20 +212,27 @@ exports.getAllClasses = async (req, res) => {
         
         // If no adviser found via adviser_id, search by grade and section in both tables
         if (!adviserName) {
+          const normalizedGrade = normalizeGradeValue(cls.grade);
+          const normalizedSection = String(cls.section || '').trim().toLowerCase();
+
           const advisersFromUsers = await runFirstSuccessfulQuery([
             {
               sql: `SELECT id, firstName AS first_name, lastName AS last_name
                     FROM users
-                    WHERE role = 'adviser' AND gradeLevel = ? AND section = ?
+                    WHERE role = 'adviser'
+                      AND LOWER(REPLACE(TRIM(gradeLevel), 'grade ', '')) = ?
+                      AND LOWER(TRIM(section)) = ?
                     LIMIT 1`,
-              params: [cls.grade, cls.section]
+              params: [normalizedGrade, normalizedSection]
             },
             {
               sql: `SELECT id, first_name, last_name
                     FROM users
-                    WHERE role = 'adviser' AND grade_level = ? AND section = ?
+                    WHERE role = 'adviser'
+                      AND LOWER(REPLACE(TRIM(grade_level), 'grade ', '')) = ?
+                      AND LOWER(TRIM(section)) = ?
                     LIMIT 1`,
-              params: [cls.grade, cls.section]
+              params: [normalizedGrade, normalizedSection]
             }
           ]);
 
@@ -232,13 +244,18 @@ exports.getAllClasses = async (req, res) => {
         
         // If still no adviser found, check teachers table
         if (!adviserName) {
+          const normalizedGrade = normalizeGradeValue(cls.grade);
+          const normalizedSection = String(cls.section || '').trim().toLowerCase();
+
           try {
             const advisersFromTeachers = await query(
               `SELECT id, first_name, last_name FROM teachers 
-               WHERE role = 'adviser' AND grade_level = ? AND section = ?
+               WHERE role = 'adviser'
+               AND LOWER(REPLACE(TRIM(grade_level), 'grade ', '')) = ?
+               AND LOWER(TRIM(section)) = ?
                AND (school_year_id = ? OR school_year_id IS NULL)
                ORDER BY school_year_id DESC`,
-              [cls.grade, cls.section, targetSy.id]
+              [normalizedGrade, normalizedSection, targetSy.id]
             );
             if (advisersFromTeachers.length > 0) {
               adviserName = `${advisersFromTeachers[0].first_name} ${advisersFromTeachers[0].last_name}`;
