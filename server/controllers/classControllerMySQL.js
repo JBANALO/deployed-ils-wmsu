@@ -51,6 +51,18 @@ const resolveSchoolYear = async (req) => {
   return getActiveSchoolYear();
 };
 
+const runFirstSuccessfulQuery = async (queries = []) => {
+  for (const { sql, params = [] } of queries) {
+    try {
+      const rows = await query(sql, params);
+      return rows;
+    } catch (err) {
+      // Try next candidate query when schema differs (camelCase vs snake_case)
+    }
+  }
+  return [];
+};
+
 const getPreviousSchoolYear = async (activeStartDate) => {
   const rows = await query(
     'SELECT id, label, start_date FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
@@ -112,36 +124,71 @@ exports.getAllClasses = async (req, res) => {
         let adviserId = cls.adviser_id;
         
         if (cls.adviser_id) {
-          // First, check if adviser_id exists in users table
-          try {
-            const advisers = await query(
-              `SELECT id, firstName, lastName FROM users WHERE id = ? AND role = 'adviser'`,
-              [cls.adviser_id]
-            );
-            if (advisers.length > 0) {
-              adviserName = `${advisers[0].firstName} ${advisers[0].lastName}`;
-              adviserId = advisers[0].id;
+          // Check users table first (support both firstName/lastName and first_name/last_name schemas)
+          const userAdvisers = await runFirstSuccessfulQuery([
+            {
+              sql: `SELECT id, firstName AS first_name, lastName AS last_name
+                    FROM users
+                    WHERE id = ? AND role = 'adviser'
+                    LIMIT 1`,
+              params: [cls.adviser_id]
+            },
+            {
+              sql: `SELECT id, first_name, last_name
+                    FROM users
+                    WHERE id = ? AND role = 'adviser'
+                    LIMIT 1`,
+              params: [cls.adviser_id]
             }
-          } catch (err) {
-            console.error(`Error fetching adviser for class ${cls.id}:`, err);
+          ]);
+
+          if (userAdvisers.length > 0) {
+            adviserName = `${userAdvisers[0].first_name || ''} ${userAdvisers[0].last_name || ''}`.trim();
+            adviserId = userAdvisers[0].id;
+          }
+
+          // If not found in users, check teachers table for the selected school year
+          if (!adviserName) {
+            const teacherAdvisers = await runFirstSuccessfulQuery([
+              {
+                sql: `SELECT id, first_name, last_name
+                      FROM teachers
+                      WHERE id = ? AND role = 'adviser' AND (school_year_id = ? OR school_year_id IS NULL)
+                      ORDER BY school_year_id DESC
+                      LIMIT 1`,
+                params: [cls.adviser_id, targetSy.id]
+              }
+            ]);
+
+            if (teacherAdvisers.length > 0) {
+              adviserName = `${teacherAdvisers[0].first_name || ''} ${teacherAdvisers[0].last_name || ''}`.trim();
+              adviserId = teacherAdvisers[0].id;
+            }
           }
         }
         
         // If no adviser found via adviser_id, search by grade and section in both tables
         if (!adviserName) {
-          try {
-            // First check users table
-            const advisersFromUsers = await query(
-              `SELECT id, firstName, lastName FROM users 
-               WHERE role = 'adviser' AND gradeLevel = ? AND section = ?`,
-              [cls.grade, cls.section]
-            );
-            if (advisersFromUsers.length > 0) {
-              adviserName = `${advisersFromUsers[0].firstName} ${advisersFromUsers[0].lastName}`;
-              adviserId = advisersFromUsers[0].id;
+          const advisersFromUsers = await runFirstSuccessfulQuery([
+            {
+              sql: `SELECT id, firstName AS first_name, lastName AS last_name
+                    FROM users
+                    WHERE role = 'adviser' AND gradeLevel = ? AND section = ?
+                    LIMIT 1`,
+              params: [cls.grade, cls.section]
+            },
+            {
+              sql: `SELECT id, first_name, last_name
+                    FROM users
+                    WHERE role = 'adviser' AND grade_level = ? AND section = ?
+                    LIMIT 1`,
+              params: [cls.grade, cls.section]
             }
-          } catch (err) {
-            console.error(`Error searching adviser in users table for class ${cls.id}:`, err);
+          ]);
+
+          if (advisersFromUsers.length > 0) {
+            adviserName = `${advisersFromUsers[0].first_name || ''} ${advisersFromUsers[0].last_name || ''}`.trim();
+            adviserId = advisersFromUsers[0].id;
           }
         }
         
@@ -150,8 +197,10 @@ exports.getAllClasses = async (req, res) => {
           try {
             const advisersFromTeachers = await query(
               `SELECT id, first_name, last_name FROM teachers 
-               WHERE role = 'adviser' AND grade_level = ? AND section = ?`,
-              [cls.grade, cls.section]
+               WHERE role = 'adviser' AND grade_level = ? AND section = ?
+               AND (school_year_id = ? OR school_year_id IS NULL)
+               ORDER BY school_year_id DESC`,
+              [cls.grade, cls.section, targetSy.id]
             );
             if (advisersFromTeachers.length > 0) {
               adviserName = `${advisersFromTeachers[0].first_name} ${advisersFromTeachers[0].last_name}`;
