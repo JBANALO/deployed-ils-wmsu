@@ -68,6 +68,38 @@ const assertActiveTargetSchoolYear = async (targetSy) => {
   return active;
 };
 
+const getSectionFallbackFromClasses = async (schoolYearId) => {
+  const classColumns = await query('SHOW COLUMNS FROM classes');
+  const hasClassSchoolYear = classColumns.some((c) => c.Field === 'school_year_id');
+
+  const classRows = hasClassSchoolYear
+    ? await query(
+        `SELECT MIN(id) AS id, TRIM(section) AS section_name, MIN(grade) AS grade_level
+         FROM classes
+         WHERE school_year_id = ? AND section IS NOT NULL AND TRIM(section) <> ''
+         GROUP BY TRIM(section)
+         ORDER BY section_name`,
+        [schoolYearId]
+      )
+    : await query(
+        `SELECT MIN(id) AS id, TRIM(section) AS section_name, MIN(grade) AS grade_level
+         FROM classes
+         WHERE section IS NOT NULL AND TRIM(section) <> ''
+         GROUP BY TRIM(section)
+         ORDER BY section_name`
+      );
+
+  return classRows.map((row, index) => ({
+    id: row.id || `class-fallback-${schoolYearId}-${index}`,
+    name: row.section_name,
+    description: null,
+    grade_level: row.grade_level || null,
+    is_archived: 0,
+    school_year_id: schoolYearId,
+    source: 'classes_fallback'
+  }));
+};
+
 const getPreviousSchoolYear = async (activeStartDate) => {
   const rows = await query(
     'SELECT id, label FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
@@ -81,10 +113,16 @@ const getAllSections = async (req, res) => {
   try {
     await ensureSectionColumns();
     const targetSy = await resolveSchoolYear(req);
-    const sections = await query(
+    let sections = await query(
       'SELECT * FROM sections WHERE is_archived = FALSE AND school_year_id = ? ORDER BY name',
       [targetSy.id]
     );
+
+    // Some historical years only have section names in classes; expose them in view-only mode.
+    if (sections.length === 0) {
+      sections = await getSectionFallbackFromClasses(targetSy.id);
+    }
+
     res.json({ success: true, data: sections });
   } catch (error) {
     console.error('Error fetching sections:', error);
@@ -426,15 +464,32 @@ const getSectionStats = async (req, res) => {
   try {
     await ensureSectionColumns();
     const targetSy = await resolveSchoolYear(req);
-    const stats = await query(`
-      SELECT s.id, s.name, s.description, s.is_archived,
-             COUNT(c.id) as class_count
-      FROM sections s
-      LEFT JOIN classes c ON c.section = s.name COLLATE utf8mb4_general_ci AND c.school_year_id = s.school_year_id
-      WHERE s.is_archived = FALSE AND s.school_year_id = ?
-      GROUP BY s.id, s.name, s.description, s.is_archived
-      ORDER BY s.name
-    `, [targetSy.id]);
+    const classColumns = await query('SHOW COLUMNS FROM classes');
+    const hasClassSchoolYear = classColumns.some((c) => c.Field === 'school_year_id');
+
+    const stats = hasClassSchoolYear
+      ? await query(
+          `SELECT s.id, s.name, s.description, s.is_archived,
+                  COUNT(c.id) AS class_count
+           FROM sections s
+           LEFT JOIN classes c
+             ON c.section = s.name COLLATE utf8mb4_general_ci
+            AND c.school_year_id = s.school_year_id
+           WHERE s.is_archived = FALSE AND s.school_year_id = ?
+           GROUP BY s.id, s.name, s.description, s.is_archived
+           ORDER BY s.name`,
+          [targetSy.id]
+        )
+      : await query(
+          `SELECT s.id, s.name, s.description, s.is_archived,
+                  COUNT(c.id) AS class_count
+           FROM sections s
+           LEFT JOIN classes c ON c.section = s.name COLLATE utf8mb4_general_ci
+           WHERE s.is_archived = FALSE AND s.school_year_id = ?
+           GROUP BY s.id, s.name, s.description, s.is_archived
+           ORDER BY s.name`,
+          [targetSy.id]
+        );
     res.json({ success: true, data: stats });
   } catch (error) {
     console.error('Error fetching section stats:', error);
