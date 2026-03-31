@@ -40,6 +40,34 @@ const getActiveSchoolYear = async () => {
   return rows[0];
 };
 
+const getSchoolYearById = async (schoolYearId) => {
+  if (!schoolYearId) return null;
+  const rows = await query(
+    'SELECT id, label, start_date FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1',
+    [schoolYearId]
+  );
+  return rows[0] || null;
+};
+
+const resolveSchoolYear = async (req) => {
+  const requestedId = req?.query?.schoolYearId || req?.body?.schoolYearId;
+  if (requestedId) {
+    const sy = await getSchoolYearById(requestedId);
+    if (sy) return sy;
+  }
+  return getActiveSchoolYear();
+};
+
+const assertActiveTargetSchoolYear = async (targetSy) => {
+  const active = await getActiveSchoolYear();
+  if (!targetSy || targetSy.id !== active.id) {
+    const err = new Error('Edits are only allowed in the active school year');
+    err.statusCode = 400;
+    throw err;
+  }
+  return active;
+};
+
 const getPreviousSchoolYear = async (activeStartDate) => {
   const rows = await query(
     'SELECT id, label FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
@@ -52,10 +80,10 @@ const getPreviousSchoolYear = async (activeStartDate) => {
 const getAllSections = async (req, res) => {
   try {
     await ensureSectionColumns();
-    const activeSy = await getActiveSchoolYear();
+    const targetSy = await resolveSchoolYear(req);
     const sections = await query(
       'SELECT * FROM sections WHERE is_archived = FALSE AND school_year_id = ? ORDER BY name',
-      [activeSy.id]
+      [targetSy.id]
     );
     res.json({ success: true, data: sections });
   } catch (error) {
@@ -68,8 +96,8 @@ const getAllSections = async (req, res) => {
 const getAllSectionsWithArchived = async (req, res) => {
   try {
     await ensureSectionColumns();
-    const activeSy = await getActiveSchoolYear();
-    const sections = await query('SELECT * FROM sections WHERE school_year_id = ? ORDER BY is_archived, name', [activeSy.id]);
+    const targetSy = await resolveSchoolYear(req);
+    const sections = await query('SELECT * FROM sections WHERE school_year_id = ? ORDER BY is_archived, name', [targetSy.id]);
     res.json({ success: true, data: sections });
   } catch (error) {
     console.error('Error fetching sections:', error);
@@ -81,10 +109,10 @@ const getAllSectionsWithArchived = async (req, res) => {
 const getArchivedSections = async (req, res) => {
   try {
     await ensureSectionColumns();
-    const activeSy = await getActiveSchoolYear();
+    const targetSy = await resolveSchoolYear(req);
     const sections = await query(
       'SELECT * FROM sections WHERE is_archived = TRUE AND school_year_id = ? ORDER BY name',
-      [activeSy.id]
+      [targetSy.id]
     );
     res.json({ success: true, data: sections });
   } catch (error) {
@@ -275,8 +303,8 @@ const deleteSection = async (req, res) => {
 const getPreviousYearSections = async (req, res) => {
   try {
     await ensureSectionColumns();
-    const activeSy = await getActiveSchoolYear();
-    const prevSy = await getPreviousSchoolYear(activeSy.start_date);
+    const targetSy = await resolveSchoolYear(req);
+    const prevSy = await getPreviousSchoolYear(targetSy.start_date);
     if (!prevSy) return res.json({ success: true, data: [] });
 
     const sections = await query(
@@ -284,7 +312,7 @@ const getPreviousYearSections = async (req, res) => {
       [prevSy.id]
     );
 
-    res.json({ success: true, data: sections, meta: { sourceSchoolYearId: prevSy.id } });
+    res.json({ success: true, data: sections, meta: { sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id } });
   } catch (error) {
     console.error('Error fetching previous year sections:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch previous year sections' });
@@ -295,8 +323,9 @@ const getPreviousYearSections = async (req, res) => {
 const fetchSectionsFromPreviousYear = async (req, res) => {
   try {
     await ensureSectionColumns();
-    const activeSy = await getActiveSchoolYear();
-    const prevSy = await getPreviousSchoolYear(activeSy.start_date);
+    const targetSy = await resolveSchoolYear(req);
+    await assertActiveTargetSchoolYear(targetSy);
+    const prevSy = await getPreviousSchoolYear(targetSy.start_date);
     if (!prevSy) {
       return res.status(400).json({ success: false, message: 'No previous school year found to fetch from' });
     }
@@ -331,7 +360,7 @@ const fetchSectionsFromPreviousYear = async (req, res) => {
     for (const sec of prevSections) {
       const dup = await query(
         'SELECT id FROM sections WHERE name = ? AND school_year_id = ?',
-        [sec.name, activeSy.id]
+        [sec.name, targetSy.id]
       );
       if (dup.length) {
         skipped += 1;
@@ -340,15 +369,16 @@ const fetchSectionsFromPreviousYear = async (req, res) => {
 
       await query(
         'INSERT INTO sections (name, description, grade_level, school_year_id, is_archived) VALUES (?, ?, ?, ?, FALSE)',
-        [sec.name, sec.description, sec.grade_level || null, activeSy.id]
+        [sec.name, sec.description, sec.grade_level || null, targetSy.id]
       );
       inserted += 1;
     }
 
-    res.json({ success: true, message: 'Fetch complete', data: { inserted, skipped, sourceSchoolYearId: prevSy.id, targetSchoolYearId: activeSy.id } });
+    res.json({ success: true, message: 'Fetch complete', data: { inserted, skipped, sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id } });
   } catch (error) {
     console.error('Error fetching sections from previous year:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch sections from previous year' });
+    const status = error.statusCode || 500;
+    res.status(status).json({ success: false, message: error.message || 'Failed to fetch sections from previous year' });
   }
 };
 
@@ -395,16 +425,16 @@ const syncSectionsFromStudents = async (req, res) => {
 const getSectionStats = async (req, res) => {
   try {
     await ensureSectionColumns();
-    const activeSy = await getActiveSchoolYear();
+    const targetSy = await resolveSchoolYear(req);
     const stats = await query(`
       SELECT s.id, s.name, s.description, s.is_archived,
              COUNT(c.id) as class_count
       FROM sections s
-      LEFT JOIN classes c ON c.section = s.name COLLATE utf8mb4_general_ci
+      LEFT JOIN classes c ON c.section = s.name COLLATE utf8mb4_general_ci AND c.school_year_id = s.school_year_id
       WHERE s.is_archived = FALSE AND s.school_year_id = ?
       GROUP BY s.id, s.name, s.description, s.is_archived
       ORDER BY s.name
-    `, [activeSy.id]);
+    `, [targetSy.id]);
     res.json({ success: true, data: stats });
   } catch (error) {
     console.error('Error fetching section stats:', error);
