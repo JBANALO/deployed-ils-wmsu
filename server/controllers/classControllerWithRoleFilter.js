@@ -283,6 +283,12 @@ const getAllClasses = async (req, res) => {
       // Fallback: generate classes from students table
       try {
         const targetSy = await resolveSchoolYear(req);
+        const normalizeGrade = (value = '') => String(value).trim().toLowerCase().replace(/^grade\s+/i, '').replace(/\s+/g, ' ');
+        const normalizeSection = (value = '') => String(value).trim().toLowerCase().replace(/\s+/g, ' ');
+        const classKey = (grade, section) => `${normalizeGrade(grade)}::${normalizeSection(section)}`;
+        const slugKey = (grade, section) => `${String(grade || '').toLowerCase().replace(/\s+/g, '-')}-${String(section || '').toLowerCase().replace(/\s+/g, '-')}`;
+        const normalizeClassId = (value = '') => String(value).trim().toLowerCase().replace(/\s+/g, '-');
+
         const [studentRows] = await pool.query(
           `SELECT grade_level, section, COUNT(*) as student_count FROM students WHERE school_year_id = ? GROUP BY grade_level, section ORDER BY grade_level, section`,
           [targetSy.id]
@@ -292,7 +298,12 @@ const getAllClasses = async (req, res) => {
         let adviserRows = [];
         try {
           const [ar] = await pool.query(
-            `SELECT id, first_name, last_name, grade_level, section FROM teachers WHERE role IN ('adviser', 'Adviser') AND grade_level IS NOT NULL AND section IS NOT NULL AND school_year_id = ?`,
+            `SELECT id, first_name, last_name, grade_level, section
+             FROM teachers
+             WHERE role IN ('adviser', 'Adviser', 'teacher', 'subject_teacher')
+               AND grade_level IS NOT NULL
+               AND section IS NOT NULL
+               AND (school_year_id = ? OR school_year_id IS NULL)`,
             [targetSy.id]
           );
           adviserRows = ar;
@@ -303,29 +314,62 @@ const getAllClasses = async (req, res) => {
         // Also fetch from class_assignments (stores UUID-based assignments from file system advisers)
         let caRows = [];
         try {
-          const [ca] = await pool.query(`SELECT grade_level, section, adviser_id, adviser_name FROM class_assignments WHERE school_year_id = ?`, [targetSy.id]);
+          const [ca] = await pool.query(
+            `SELECT grade_level, section, adviser_id, adviser_name
+             FROM class_assignments
+             WHERE school_year_id = ? OR school_year_id IS NULL`,
+            [targetSy.id]
+          );
           caRows = ca;
         } catch (e) { /* table may not exist yet */ }
+
+        // Pull subject teacher assignments so previous-year cards can display historical entries.
+        let subjectTeacherRows = [];
+        try {
+          const [st] = await pool.query(
+            `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time
+             FROM subject_teachers
+             WHERE school_year_id = ? OR school_year_id IS NULL`,
+            [targetSy.id]
+          );
+          subjectTeacherRows = st;
+        } catch (e) { /* table may not exist yet */ }
+
+        const subjectTeachersByClassKey = {};
+        subjectTeacherRows.forEach((st) => {
+          const key = normalizeClassId(st.class_id || '');
+          if (!key) return;
+          if (!subjectTeachersByClassKey[key]) subjectTeachersByClassKey[key] = [];
+          subjectTeachersByClassKey[key].push(st);
+        });
         
         const gradeOrder = { 'Kindergarten': 0, 'Grade 1': 1, 'Grade 2': 2, 'Grade 3': 3, 'Grade 4': 4, 'Grade 5': 5, 'Grade 6': 6 };
         const classes = studentRows.map(row => {
           const gradeSlug = (row.grade_level || '').toLowerCase().replace(/\s+/g, '-');
           const sectionSlug = (row.section || '').toLowerCase().replace(/\s+/g, '-');
           // Find matching adviser: class_assignments takes priority (most recent assignment)
-          const caMatch = caRows.find(ca => ca.grade_level === row.grade_level && ca.section === row.section);
+          const caMatch = caRows.find(ca => classKey(ca.grade_level, ca.section) === classKey(row.grade_level, row.section));
           const adviser = adviserRows.find(u =>
-            u.grade_level === row.grade_level && u.section === row.section
+            classKey(u.grade_level, u.section) === classKey(row.grade_level, row.section)
           );
           const adviserId = caMatch ? caMatch.adviser_id : (adviser ? adviser.id : null);
           const adviserName = caMatch ? caMatch.adviser_name :
             (adviser ? `${adviser.first_name || ''} ${adviser.last_name || ''}`.trim() : '');
+
+          const classSlug = normalizeClassId(slugKey(row.grade_level, row.section));
+          const subjectTeachers = [
+            ...(subjectTeachersByClassKey[classSlug] || []),
+            ...(subjectTeachersByClassKey[normalizeClassId(classKey(row.grade_level, row.section))] || [])
+          ];
+
           return {
             id: `${gradeSlug}-${sectionSlug}`,
             grade: row.grade_level,
             section: row.section,
             student_count: row.student_count,
             adviser_id: adviserId,
-            adviser_name: adviserName
+            adviser_name: adviserName,
+            subject_teachers: subjectTeachers
           };
         }).sort((a, b) => {
           const ao = gradeOrder[a.grade] ?? 99;
