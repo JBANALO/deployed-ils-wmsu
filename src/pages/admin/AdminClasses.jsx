@@ -15,7 +15,7 @@ import { useSchoolYear } from "../../context/SchoolYearContext";
 export default function AdminClasses() {
 
   const navigate = useNavigate();
-  const { isViewingLocked } = useSchoolYear();
+  const { viewingSchoolYear, setViewingSchoolYear, setActiveSchoolYear: setContextActiveSchoolYear, isViewingLocked } = useSchoolYear();
 
   const [classesData, setClassesData] = useState([]);
 
@@ -52,8 +52,12 @@ export default function AdminClasses() {
       const active = Array.isArray(list) ? list.find((sy) => sy.is_active) : null;
       if (active) {
         setActiveSchoolYear(active);
-        if (!selectedSchoolYearId) {
+        setContextActiveSchoolYear(active);
+        if (viewingSchoolYear?.id) {
+          setSelectedSchoolYearId(String(viewingSchoolYear.id));
+        } else if (!selectedSchoolYearId) {
           setSelectedSchoolYearId(String(active.id));
+          setViewingSchoolYear(active);
         }
       }
     } catch (error) {
@@ -220,6 +224,12 @@ export default function AdminClasses() {
   useEffect(() => {
     fetchSchoolYears();
   }, []);
+
+  useEffect(() => {
+    if (viewingSchoolYear?.id) {
+      setSelectedSchoolYearId(String(viewingSchoolYear.id));
+    }
+  }, [viewingSchoolYear?.id]);
 
   useEffect(() => {
     if (selectedSchoolYearId) {
@@ -479,7 +489,12 @@ export default function AdminClasses() {
           <label className="text-sm font-semibold text-gray-700">School Year</label>
           <select
             value={selectedSchoolYearId}
-            onChange={(e) => setSelectedSchoolYearId(e.target.value)}
+            onChange={(e) => {
+              const nextId = e.target.value;
+              setSelectedSchoolYearId(nextId);
+              const matched = schoolYears.find((sy) => String(sy.id) === String(nextId));
+              if (matched) setViewingSchoolYear(matched);
+            }}
             className="border border-gray-300 rounded px-3 py-2 text-sm"
           >
             <option value="">Select school year</option>

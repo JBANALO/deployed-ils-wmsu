@@ -27,7 +27,7 @@ const API_BASE = import.meta.env.VITE_API_URL;
 
 export default function AdminTeachers() {
   const navigate = useNavigate();
-  const { viewingSchoolYear, activeSchoolYear: contextActiveSchoolYear, isViewingLocked } = useSchoolYear();
+  const { viewingSchoolYear, setViewingSchoolYear, setActiveSchoolYear: setContextActiveSchoolYear, isViewingLocked } = useSchoolYear();
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
@@ -85,8 +85,12 @@ export default function AdminTeachers() {
       const active = Array.isArray(list) ? list.find((sy) => sy.is_active) : null;
       if (active) {
         setActiveSchoolYear(active);
-        if (!selectedSchoolYearId) {
+        setContextActiveSchoolYear(active);
+        if (viewingSchoolYear?.id) {
+          setSelectedSchoolYearId(String(viewingSchoolYear.id));
+        } else if (!selectedSchoolYearId) {
           setSelectedSchoolYearId(String(active.id));
+          setViewingSchoolYear(active);
         }
       }
     } catch (error) {
@@ -997,7 +1001,12 @@ export default function AdminTeachers() {
           <label className="text-sm font-semibold text-gray-700">School Year</label>
           <select
             value={selectedSchoolYearId}
-            onChange={(e) => setSelectedSchoolYearId(e.target.value)}
+            onChange={(e) => {
+              const nextId = e.target.value;
+              setSelectedSchoolYearId(nextId);
+              const matched = schoolYears.find((sy) => String(sy.id) === String(nextId));
+              if (matched) setViewingSchoolYear(matched);
+            }}
             className="border border-gray-300 rounded px-3 py-2 text-sm"
           >
             <option value="">Select school year</option>

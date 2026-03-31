@@ -6,7 +6,7 @@ import { useSchoolYear } from "../../context/SchoolYearContext";
 import api from "../../api/axiosConfig";
 
 export default function AdminAssignAdviser() {
-    const { isViewingLocked } = useSchoolYear();
+  const { viewingSchoolYear, setViewingSchoolYear, setActiveSchoolYear: setContextActiveSchoolYear, isViewingLocked } = useSchoolYear();
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [activeSchoolYearId, setActiveSchoolYearId] = useState("");
@@ -35,7 +35,13 @@ export default function AdminAssignAdviser() {
         const list = response.data?.data || response.data || [];
         const active = Array.isArray(list) ? list.find((item) => item.is_active) : null;
         if (active?.id) {
-          setActiveSchoolYearId(String(active.id));
+          setContextActiveSchoolYear(active);
+          if (viewingSchoolYear?.id) {
+            setActiveSchoolYearId(String(viewingSchoolYear.id));
+          } else {
+            setActiveSchoolYearId(String(active.id));
+            setViewingSchoolYear(active);
+          }
           return;
         }
         setLoading(false);
@@ -47,6 +53,12 @@ export default function AdminAssignAdviser() {
 
     fetchActiveSchoolYear();
   }, []);
+
+  useEffect(() => {
+    if (viewingSchoolYear?.id) {
+      setActiveSchoolYearId(String(viewingSchoolYear.id));
+    }
+  }, [viewingSchoolYear?.id]);
 
   useEffect(() => {
     if (!activeSchoolYearId) return;

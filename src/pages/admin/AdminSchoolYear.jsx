@@ -128,11 +128,10 @@ export default function AdminSchoolYear() {
         const activeRaw = activeRes.value.data?.data || null;
         const formattedActive = activeRaw ? { ...activeRaw, label: formatSchoolYearLabel(activeRaw.label) } : null;
         setActiveSchoolYear(formattedActive);
-        // Default viewing year to the active year unless user was already viewing another
+        // Keep current viewing year if already chosen; only default to active when empty.
         setViewingSchoolYear((prev) => {
-          if (!formattedActive) return prev;
-          if (prev && prev.id === formattedActive.id) return prev;
-          return formattedActive;
+          if (prev) return prev;
+          return formattedActive || null;
         });
       }
       if (gradeRes.status === 'fulfilled') setStudentsByGrade(gradeRes.value.data?.data || []);

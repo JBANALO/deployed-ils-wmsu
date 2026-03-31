@@ -13,10 +13,12 @@ import { toast } from 'react-toastify';
 import axios from "../../api/axiosConfig";
 import SF2AttendanceForm from "../../components/SF2AttendanceForm";
 import { useNavigate } from "react-router-dom";
+import { useSchoolYear } from "../../context/SchoolYearContext";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 
 export default function AdminDashboard() {
+  const { viewingSchoolYear, setViewingSchoolYear, setActiveSchoolYear: setContextActiveSchoolYear } = useSchoolYear();
   const [students, setStudents] = useState([]);
   const [attendanceData, setAttendanceData] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -110,6 +112,12 @@ export default function AdminDashboard() {
     }
   }, [selectedSchoolYearId]);
 
+  useEffect(() => {
+    if (viewingSchoolYear?.id) {
+      setSelectedSchoolYearId(String(viewingSchoolYear.id));
+    }
+  }, [viewingSchoolYear?.id]);
+
   const fetchSchoolYears = async () => {
     try {
       const res = await axios.get('/school-years');
@@ -140,7 +148,7 @@ const loadDashboardStats = async (overrideSyId) => {
     console.log('Loading dashboard stats...');
 
     // Ensure we have a target school year (prefer override -> selected -> active)
-    let targetSyId = overrideSyId || selectedSchoolYearId || '';
+    let targetSyId = overrideSyId || selectedSchoolYearId || String(viewingSchoolYear?.id || '');
 
     if (!targetSyId) {
       try {
@@ -153,7 +161,11 @@ const loadDashboardStats = async (overrideSyId) => {
         }
         targetSyId = String(activeSy.id);
         setActiveSchoolYear({ ...activeSy, label: formatSchoolYearLabel(activeSy.label) });
-        setSelectedSchoolYearId(String(activeSy.id));
+        setContextActiveSchoolYear({ ...activeSy, label: formatSchoolYearLabel(activeSy.label) });
+        if (!viewingSchoolYear?.id) {
+          setSelectedSchoolYearId(String(activeSy.id));
+          setViewingSchoolYear({ ...activeSy, label: formatSchoolYearLabel(activeSy.label) });
+        }
       } catch (syErr) {
         console.error('Error fetching active school year for dashboard:', syErr);
         toast.error('Failed to fetch active school year');
@@ -356,8 +368,10 @@ const loadDashboardStats = async (overrideSyId) => {
       if (schoolYearRes.data?.data) {
         const schoolYear = schoolYearRes.data.data;
         setActiveSchoolYear({ ...schoolYear, label: formatSchoolYearLabel(schoolYear.label) });
-        if (!selectedSchoolYearId) {
+        setContextActiveSchoolYear({ ...schoolYear, label: formatSchoolYearLabel(schoolYear.label) });
+        if (!selectedSchoolYearId && !viewingSchoolYear?.id) {
           setSelectedSchoolYearId(String(schoolYear.id));
+          setViewingSchoolYear({ ...schoolYear, label: formatSchoolYearLabel(schoolYear.label) });
         }
       }
     } catch (err) {
@@ -586,7 +600,12 @@ const loadDashboardStats = async (overrideSyId) => {
             <label className="text-xs text-gray-500">View School Year</label>
             <select
               value={selectedSchoolYearId}
-              onChange={(e) => setSelectedSchoolYearId(e.target.value)}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                setSelectedSchoolYearId(nextId);
+                const matched = schoolYears.find((sy) => String(sy.id) === String(nextId));
+                if (matched) setViewingSchoolYear(matched);
+              }}
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
             >
               <option value="">Select school year</option>
