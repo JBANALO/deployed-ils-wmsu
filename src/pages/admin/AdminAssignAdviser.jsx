@@ -2,9 +2,11 @@ import React, { useState, useEffect } from "react";
 import { UserGroupIcon, CheckCircleIcon, XCircleIcon, TrashIcon } from "@heroicons/react/24/solid";
 import { API_BASE_URL } from "../../api/config";
 import { toast } from 'react-toastify';
+import { useSchoolYear } from "../../context/SchoolYearContext";
 import api from "../../api/axiosConfig";
 
 export default function AdminAssignAdviser() {
+    const { isViewingLocked } = useSchoolYear();
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [activeSchoolYearId, setActiveSchoolYearId] = useState("");

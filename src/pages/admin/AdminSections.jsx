@@ -11,9 +11,11 @@ import {
   UserGroupIcon
 } from "@heroicons/react/24/solid";
 import { toast } from 'react-toastify';
+import { useSchoolYear } from "../../context/SchoolYearContext";
 import axios from "../../api/axiosConfig";
 
 export default function AdminSections() {
+    const { isViewingLocked } = useSchoolYear();
   const [sections, setSections] = useState([]);
   const [archivedSections, setArchivedSections] = useState([]);
   const [sectionStats, setSectionStats] = useState([]);

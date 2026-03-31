@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { ClipboardDocumentIcon, PencilSquareIcon, MagnifyingGlassIcon, EyeIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
 import { toast } from 'react-toastify';
+import { useSchoolYear } from "../../context/SchoolYearContext";
 
 // DepEd K-12 Subjects
 const DEPED_SUBJECTS = {
@@ -21,6 +22,7 @@ const normalizeSubjectName = (value) => String(value || '')
   .toLowerCase();
 
 export default function AdminGrades() {
+    const { isViewingLocked } = useSchoolYear();
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -145,6 +147,10 @@ export default function AdminGrades() {
 
   // Edit student grades  
   const handleEditGrades = async (student) => {
+        if (isViewingLocked) {
+          toast.error('Previous school years are view-only. Switch to the active year to edit grades.');
+          return;
+        }
     setSelectedStudent(student);
     const grades = await fetchStudentGrades(student);
     
@@ -167,6 +173,10 @@ export default function AdminGrades() {
 
   // Save grades
   const handleSaveGrades = async () => {
+        if (isViewingLocked) {
+          toast.error('Previous school years are view-only. Switch to the active year to edit grades.');
+          return;
+        }
     if (!selectedStudent) return;
     
     setSaving(true);

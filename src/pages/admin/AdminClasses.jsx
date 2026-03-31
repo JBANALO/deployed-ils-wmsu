@@ -8,12 +8,14 @@ import { API_BASE_URL } from "../../api/config";
 import axios from "../../api/axiosConfig";
 
 import { toast } from 'react-toastify';
+import { useSchoolYear } from "../../context/SchoolYearContext";
 
 
 
 export default function AdminClasses() {
 
   const navigate = useNavigate();
+  const { isViewingLocked } = useSchoolYear();
 
   const [classesData, setClassesData] = useState([]);
 

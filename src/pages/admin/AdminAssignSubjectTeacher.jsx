@@ -1,8 +1,10 @@
+import { useSchoolYear } from "../../context/SchoolYearContext";
 import React, { useState, useEffect } from "react";
 import { UserGroupIcon, CheckCircleIcon, XCircleIcon, TrashIcon } from "@heroicons/react/24/solid";
 import api from "../../api/axiosConfig";
 
 export default function AdminAssignSubjectTeacher() {
+    const { isViewingLocked } = useSchoolYear();
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [selectedClass, setSelectedClass] = useState(null);

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
+import { useSchoolYear } from "../../context/SchoolYearContext";
 import { ClipboardDocumentCheckIcon, MagnifyingGlassIcon } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
 
 export default function AdminAttendance() {
+    const { isViewingLocked } = useSchoolYear();
   const [attendance, setAttendance] = useState([]);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);

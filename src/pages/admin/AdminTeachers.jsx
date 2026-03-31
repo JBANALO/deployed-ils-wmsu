@@ -11,11 +11,13 @@ import {
   ArrowPathIcon,
   UsersIcon,
   KeyIcon,
-  XMarkIcon
+  XMarkIcon,
+  LockClosedIcon
 } from "@heroicons/react/24/solid";
 import { API_BASE_URL } from "../../api/config";
 import api from "../../api/axiosConfig";
 import { toast } from 'react-toastify';
+import { useSchoolYear } from "../../context/SchoolYearContext";
 import RestoreTeacherModal from '../../components/modals/RestoreTeacherModal';
 import PermanentDeleteTeacherModal from '../../components/modals/PermanentDeleteTeacherModal';
 import TeacherBulkImportModal from "../../components/modals/TeacherBulkImportModal";
@@ -25,6 +27,7 @@ const API_BASE = import.meta.env.VITE_API_URL;
 
 export default function AdminTeachers() {
   const navigate = useNavigate();
+  const { viewingSchoolYear, activeSchoolYear: contextActiveSchoolYear, isViewingLocked } = useSchoolYear();
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
@@ -107,6 +110,13 @@ export default function AdminTeachers() {
   useEffect(() => {
     fetchSchoolYears();
   }, []);
+
+  // Sync with context school year selection
+  useEffect(() => {
+    if (viewingSchoolYear?.id) {
+      setSelectedSchoolYearId(String(viewingSchoolYear.id));
+    }
+  }, [viewingSchoolYear?.id]);
 
   useEffect(() => {
     if (selectedSchoolYearId) {
@@ -341,7 +351,7 @@ export default function AdminTeachers() {
     setShowArchives(!showArchives);
   };
 
-  const isViewOnly = activeSchoolYear && selectedSchoolYearId && Number(selectedSchoolYearId) !== Number(activeSchoolYear.id);
+  const isViewOnly = isViewingLocked;
 
   const fetchTeachers = async (isRefresh = false) => {
     try {

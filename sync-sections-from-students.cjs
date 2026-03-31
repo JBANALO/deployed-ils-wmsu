@@ -1,4 +1,7 @@
-// Sync sections table with distinct gradeLevel/section combos from students for the active school year
+const filteredClasses = classesArray.filter(
+  c => String(c.school_year_id) === String(schoolYearId)
+);
+setClasses(filteredClasses);// Sync sections table with distinct gradeLevel/section combos from students for the active school year
 const mysql = require('mysql2/promise');
 require('dotenv').config();
 

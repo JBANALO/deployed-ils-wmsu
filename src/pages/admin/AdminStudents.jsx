@@ -13,6 +13,7 @@ import {
   KeyIcon
 } from "@heroicons/react/24/solid";
 import BulkImportModal from "../../components/modals/BulkImportModal";
+import { useSchoolYear } from "../../context/SchoolYearContext";
 import { API_BASE_URL } from "../../api/config";
 
 // Helper functions for QR code URL handling
@@ -54,6 +55,7 @@ const getAlternativeQRUrls = (qrCode) => {
 
 export default function AdminStudents() {
   const navigate = useNavigate();
+  const { isViewingLocked } = useSchoolYear();
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -74,6 +76,8 @@ export default function AdminStudents() {
   const [selectAll, setSelectAll] = useState(false);
   const [selectAllK3, setSelectAllK3] = useState(false);
   const [selectAllG4to6, setSelectAllG4to6] = useState(false);
+
+  const isViewOnly = isViewingLocked;
 
   // Fetch students from API
   useEffect(() => {
@@ -225,6 +229,10 @@ export default function AdminStudents() {
 
   // EDIT STUDENT
   const handleEdit = (student) => {
+        if (isViewOnly) {
+          toast.error('Previous school years are view-only. Switch to the active year to edit.');
+          return;
+        }
     setSelectedStudent(student);
     setEditFormData({ ...student });
     setShowEditModal(true);
@@ -275,6 +283,10 @@ export default function AdminStudents() {
 
   // DELETE STUDENT
   const handleDelete = (studentId) => {
+        if (isViewOnly) {
+          toast.error('Previous school years are view-only. Switch to the active year to delete.');
+          return;
+        }
     const student = students.find(s => s.id === studentId);
     if (student) {
       setStudentToDelete(student);
@@ -601,14 +613,16 @@ export default function AdminStudents() {
       <div className="flex justify-end gap-3 mt-6">
         <button
           onClick={() => setShowBulkImportModal(true)}
-          className="bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+          disabled={isViewOnly}
+          className={`px-5 py-2 rounded-lg transition flex items-center gap-2 ${isViewOnly ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
         >
           <ArrowUpTrayIcon className="w-5 h-5" />
           Bulk Import (CSV)
         </button>
         <button
           onClick={() => navigate("/admin/admin/create-k6")}
-          className="bg-red-800 text-white px-5 py-2 rounded-lg hover:bg-red-700 transition"
+          disabled={isViewOnly}
+          className={`px-5 py-2 rounded-lg transition ${isViewOnly ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-red-800 text-white hover:bg-red-700'}`}
         >
           + Create Individual Account
         </button>

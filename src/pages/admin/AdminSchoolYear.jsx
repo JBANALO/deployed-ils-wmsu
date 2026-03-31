@@ -15,6 +15,7 @@ import {
 } from "@heroicons/react/24/solid";
 import { toast } from 'react-toastify';
 import axios from "../../api/axiosConfig";
+import { useSchoolYear } from "../../context/SchoolYearContext";
 import GradesReportCard from "../../components/GradesReportCard";
 import {
   BarChart,
@@ -40,9 +41,10 @@ const GRADE_COLORS = {
 };
 
 export default function AdminSchoolYear() {
+  const { viewingSchoolYear, setViewingSchoolYear, activeSchoolYear, setActiveSchoolYear } = useSchoolYear();
+  
   const [schoolYears, setSchoolYears] = useState([]);
   const [archivedSchoolYears, setArchivedSchoolYears] = useState([]);
-  const [activeSchoolYear, setActiveSchoolYear] = useState(null);
   const [studentsByGrade, setStudentsByGrade] = useState([]);
   const [promotionPreview, setPromotionPreview] = useState([]);
   const [promotionHistory, setPromotionHistory] = useState([]);
@@ -51,7 +53,6 @@ export default function AdminSchoolYear() {
   const [classes, setClasses] = useState([]);
   const [selectedPromotionSchoolYearId, setSelectedPromotionSchoolYearId] = useState('');
   const [promotionAssignments, setPromotionAssignments] = useState({});
-  const [viewingSchoolYear, setViewingSchoolYear] = useState(null);
   const [historyGradeFilter, setHistoryGradeFilter] = useState('All Grades');
   const [historySectionFilter, setHistorySectionFilter] = useState('All Sections');
   const [loading, setLoading] = useState(true);

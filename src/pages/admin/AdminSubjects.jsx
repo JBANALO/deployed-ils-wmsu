@@ -11,6 +11,7 @@ import {
   AcademicCapIcon
 } from "@heroicons/react/24/solid";
 import { toast } from 'react-toastify';
+import { useSchoolYear } from "../../context/SchoolYearContext";
 import axios from "../../api/axiosConfig";
 
 const GRADE_TABS = [
@@ -36,6 +37,7 @@ const GRADE_COLORS = {
 };
 
 export default function AdminSubjects() {
+    const { isViewingLocked } = useSchoolYear();
   const [subjects, setSubjects] = useState([]);
   const [archivedSubjects, setArchivedSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
