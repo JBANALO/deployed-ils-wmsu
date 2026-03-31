@@ -155,7 +155,7 @@ exports.getAllClasses = async (req, res) => {
           `SELECT st.*, u.firstName, u.lastName 
            FROM subject_teachers st 
            LEFT JOIN users u ON st.teacher_id = u.id COLLATE utf8mb4_unicode_ci
-           WHERE st.class_id = ? AND st.school_year_id = ?` ,
+           WHERE st.class_id = ? AND (st.school_year_id = ? OR st.school_year_id IS NULL)` ,
           [cls.id, targetSy.id]
         );
         
@@ -172,14 +172,14 @@ exports.getAllClasses = async (req, res) => {
             {
               sql: `SELECT id, firstName AS first_name, lastName AS last_name
                     FROM users
-                    WHERE id = ? AND role = 'adviser'
+                    WHERE id = ? AND role IN ('adviser', 'teacher', 'subject_teacher')
                     LIMIT 1`,
               params: [adviserId]
             },
             {
               sql: `SELECT id, first_name, last_name
                     FROM users
-                    WHERE id = ? AND role = 'adviser'
+                    WHERE id = ? AND role IN ('adviser', 'teacher', 'subject_teacher')
                     LIMIT 1`,
               params: [adviserId]
             }
@@ -196,7 +196,8 @@ exports.getAllClasses = async (req, res) => {
               {
                 sql: `SELECT id, first_name, last_name
                       FROM teachers
-                      WHERE id = ? AND role = 'adviser' AND (school_year_id = ? OR school_year_id IS NULL)
+                      WHERE id = ? AND role IN ('adviser', 'teacher', 'subject_teacher')
+                      AND (school_year_id = ? OR school_year_id IS NULL)
                       ORDER BY school_year_id DESC
                       LIMIT 1`,
                 params: [adviserId, targetSy.id]
@@ -219,7 +220,7 @@ exports.getAllClasses = async (req, res) => {
             {
               sql: `SELECT id, firstName AS first_name, lastName AS last_name
                     FROM users
-                    WHERE role = 'adviser'
+                    WHERE role IN ('adviser', 'teacher', 'subject_teacher')
                       AND LOWER(REPLACE(TRIM(gradeLevel), 'grade ', '')) = ?
                       AND LOWER(TRIM(section)) = ?
                     LIMIT 1`,
@@ -228,7 +229,7 @@ exports.getAllClasses = async (req, res) => {
             {
               sql: `SELECT id, first_name, last_name
                     FROM users
-                    WHERE role = 'adviser'
+                    WHERE role IN ('adviser', 'teacher', 'subject_teacher')
                       AND LOWER(REPLACE(TRIM(grade_level), 'grade ', '')) = ?
                       AND LOWER(TRIM(section)) = ?
                     LIMIT 1`,
@@ -250,7 +251,7 @@ exports.getAllClasses = async (req, res) => {
           try {
             const advisersFromTeachers = await query(
               `SELECT id, first_name, last_name FROM teachers 
-               WHERE role = 'adviser'
+               WHERE role IN ('adviser', 'teacher', 'subject_teacher')
                AND LOWER(REPLACE(TRIM(grade_level), 'grade ', '')) = ?
                AND LOWER(TRIM(section)) = ?
                AND (school_year_id = ? OR school_year_id IS NULL)
