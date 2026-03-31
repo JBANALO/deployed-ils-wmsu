@@ -106,7 +106,7 @@ const getAllTeachers = async (req, res) => {
         classAssignments = await query(
           `SELECT grade_level, section, adviser_id, adviser_name
            FROM class_assignments
-           WHERE school_year_id = ?`,
+           WHERE school_year_id = ? OR school_year_id IS NULL`,
           [targetSy.id]
         );
       } catch (error) {
@@ -124,11 +124,25 @@ const getAllTeachers = async (req, res) => {
         classesWithAdvisers = [];
       }
 
+      // Legacy fallback for rows that may not have school_year_id populated in class_assignments
+      if (classesWithAdvisers.length === 0) {
+        try {
+          classesWithAdvisers = await query(
+            `SELECT grade, section, adviser_id, adviser_name
+             FROM classes
+             WHERE (adviser_id IS NOT NULL OR adviser_name IS NOT NULL)
+             ORDER BY id DESC`
+          );
+        } catch (error) {
+          classesWithAdvisers = [];
+        }
+      }
+
       try {
         subjectTeachers = await query(
           `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time
            FROM subject_teachers
-           WHERE school_year_id = ?`,
+           WHERE school_year_id = ? OR school_year_id IS NULL`,
           [targetSy.id]
         );
       } catch (error) {

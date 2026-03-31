@@ -206,19 +206,26 @@ const getAllClasses = async (req, res) => {
       
       // If classes table has data, fetch subject_teachers for each class
       if (rows.length > 0) {
+        const normalizeGrade = (value = '') => String(value).trim().toLowerCase().replace(/^grade\s+/i, '').replace(/\s+/g, ' ');
+        const normalizeSection = (value = '') => String(value).trim().toLowerCase().replace(/\s+/g, ' ');
+        const normalizeClassId = (value = '') => String(value).trim().toLowerCase();
+        const classKey = (grade, section) => `${normalizeGrade(grade)}::${normalizeSection(section)}`;
+        const classSlug = (grade, section) => `${String(grade || '').toLowerCase().replace(/\s+/g, '-')}-${String(section || '').toLowerCase().replace(/\s+/g, '-')}`;
+
         // Try to fetch subject_teachers
         let subjectTeachersMap = {};
         let classAssignmentsMap = {};
         try {
           const [stRows] = await pool.query(
-            `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time FROM subject_teachers WHERE school_year_id = ?`,
+            `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time
+             FROM subject_teachers
+             WHERE school_year_id = ? OR school_year_id IS NULL`,
             [targetSy.id]
           );
           stRows.forEach(st => {
-            if (!subjectTeachersMap[st.class_id]) {
-              subjectTeachersMap[st.class_id] = [];
-            }
-            subjectTeachersMap[st.class_id].push(st);
+            const idKey = normalizeClassId(st.class_id);
+            if (!subjectTeachersMap[idKey]) subjectTeachersMap[idKey] = [];
+            subjectTeachersMap[idKey].push(st);
           });
         } catch (stError) {
           console.log('Could not fetch subject_teachers:', stError.message);
@@ -229,27 +236,38 @@ const getAllClasses = async (req, res) => {
           const [caRows] = await pool.query(
             `SELECT class_id, grade_level, section, adviser_id, adviser_name
              FROM class_assignments
-             WHERE school_year_id = ?`,
+             WHERE school_year_id = ? OR school_year_id IS NULL`,
             [targetSy.id]
           );
           caRows.forEach((ca) => {
             if (ca.class_id) {
-              classAssignmentsMap[`id:${ca.class_id}`] = ca;
+              classAssignmentsMap[`id:${normalizeClassId(ca.class_id)}`] = ca;
             }
             if (ca.grade_level && ca.section) {
-              classAssignmentsMap[`gs:${ca.grade_level}::${ca.section}`] = ca;
+              classAssignmentsMap[`gs:${classKey(ca.grade_level, ca.section)}`] = ca;
             }
           });
         } catch (caError) {
           console.log('Could not fetch class_assignments:', caError.message);
         }
 
-        const classesWithST = rows.map(cls => ({
-          ...cls,
-          adviser_id: cls.adviser_id || classAssignmentsMap[`id:${cls.id}`]?.adviser_id || classAssignmentsMap[`gs:${cls.grade}::${cls.section}`]?.adviser_id || null,
-          adviser_name: cls.adviser_name || classAssignmentsMap[`id:${cls.id}`]?.adviser_name || classAssignmentsMap[`gs:${cls.grade}::${cls.section}`]?.adviser_name || '',
-          subject_teachers: subjectTeachersMap[cls.id] || []
-        }));
+        const classesWithST = rows.map((cls) => {
+          const idKey = `id:${normalizeClassId(cls.id)}`;
+          const slugKey = `id:${normalizeClassId(classSlug(cls.grade, cls.section))}`;
+          const gsKey = `gs:${classKey(cls.grade, cls.section)}`;
+          const classAssignment = classAssignmentsMap[idKey] || classAssignmentsMap[slugKey] || classAssignmentsMap[gsKey] || null;
+
+          const stById = subjectTeachersMap[normalizeClassId(cls.id)] || [];
+          const stBySlug = subjectTeachersMap[normalizeClassId(classSlug(cls.grade, cls.section))] || [];
+          const mergedSubjectTeachers = [...stById, ...stBySlug];
+
+          return {
+            ...cls,
+            adviser_id: cls.adviser_id || classAssignment?.adviser_id || null,
+            adviser_name: cls.adviser_name || classAssignment?.adviser_name || '',
+            subject_teachers: mergedSubjectTeachers
+          };
+        });
 
         return res.json({ 
           success: true, 

@@ -147,7 +147,7 @@ export default function AdminAssignAdviser() {
             const data = await usersResponse.json();
             const users = data.data?.users || data.users || data.data || [];
             allTeachers = users
-              .filter(u => u.role === 'adviser' || u.role === 'teacher')
+              .filter((u) => ['adviser', 'teacher', 'subject_teacher'].includes(String(u.role || '').toLowerCase()))
               .map(u => ({
                 id: u.id,
                 firstName: u.firstName || u.first_name || '',
