@@ -669,12 +669,23 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
     }
 
     const { ids } = req.body || {};
-    const idList = Array.isArray(ids) && ids.length > 0 ? ids : null;
+    const idList = Array.isArray(ids)
+      ? ids.map((id) => String(id).trim()).filter(Boolean)
+      : [];
 
-    const prevTeachers = await query(
-      `SELECT * FROM teachers WHERE school_year_id = ? ${idList ? 'AND id IN (?)' : ''}`,
-      idList ? [prevSy.id, idList] : [prevSy.id]
-    );
+    let prevTeachers = [];
+    if (idList.length > 0) {
+      const placeholders = idList.map(() => '?').join(',');
+      prevTeachers = await query(
+        `SELECT * FROM teachers WHERE school_year_id = ? AND id IN (${placeholders})`,
+        [prevSy.id, ...idList]
+      );
+    } else {
+      prevTeachers = await query(
+        'SELECT * FROM teachers WHERE school_year_id = ?',
+        [prevSy.id]
+      );
+    }
 
     if (!prevTeachers.length) {
       return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0 } });

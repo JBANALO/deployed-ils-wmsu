@@ -302,12 +302,24 @@ const fetchSectionsFromPreviousYear = async (req, res) => {
     }
 
     const { ids } = req.body || {};
-    const idList = Array.isArray(ids) && ids.length > 0 ? ids : null;
+    const idList = Array.isArray(ids)
+      ? ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+      : [];
 
-    const prevSections = await query(
-      `SELECT * FROM sections WHERE is_archived = FALSE AND school_year_id = ? ${idList ? 'AND id IN (?)' : ''}`,
-      idList ? [prevSy.id, idList] : [prevSy.id]
-    );
+    let prevSections = [];
+    if (idList.length > 0) {
+      const placeholders = idList.map(() => '?').join(',');
+      prevSections = await query(
+        `SELECT * FROM sections
+         WHERE is_archived = FALSE AND school_year_id = ? AND id IN (${placeholders})`,
+        [prevSy.id, ...idList]
+      );
+    } else {
+      prevSections = await query(
+        'SELECT * FROM sections WHERE is_archived = FALSE AND school_year_id = ?',
+        [prevSy.id]
+      );
+    }
 
     if (!prevSections.length) {
       return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0 } });
