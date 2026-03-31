@@ -95,6 +95,7 @@ export default function AdminAssignAdviser() {
       }
 
       const schoolYearQuery = `schoolYearId=${encodeURIComponent(String(schoolYearId))}`;
+      let classesArray = [];
 
       // Fetch classes with adviser info
       const classesResponse = await fetch(`${API_BASE_URL}/classes?${schoolYearQuery}`);
@@ -103,7 +104,6 @@ export default function AdminAssignAdviser() {
         console.log('Raw classes response:', classesData);
         
         // Handle different response formats
-        let classesArray = [];
         if (Array.isArray(classesData)) {
           classesArray = classesData;
         } else if (Array.isArray(classesData.data)) {
@@ -121,7 +121,6 @@ export default function AdminAssignAdviser() {
         })));
         
         toast.success('Classes loaded successfully');
-        setClasses(classesArray);
       } else {
         toast.error(`Failed to load classes: ${classesResponse.status}`);
       }
@@ -172,6 +171,30 @@ export default function AdminAssignAdviser() {
       } else {
         toast.success(`Found ${allTeachers.length} teachers/advisers`);
       }
+
+      const normalizeGrade = (value) => String(value || '').trim().toLowerCase().replace(/^grade\s+/i, '');
+      const normalizeSection = (value) => String(value || '').trim().toLowerCase();
+
+      const classesWithFallbackAdviser = classesArray.map((cls) => {
+        if (cls.adviser_name) return cls;
+
+        const match = allTeachers.find((teacher) => {
+          const teacherGrade = normalizeGrade(teacher.gradeLevel || teacher.grade_level || '');
+          const teacherSection = normalizeSection(teacher.section || '');
+          const classGrade = normalizeGrade(cls.grade || '');
+          const classSection = normalizeSection(cls.section || '');
+          return teacherGrade && teacherSection && teacherGrade === classGrade && teacherSection === classSection;
+        });
+
+        if (!match) return cls;
+        return {
+          ...cls,
+          adviser_id: cls.adviser_id || match.id,
+          adviser_name: `${match.firstName || ''} ${match.lastName || ''}`.trim() || cls.adviser_name
+        };
+      });
+
+      setClasses(classesWithFallbackAdviser);
       setTeachers(allTeachers);
     } catch (error) {
       toast.error('Error loading data: ' + error.message);
