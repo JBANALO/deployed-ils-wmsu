@@ -363,6 +363,8 @@ const GRADE_PROGRESSION = {
 };
 const PASSING_GRADE = 75;
 const REQUIRED_QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'];
+const KINDERGARTEN_ATTENDANCE_THRESHOLD = 75;
+const KINDERGARTEN_COUNTED_STATUSES = ['present', 'late', 'excused'];
 
 function toGradeKey(gradeLevel = '') {
   return String(gradeLevel).replace(/^Grade\s+/i, '').trim();
@@ -388,7 +390,74 @@ function normalizeSubjectName(value = '') {
     .toLowerCase();
 }
 
+function normalizeGradeLevel(value = '') {
+  return String(value).trim().toLowerCase();
+}
+
+async function evaluateKindergartenEligibility(conn, student) {
+  // For Kindergarten: attendance-based promotion
+  // Formula: (Present + Late + Excused) / Total days × 100
+  
+  const [attendanceRows] = await conn.query(
+    `SELECT DATE(date) as date, status
+     FROM attendance
+     WHERE student_id = ? AND status IN ('present', 'late', 'absent', 'excused')
+     ORDER BY date`,
+    [student.id]
+  );
+
+  if (attendanceRows.length === 0) {
+    return {
+      eligible: false,
+      average: 0,
+      attendancePercentage: 0,
+      totalDays: 0,
+      countedDays: 0,
+      hasCompleteGrades: false,
+      hasFailingGrade: false,
+      reason: 'No attendance records found for Kindergarten student',
+      attendanceStatus: 'no-data'
+    };
+  }
+
+  // Group by date to count unique days
+  const uniqueDates = new Set(attendanceRows.map(r => r.date));
+  const totalDays = uniqueDates.size;
+  
+  // Count days with attendance status (present, late, excused)
+  const countedRecords = attendanceRows.filter(r => 
+    KINDERGARTEN_COUNTED_STATUSES.includes(String(r.status || '').toLowerCase())
+  );
+  const countedDays = new Set(countedRecords.map(r => r.date)).size;
+  
+  const attendancePercentage = totalDays > 0 
+    ? Math.round((countedDays / totalDays) * 100)
+    : 0;
+
+  const eligible = attendancePercentage >= KINDERGARTEN_ATTENDANCE_THRESHOLD;
+
+  return {
+    eligible,
+    average: attendancePercentage,
+    attendancePercentage,
+    totalDays,
+    countedDays,
+    hasCompleteGrades: true, // Not applicable for Kindergarten
+    hasFailingGrade: false,  // Not applicable for Kindergarten
+    reason: eligible
+      ? `Attendance ${attendancePercentage}% (>= ${KINDERGARTEN_ATTENDANCE_THRESHOLD}%) - Eligible for promotion`
+      : `Attendance ${attendancePercentage}% (< ${KINDERGARTEN_ATTENDANCE_THRESHOLD}%) - System suggests retention`,
+    attendanceStatus: eligible ? 'meets-threshold' : 'below-threshold'
+  };
+}
+
 async function evaluatePromotionEligibility(conn, student) {
+  // Special handling for Kindergarten: attendance-based promotion
+  if (normalizeGradeLevel(student.grade_level) === 'kindergarten') {
+    return await evaluateKindergartenEligibility(conn, student);
+  }
+
+  // Grade 1-6: Subject-based grading promotion
   const requiredSubjects = await getRequiredSubjectsForGrade(conn, student.grade_level);
   if (requiredSubjects.length === 0) {
     return {
