@@ -7,6 +7,12 @@ import {
   AcademicCapIcon,
 } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
+import {
+  appendSchoolYearId,
+  getTeacherViewingSchoolYearId,
+  setTeacherActiveSchoolYearId,
+  setTeacherViewingSchoolYearId,
+} from "../../utils/teacherSchoolYear";
 
 export default function TeacherDashboard() {
   const [stats, setStats] = useState({
@@ -18,7 +24,7 @@ export default function TeacherDashboard() {
   const [loading, setLoading] = useState(true);
   const [activeSchoolYear, setActiveSchoolYear] = useState(null);
   const [schoolYears, setSchoolYears] = useState([]);
-  const [selectedSchoolYearId, setSelectedSchoolYearId] = useState('');
+  const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
   const [promotionHistory, setPromotionHistory] = useState([]);
   const [assignedClassKeys, setAssignedClassKeys] = useState([]);
 
@@ -37,6 +43,7 @@ export default function TeacherDashboard() {
 
   useEffect(() => {
     if (selectedSchoolYearId) {
+      setTeacherViewingSchoolYearId(selectedSchoolYearId);
       loadDashboardData(selectedSchoolYearId);
     }
   }, [selectedSchoolYearId]);
@@ -66,8 +73,13 @@ export default function TeacherDashboard() {
       }
       
       setActiveSchoolYear(schoolYear);
+      if (schoolYear?.id) {
+        setTeacherActiveSchoolYearId(String(schoolYear.id));
+      }
       if (schoolYear?.id && !selectedSchoolYearId) {
-        setSelectedSchoolYearId(String(schoolYear.id));
+        const defaultId = String(schoolYear.id);
+        setSelectedSchoolYearId(defaultId);
+        setTeacherViewingSchoolYearId(defaultId);
       }
     } catch (e) {
       // non-critical
@@ -120,15 +132,15 @@ export default function TeacherDashboard() {
       if (user?.id) {
         try {
           const [adviserRes, stRes] = await Promise.all([
-            axios.get(`/classes/adviser/${user.id}`),
-            axios.get(`/classes/subject-teacher/${user.id}`)
+            axios.get(appendSchoolYearId(`/classes/adviser/${user.id}`, syParam)),
+            axios.get(appendSchoolYearId(`/classes/subject-teacher/${user.id}`, syParam))
           ]);
           let adviserClasses = Array.isArray(adviserRes.data.data) ? adviserRes.data.data : [];
           const stClasses = Array.isArray(stRes.data.data) ? stRes.data.data : [];
           // Fallback: if no adviser classes by ID, search by adviser_name (partial match for middle names)
           if (adviserClasses.length === 0 && user.firstName && user.lastName) {
             try {
-              const allRes = await axios.get('/classes');
+              const allRes = await axios.get(appendSchoolYearId('/classes', syParam));
               const allClasses = Array.isArray(allRes.data) ? allRes.data : [];
               adviserClasses = allClasses.filter(c =>
                 c.adviser_name &&

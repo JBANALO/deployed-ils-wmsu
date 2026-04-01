@@ -13,6 +13,14 @@ import ViewStudentModal from '@/components/modals/ViewStudentModal'
 import EditStudentModal from '@/components/modals/EditStudentModal'
 import DeleteRequestModal from '@/components/modals/DeleteRequestModal'
 import { API_BASE_URL } from '../../api/config';
+import {
+  appendSchoolYearId,
+  getTeacherActiveSchoolYearId,
+  getTeacherViewingSchoolYearId,
+  isTeacherViewOnlyMode,
+  setTeacherActiveSchoolYearId,
+  setTeacherViewingSchoolYearId,
+} from '../../utils/teacherSchoolYear';
 
 export default function ClassList() {
   const [search, setSearch] = useState("");
@@ -32,6 +40,10 @@ export default function ClassList() {
   const [showDeleteRequestModal, setShowDeleteRequestModal] = useState(false);
   const [editFormData, setEditFormData] = useState({});
   const [deleteReason, setDeleteReason] = useState("");
+  const [activeSchoolYearId, setActiveSchoolYearId] = useState(() => getTeacherActiveSchoolYearId());
+  const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
+
+  const isViewOnlyMode = isTeacherViewOnlyMode(selectedSchoolYearId, activeSchoolYearId);
 
   const totalStudents = students.length;
   const activeStudents = students.filter(s => s.status === "Active").length;
@@ -48,7 +60,35 @@ export default function ClassList() {
     }, 15000);
     
     return () => clearInterval(interval);
+  }, [selectedSchoolYearId]);
+
+  useEffect(() => {
+    const fetchActiveSchoolYear = async () => {
+      try {
+        const res = await axios.get('/school-years/active');
+        const activeSy = res.data?.data || res.data;
+        if (activeSy?.id) {
+          const nextActiveId = String(activeSy.id);
+          setActiveSchoolYearId(nextActiveId);
+          setTeacherActiveSchoolYearId(nextActiveId);
+          if (!selectedSchoolYearId) {
+            setSelectedSchoolYearId(nextActiveId);
+            setTeacherViewingSchoolYearId(nextActiveId);
+          }
+        }
+      } catch (error) {
+        console.warn('Could not load active school year:', error.message);
+      }
+    };
+
+    fetchActiveSchoolYear();
   }, []);
+
+  useEffect(() => {
+    if (selectedSchoolYearId) {
+      setTeacherViewingSchoolYearId(selectedSchoolYearId);
+    }
+  }, [selectedSchoolYearId]);
 
   const fetchStudents = async () => {
     try {
@@ -76,7 +116,7 @@ export default function ClassList() {
       // Fetch adviser classes
       let adviserClasses = [];
       try {
-        const adviserResponse = await fetch(`${API_BASE_URL}/classes/adviser/${user.id}`);
+        const adviserResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/adviser/${user.id}`, selectedSchoolYearId));
         if (adviserResponse.ok) {
           const data = await adviserResponse.json();
           adviserClasses = Array.isArray(data.data) ? data.data : [];
@@ -88,7 +128,7 @@ export default function ClassList() {
       // Fallback: if no adviser classes by ID, search by adviser_name (partial match for middle names)
       if (adviserClasses.length === 0 && user.firstName && user.lastName) {
         try {
-          const allClassesResp = await fetch(`${API_BASE_URL}/classes`);
+          const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, selectedSchoolYearId));
           if (allClassesResp.ok) {
             const allClassesData = await allClassesResp.json();
             const allClasses = Array.isArray(allClassesData) ? allClassesData : [];
@@ -105,7 +145,7 @@ export default function ClassList() {
       // Fetch subject teacher classes
       let subjectTeacherClasses = [];
       try {
-        const stResponse = await fetch(`${API_BASE_URL}/classes/subject-teacher/${user.id}`);
+        const stResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${user.id}`, selectedSchoolYearId));
         if (stResponse.ok) {
           const data = await stResponse.json();
           subjectTeacherClasses = Array.isArray(data.data) ? data.data : [];
@@ -122,7 +162,7 @@ export default function ClassList() {
       console.log('ClassList: Assigned classes:', uniqueClasses.map(c => `${c.grade}-${c.section}`));
 
       // Fetch all students
-      const response = await axios.get('/students');
+      const response = await axios.get('/students', { params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {} });
       const allStudents = Array.isArray(response.data.data) 
         ? response.data.data 
         : Array.isArray(response.data) 
@@ -174,6 +214,10 @@ export default function ClassList() {
   };
 
   const handleEdit = (student) => {
+    if (isViewOnlyMode) {
+      toast.error('Past school years are view-only. Student editing is disabled.');
+      return;
+    }
     setSelectedStudent(student);
     setEditFormData({ ...student, profilePic: student.profilePic }); // Added profilePic
     setShowEditModal(true);
@@ -223,6 +267,10 @@ export default function ClassList() {
   };
 
   const handleDeleteRequest = (student) => {
+    if (isViewOnlyMode) {
+      toast.error('Past school years are view-only. Delete requests are disabled.');
+      return;
+    }
     setSelectedStudent(student);
     setDeleteReason("");
     setShowDeleteRequestModal(true);
@@ -274,6 +322,12 @@ export default function ClassList() {
           Manage Students
         </h2>
       </div>
+
+      {isViewOnlyMode && (
+        <div className="bg-orange-50 border border-orange-200 text-orange-800 rounded-lg px-4 py-3 text-sm font-medium">
+          View-only mode: You are viewing a past school year. Student edits and delete requests are disabled.
+        </div>
+      )}
 
       {/* === PRESERVED: Stats Cards === */}
       {/* v2.0 - Filter by assigned classes */}
@@ -485,14 +539,16 @@ export default function ClassList() {
                   </button>
                   <button
                     onClick={() => handleEdit(student)}
-                    className="text-green-600 hover:text-green-800 transition"
+                    disabled={isViewOnlyMode}
+                    className={`transition ${isViewOnlyMode ? 'text-gray-300 cursor-not-allowed' : 'text-green-600 hover:text-green-800'}`}
                     title="Edit"
                   >
                     <PencilSquareIcon className="w-5 h-5" />
                   </button>
                   <button
                     onClick={() => handleDeleteRequest(student)}
-                    className="text-red-600 hover:text-red-800 transition"
+                    disabled={isViewOnlyMode}
+                    className={`transition ${isViewOnlyMode ? 'text-gray-300 cursor-not-allowed' : 'text-red-600 hover:text-red-800'}`}
                     title="Delete Request"
                   >
                     <TrashIcon className="w-5 h-5" />

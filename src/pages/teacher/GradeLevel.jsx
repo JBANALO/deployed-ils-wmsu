@@ -13,6 +13,14 @@ import ViewStudentModal from '@/components/modals/ViewStudentModal'
 import EditStudentModal from '@/components/modals/EditStudentModal'
 import DeleteRequestModal from '@/components/modals/DeleteRequestModal'
 import { API_BASE_URL } from '../../api/config';
+import {
+  appendSchoolYearId,
+  getTeacherActiveSchoolYearId,
+  getTeacherViewingSchoolYearId,
+  isTeacherViewOnlyMode,
+  setTeacherActiveSchoolYearId,
+  setTeacherViewingSchoolYearId,
+} from '../../utils/teacherSchoolYear';
 
 export default function GradeLevel() {
   const [students, setStudents] = useState([]);
@@ -25,6 +33,9 @@ export default function GradeLevel() {
   const [editFormData, setEditFormData] = useState({});
   const [deleteReason, setDeleteReason] = useState("");
   const [viewingClass, setViewingClass] = useState(null);
+  const [activeSchoolYearId, setActiveSchoolYearId] = useState(() => getTeacherActiveSchoolYearId());
+  const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
+  const isViewOnlyMode = isTeacherViewOnlyMode(selectedSchoolYearId, activeSchoolYearId);
 
   useEffect(() => {
     fetchData();
@@ -35,7 +46,37 @@ export default function GradeLevel() {
     }, 15000);
     
     return () => clearInterval(interval);
+  }, [selectedSchoolYearId]);
+
+  useEffect(() => {
+    const fetchActiveSchoolYear = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/school-years/active`);
+        if (!res.ok) return;
+        const payload = await res.json();
+        const activeSy = payload?.data || payload;
+        if (activeSy?.id) {
+          const nextActiveId = String(activeSy.id);
+          setActiveSchoolYearId(nextActiveId);
+          setTeacherActiveSchoolYearId(nextActiveId);
+          if (!selectedSchoolYearId) {
+            setSelectedSchoolYearId(nextActiveId);
+            setTeacherViewingSchoolYearId(nextActiveId);
+          }
+        }
+      } catch (error) {
+        console.warn('Could not load active school year:', error.message);
+      }
+    };
+
+    fetchActiveSchoolYear();
   }, []);
+
+  useEffect(() => {
+    if (selectedSchoolYearId) {
+      setTeacherViewingSchoolYearId(selectedSchoolYearId);
+    }
+  }, [selectedSchoolYearId]);
 
   const fetchData = async () => {
     try {
@@ -63,7 +104,7 @@ export default function GradeLevel() {
       // Fetch students (optional, do not block class display if fails)
       try {
         console.log('🔄 Fetching students from API...');
-        const response = await fetch(`${API_BASE_URL}/students`);
+        const response = await fetch(appendSchoolYearId(`${API_BASE_URL}/students`, selectedSchoolYearId));
         console.log('📡 Students API response status:', response.status);
         if (response.ok) {
           const result = await response.json();
@@ -81,7 +122,7 @@ export default function GradeLevel() {
 
       // Fetch classes assigned to this adviser
       console.log(`Fetching adviser classes for user: ${user.id}`);
-      const classesResponse = await fetch(`${API_BASE_URL}/classes/adviser/${user.id}`);
+      const classesResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/adviser/${user.id}`, selectedSchoolYearId));
       let adviserClasses = [];
       if (classesResponse.ok) {
         const classesData = await classesResponse.json();
@@ -100,7 +141,7 @@ export default function GradeLevel() {
       if (adviserClasses.length === 0 && user.firstName && user.lastName) {
         try {
           console.log('⚠️ No adviser classes by ID — trying name fallback...');
-          const allClassesResp = await fetch(`${API_BASE_URL}/classes`);
+          const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, selectedSchoolYearId));
           if (allClassesResp.ok) {
             const allClassesData = await allClassesResp.json();
             const allClasses = Array.isArray(allClassesData) ? allClassesData : (Array.isArray(allClassesData.data) ? allClassesData.data : []);
@@ -118,7 +159,7 @@ export default function GradeLevel() {
 
       // Fetch classes assigned to this subject teacher
       console.log(`Fetching subject teacher classes for user: ${user.id}`);
-      const subjectTeacherResponse = await fetch(`${API_BASE_URL}/classes/subject-teacher/${user.id}`);
+      const subjectTeacherResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${user.id}`, selectedSchoolYearId));
       let subjectTeacherClasses = [];
       if (subjectTeacherResponse.ok) {
         const stData = await subjectTeacherResponse.json();
@@ -243,8 +284,24 @@ export default function GradeLevel() {
 
   // Handlers
   const handleView = (student) => { setSelectedStudent(student); setShowViewModal(true); };
-  const handleEdit = (student) => { setSelectedStudent(student); setEditFormData({ ...student }); setShowEditModal(true); };
-  const handleDeleteRequest = (student) => { setSelectedStudent(student); setDeleteReason(""); setShowDeleteRequestModal(true); };
+  const handleEdit = (student) => {
+    if (isViewOnlyMode) {
+      alert('Past school years are view-only. Student editing is disabled.');
+      return;
+    }
+    setSelectedStudent(student);
+    setEditFormData({ ...student });
+    setShowEditModal(true);
+  };
+  const handleDeleteRequest = (student) => {
+    if (isViewOnlyMode) {
+      alert('Past school years are view-only. Delete requests are disabled.');
+      return;
+    }
+    setSelectedStudent(student);
+    setDeleteReason("");
+    setShowDeleteRequestModal(true);
+  };
 
   const handleUpdateStudent = async () => {
     try {
@@ -393,8 +450,20 @@ export default function GradeLevel() {
                         <td className="px-3 py-2">
                           <div className="flex justify-center gap-3">
                             <button onClick={() => handleView(student)} className="text-blue-600 hover:text-blue-800"><EyeIcon className="w-5 h-5" /></button>
-                            <button onClick={() => handleEdit(student)} className="text-green-600 hover:text-green-800"><PencilSquareIcon className="w-5 h-5" /></button>
-                            <button onClick={() => handleDeleteRequest(student)} className="text-red-600 hover:text-red-800"><TrashIcon className="w-5 h-5" /></button>
+                            <button
+                              onClick={() => handleEdit(student)}
+                              disabled={isViewOnlyMode}
+                              className={isViewOnlyMode ? "text-gray-300 cursor-not-allowed" : "text-green-600 hover:text-green-800"}
+                            >
+                              <PencilSquareIcon className="w-5 h-5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteRequest(student)}
+                              disabled={isViewOnlyMode}
+                              className={isViewOnlyMode ? "text-gray-300 cursor-not-allowed" : "text-red-600 hover:text-red-800"}
+                            >
+                              <TrashIcon className="w-5 h-5" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -414,6 +483,12 @@ export default function GradeLevel() {
               Grade Level Management
             </h2>
           </div>
+
+          {isViewOnlyMode && (
+            <div className="bg-orange-50 border border-orange-200 text-orange-800 rounded-lg px-4 py-3 text-sm font-medium mb-6">
+              View-only mode: You are viewing a past school year. Student edits and delete requests are disabled.
+            </div>
+          )}
 
           {gradeLevels.length === 0 ? (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center max-w-2xl mx-auto">

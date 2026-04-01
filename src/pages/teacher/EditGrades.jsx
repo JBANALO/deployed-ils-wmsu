@@ -12,6 +12,14 @@ import {
   ArrowDownTrayIcon,
   XMarkIcon,
 } from "@heroicons/react/24/solid";
+import {
+  appendSchoolYearId,
+  getTeacherActiveSchoolYearId,
+  getTeacherViewingSchoolYearId,
+  isTeacherViewOnlyMode,
+  setTeacherActiveSchoolYearId,
+  setTeacherViewingSchoolYearId,
+} from "../../utils/teacherSchoolYear";
 
 export default function EditGrades() {
   const getStudentGradeLevel = (student) => student?.gradeLevel || student?.grade_level || "";
@@ -47,6 +55,9 @@ export default function EditGrades() {
   const [showReportCard, setShowReportCard] = useState(false);
   const [reportCardStudent, setReportCardStudent] = useState(null); // null = all students, array = selected students
   const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
+  const [activeSchoolYearId, setActiveSchoolYearId] = useState(() => getTeacherActiveSchoolYearId());
+  const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
+  const isViewOnlyMode = isTeacherViewOnlyMode(selectedSchoolYearId, activeSchoolYearId);
 
   const toggleStudentSelection = (id) => {
     setSelectedStudentIds(prev => {
@@ -77,12 +88,40 @@ export default function EditGrades() {
   });
 
   useEffect(() => {
-    fetchStudents();
+    const fetchActiveSchoolYear = async () => {
+      try {
+        const res = await api.get('/school-years/active');
+        const activeSy = res.data?.data || res.data;
+        if (activeSy?.id) {
+          const nextActiveId = String(activeSy.id);
+          setActiveSchoolYearId(nextActiveId);
+          setTeacherActiveSchoolYearId(nextActiveId);
+          if (!selectedSchoolYearId) {
+            setSelectedSchoolYearId(nextActiveId);
+            setTeacherViewingSchoolYearId(nextActiveId);
+          }
+        }
+      } catch (error) {
+        console.warn('Could not load active school year:', error.message);
+      }
+    };
+
+    fetchActiveSchoolYear();
   }, []);
 
   useEffect(() => {
+    if (selectedSchoolYearId) {
+      setTeacherViewingSchoolYearId(selectedSchoolYearId);
+    }
+  }, [selectedSchoolYearId]);
+
+  useEffect(() => {
+    fetchStudents();
+  }, [selectedSchoolYearId]);
+
+  useEffect(() => {
     fetchProgress(selectedQuarter);
-  }, [selectedQuarter]);
+  }, [selectedQuarter, selectedSchoolYearId]);
 
   // Update available sections when grade level changes
   useEffect(() => {
@@ -113,7 +152,7 @@ export default function EditGrades() {
           // Try to get subjects from API based on class
           try {
             const classId = `${selectedGradeLevel.toLowerCase().replace(/\s+/g, '-')}-${selectedSection.toLowerCase().replace(/\s+/g, '-')}`;
-            const response = await api.get(`/classes/${classId}/subjects`);
+            const response = await api.get(`/classes/${classId}/subjects`, { params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {} });
             setAvailableSubjects(response.data.subjects || []);
           } catch (error) {
             console.error('Error fetching class subjects, using fallback:', error);
@@ -157,7 +196,7 @@ export default function EditGrades() {
       // Fetch adviser classes
       let adviserClasses = [];
       try {
-        const adviserResponse = await fetch(`${API_BASE_URL}/classes/adviser/${userId}`);
+        const adviserResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/adviser/${userId}`, selectedSchoolYearId));
         if (adviserResponse.ok) {
           const data = await adviserResponse.json();
           adviserClasses = Array.isArray(data.data) ? data.data : [];
@@ -169,7 +208,7 @@ export default function EditGrades() {
       // Fetch subject teacher classes
       let subjectTeacherClasses = [];
       try {
-        const stResponse = await fetch(`${API_BASE_URL}/classes/subject-teacher/${userId}`);
+        const stResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${userId}`, selectedSchoolYearId));
         if (stResponse.ok) {
           const data = await stResponse.json();
           subjectTeacherClasses = Array.isArray(data.data) ? data.data : [];
@@ -233,7 +272,7 @@ export default function EditGrades() {
       fetchProgress(selectedQuarter);
 
       // Fetch all students
-      const response = await api.get('/students');
+      const response = await api.get('/students', { params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {} });
       const allStudents = response.data.data || response.data;
       
       // Filter students to only show those in assigned classes
@@ -256,7 +295,7 @@ export default function EditGrades() {
           try {
             // grade_levels in DB stores just the number (e.g. '3' not 'Grade 3')
             const gradeKey = grade.replace(/^Grade\s+/i, '').trim();
-            const resp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`);
+            const resp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`, { params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {} });
             const names = (resp.data?.data || []).map(s => s.name).filter(Boolean);
             if (names.length > 0) gradeSubjectMap[grade] = names; // keep 'Grade 3' as map key
           } catch (e) {
@@ -280,7 +319,7 @@ export default function EditGrades() {
   const fetchProgress = async (quarter = 'q1') => {
     try {
       setProgressLoading(true);
-      const response = await api.get('/grades/progress', { params: { quarter } });
+      const response = await api.get('/grades/progress', { params: { quarter, ...(selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}) } });
       const data = response.data?.data || {};
       setProgressData({
         summary: data.summary || { percent: 0, totalStudents: 0, gradedStudents: 0 },
@@ -327,7 +366,7 @@ export default function EditGrades() {
     try {
       // grade_levels column stores just the number e.g. '3', not 'Grade 3'
       const gradeKey = (getStudentGradeLevel(student) || '').replace(/^Grade\s+/i, '').trim();
-      const subjResp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`);
+      const subjResp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`, { params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {} });
       dbSubjectsForGrade = (subjResp.data?.data || []).map(s => s.name).filter(Boolean);
       console.log('DB subjects for', getStudentGradeLevel(student), ':', dbSubjectsForGrade);
     } catch (e) {
@@ -344,7 +383,7 @@ export default function EditGrades() {
       const userStr = localStorage.getItem('user');
       const freshUserId = userStr ? (JSON.parse(userStr).id) : null;
       if (freshUserId) {
-        const stResp = await fetch(`${API_BASE_URL}/classes/subject-teacher/${freshUserId}`);
+        const stResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${freshUserId}`, selectedSchoolYearId));
         if (stResp.ok) {
           const stData = await stResp.json();
           const stClasses = Array.isArray(stData.data) ? stData.data : [];
@@ -380,7 +419,7 @@ export default function EditGrades() {
     // Fetch grades from API
     let studentGrades = {};
     try {
-      const gradesResponse = await api.get(`/students/${student.id}/grades`);
+      const gradesResponse = await api.get(`/students/${student.id}/grades`, { params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {} });
       studentGrades = gradesResponse.data || {};
       console.log('Fetched grades from API:', studentGrades);
     } catch (error) {
@@ -527,6 +566,11 @@ export default function EditGrades() {
       return;
     }
 
+    if (isViewOnlyMode) {
+      alert("❌ Past school years are view-only. Grade editing is disabled.");
+      return;
+    }
+
     // Check for unauthorized subject edits (for subject teachers including teacher role with assigned subjects)
     const isSubjectTeacherMode = (userRole === 'subject_teacher' || userRole === 'teacher') && availableSubjects.length > 0;
     if (isSubjectTeacherMode) {
@@ -583,7 +627,8 @@ export default function EditGrades() {
         grades: quarterGrades,
         average: parseFloat(finalAverage),
         quarter: quarterValue,
-        lastGradeEditTime: new Date().toISOString()
+        lastGradeEditTime: new Date().toISOString(),
+        ...(selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {})
       });
 
       if (response.data?.success) {
@@ -646,6 +691,12 @@ export default function EditGrades() {
           </button>
         </div>
       </div>
+
+      {isViewOnlyMode && (
+        <div className="bg-orange-50 border border-orange-200 text-orange-800 rounded-lg px-4 py-3 text-sm font-medium">
+          View-only mode: You are viewing a past school year. Grade editing is disabled.
+        </div>
+      )}
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
@@ -1036,7 +1087,7 @@ export default function EditGrades() {
                                 )}
                               </td>
                               {quartersToShow.map(q => {
-                                const editable = canEdit && isEditableQ(q) && !isGradeLocked;
+                                const editable = canEdit && isEditableQ(q) && !isGradeLocked && !isViewOnlyMode;
                                 const val = gradeData[subject]?.[q];
                                 const hasVal = val && val !== 0 && val !== '';
                                 return (
@@ -1106,9 +1157,9 @@ export default function EditGrades() {
               <div className="flex gap-4 mt-8">
                 <button
                   onClick={saveGrades}
-                  disabled={isGradeLocked}
+                  disabled={isGradeLocked || isViewOnlyMode}
                   className={`flex-1 py-4 rounded-xl font-bold text-lg transition shadow-lg ${
-                    isGradeLocked
+                    (isGradeLocked || isViewOnlyMode)
                       ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
                       : 'bg-green-600 hover:bg-green-700 text-white'
                   }`}
