@@ -356,8 +356,11 @@ router.get('/', async (req, res) => {
     try {
       records = await query(sqlQuery, params);
     } catch (queryError) {
-      if (canFilterBySchoolYear && queryError.message && queryError.message.toLowerCase().includes('unknown column') && queryError.message.includes('school_year_id')) {
-        console.warn('[attendance GET] school_year_id filter query failed; retrying without school year filter');
+      console.warn('[attendance GET] query error:', queryError.message);
+
+      // If schoolYearId filtering was attempted and failed, retry without it
+      if (canFilterBySchoolYear && targetSy?.id && params.length > 0) {
+        console.warn('[attendance GET] Retrying without school_year_id filter due to error');
         let fallbackQuery = 'SELECT * FROM attendance WHERE 1=1';
         const fallbackParams = [];
 
@@ -379,31 +382,25 @@ router.get('/', async (req, res) => {
         }
 
         fallbackQuery += ' ORDER BY timestamp DESC';
-        records = await query(fallbackQuery, fallbackParams);
-      }
-
-      // Check if it's the ENUM error and attempt auto-fix
-      else if (queryError.message && queryError.message.includes("has duplicated value")) {
-        console.warn('⚠️ Detected ENUM error, attempting auto-fix...');
         try {
-          // Normalize all lowercase values to proper case
-          await query(`UPDATE attendance SET status = 'Present' WHERE LOWER(status) = 'present'`);
-          await query(`UPDATE attendance SET status = 'Absent' WHERE LOWER(status) = 'absent'`);
-          await query(`UPDATE attendance SET status = 'Late' WHERE LOWER(status) = 'late'`);
-          console.log('✅ Auto-fixed status values');
-          
-          // Retry the query
-          records = await query(sqlQuery, params);
-        } catch (fixError) {
-          console.error('❌ Auto-fix failed:', fixError.message);
+          records = await query(fallbackQuery, fallbackParams);
+        } catch (fallbackError) {
+          console.error('[attendance GET] Fallback query also failed:', fallbackError.message);
           return res.status(500).json({
             success: false,
-            message: 'Database schema error detected. Please run: node fix-attendance-enum.cjs',
-            error: fixError.message
+            message: 'Failed to fetch attendance records',
+            error: fallbackError.message
           });
         }
-      } else {
-        throw queryError;
+      }
+      // If no schoolYearId was involved or already failed fallback, rethrow
+      else {
+        console.error('[attendance GET] Query failed without schoolYearId recovery option:', queryError.message);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to fetch attendance records',
+          error: queryError.message
+        });
       }
     }
     
