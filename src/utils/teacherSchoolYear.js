@@ -37,3 +37,24 @@ export const appendSchoolYearId = (url, schoolYearId) => {
   const separator = url.includes('?') ? '&' : '?';
   return `${url}${separator}schoolYearId=${encodeURIComponent(schoolYearId)}`;
 };
+
+const normalizeGrade = (value = '') => String(value).trim().toLowerCase().replace(/^grade\s+/i, '').replace(/\s+/g, ' ');
+const normalizeSection = (value = '') => String(value).trim().toLowerCase().replace(/\s+/g, ' ');
+
+export const dedupeTeacherClasses = (classes = []) => {
+  const uniqueMap = new Map();
+  for (const cls of Array.isArray(classes) ? classes : []) {
+    if (!cls) continue;
+    const idPart = cls.id !== undefined && cls.id !== null && String(cls.id).trim() !== ''
+      ? `id:${String(cls.id).trim().toLowerCase()}`
+      : '';
+    const gsPart = `gs:${normalizeGrade(cls.grade || cls.grade_level)}::${normalizeSection(cls.section)}`;
+    const key = idPart || gsPart;
+    if (!uniqueMap.has(key)) {
+      uniqueMap.set(key, cls);
+    } else {
+      uniqueMap.set(key, { ...uniqueMap.get(key), ...cls });
+    }
+  }
+  return Array.from(uniqueMap.values());
+};

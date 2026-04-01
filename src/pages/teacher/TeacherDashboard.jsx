@@ -9,6 +9,7 @@ import {
 import axios from "../../api/axiosConfig";
 import {
   appendSchoolYearId,
+  dedupeTeacherClasses,
   getTeacherViewingSchoolYearId,
   setTeacherActiveSchoolYearId,
   setTeacherViewingSchoolYearId,
@@ -150,7 +151,7 @@ export default function TeacherDashboard() {
             } catch (fbErr) { /* non-critical */ }
           }
           const combined = [...adviserClasses, ...stClasses];
-          assignedClasses = Array.from(new Map(combined.map(c => [c.id, c])).values());
+          assignedClasses = dedupeTeacherClasses(combined);
           // Store keys for promotion history filtering
           const keys = assignedClasses.map(c => `${c.grade}||${c.section}`);
           setAssignedClassKeys(keys);

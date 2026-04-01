@@ -14,6 +14,7 @@ import {
 } from "@heroicons/react/24/solid";
 import {
   appendSchoolYearId,
+  dedupeTeacherClasses,
   getTeacherActiveSchoolYearId,
   getTeacherViewingSchoolYearId,
   isTeacherViewOnlyMode,
@@ -219,7 +220,7 @@ export default function EditGrades() {
 
       // Combine and deduplicate classes
       const combinedClasses = [...adviserClasses, ...subjectTeacherClasses];
-      const uniqueClasses = Array.from(new Map(combinedClasses.map(c => [c.id, c])).values());
+      const uniqueClasses = dedupeTeacherClasses(combinedClasses);
       setAssignedClasses(uniqueClasses);
       
       console.log('EditGrades - Assigned classes:', uniqueClasses.map(c => `${c.grade}-${c.section}`));

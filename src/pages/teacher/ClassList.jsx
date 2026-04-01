@@ -15,6 +15,7 @@ import DeleteRequestModal from '@/components/modals/DeleteRequestModal'
 import { API_BASE_URL } from '../../api/config';
 import {
   appendSchoolYearId,
+  dedupeTeacherClasses,
   getTeacherActiveSchoolYearId,
   getTeacherViewingSchoolYearId,
   isTeacherViewOnlyMode,
@@ -156,7 +157,7 @@ export default function ClassList() {
 
       // Combine and deduplicate classes
       const combinedClasses = [...adviserClasses, ...subjectTeacherClasses];
-      const uniqueClasses = Array.from(new Map(combinedClasses.map(c => [c.id, c])).values());
+      const uniqueClasses = dedupeTeacherClasses(combinedClasses);
       setAssignedClasses(uniqueClasses);
       
       console.log('ClassList: Assigned classes:', uniqueClasses.map(c => `${c.grade}-${c.section}`));

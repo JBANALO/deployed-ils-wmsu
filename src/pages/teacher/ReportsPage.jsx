@@ -22,6 +22,7 @@ import {
 } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
 import SF2AttendanceForm from "../../components/SF2AttendanceForm";
+import { dedupeTeacherClasses } from "../../utils/teacherSchoolYear";
 
 export default function ReportsPage() {
   const [showDropdown, setShowDropdown] = useState(false);
@@ -123,7 +124,7 @@ export default function ReportsPage() {
 
       // Combine and deduplicate assigned classes
       const combinedClasses = [...adviserClasses, ...subjectTeacherClasses];
-      const uniqueClasses = Array.from(new Map(combinedClasses.map(c => [c.id, c])).values());
+      const uniqueClasses = dedupeTeacherClasses(combinedClasses);
       
       // Extract sections from assigned classes only
       const assignedSections = uniqueClasses.map(c => `${c.grade} - ${c.section}`).filter(Boolean);

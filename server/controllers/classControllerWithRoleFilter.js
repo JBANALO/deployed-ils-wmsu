@@ -509,8 +509,14 @@ const getSubjectTeacherClasses = async (req, res) => {
         `SELECT DISTINCT c.*,
                 GROUP_CONCAT(DISTINCT st.subject) as subjects_teaching
          FROM classes c
-         JOIN subject_teachers st ON c.id = st.class_id
-         WHERE st.teacher_id = ? AND st.school_year_id = ? AND c.school_year_id = ?
+         JOIN subject_teachers st
+           ON (
+             LOWER(TRIM(CAST(c.id AS CHAR))) = LOWER(TRIM(st.class_id))
+             OR LOWER(REPLACE(CONCAT(TRIM(c.grade), '-', TRIM(c.section)), ' ', '-')) = LOWER(REPLACE(TRIM(st.class_id), ' ', '-'))
+           )
+         WHERE st.teacher_id = ?
+           AND (st.school_year_id = ? OR st.school_year_id IS NULL)
+           AND c.school_year_id = ?
          GROUP BY c.id`,
         [userId, targetSy.id, targetSy.id]
       );

@@ -22,6 +22,7 @@ import {
   PrinterIcon as PrinterIconSolid,
   ChartBarSquareIcon,
 } from "@heroicons/react/24/solid";
+import { dedupeTeacherClasses } from "../../utils/teacherSchoolYear";
 
 export default function QRCodePortal() {
   const [scannerActive, setScannerActive] = useState(false);
@@ -180,7 +181,7 @@ export default function QRCodePortal() {
           } catch (fbErr) { /* non-critical */ }
         }
         const combined = [...adviserClasses, ...stClasses];
-        assignedClasses = Array.from(new Map(combined.map(c => [c.id, c])).values());
+        assignedClasses = dedupeTeacherClasses(combined);
       } catch (e) {
         console.error('Error fetching assigned classes:', e);
       }
