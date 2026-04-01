@@ -2,10 +2,12 @@ import React, { useState, useEffect } from "react";
 import { UserCircleIcon, PencilIcon, PlusIcon, TrashIcon } from "@heroicons/react/24/solid";
 import { authService } from "../../api/userService";
 import api from "../../api/axiosConfig";
+import { appendSchoolYearId, getTeacherViewingSchoolYearId } from "../../utils/teacherSchoolYear";
 
 export default function TeacherProfile() {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
   const [profileData, setProfileData] = useState({
     firstName: "",
     lastName: "",
@@ -19,6 +21,9 @@ export default function TeacherProfile() {
   useEffect(() => {
     const fetchUserData = async () => {
       try {
+        const viewingSyId = getTeacherViewingSchoolYearId();
+        setSelectedSchoolYearId(viewingSyId);
+
         // First try to get user from localStorage
         let user = null;
         const userStr = localStorage.getItem("user");
@@ -79,7 +84,7 @@ export default function TeacherProfile() {
               // Use NEW unified endpoint that returns ONLY classes visible to this teacher
               // based on their role (adviser OR subject teacher)
               try {
-                const visibleClassesResponse = await api.get(`/classes/teacher/${user.id}`);
+                const visibleClassesResponse = await api.get(appendSchoolYearId(`/classes/teacher/${user.id}`, viewingSyId));
                 const visibleClasses = Array.isArray(visibleClassesResponse.data.data) ? visibleClassesResponse.data.data : [];
                 
                 console.log(`✓ Fetched ${visibleClasses.length} classes for teacher ${user.id}`);
@@ -309,6 +314,11 @@ export default function TeacherProfile() {
               <span className="bg-red-800 w-1 h-8 rounded"></span>
               Class Schedule
             </h4>
+            {!isEditing && selectedSchoolYearId && (
+              <span className="text-xs font-semibold bg-orange-100 text-orange-800 px-3 py-1 rounded-full">
+                School Year Scope: {selectedSchoolYearId}
+              </span>
+            )}
             {isEditing && (
               <button
                 onClick={addSchedule}
