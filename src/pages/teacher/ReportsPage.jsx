@@ -22,7 +22,13 @@ import {
 } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
 import SF2AttendanceForm from "../../components/SF2AttendanceForm";
-import { dedupeTeacherClasses } from "../../utils/teacherSchoolYear";
+import {
+  appendSchoolYearId,
+  dedupeTeacherClasses,
+  getTeacherViewingSchoolYearId,
+  setTeacherActiveSchoolYearId,
+  setTeacherViewingSchoolYearId,
+} from "../../utils/teacherSchoolYear";
 
 export default function ReportsPage() {
   const [showDropdown, setShowDropdown] = useState(false);
@@ -62,6 +68,7 @@ export default function ReportsPage() {
   const [sendingEmailFor, setSendingEmailFor] = useState(null);
   const [emailResults, setEmailResults] = useState({});
   const [allSubjects, setAllSubjects] = useState([]);
+  const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
 
   const months = [
     { value: 1, label: "January" },
@@ -80,7 +87,34 @@ export default function ReportsPage() {
 
   useEffect(() => {
     loadReportsData();
-  }, [selectedSection, selectedMonth, selectedYear]);
+  }, [selectedSection, selectedMonth, selectedYear, selectedSchoolYearId]);
+
+  useEffect(() => {
+    const fetchActiveSchoolYear = async () => {
+      try {
+        const res = await axios.get('/school-years/active');
+        const activeSy = res.data?.data || res.data;
+        if (activeSy?.id) {
+          const nextActiveId = String(activeSy.id);
+          setTeacherActiveSchoolYearId(nextActiveId);
+          if (!selectedSchoolYearId) {
+            setSelectedSchoolYearId(nextActiveId);
+            setTeacherViewingSchoolYearId(nextActiveId);
+          }
+        }
+      } catch (error) {
+        console.warn('Could not load active school year:', error.message);
+      }
+    };
+
+    fetchActiveSchoolYear();
+  }, []);
+
+  useEffect(() => {
+    if (selectedSchoolYearId) {
+      setTeacherViewingSchoolYearId(selectedSchoolYearId);
+    }
+  }, [selectedSchoolYearId]);
 
   const loadReportsData = async () => {
     try {
@@ -106,17 +140,35 @@ export default function ReportsPage() {
       // Fetch adviser classes for this teacher
       let adviserClasses = [];
       try {
-        const adviserResponse = await axios.get(`/classes/adviser/${userId}`);
+        const adviserResponse = await axios.get(appendSchoolYearId(`/classes/adviser/${userId}`, selectedSchoolYearId));
         adviserClasses = Array.isArray(adviserResponse.data.data) ? adviserResponse.data.data : [];
       } catch (e) {
         console.error('Error fetching adviser classes:', e);
+      }
+      if (adviserClasses.length === 0 && userStr) {
+        try {
+          const user = JSON.parse(userStr);
+          if (user.firstName && user.lastName) {
+            const allRes = await axios.get(appendSchoolYearId('/classes', selectedSchoolYearId));
+            const allClasses = Array.isArray(allRes.data)
+              ? allRes.data
+              : (Array.isArray(allRes.data?.data) ? allRes.data.data : []);
+            adviserClasses = allClasses.filter(c =>
+              c.adviser_name &&
+              c.adviser_name.includes(user.firstName) &&
+              c.adviser_name.includes(user.lastName)
+            );
+          }
+        } catch (fbErr) {
+          console.warn('Reports adviser-name fallback failed:', fbErr.message);
+        }
       }
       setIsAdviser(adviserClasses.length > 0);
 
       // Fetch subject teacher classes
       let subjectTeacherClasses = [];
       try {
-        const stResponse = await axios.get(`/classes/subject-teacher/${userId}`);
+        const stResponse = await axios.get(appendSchoolYearId(`/classes/subject-teacher/${userId}`, selectedSchoolYearId));
         subjectTeacherClasses = Array.isArray(stResponse.data.data) ? stResponse.data.data : [];
       } catch (e) {
         console.error('Error fetching subject teacher classes:', e);
@@ -132,7 +184,9 @@ export default function ReportsPage() {
       console.log('Assigned sections for reports:', assignedSections);
 
       // Fetch all students
-      const studentsResponse = await axios.get('/students');
+      const studentsResponse = await axios.get('/students', {
+        params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}
+      });
       let studentsData = Array.isArray(studentsResponse.data.data) 
         ? studentsResponse.data.data 
         : Array.isArray(studentsResponse.data) 
@@ -157,7 +211,9 @@ export default function ReportsPage() {
       const studentsWithGrades = await Promise.all(
         studentsData.map(async (student) => {
           try {
-            const gradesResponse = await axios.get(`/students/${student.id}/grades`);
+            const gradesResponse = await axios.get(`/students/${student.id}/grades`, {
+              params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}
+            });
             const grades = gradesResponse.data || {};
             
             // Calculate overall average from all subjects and quarters
@@ -186,7 +242,9 @@ export default function ReportsPage() {
       setStudents(studentsWithGrades);
 
       // Fetch attendance data
-      const attendanceResponse = await axios.get('/attendance');
+      const attendanceResponse = await axios.get('/attendance', {
+        params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}
+      });
       let allAttendance = Array.isArray(attendanceResponse.data.data) 
         ? attendanceResponse.data.data 
         : Array.isArray(attendanceResponse.data) 

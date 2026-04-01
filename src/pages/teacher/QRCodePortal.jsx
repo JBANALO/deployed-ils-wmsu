@@ -22,7 +22,15 @@ import {
   PrinterIcon as PrinterIconSolid,
   ChartBarSquareIcon,
 } from "@heroicons/react/24/solid";
-import { dedupeTeacherClasses } from "../../utils/teacherSchoolYear";
+import {
+  appendSchoolYearId,
+  dedupeTeacherClasses,
+  getTeacherActiveSchoolYearId,
+  getTeacherViewingSchoolYearId,
+  isTeacherViewOnlyMode,
+  setTeacherActiveSchoolYearId,
+  setTeacherViewingSchoolYearId,
+} from "../../utils/teacherSchoolYear";
 
 export default function QRCodePortal() {
   const [scannerActive, setScannerActive] = useState(false);
@@ -39,6 +47,9 @@ export default function QRCodePortal() {
   const [attendanceRecords, setAttendanceRecords] = useState([]); // Store all attendance records
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeSchoolYearId, setActiveSchoolYearId] = useState(() => getTeacherActiveSchoolYearId());
+  const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
+  const isViewOnlyMode = isTeacherViewOnlyMode(selectedSchoolYearId, activeSchoolYearId);
   const [attendanceStats, setAttendanceStats] = useState({
     todayScans: 0,
     presentStudents: 0,
@@ -48,20 +59,53 @@ export default function QRCodePortal() {
   const options = ["All Status", "Present", "Late", "Absent", "Not Scanned"];
 
   useEffect(() => {
+    const fetchActiveSchoolYear = async () => {
+      try {
+        const res = await axios.get('/school-years/active');
+        const activeSy = res.data?.data || res.data;
+        if (activeSy?.id) {
+          const nextActiveId = String(activeSy.id);
+          setActiveSchoolYearId(nextActiveId);
+          setTeacherActiveSchoolYearId(nextActiveId);
+          if (!selectedSchoolYearId) {
+            setSelectedSchoolYearId(nextActiveId);
+            setTeacherViewingSchoolYearId(nextActiveId);
+          }
+        }
+      } catch (error) {
+        console.warn('Could not load active school year:', error.message);
+      }
+    };
+
+    fetchActiveSchoolYear();
+  }, []);
+
+  useEffect(() => {
+    if (selectedSchoolYearId) {
+      setTeacherViewingSchoolYearId(selectedSchoolYearId);
+    }
+  }, [selectedSchoolYearId]);
+
+  useEffect(() => {
     loadStudents();
     loadAttendanceForDate(selectedDate);
-  }, []);
+  }, [selectedSchoolYearId]);
 
   // Reload attendance when date changes
   useEffect(() => {
     loadAttendanceForDate(selectedDate);
-  }, [selectedDate]);
+  }, [selectedDate, selectedSchoolYearId]);
 
   // Load attendance records for a specific date
   const loadAttendanceForDate = async (date) => {
     try {
       console.log('Loading attendance for date:', date);
-      const attendanceResponse = await axios.get('/attendance');
+      const attendanceResponse = await axios.get('/attendance', {
+        params: {
+          date,
+          ...(selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {})
+        }
+      });
       console.log('Attendance API response:', attendanceResponse.data);
       
       const allAttendance = Array.isArray(attendanceResponse.data.data) 
@@ -163,16 +207,18 @@ export default function QRCodePortal() {
       let assignedClasses = [];
       try {
         const [adviserRes, stRes] = await Promise.all([
-          axios.get(`/classes/adviser/${currentUser.id}`),
-          axios.get(`/classes/subject-teacher/${currentUser.id}`)
+          axios.get(appendSchoolYearId(`/classes/adviser/${currentUser.id}`, selectedSchoolYearId)),
+          axios.get(appendSchoolYearId(`/classes/subject-teacher/${currentUser.id}`, selectedSchoolYearId))
         ]);
         let adviserClasses = Array.isArray(adviserRes.data.data) ? adviserRes.data.data : [];
         const stClasses = Array.isArray(stRes.data.data) ? stRes.data.data : [];
         // Fallback: if no adviser classes by ID, search by adviser_name (partial match for middle names)
         if (adviserClasses.length === 0 && currentUser.firstName && currentUser.lastName) {
           try {
-            const allRes = await axios.get('/classes');
-            const allClasses = Array.isArray(allRes.data) ? allRes.data : [];
+            const allRes = await axios.get(appendSchoolYearId('/classes', selectedSchoolYearId));
+            const allClasses = Array.isArray(allRes.data)
+              ? allRes.data
+              : (Array.isArray(allRes.data?.data) ? allRes.data.data : []);
             adviserClasses = allClasses.filter(c =>
               c.adviser_name &&
               c.adviser_name.includes(currentUser.firstName) &&
@@ -187,7 +233,9 @@ export default function QRCodePortal() {
       }
       
       // Fetch all students
-      const response = await axios.get('/students');
+      const response = await axios.get('/students', {
+        params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}
+      });
       let studentData = Array.isArray(response.data.data) ? response.data.data : 
                        Array.isArray(response.data) ? response.data : [];
       
@@ -214,7 +262,9 @@ export default function QRCodePortal() {
       
       // Fetch real attendance data for today
       try {
-        const attendanceResponse = await axios.get('/attendance');
+        const attendanceResponse = await axios.get('/attendance', {
+          params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}
+        });
         const allAttendance = Array.isArray(attendanceResponse.data.data) 
           ? attendanceResponse.data.data 
           : Array.isArray(attendanceResponse.data) 
@@ -290,6 +340,11 @@ export default function QRCodePortal() {
   // Handle QR code scanning and attendance recording
   const handleBarCodeScanned = async (qrText) => {
     try {
+      if (isViewOnlyMode) {
+        alert('Past school years are view-only. QR attendance scanning is disabled.');
+        return;
+      }
+
       let qrData = null;
       let studentId = null;
       
@@ -370,6 +425,7 @@ export default function QRCodePortal() {
           teacherName: teacherName,
           qrData: qrData,
           location: 'QR Portal - Web',
+          ...(selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}),
           deviceInfo: {
             userAgent: navigator.userAgent,
             platform: navigator.platform,

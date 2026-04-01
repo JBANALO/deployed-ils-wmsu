@@ -206,6 +206,29 @@ export default function EditGrades() {
         console.error('Error fetching adviser classes:', e);
       }
 
+      // Fallback: if no adviser classes by ID, search by adviser_name
+      if (adviserClasses.length === 0 && userStr) {
+        try {
+          const user = JSON.parse(userStr);
+          if (user.firstName && user.lastName) {
+            const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, selectedSchoolYearId));
+            if (allClassesResp.ok) {
+              const allClassesData = await allClassesResp.json();
+              const allClasses = Array.isArray(allClassesData)
+                ? allClassesData
+                : (Array.isArray(allClassesData.data) ? allClassesData.data : []);
+              adviserClasses = allClasses.filter(c =>
+                c.adviser_name &&
+                c.adviser_name.includes(user.firstName) &&
+                c.adviser_name.includes(user.lastName)
+              );
+            }
+          }
+        } catch (fbErr) {
+          console.warn('EditGrades adviser-name fallback failed:', fbErr.message);
+        }
+      }
+
       // Fetch subject teacher classes
       let subjectTeacherClasses = [];
       try {
