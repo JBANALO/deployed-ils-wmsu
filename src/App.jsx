@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/auth/LoginPage";
 import GoogleCallbackPage from "./pages/auth/GoogleCallbackPage";
 import ForgotPassword from "./pages/auth/ForgotPassword";
@@ -96,7 +97,7 @@ function App() {
 
           <Routes>
             {/* Root route - must be first */}
-            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="/" element={<HomePage />} />
 
             {/* Public routes */}
             <Route path="/login" element={<LoginPage />} />
