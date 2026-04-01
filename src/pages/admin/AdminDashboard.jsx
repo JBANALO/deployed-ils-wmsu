@@ -232,15 +232,22 @@ const loadDashboardStats = async (overrideSyId) => {
     ].filter(c => c !== 'undefined-undefined');
 
     // =========================
-    // FETCH ATTENDANCE
+    // FETCH ATTENDANCE (non-blocking)
     // =========================
-    const attendanceRes = await axios.get(`/attendance${querySuffix}`);
-    const attendanceList =
-      Array.isArray(attendanceRes.data?.data)
-        ? attendanceRes.data.data
-        : Array.isArray(attendanceRes.data)
-        ? attendanceRes.data
-        : [];
+    let attendanceList = [];
+    try {
+      const attendanceRes = await axios.get(`/attendance${querySuffix}`);
+      attendanceList =
+        Array.isArray(attendanceRes.data?.data)
+          ? attendanceRes.data.data
+          : Array.isArray(attendanceRes.data)
+          ? attendanceRes.data
+          : [];
+    } catch (attendanceErr) {
+      console.error('Error fetching attendance:', attendanceErr);
+      attendanceList = [];
+      toast.warn('Attendance data unavailable for this school year.');
+    }
 
     setAttendanceData(attendanceList); // ✅ important for SF2
 

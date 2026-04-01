@@ -305,17 +305,30 @@ router.post('/', async (req, res) => {
 // GET /api/attendance - Get attendance records
 router.get('/', async (req, res) => {
   try {
-    await ensureAttendanceSchoolYearColumn();
+    let canFilterBySchoolYear = true;
+    try {
+      await ensureAttendanceSchoolYearColumn();
+    } catch (ensureErr) {
+      canFilterBySchoolYear = false;
+      console.warn('[attendance GET] school_year_id column unavailable, continuing without school-year DB filter:', ensureErr.message);
+    }
     const { date, studentId, gradeLevel, section, schoolYearId } = req.query;
     let targetSy;
-    try {
-      targetSy = await resolveTargetSchoolYear(schoolYearId);
-    } catch (syErr) {
-      return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
+    if (schoolYearId && canFilterBySchoolYear) {
+      try {
+        targetSy = await resolveTargetSchoolYear(schoolYearId);
+      } catch (syErr) {
+        return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
+      }
     }
     
-    let sqlQuery = 'SELECT * FROM attendance WHERE school_year_id = ?';
-    const params = [targetSy.id];
+    let sqlQuery = 'SELECT * FROM attendance WHERE 1=1';
+    const params = [];
+
+    if (canFilterBySchoolYear && targetSy?.id) {
+      sqlQuery += ' AND school_year_id = ?';
+      params.push(targetSy.id);
+    }
     
     if (date) {
       sqlQuery += ' AND date = ?';
@@ -343,8 +356,34 @@ router.get('/', async (req, res) => {
     try {
       records = await query(sqlQuery, params);
     } catch (queryError) {
+      if (canFilterBySchoolYear && queryError.message && queryError.message.toLowerCase().includes('unknown column') && queryError.message.includes('school_year_id')) {
+        console.warn('[attendance GET] school_year_id filter query failed; retrying without school year filter');
+        let fallbackQuery = 'SELECT * FROM attendance WHERE 1=1';
+        const fallbackParams = [];
+
+        if (date) {
+          fallbackQuery += ' AND date = ?';
+          fallbackParams.push(date);
+        }
+        if (studentId) {
+          fallbackQuery += ' AND studentId = ?';
+          fallbackParams.push(studentId);
+        }
+        if (gradeLevel) {
+          fallbackQuery += ' AND gradeLevel = ?';
+          fallbackParams.push(gradeLevel);
+        }
+        if (section) {
+          fallbackQuery += ' AND section = ?';
+          fallbackParams.push(section);
+        }
+
+        fallbackQuery += ' ORDER BY timestamp DESC';
+        records = await query(fallbackQuery, fallbackParams);
+      }
+
       // Check if it's the ENUM error and attempt auto-fix
-      if (queryError.message && queryError.message.includes("has duplicated value")) {
+      else if (queryError.message && queryError.message.includes("has duplicated value")) {
         console.warn('⚠️ Detected ENUM error, attempting auto-fix...');
         try {
           // Normalize all lowercase values to proper case
