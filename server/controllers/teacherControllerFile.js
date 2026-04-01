@@ -88,6 +88,7 @@ const getAllTeachers = async (req, res) => {
     try {
       await ensureTeacherSchoolYearColumn();
       const targetSy = await resolveSchoolYear(req);
+      const isExplicitSchoolYearScope = Boolean(req?.query?.schoolYearId || req?.body?.schoolYearId);
 
       const dbTeachers = await query(
         `SELECT id, first_name, middle_name, last_name, username, email, role,
@@ -106,7 +107,7 @@ const getAllTeachers = async (req, res) => {
         classAssignments = await query(
           `SELECT grade_level, section, adviser_id, adviser_name
            FROM class_assignments
-           WHERE school_year_id = ? OR school_year_id IS NULL`,
+           WHERE school_year_id = ?${isExplicitSchoolYearScope ? '' : ' OR school_year_id IS NULL'}`,
           [targetSy.id]
         );
       } catch (error) {
@@ -124,8 +125,8 @@ const getAllTeachers = async (req, res) => {
         classesWithAdvisers = [];
       }
 
-      // Legacy fallback for rows that may not have school_year_id populated in class_assignments
-      if (classesWithAdvisers.length === 0) {
+      // Legacy global fallback is only allowed when no explicit school year scope is requested.
+      if (classesWithAdvisers.length === 0 && !isExplicitSchoolYearScope) {
         try {
           classesWithAdvisers = await query(
             `SELECT grade, section, adviser_id, adviser_name
@@ -142,7 +143,7 @@ const getAllTeachers = async (req, res) => {
         subjectTeachers = await query(
           `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time
            FROM subject_teachers
-           WHERE school_year_id = ? OR school_year_id IS NULL`,
+           WHERE school_year_id = ?${isExplicitSchoolYearScope ? '' : ' OR school_year_id IS NULL'}`,
           [targetSy.id]
         );
       } catch (error) {
