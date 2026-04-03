@@ -36,30 +36,52 @@ router.post('/forgot-password', async (req, res) => {
 
     console.log('Password reset requested for:', email);
 
-    // Check users.json first
-    const users = readUsers();
-    let user = users.find(u => u.email === email);
+    let user = null;
 
-    // If not found in users.json, check database (for students)
-    if (!user) {
-      try {
-        const [students] = await query(
-          'SELECT id, lrn, first_name as firstName, last_name as lastName, student_email as email FROM students WHERE student_email = ?',
+    // First check database for all user types (students, teachers, users)
+    try {
+      // Check users table (for students, admin, super_admin)
+      const [users] = await query(
+        'SELECT id, username, first_name as firstName, last_name as lastName, email, role FROM users WHERE email = ?',
+        [email]
+      );
+      
+      if (users && users.length > 0) {
+        user = users[0];
+        console.log('Found user in users table:', email, 'Role:', users[0].role);
+      } else {
+        // Check teachers table (for teachers)
+        const [teachers] = await query(
+          'SELECT id, teacher_id as teacherId, first_name as firstName, last_name as lastName, email, "teacher" as role FROM teachers WHERE email = ?',
           [email]
         );
         
-        if (students && students.length > 0) {
-          const studentData = students[0];
-          user = {
-            id: studentData.id,
-            firstName: studentData.firstName,
-            lastName: studentData.lastName,
-            email: studentData.email,
-            role: 'student'
-          };
+        if (teachers && teachers.length > 0) {
+          user = teachers[0];
+          console.log('Found teacher in teachers table:', email);
+        } else {
+          // Check students table as fallback (if you still use it)
+          const [students] = await query(
+            'SELECT id, lrn, first_name as firstName, last_name as lastName, student_email as email, "student" as role FROM students WHERE student_email = ?',
+            [email]
+          );
+          
+          if (students && students.length > 0) {
+            user = students[0];
+            console.log('Found student in students table:', email);
+          }
         }
-      } catch (dbError) {
-        console.error('Database error during password reset:', dbError);
+      }
+    } catch (dbError) {
+      console.error('Database error during password reset:', dbError);
+    }
+
+    // If still not found, check users.json as fallback (for local development)
+    if (!user) {
+      const users = readUsers();
+      user = users.find(u => u.email === email);
+      if (user) {
+        console.log('Found user in users.json:', email);
       }
     }
 
@@ -170,13 +192,28 @@ router.post('/reset-password', async (req, res) => {
 
     // Update password based on user role
     if (tokenData.role === 'student') {
-      // Update student in database
+      // Update student in users table (main users table)
       await query(
-        'UPDATE students SET password = ? WHERE id = ?',
+        'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [hashedPassword, tokenData.userId]
       );
+      console.log('✅ Student password updated in users database');
+    } else if (tokenData.role === 'teacher') {
+      // Update teacher in teachers table
+      await query(
+        'UPDATE teachers SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [hashedPassword, tokenData.userId]
+      );
+      console.log('✅ Teacher password updated in teachers database');
+    } else if (tokenData.role === 'admin' || tokenData.role === 'super_admin') {
+      // Update admin/super_admin in users table
+      await query(
+        'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [hashedPassword, tokenData.userId]
+      );
+      console.log(`✅ ${tokenData.role} password updated in users database`);
     } else {
-      // Update user in users.json
+      // Handle adviser, subject_teacher, and other roles in users.json
       const users = readUsers();
       const userIndex = users.findIndex(u => u.id === tokenData.userId);
       
@@ -184,6 +221,9 @@ router.post('/reset-password', async (req, res) => {
         users[userIndex].password = hashedPassword;
         users[userIndex].updatedAt = new Date().toISOString();
         writeUsers(users);
+        console.log(`✅ ${tokenData.role} password updated in users.json`);
+      } else {
+        return res.status(404).json({ message: 'User not found' });
       }
     }
 
