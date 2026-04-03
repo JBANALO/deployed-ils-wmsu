@@ -36,9 +36,10 @@ router.post('/forgot-password', async (req, res) => {
 
     console.log('Password reset requested for:', email);
 
-    let user = null;
-
     // First check database for all user types (students, teachers, users)
+    let user = null;
+    let userSource = null; // Track where user was found
+    
     try {
       // Check users table (for students, admin, super_admin)
       const [users] = await query(
@@ -48,6 +49,7 @@ router.post('/forgot-password', async (req, res) => {
       
       if (users && users.length > 0) {
         user = users[0];
+        userSource = 'database';
         console.log('Found user in users table:', email, 'Role:', users[0].role);
       } else {
         // Check teachers table (for teachers)
@@ -58,6 +60,7 @@ router.post('/forgot-password', async (req, res) => {
         
         if (teachers && teachers.length > 0) {
           user = teachers[0];
+          userSource = 'database';
           console.log('Found teacher in teachers table:', email);
         } else {
           // Check students table as fallback (if you still use it)
@@ -68,6 +71,7 @@ router.post('/forgot-password', async (req, res) => {
           
           if (students && students.length > 0) {
             user = students[0];
+            userSource = 'database';
             console.log('Found student in students table:', email);
           }
         }
@@ -81,6 +85,7 @@ router.post('/forgot-password', async (req, res) => {
       const users = readUsers();
       user = users.find(u => u.email === email);
       if (user) {
+        userSource = 'json';
         console.log('Found user in users.json:', email);
       }
     }
@@ -93,15 +98,16 @@ router.post('/forgot-password', async (req, res) => {
 
     // Generate reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
+    const tokenData = {
+      email: user.email,
+      userId: user.id,
+      role: user.role,
+      source: userSource // Track where user was found
+    };
     const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour
 
     // Store token
-    resetTokens.set(resetToken, {
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      expiry: resetTokenExpiry
-    });
+    resetTokens.set(resetToken, { ...tokenData, expiry: resetTokenExpiry });
 
     // Create reset URL
     console.log('🔍 FRONTEND_URL from env:', process.env.FRONTEND_URL);
@@ -190,30 +196,39 @@ router.post('/reset-password', async (req, res) => {
     // Hash new password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Update password based on user role
-    if (tokenData.role === 'student') {
-      // Update student in users table (main users table)
-      await query(
-        'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [hashedPassword, tokenData.userId]
-      );
-      console.log('✅ Student password updated in users database');
-    } else if (tokenData.role === 'teacher') {
-      // Update teacher in teachers table
-      await query(
-        'UPDATE teachers SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [hashedPassword, tokenData.userId]
-      );
-      console.log('✅ Teacher password updated in teachers database');
-    } else if (tokenData.role === 'admin' || tokenData.role === 'super_admin') {
-      // Update admin/super_admin in users table
-      await query(
-        'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [hashedPassword, tokenData.userId]
-      );
-      console.log(`✅ ${tokenData.role} password updated in users database`);
-    } else {
-      // Handle adviser, subject_teacher, and other roles in users.json
+    // Update password based on user role and source
+    if (tokenData.role === 'teacher') {
+      // For teachers: ALWAYS update BOTH users.json AND Railway database for redundancy
+      console.log('🔄 Teacher password reset: updating both users.json and Railway database');
+      
+      // 1. Update users.json (for current teachers)
+      try {
+        const users = readUsers();
+        const userIndex = users.findIndex(u => u.id === tokenData.userId);
+        
+        if (userIndex !== -1) {
+          users[userIndex].password = hashedPassword;
+          users[userIndex].updatedAt = new Date().toISOString();
+          writeUsers(users);
+          console.log('✅ Teacher password updated in users.json');
+        }
+      } catch (jsonError) {
+        console.error('Error updating users.json:', jsonError);
+      }
+      
+      // 2. Update Railway database (for future teachers and redundancy)
+      try {
+        await query(
+          'UPDATE teachers SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          [hashedPassword, tokenData.userId]
+        );
+        console.log('✅ Teacher password updated in Railway teachers database');
+      } catch (dbError) {
+        console.error('Error updating Railway database:', dbError);
+      }
+      
+    } else if (tokenData.source === 'json') {
+      // Handle advisers, subject_teachers from users.json only
       const users = readUsers();
       const userIndex = users.findIndex(u => u.id === tokenData.userId);
       
@@ -224,6 +239,23 @@ router.post('/reset-password', async (req, res) => {
         console.log(`✅ ${tokenData.role} password updated in users.json`);
       } else {
         return res.status(404).json({ message: 'User not found' });
+      }
+    } else {
+      // Handle database users (students, admins, super_admin)
+      if (tokenData.role === 'student') {
+        // Update student in users table (main users table)
+        await query(
+          'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          [hashedPassword, tokenData.userId]
+        );
+        console.log('✅ Student password updated in users database');
+      } else if (tokenData.role === 'admin' || tokenData.role === 'super_admin') {
+        // Update admin/super_admin in users table
+        await query(
+          'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          [hashedPassword, tokenData.userId]
+        );
+        console.log(`✅ ${tokenData.role} password updated in users database`);
       }
     }
 

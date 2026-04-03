@@ -61,7 +61,14 @@ export const UserProvider = ({ children }) => {
         try {
           const parsedUser = JSON.parse(currentUser);
           console.log('UserContext - refreshing user data on focus:', parsedUser);
-          setAdminUser(parsedUser);
+          
+          // Only update if the stored user is different from current user
+          // This prevents overriding updated profile image with stale data
+          if (!adminUser || 
+              adminUser.email !== parsedUser.email || 
+              adminUser.profileImage !== parsedUser.profileImage) {
+            setAdminUser(parsedUser);
+          }
         } catch (error) {
           console.error('UserContext - Error parsing user on focus:', error);
         }
@@ -72,7 +79,7 @@ export const UserProvider = ({ children }) => {
 
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, []);
+  }, [adminUser]); // Add adminUser dependency to prevent stale overrides
 
   // Update user helper
   const updateUser = (user) => {

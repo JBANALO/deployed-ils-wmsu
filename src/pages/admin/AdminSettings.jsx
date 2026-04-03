@@ -82,7 +82,11 @@ export default function AdminSettings() {
     try {
       setLoading(true);
       const response = await api.get('/admin/settings');
-      setSettings(response.data);
+      // Preserve current admin email from logged-in user
+      setSettings(prev => ({
+        ...response.data,
+        adminEmail: adminUser?.email || prev.adminEmail || response.data.adminEmail
+      }));
       setInitialSettings(response.data);
     } catch (error) {
       console.error('Error fetching settings:', error);
