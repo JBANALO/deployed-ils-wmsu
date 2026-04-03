@@ -17,11 +17,12 @@
     "lastName": "Admin",
     "username": "ashnicx02",
     "role": "admin",
-    "email": "ashnicx02@wmsu.edu.ph",
+    "email": "ashnicx@wmsu.edu.ph",
     "password": "WMSUILS123",
     "status": "approved",
     "createdAt": "2026-03-16T00:00:00.000Z",
-    "updatedAt": "2026-03-16T00:00:00.000Z"
+    "updatedAt": "2026-04-03T11:40:13.790Z",
+    "phone": "09090909"
   },
   {
     "id": "044d76b3-0b79-4dd0-bdca-90e1f2fc715f",
