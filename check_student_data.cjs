@@ -1,7 +1,7 @@
 const mysql = require('mysql2/promise');
 
 async function main() {
-  const conn = await mysql.createConnection('mysql://root:SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu@metro.proxy.rlwy.net:25385/railway');
+  const conn = await mysql.createConnection('REPLACE_ME_DATABASE_URL');
   
   // Check attendance records count
   const [count] = await conn.execute('SELECT COUNT(*) as count FROM attendance');

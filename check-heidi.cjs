@@ -1,7 +1,7 @@
 const mysql = require('mysql2/promise');
 
 (async () => {
-  const c = await mysql.createConnection('mysql://root:SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu@metro.proxy.rlwy.net:25385/railway');
+  const c = await mysql.createConnection('REPLACE_ME_DATABASE_URL');
   
   // Find Heidi's user account
   console.log('=== Heidi User Account ===');

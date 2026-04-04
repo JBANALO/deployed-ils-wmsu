@@ -4,7 +4,7 @@ const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 
 async function verifyAdmin() {
-  const dbUrl = process.env.DATABASE_URL || 'mysql://root:SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu@metro.proxy.rlwy.net:25385/railway';
+  const dbUrl = process.env.DATABASE_URL || 'REPLACE_ME_DATABASE_URL';
   const url = new URL(dbUrl);
   
   const connection = await mysql.createConnection({

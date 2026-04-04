@@ -16,7 +16,7 @@ async function importStudentsToRailway() {
     console.log('\n📚 Direct Railway Database Import\n');
 
     // Parse DATABASE_URL
-    const dbUrl = 'mysql://root:SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu@metro.proxy.rlwy.net:25385/railway';
+    const dbUrl = 'REPLACE_ME_DATABASE_URL';
     const url = new URL(dbUrl);
     
     const connectionConfig = {

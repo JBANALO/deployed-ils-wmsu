@@ -1,7 +1,7 @@
 const mysql = require('mysql2/promise');
 
 (async () => {
-  const c = await mysql.createConnection('mysql://root:SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu@metro.proxy.rlwy.net:25385/railway');
+  const c = await mysql.createConnection('REPLACE_ME_DATABASE_URL');
   
   const oldId = 'ff3e8a38-7cba-4372-ba48-bfc530544150';
   const newId = 'user-hz-1772699124173';

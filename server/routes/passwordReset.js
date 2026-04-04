@@ -114,48 +114,67 @@ router.post('/forgot-password', async (req, res) => {
     const resetUrl = `${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu-production.up.railway.app'}/reset-password/${resetToken}`;
     console.log('🔍 Generated reset URL:', resetUrl);
 
-    // Send email using SendGrid
-    const msg = {
-      to: email,
-      from: process.env.SENDGRID_EMAIL_FROM || 'noreply@wmsu.edu.ph',
-      subject: 'WMSU ILS - Password Reset Request',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="text-align: center; padding: 20px;">
-            <img src="https://deployed-ils-wmsu-production.up.railway.app/wmsu-logo.jpg" alt="WMSU Logo" style="width: 100px; height: auto;" onerror="this.style.display='none';">
-          </div>
-          <h2 style="color: #dc2626; text-align: center;">Password Reset Request</h2>
-          <p>Hello ${user.firstName},</p>
-          <p>You requested to reset your password for the WMSU ILS Portal. Click the button below to reset your password:</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${resetUrl}" style="background-color: #dc2626; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a>
-          </div>
-          <p>Or copy and paste this link in your browser:</p>
-          <p style="word-break: break-all; color: #666;">${resetUrl}</p>
-          <p><strong>This link will expire in 1 hour.</strong></p>
-          <p>If you didn't request this password reset, please ignore this email.</p>
-          <hr style="border: 1px solid #eee; margin: 30px 0;">
-          <p style="color: #666; font-size: 12px; text-align: center;">
-            WMSU ILS Portal - Elementary Department<br>
-            Automated Grades Portal and Students Attendance using QR Code
-          </p>
+    // Build email HTML
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="text-align: center; padding: 20px;">
+          <img src="https://deployed-ils-wmsu-production.up.railway.app/wmsu-logo.jpg" alt="WMSU Logo" style="width: 100px; height: auto;" onerror="this.style.display='none';">
         </div>
-      `
-    };
+        <h2 style="color: #dc2626; text-align: center;">Password Reset Request</h2>
+        <p>Hello ${user.firstName},</p>
+        <p>You requested to reset your password for the WMSU ILS Portal. Click the button below to reset your password:</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetUrl}" style="background-color: #dc2626; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a>
+        </div>
+        <p>Or copy and paste this link in your browser:</p>
+        <p style="word-break: break-all; color: #666;">${resetUrl}</p>
+        <p><strong>This link will expire in 1 hour.</strong></p>
+        <p>If you didn't request this password reset, please ignore this email.</p>
+        <hr style="border: 1px solid #eee; margin: 30px 0;">
+        <p style="color: #666; font-size: 12px; text-align: center;">
+          WMSU ILS Portal - Elementary Department<br>
+          Automated Grades Portal and Students Attendance using QR Code
+        </p>
+      </div>
+    `;
 
     try {
-      if (!process.env.SENDGRID_API_KEY) {
-        console.error('❌ Cannot send email - SENDGRID_API_KEY not configured');
-        // Still return success to prevent email enumeration
-        return res.json({ message: 'If an account with this email exists, a reset link has been sent.' });
+      // Prefer Brevo SMTP if configured
+      if (process.env.BREVO_API_KEY) {
+        const nodemailer = require('nodemailer');
+        const transporter = nodemailer.createTransport({
+          host: 'smtp-relay.brevo.com',
+          port: 587,
+          secure: false,
+          auth: {
+            user: 'apikey',
+            pass: process.env.BREVO_API_KEY
+          }
+        });
+
+        await transporter.sendMail({
+          from: process.env.BREVO_EMAIL_FROM || process.env.SENDGRID_EMAIL_FROM || 'noreply@wmsu.edu.ph',
+          to: email,
+          subject: 'WMSU ILS - Password Reset Request',
+          html
+        });
+        console.log('✅ Reset email sent via Brevo SMTP to:', email);
+      } else if (process.env.SENDGRID_API_KEY) {
+        // Fallback to SendGrid if available
+        const msg = {
+          to: email,
+          from: process.env.SENDGRID_EMAIL_FROM || 'noreply@wmsu.edu.ph',
+          subject: 'WMSU ILS - Password Reset Request',
+          html
+        };
+        await sgMail.send(msg);
+        console.log('✅ Reset email sent via SendGrid to:', email);
+      } else {
+        console.error('❌ No email provider configured (BREVO_API_KEY or SENDGRID_API_KEY)');
+        // Still return success to the caller to avoid enumeration
       }
-      
-      await sgMail.send(msg);
-      console.log('✅ Reset email sent to:', email);
     } catch (emailError) {
-      console.error('❌ SendGrid error:', emailError);
-      console.error('❌ SendGrid error details:', emailError.response?.body);
-      // Still return success to prevent email enumeration
+      console.error('❌ Email sending error:', emailError);
     }
 
     res.json({ message: 'If an account with this email exists, a reset link has been sent.' });

@@ -278,6 +278,147 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Fallback middleware: when DB is not available, serve JSON files for key endpoints
+const { isDatabaseAvailable } = require('./config/database');
+const { readUsers, readStudents } = require('./utils/fileStorage');
+
+app.use('/api', (req, res, next) => {
+  try {
+    if (isDatabaseAvailable()) return next();
+
+    // Serve lightweight fallbacks for dashboard endpoints when DB is down
+    const url = req.originalUrl || req.url || '';
+    if (url.startsWith('/api/students') && req.method === 'GET') {
+      const students = readStudents();
+      return res.json({ status: 'success', data: students });
+    }
+
+    if (url.startsWith('/api/users') && req.method === 'GET') {
+      const users = readUsers();
+      // If it's the pending endpoints, return empty lists
+      if (url.startsWith('/api/users/pending-teachers')) return res.json({ status: 'success', data: { teachers: [] } });
+      if (url.startsWith('/api/users/pending-students')) return res.json({ status: 'success', data: { students: [] } });
+      return res.json({ status: 'success', users });
+    }
+
+    // Allow updating user in file-only mode (PUT /api/users/:id)
+    // Note: middleware is mounted at '/api' so req.url may be '/users/..' — accept both forms
+    if ((url.startsWith('/api/users/') || url.startsWith('/users/')) && req.method === 'PUT') {
+      try {
+        const id = url.split('/').pop();
+        const usersPath = path.join(__dirname, '../data/users.json');
+        if (!fs.existsSync(usersPath)) return res.status(500).json({ status: 'error', message: 'Users data not available' });
+        const usersData = JSON.parse(fs.readFileSync(usersPath, 'utf8'));
+        const idx = usersData.findIndex(u => String(u.id) === String(id));
+        if (idx === -1) return res.status(404).json({ status: 'fail', message: 'User not found' });
+
+        // Merge allowed fields
+        const allowed = ['firstName','lastName','username','email','phone','profile_pic','role'];
+        for (const key of allowed) {
+          if (req.body[key] !== undefined) usersData[idx][key] = req.body[key];
+        }
+
+        // Persist
+        fs.writeFileSync(usersPath, JSON.stringify(usersData, null, 2), 'utf8');
+
+        const updated = usersData[idx];
+        const formattedUser = {
+          id: updated.id,
+          firstName: updated.firstName || updated.first_name || '',
+          lastName: updated.lastName || updated.last_name || '',
+          username: updated.username,
+          email: updated.email,
+          phone: updated.phone || null,
+          profile_pic: updated.profile_pic || null,
+          role: updated.role || 'teacher'
+        };
+
+        return res.json({ status: 'success', message: 'User updated successfully', data: formattedUser });
+      } catch (err) {
+        console.error('Fallback user update error:', err.message);
+        return res.status(500).json({ status: 'error', message: 'Failed to update user in fallback mode' });
+      }
+    }
+
+    if (url.startsWith('/api/attendance') && req.method === 'GET') {
+      return res.json({ data: [] });
+    }
+
+    if ((url === '/api/grades' || url.startsWith('/api/grades')) && req.method === 'GET') {
+      return res.json({ data: [] });
+    }
+
+    // Fallback for school years when DB is down
+    if ((url === '/api/school-years' || url.startsWith('/api/school-years')) && req.method === 'GET') {
+      const fallbackSY = [
+        {
+          id: 1,
+          label: '2026-2027',
+          start_date: '2026-06-01',
+          end_date: '2027-03-31',
+          is_active: 1,
+          is_archived: 0
+        }
+      ];
+      if (url === '/api/school-years/active' || url.startsWith('/api/school-years/active')) {
+        return res.json({ success: true, data: fallbackSY[0] });
+      }
+      if (url === '/api/school-years/archived' || url.startsWith('/api/school-years/archived')) {
+        return res.json({ success: true, data: [] });
+      }
+      return res.json({ success: true, data: fallbackSY });
+    }
+
+    // Fallback for subjects: return empty lists or a minimal set
+    if ((url === '/api/subjects' || url.startsWith('/api/subjects')) && req.method === 'GET') {
+      // Minimal subjects fallback
+      const fallbackSubjects = [
+        { id: 'math-1', name: 'Mathematics', grade: 'Grade 1' },
+        { id: 'eng-1', name: 'English', grade: 'Grade 1' }
+      ];
+      if (url.startsWith('/api/subjects/grade/')) {
+        return res.json({ success: true, data: fallbackSubjects.filter(s => url.includes(encodeURIComponent(s.grade))) });
+      }
+      if (url === '/api/subjects/archived' || url.startsWith('/api/subjects/archived')) return res.json({ success: true, data: [] });
+      if (url === '/api/subjects/previous-year' || url.startsWith('/api/subjects/previous-year')) return res.json({ success: true, data: [] });
+      return res.json({ success: true, data: fallbackSubjects });
+    }
+
+    // Fallback for sections: derive from data/classes.json
+    if ((url === '/api/sections' || url.startsWith('/api/sections')) && req.method === 'GET') {
+      try {
+        const classesPath = path.join(__dirname, '../data/classes.json');
+        let classesData = [];
+        if (fs.existsSync(classesPath)) {
+          classesData = JSON.parse(fs.readFileSync(classesPath, 'utf8'));
+        }
+        const fallbackSections = classesData.map(c => ({
+          id: c.id || `${(c.grade||'').toLowerCase()}-${(c.section||'').toLowerCase().replace(/\s+/g,'-')}`,
+          name: c.section || c.name || '',
+          grade_level: c.grade || c.grade_level || '',
+          description: c.description || '',
+          createdAt: c.createdAt || new Date().toISOString()
+        }));
+
+        if (url.endsWith('/archived') || url.includes('/archived')) return res.json({ success: true, data: [] });
+        if (url.endsWith('/stats') || url.includes('/stats')) return res.json({ success: true, data: [] });
+        if (url.endsWith('/previous-year') || url.includes('/previous-year')) return res.json({ success: true, data: fallbackSections });
+
+        return res.json({ success: true, data: fallbackSections });
+      } catch (err) {
+        console.error('Sections fallback error:', err.message);
+        return res.json({ success: true, data: [] });
+      }
+    }
+
+    // Let other routes continue to route handlers which may handle DB errors
+    return next();
+  } catch (err) {
+    console.error('Fallback middleware error:', err.message);
+    return next();
+  }
+});
+
 // Serve static files from public directory (QR codes, profile pictures)
 app.use('/qrcodes', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');

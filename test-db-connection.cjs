@@ -10,7 +10,7 @@ const mysql = require('mysql2/promise');
     const connection = await mysql.createConnection({
       host: process.env.DB_HOST || 'metro.proxy.rlwy.net',
       user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || 'SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu',
+      password: process.env.DB_PASSWORD || 'REPLACE_ME_DB_PASSWORD',
       database: process.env.DB_NAME || 'railway',
       port: parseInt(process.env.DB_PORT || '25385')
     });

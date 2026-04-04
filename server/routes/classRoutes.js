@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 // Use MySQL-backed controller with school year scoping
 const classController = require('../controllers/classControllerMySQL');
+// Role-filter controller provides a unified endpoint for teacher-visible classes
+const roleFilterController = require('../controllers/classControllerWithRoleFilter');
 
 // Get all classes
 router.get('/', classController.getAllClasses);
@@ -14,6 +16,9 @@ router.post('/fetch-from-previous', classController.fetchClassesFromPreviousYear
 
 // Get classes for a subject teacher (MUST come before /:id routes)
 router.get('/subject-teacher/:userId', classController.getSubjectTeacherClasses);
+
+// Unified endpoint used by frontend to fetch classes visible to a teacher (adviser OR subject teacher)
+router.get('/teacher/:userId', roleFilterController.getTeacherVisibleClasses);
 
 // Get adviser classes (MUST come before /:id routes)
 router.get('/adviser/:adviserId', classController.getAdviserClasses);

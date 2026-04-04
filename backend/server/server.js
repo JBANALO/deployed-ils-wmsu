@@ -13,6 +13,9 @@ const deleteRequestRoutes = require('./routes/deleteRequests');
 const gradeRoutes = require('./routes/grades');
 const classRoutes = require('./routes/classes');
 const teacherRoutes = require('./routes/teachers');
+const schoolYearRoutes = require('./routes/schoolYears');
+const subjectRoutes = require('./routes/subjects');
+const sectionRoutes = require('./routes/sections');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -21,6 +24,56 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+// Fallback middleware for this backend: when DB is not available, serve JSON files
+const { isDatabaseAvailable } = require('./config/db');
+
+// Simple JSON readers for the repo-level data folder
+const dataDir = path.join(__dirname, '../../data');
+const readJSON = (filename) => {
+  try {
+    const p = path.join(dataDir, filename);
+    if (!fs.existsSync(p)) return [];
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch (err) {
+    console.error('readJSON error for', filename, err.message);
+    return [];
+  }
+};
+const readUsers = () => readJSON('users.json');
+const readStudents = () => readJSON('students.json');
+
+app.use('/api', (req, res, next) => {
+  try {
+    if (isDatabaseAvailable && isDatabaseAvailable()) return next();
+    const url = req.originalUrl || req.url || '';
+
+    if (url.startsWith('/api/students') && req.method === 'GET') {
+      const students = readStudents();
+      return res.json({ status: 'success', data: students });
+    }
+
+    if (url.startsWith('/api/users') && req.method === 'GET') {
+      if (url.startsWith('/api/users/pending-teachers')) return res.json({ status: 'success', data: { teachers: [] } });
+      if (url.startsWith('/api/users/pending-students')) return res.json({ status: 'success', data: { students: [] } });
+      const users = readUsers();
+      return res.json({ status: 'success', users });
+    }
+
+    if (url.startsWith('/api/attendance') && req.method === 'GET') {
+      return res.json({ data: [] });
+    }
+
+    if ((url === '/api/grades' || url.startsWith('/api/grades')) && req.method === 'GET') {
+      return res.json({ data: [] });
+    }
+
+    return next();
+  } catch (err) {
+    console.error('Backend fallback middleware error:', err.message);
+    return next();
+  }
+});
 
 // Auto-sync student data on startup (QR codes and profile pictures)
 const syncStudentData = async () => {
@@ -150,6 +203,33 @@ app.use('/api/students', gradeRoutes); // grades under students - MUST be before
 app.use('/api/students', studentRoutes);
 app.use('/api/delete-requests', deleteRequestRoutes);
 app.use('/api/student', require('./routes/studentPortal'));
+app.use('/api/school-years', schoolYearRoutes);
+app.use('/api/subjects', subjectRoutes);
+app.use('/api/sections', sectionRoutes);
+
+// Lightweight grades summary endpoint (fallback)
+app.get('/api/grades', (req, res) => {
+  res.json({ data: [] });
+});
+
+// Admin settings fallback endpoints
+app.get('/api/admin/settings', (req, res) => {
+  res.json({
+    siteName: 'WMSU ILS-Elementary Department',
+    siteDescription: 'Automated Grades Portal and Students Attendance using QR Code',
+    adminEmail: 'admin@wmsu.edu.ph',
+    allowRegistration: true,
+    requireApproval: true,
+    sessionTimeout: '30',
+    maintenance: false,
+    notifications: { email: true },
+    backup: { enabled: true, frequency: 'daily', lastBackup: null }
+  });
+});
+
+app.put('/api/admin/settings', (req, res) => {
+  res.json({ message: 'Settings saved (fallback)', ...req.body });
+});
 
 // Version check - used to verify Railway has latest code
 app.get('/api/version', (req, res) => {

@@ -5,7 +5,7 @@ async function checkStructure() {
   const connection = await mysql.createConnection({
     host: 'metro.proxy.rlwy.net',
     user: 'root',
-    password: 'SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu',
+    password: 'REPLACE_ME_DB_PASSWORD',
     database: 'railway',
     port: 25385
   });

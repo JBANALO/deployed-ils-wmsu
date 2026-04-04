@@ -7,7 +7,7 @@ async function testStudentAPI() {
     host: 'metro.proxy.rlwy.net',
     port: 25385,
     user: 'root',
-    password: 'SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu',
+    password: 'REPLACE_ME_DB_PASSWORD',
     database: 'railway'
   };
 

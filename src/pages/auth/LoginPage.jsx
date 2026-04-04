@@ -74,14 +74,12 @@ export default function LoginPage() {
       const response = await authService.login(loginData);
 
       console.log('Login response:', response);
-      console.log('Response type:', typeof response);
-      console.log('Response keys:', Object.keys(response));
-      console.log('Response data:', response.data);
-      console.log('Response data type:', typeof response.data);
-      console.log('Response data keys:', Object.keys(response.data || {}));
-      
-      // The data is directly in the response, not in response.data
-      const user = response?.user;
+      // Response shape may vary (authService returns response.data). Handle multiple shapes.
+      // Possible shapes:
+      // 1) { status, message, token, data: { user } }  <-- authService.login returns this
+      // 2) axios response with `data` property
+      // 3) already-flattened { user }
+      const user = response?.data?.user ?? response?.user ?? response?.data ?? null;
       console.log('User object:', user);
       const role = user?.role;
       console.log('Role extracted:', role);

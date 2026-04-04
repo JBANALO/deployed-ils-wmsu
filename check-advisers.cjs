@@ -2,7 +2,7 @@ const mysql = require('mysql2/promise');
 async function check() {
   const conn = await mysql.createConnection({
     host: 'metro.proxy.rlwy.net', port: 25385,
-    user: 'root', password: 'SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu', database: 'railway'
+    user: 'root', password: 'REPLACE_ME_DB_PASSWORD', database: 'railway'
   });
 
   // Check class_assignments table

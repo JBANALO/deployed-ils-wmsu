@@ -7,7 +7,7 @@
     "dev": "vite",
     "prebuild": "node print-env.js",
     "build": "vite build",
-    "postinstall": "if [ \"$CI\" != \"true\" ]; then cd server && npm ci --omit=dev || true; fi",
+    "postinstall": "node -e \"if(process.env.CI !== 'true'){ try{ require('child_process').execSync('cd server && npm ci --omit=dev', { stdio: 'inherit' }) }catch(e){} }\"",
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "node backend/server/server.js",

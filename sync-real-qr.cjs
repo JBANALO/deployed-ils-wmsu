@@ -5,7 +5,7 @@ const path = require('path');
 const mysql = require('mysql2/promise');
 
 async function syncRealQRCodes() {
-  const dbUrl = 'mysql://root:SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu@metro.proxy.rlwy.net:25385/railway';
+  const dbUrl = 'REPLACE_ME_DATABASE_URL';
   const urlObj = new URL(dbUrl);
 
   const config = {

@@ -1,6 +1,6 @@
 const mysql = require('mysql2/promise');
 
-const url = 'mysql://root:SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu@metro.proxy.rlwy.net:25385/railway';
+const url = 'REPLACE_ME_DATABASE_URL';
 
 (async () => {
   try {
