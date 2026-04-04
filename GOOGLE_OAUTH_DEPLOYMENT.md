@@ -13,7 +13,7 @@ This guide provides step-by-step instructions for deploying the WMSU ILS Portal 
 
 Already created and configured:
 - **Client ID**: `545992268289-4fp8qedhktkyccfhfdedkjpn2pc6.apps.googleusercontent.com`
-- **Client Secret**: `GODSPX-ocCxUDJ1DzW6w0fndAqj5XKUcWll`
+- **Client Secret**: `REPLACE_ME_GOOGLE_CLIENT_SECRET`
 
 ## Authorized Redirect URIs (Already Configured in Google Console)
 
@@ -35,7 +35,7 @@ In your Railway project, set the following environment variables:
 ```
 DATABASE_URL=mysql://root:YOUR_PASSWORD@metro.proxy.rlwy.net:PORT/railway
 GOOGLE_CLIENT_ID=545992268289-4fp8qedhktkyccfhfdedkjpn2pc6.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=GODSPX-ocCxUDJ1DzW6w0fndAqj5XKUcWll
+GOOGLE_CLIENT_SECRET=REPLACE_ME_GOOGLE_CLIENT_SECRET
 SESSION_SECRET=your-session-secret-key-change-this
 FRONTEND_URL=https://deployed-ils-wmsu.vercel.app
 JWT_SECRET=wmsu-portal-secret-key-2023

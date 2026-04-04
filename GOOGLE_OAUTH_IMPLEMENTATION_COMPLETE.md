@@ -146,7 +146,7 @@ npm run dev
 ### Backend (server/.env for local, Railway env vars for production)
 ```
 GOOGLE_CLIENT_ID=545992268289-4fp8qedhktkyccfhfdedkjpn2pc6.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=GODSPX-ocCxUDJ1DzW6w0fndAqj5XKUcWll
+GOOGLE_CLIENT_SECRET=REPLACE_ME_GOOGLE_CLIENT_SECRET
 FRONTEND_URL=http://localhost:5173 (or Vercel URL)
 SESSION_SECRET=your-session-secret
 JWT_SECRET=your-jwt-secret
