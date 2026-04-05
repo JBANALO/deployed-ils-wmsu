@@ -2230,24 +2230,6 @@
     "restoredAt": "2026-03-02T11:43:26.596Z"
   },
   {
-    "id": "f9aa512c-88ab-4cd5-92e7-12121a5e41cb",
-    "firstName": "Ashley",
-    "lastName": "Villanueva",
-    "email": "hz202300368@wmsu.edu.ph",
-    "username": "ashley",
-    "password": "$2a$12$bH4QIzaQUAc2mhgL2Gluhue7Q2plfhUCyx28CXRTF29BnGbfBKb3e",
-    "role": "adviser",
-    "gradeLevel": "Grade 6",
-    "section": "Honesty",
-    "subjects": "[\"GMRC\",\"English\",\"ArPan\",\"Mathematics\",\"Filipino\",\"EPP\",\"Science\",\"MAPEH\"]",
-    "bio": "",
-    "status": "approved",
-    "archived": false,
-    "createdAt": "2026-03-04T17:14:19.785Z",
-    "middleName": "",
-    "updatedAt": "2026-03-29T13:16:11.539Z"
-  },
-  {
     "id": "61ce7439-82f3-4e86-9e6b-7b08cc9b634a",
     "firstName": "testtttt",
     "lastName": "creditalsssdsdadasda",
