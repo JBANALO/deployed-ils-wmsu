@@ -159,34 +159,36 @@ exports.login = async (req, res) => {
 
     let users = [];
 
-    // 1️⃣ Always try students table first (MySQL) - check by email OR LRN
+    // 1️⃣ Priority lookup: MySQL users and teachers (admin/super_admin/teacher/adviser)
     try {
-      users = await query(
-        'SELECT * FROM students WHERE LOWER(student_email) = LOWER(?) OR lrn = ?',
-        [loginField.toLowerCase(), loginField]
-      );
-      console.log('Student login check - loginField:', loginField, 'found:', users.length);
+      users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [loginField, loginField]);
+      console.log('Users login check - loginField:', loginField, 'found:', users.length);
     } catch (dbError) {
-      console.log('Student DB login check failed, will continue with fallbacks:', dbError.message);
+      console.log('Users DB login check failed:', dbError.message);
       users = [];
     }
 
-    // 2️⃣ If not a student, try MySQL `users` and `teachers` tables first
     if (users.length === 0) {
       try {
-        users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [loginField, loginField]);
+        users = await query('SELECT * FROM teachers WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [loginField, loginField]);
+        console.log('Teachers login check - loginField:', loginField, 'found:', users.length);
       } catch (dbError) {
-        console.log('Users DB login check failed:', dbError.message);
+        console.log('Teachers DB login check failed:', dbError.message);
         users = [];
       }
+    }
 
-      if (users.length === 0) {
-        try {
-          users = await query('SELECT * FROM teachers WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [loginField, loginField]);
-        } catch (dbError) {
-          console.log('Teachers DB login check failed:', dbError.message);
-          users = [];
-        }
+    // 2️⃣ If no admin/teacher match, try students table (email/LRN)
+    if (users.length === 0) {
+      try {
+        users = await query(
+          'SELECT * FROM students WHERE LOWER(student_email) = LOWER(?) OR lrn = ?',
+          [loginField.toLowerCase(), loginField]
+        );
+        console.log('Student login check - loginField:', loginField, 'found:', users.length);
+      } catch (dbError) {
+        console.log('Student DB login check failed, will continue with fallbacks:', dbError.message);
+        users = [];
       }
     }
 
