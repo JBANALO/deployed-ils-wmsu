@@ -762,7 +762,7 @@ export default function ReportsPage() {
                                student.avg >= 95 ? '🥈 With High Honors' :
                                student.avg >= 85 ? '🥉 With Honors' :
                                student.avg >= 75 ? '✅ No Award' :
-                               '❌ Failed'}}
+                               '❌ Failed'}
                             </p>
                           </div>
                           {isAdviser && (
