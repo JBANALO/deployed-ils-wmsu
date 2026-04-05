@@ -1032,38 +1032,151 @@ const createTeacher = async (req, res) => {
 };
 
 // Update a teacher
-const updateTeacher = (req, res) => {
+const updateTeacher = async (req, res) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    const updateData = { ...req.body };
+
+    // Normalize and validate institutional email domain.
+    if (updateData.email !== undefined) {
+      const normalizedEmail = String(updateData.email || '')
+        .trim()
+        .toLowerCase()
+        .replace(/@wmsu\.edu\.com$/i, '@wmsu.edu.ph');
+
+      if (!normalizedEmail || !/^[^\s@]+@wmsu\.edu\.ph$/i.test(normalizedEmail)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email must use the @wmsu.edu.ph domain'
+        });
+      }
+
+      updateData.email = normalizedEmail;
+    }
+
+    let dbUpdatedTeacher = null;
+
+    // Prefer DB update first because most teacher rows shown in admin come from DB.
+    try {
+      const teacherRows = await query(
+        `SELECT id, first_name, middle_name, last_name, username, email, role,
+                grade_level, section, subjects, bio, verification_status
+         FROM teachers
+         WHERE id = ?
+         LIMIT 1`,
+        [id]
+      );
+
+      if (teacherRows.length > 0) {
+        const current = teacherRows[0];
+
+        if (updateData.email) {
+          const duplicateEmailRows = await query(
+            'SELECT id FROM teachers WHERE email = ? AND id <> ? LIMIT 1',
+            [updateData.email, id]
+          );
+          if (duplicateEmailRows.length > 0) {
+            return res.status(400).json({
+              success: false,
+              message: 'Email already exists'
+            });
+          }
+        }
+
+        const firstName = updateData.firstName ?? updateData.first_name ?? current.first_name ?? '';
+        const middleName = updateData.middleName ?? updateData.middle_name ?? current.middle_name ?? '';
+        const lastName = updateData.lastName ?? updateData.last_name ?? current.last_name ?? '';
+        const username = updateData.username ?? current.username ?? '';
+        const email = updateData.email ?? current.email ?? '';
+        const role = updateData.role ?? current.role ?? 'teacher';
+        const gradeLevel = updateData.gradeLevel ?? updateData.grade_level ?? current.grade_level ?? '';
+        const section = updateData.section ?? current.section ?? '';
+        const subjects = updateData.subjects ?? current.subjects ?? '[]';
+        const bio = updateData.bio ?? current.bio ?? '';
+        const status = updateData.status ?? updateData.verification_status ?? current.verification_status ?? 'approved';
+
+        await query(
+          `UPDATE teachers
+           SET first_name = ?,
+               middle_name = ?,
+               last_name = ?,
+               username = ?,
+               email = ?,
+               role = ?,
+               grade_level = ?,
+               section = ?,
+               subjects = ?,
+               bio = ?,
+               verification_status = ?,
+               updated_at = NOW()
+           WHERE id = ?`,
+          [
+            firstName,
+            middleName,
+            lastName,
+            username,
+            email,
+            role,
+            gradeLevel,
+            section,
+            typeof subjects === 'string' ? subjects : JSON.stringify(subjects || []),
+            bio,
+            status,
+            id
+          ]
+        );
+
+        dbUpdatedTeacher = {
+          id: current.id,
+          firstName,
+          middleName,
+          lastName,
+          username,
+          email,
+          role,
+          gradeLevel,
+          section,
+          subjects: parseSubjects(subjects),
+          bio,
+          status
+        };
+      }
+    } catch (dbError) {
+      console.log('DB update skipped/fallback to file storage:', dbError.message);
+    }
     
     const users = readUsers();
-    
-    const teacherIndex = users.findIndex(u => u.id === id);
-    
-    if (teacherIndex === -1) {
+
+    const teacherIndex = users.findIndex(u => String(u.id) === String(id));
+
+    if (teacherIndex === -1 && !dbUpdatedTeacher) {
       return res.status(404).json({
         success: false,
         message: 'Teacher not found'
       });
     }
-    
-    // Update teacher data
-    users[teacherIndex] = {
-      ...users[teacherIndex],
-      ...updateData,
-      updatedAt: new Date().toISOString()
-    };
-    
-    const success = writeUsers(users);
-    
-    if (success) {
+
+    let fileUpdatedTeacher = null;
+    let fileSaved = true;
+
+    if (teacherIndex !== -1) {
+      const merged = {
+        ...users[teacherIndex],
+        ...updateData,
+        updatedAt: new Date().toISOString()
+      };
+      users[teacherIndex] = merged;
+      fileUpdatedTeacher = merged;
+      fileSaved = writeUsers(users);
+    }
+
+    if (dbUpdatedTeacher || fileSaved) {
       console.log(`Teacher ${id} updated successfully`);
       res.json({
         success: true,
         message: 'Teacher updated successfully',
         data: {
-          teacher: users[teacherIndex]
+          teacher: dbUpdatedTeacher || fileUpdatedTeacher
         }
       });
     } else {

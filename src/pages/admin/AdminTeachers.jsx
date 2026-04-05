@@ -948,6 +948,16 @@ export default function AdminTeachers() {
     }
     try {
       console.log('Saving teacher with data:', editFormData);
+
+      const normalizedEmail = String(editFormData.email || '')
+        .trim()
+        .toLowerCase()
+        .replace(/@wmsu\.edu\.com$/i, '@wmsu.edu.ph');
+
+      if (!/^[^\s@]+@wmsu\.edu\.ph$/i.test(normalizedEmail)) {
+        toast.error('Email must use @wmsu.edu.ph');
+        return;
+      }
       
       // Prepare the data for API call - handle kindergarten subjects properly
       let updateData;
@@ -959,7 +969,7 @@ export default function AdminTeachers() {
           middleName: String(editFormData.middleName || ''),
           lastName: String(editFormData.lastName || ''),
           username: String(selectedTeacher.username || ''),
-          email: String(editFormData.email || ''),
+          email: normalizedEmail,
           role: String(editFormData.role || ''),
           gradeLevel: String(editFormData.gradeLevel || ''),
           section: String(editFormData.section || ''),
@@ -973,7 +983,7 @@ export default function AdminTeachers() {
           middleName: String(editFormData.middleName || ''),
           lastName: String(editFormData.lastName || ''),
           username: String(selectedTeacher.username || ''),
-          email: String(editFormData.email || ''),
+          email: normalizedEmail,
           role: String(editFormData.role || ''),
           gradeLevel: String(editFormData.gradeLevel || ''),
           section: String(editFormData.section || ''),
