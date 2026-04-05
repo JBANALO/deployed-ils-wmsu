@@ -538,6 +538,33 @@ const getSubjectTeacherClasses = async (req, res) => {
     console.log(`getSubjectTeacherClasses - userId: ${userId}`);
 
     try {
+      const normalizeClassId = (value = '') => String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
+      const titleCaseToken = (value = '') => {
+        const token = String(value || '').trim();
+        if (!token) return '';
+        return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+      };
+
+      const parseGradeSectionFromSlug = (classId = '') => {
+        const normalized = normalizeClassId(classId);
+        if (!normalized) return null;
+
+        const match = normalized.match(/^grade-(\d+)-(.+)$/i);
+        if (match) {
+          const gradeNumber = match[1];
+          const sectionSlug = match[2];
+          return {
+            grade: `Grade ${gradeNumber}`,
+            section: sectionSlug
+              .split('-')
+              .map(titleCaseToken)
+              .join(' ')
+          };
+        }
+
+        return null;
+      };
+
       const [rows] = await pool.query(
         `SELECT DISTINCT c.*,
                 GROUP_CONCAT(DISTINCT st.subject) as subjects_teaching
@@ -551,12 +578,94 @@ const getSubjectTeacherClasses = async (req, res) => {
            AND st.school_year_id = ?
            AND c.school_year_id = ?
          GROUP BY c.id`,
-        [userId, targetSy.id, targetSy.id]
+        [String(userId), targetSy.id, targetSy.id]
       );
 
-      console.log(`Database: Found ${rows.length} classes for subject teacher ${userId}`);
-      
-      return res.json({ success: true, data: rows });
+      if (rows.length > 0) {
+        console.log(`Database: Found ${rows.length} classes for subject teacher ${userId}`);
+        return res.json({ success: true, data: rows });
+      }
+
+      // Fallback when classes table has no matching rows for the active school year.
+      const [stRows] = await pool.query(
+        `SELECT class_id, GROUP_CONCAT(DISTINCT subject) AS subjects_teaching
+         FROM subject_teachers
+         WHERE teacher_id = ?
+           AND school_year_id = ?
+         GROUP BY class_id`,
+        [String(userId), targetSy.id]
+      );
+
+      if (stRows.length === 0) {
+        console.log(`Database: Found 0 classes for subject teacher ${userId}`);
+        return res.json({ success: true, data: [] });
+      }
+
+      const [classRows] = await pool.query(
+        `SELECT id, grade, section
+         FROM classes
+         WHERE school_year_id = ?`,
+        [targetSy.id]
+      );
+
+      const classLookup = new Map();
+      classRows.forEach((item) => {
+        classLookup.set(normalizeClassId(item.id), { grade: item.grade, section: item.section, id: item.id });
+        classLookup.set(normalizeClassId(`${item.grade}-${item.section}`), { grade: item.grade, section: item.section, id: item.id });
+      });
+
+      try {
+        const [assignmentRows] = await pool.query(
+          `SELECT class_id, grade_level, section
+           FROM class_assignments
+           WHERE school_year_id = ?`,
+          [targetSy.id]
+        );
+        assignmentRows.forEach((item) => {
+          if (item.class_id) {
+            classLookup.set(normalizeClassId(item.class_id), { grade: item.grade_level, section: item.section, id: item.class_id });
+          }
+          classLookup.set(normalizeClassId(`${item.grade_level}-${item.section}`), { grade: item.grade_level, section: item.section, id: item.class_id || `${item.grade_level}-${item.section}` });
+        });
+      } catch (assignmentError) {
+        console.log('Fallback class_assignments lookup skipped:', assignmentError.message);
+      }
+
+      try {
+        const [studentRows] = await pool.query(
+          `SELECT DISTINCT gradeLevel, section
+           FROM students
+           WHERE school_year_id = ?`,
+          [targetSy.id]
+        );
+        studentRows.forEach((item) => {
+          classLookup.set(normalizeClassId(`${item.gradeLevel}-${item.section}`), {
+            grade: item.gradeLevel,
+            section: item.section,
+            id: `${item.gradeLevel}-${item.section}`
+          });
+        });
+      } catch (studentLookupError) {
+        console.log('Fallback students lookup skipped:', studentLookupError.message);
+      }
+
+      const fallbackRows = stRows.map((row) => {
+        const normalizedId = normalizeClassId(row.class_id);
+        const lookedUp = classLookup.get(normalizedId) || classLookup.get(normalizeClassId(row.class_id));
+        const parsed = lookedUp ? null : parseGradeSectionFromSlug(row.class_id);
+
+        return {
+          id: lookedUp?.id || row.class_id,
+          class_id: row.class_id,
+          grade: lookedUp?.grade || parsed?.grade || 'Unknown Grade',
+          section: lookedUp?.section || parsed?.section || 'Unknown Section',
+          subjects_teaching: row.subjects_teaching,
+          role_in_class: 'subject_teacher'
+        };
+      });
+
+      console.log(`Fallback: Found ${fallbackRows.length} classes for subject teacher ${userId}`);
+      return res.json({ success: true, data: fallbackRows });
 
     } catch (dbError) {
       console.log('DB error in getSubjectTeacherClasses:', dbError.message);
