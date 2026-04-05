@@ -2,6 +2,13 @@ import { UserCircleIcon } from "@heroicons/react/24/solid";
 import { API_BASE_URL } from "../../api/config";
 
 export default function ViewStudentModal({ student, onClose }) {
+  const rawQrCode = student?.qrCode || student?.qr_code || '';
+  const qrCodeSrc = rawQrCode
+    ? (rawQrCode.startsWith('http') || rawQrCode.startsWith('data:')
+      ? rawQrCode
+      : `${API_BASE_URL.replace('/api', '')}${rawQrCode}`)
+    : '';
+
   return (
     <div className="fixed inset-0 bg-black/30 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full my-8">
@@ -60,7 +67,18 @@ export default function ViewStudentModal({ student, onClose }) {
             {/* Right: QR Code */}
             <div className="flex flex-col items-center">
               <div className="bg-gray-50 p-6 rounded-2xl shadow-inner border-4 border-white">
-                <img src={student.qrCode.startsWith('http') ? student.qrCode : `${API_BASE_URL.replace('/api', '')}${student.qrCode}`} alt="QR Code" className="w-56 h-56 object-contain" />
+                {qrCodeSrc ? (
+                  <img
+                    src={qrCodeSrc}
+                    alt="QR Code"
+                    className="w-56 h-56 object-contain"
+                    onError={(event) => {
+                      event.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <div className="w-56 h-56 flex items-center justify-center text-gray-400 text-sm">No QR Code</div>
+                )}
               </div>
               <p className="mt-4 text-sm text-gray-600 font-medium">Student QR Code</p>
             </div>

@@ -492,6 +492,14 @@ exports.getStudent = async (req, res) => {
       .toLowerCase();
 
     const toGradeKey = (gradeLabel = '') => String(gradeLabel).replace(/^Grade\s+/i, '').trim();
+    const gradeRank = (gradeLabel = '') => {
+      const normalized = String(gradeLabel || '').trim().toLowerCase();
+      if (!normalized) return -1;
+      if (normalized === 'kindergarten' || normalized === 'kinder') return 0;
+      const match = normalized.match(/grade\s*(\d+)/i);
+      if (match) return Number(match[1]);
+      return -1;
+    };
 
     // ======== FETCH GRADES ========
     const gradesRaw = await query(
@@ -565,6 +573,23 @@ exports.getStudent = async (req, res) => {
         q4: matched.q4 ?? null
       };
     });
+
+    // Ensure newly encoded subjects are visible immediately even if not yet in admin subject configuration.
+    Object.values(currentGradesByNormalized).forEach((gradeRow) => {
+      if (!gradeRow?.subject) return;
+      const alreadyIncluded = Object.keys(currentGradesMap).some(
+        (subjectName) => normalizeSubjectName(subjectName) === normalizeSubjectName(gradeRow.subject)
+      );
+      if (alreadyIncluded) return;
+
+      currentGradesMap[gradeRow.subject] = {
+        subject: gradeRow.subject,
+        q1: gradeRow.q1 ?? null,
+        q2: gradeRow.q2 ?? null,
+        q3: gradeRow.q3 ?? null,
+        q4: gradeRow.q4 ?? null
+      };
+    });
     
     // Calculate averages and remarks
     const grades = Object.values(currentGradesMap).map(g => {
@@ -588,8 +613,18 @@ exports.getStudent = async (req, res) => {
         [studentId]
       );
 
+      const currentRank = gradeRank(student.grade_level);
+      const validHistoryRows = historyRows.filter((row) => {
+        const fromRank = gradeRank(row.from_grade);
+        const toRank = gradeRank(row.to_grade);
+        if (fromRank < 0 || toRank < 0 || currentRank < 0) return false;
+        if (fromRank >= toRank) return false;
+        if (toRank > currentRank) return false;
+        return true;
+      });
+
       const previousGrades = [...new Set(
-        historyRows
+        validHistoryRows
           .map(h => h.from_grade)
           .filter(g => g && g !== student.grade_level)
       )];
@@ -603,7 +638,7 @@ exports.getStudent = async (req, res) => {
         const prevSubjects = prevSubjectsRows.map(r => r.name).filter(Boolean);
 
         // Use grades recorded up to the promotion date for this previous grade snapshot
-        const promoCutoff = historyRows.find(h => h.from_grade === prevGrade)?.created_at || null;
+        const promoCutoff = validHistoryRows.find(h => h.from_grade === prevGrade)?.created_at || null;
         const gradesBeforePromotion = promoCutoff
           ? gradesRaw.filter(g => g.created_at && new Date(g.created_at) <= new Date(promoCutoff))
           : gradesRaw;
@@ -629,8 +664,8 @@ exports.getStudent = async (req, res) => {
         if (prevGrades.length > 0) {
           gradeHistory.push({
             gradeLevel: prevGrade,
-            section: historyRows.find(h => h.from_grade === prevGrade)?.from_section || null,
-            promotedAt: historyRows.find(h => h.from_grade === prevGrade)?.created_at || null,
+            section: validHistoryRows.find(h => h.from_grade === prevGrade)?.from_section || null,
+            promotedAt: validHistoryRows.find(h => h.from_grade === prevGrade)?.created_at || null,
             grades: prevGrades
           });
         }

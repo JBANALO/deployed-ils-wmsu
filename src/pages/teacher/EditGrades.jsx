@@ -71,6 +71,7 @@ export default function EditGrades() {
   const [showGradeModal, setShowGradeModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [gradeData, setGradeData] = useState({});
+  const [initialGradeData, setInitialGradeData] = useState({});
   const [isGradeLocked, setIsGradeLocked] = useState(false);
   const [lockReason, setLockReason] = useState("");
   const [showReportCard, setShowReportCard] = useState(false);
@@ -527,6 +528,7 @@ export default function EditGrades() {
     });
     
     setGradeData(initialGrades);
+    setInitialGradeData(JSON.parse(JSON.stringify(initialGrades)));
     console.log('Grade modal opened - showing subjects:', subjectsToShow, 'grades:', initialGrades);
     setShowGradeModal(true);
   };
@@ -646,19 +648,29 @@ export default function EditGrades() {
       return;
     }
 
+    const hasChangedQuarterValue = (subject, quarterKey) => {
+      const currentVal = Number(gradeData?.[subject]?.[quarterKey] || 0);
+      const initialVal = Number(initialGradeData?.[subject]?.[quarterKey] || 0);
+      return currentVal !== initialVal;
+    };
+
+    const changedSubjects = Object.keys(gradeData || {}).filter((subject) => {
+      if (selectedQuarter === 'all') {
+        return ['q1', 'q2', 'q3', 'q4'].some((q) => hasChangedQuarterValue(subject, q));
+      }
+      return hasChangedQuarterValue(subject, selectedQuarter);
+    });
+
+    if (changedSubjects.length === 0) {
+      setSuccessMessage('ℹ️ No grade changes to save.');
+      setShowSuccessModal(true);
+      return;
+    }
+
     // Check for unauthorized subject edits (for subject teachers including teacher role with assigned subjects)
     const isSubjectTeacherMode = (userRole === 'subject_teacher' || userRole === 'teacher') && availableSubjects.length > 0;
     if (isSubjectTeacherMode) {
-      const editedSubjects = Object.keys(gradeData).filter(subject => {
-        const quarterData = gradeData[subject];
-        if (selectedQuarter === "all") {
-          return quarterData.q1 || quarterData.q2 || quarterData.q3 || quarterData.q4;
-        } else {
-          return quarterData[selectedQuarter];
-        }
-      });
-      
-      const unauthorizedSubjects = editedSubjects.filter(s => !availableSubjects.includes(s));
+      const unauthorizedSubjects = changedSubjects.filter(s => !availableSubjects.includes(s));
       if (unauthorizedSubjects.length > 0) {
         alert(`❌ You don't have permission to edit: ${unauthorizedSubjects.join(', ')}`);
         return;
@@ -677,7 +689,7 @@ export default function EditGrades() {
     
     // Extract grades for the selected quarter(s)
     const quarterGrades = {};
-    Object.keys(gradeData).forEach(subject => {
+    changedSubjects.forEach(subject => {
       // For subject teachers (including teacher role with assigned subjects), only include authorized subjects
       const isSubjectTeacherMode = (userRole === 'subject_teacher' || userRole === 'teacher') && availableSubjects.length > 0;
       if (isSubjectTeacherMode && !availableSubjects.includes(subject)) {
@@ -685,17 +697,27 @@ export default function EditGrades() {
       }
       
       if (selectedQuarter === "all") {
+        const payload = {};
+        ['q1', 'q2', 'q3', 'q4'].forEach((q) => {
+          if (hasChangedQuarterValue(subject, q)) {
+            payload[q] = gradeData[subject][q] || 0;
+          }
+        });
+        if (Object.keys(payload).length === 0) return;
         quarterGrades[subject] = {
-          q1: gradeData[subject].q1 || 0,
-          q2: gradeData[subject].q2 || 0,
-          q3: gradeData[subject].q3 || 0,
-          q4: gradeData[subject].q4 || 0,
+          ...payload,
         };
       } else {
         // Send a plain number so the backend can store it directly in the quarter column
         quarterGrades[subject] = gradeData[subject][selectedQuarter] || 0;
       }
     });
+
+    if (Object.keys(quarterGrades).length === 0) {
+      setSuccessMessage('ℹ️ No grade changes to save.');
+      setShowSuccessModal(true);
+      return;
+    }
 
     try {
       const response = await api.put(`/students/${selectedStudent.id}/grades`, {
