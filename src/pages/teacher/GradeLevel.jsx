@@ -173,6 +173,43 @@ export default function GradeLevel() {
         } catch (e) {}
       }
 
+      // Fallback: some legacy deployments return empty for /classes/subject-teacher/:id
+      // even when /classes already includes matching subject_teachers.
+      if (subjectTeacherClasses.length === 0) {
+        try {
+          const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, selectedSchoolYearId));
+          if (allClassesResp.ok) {
+            const allClassesData = await allClassesResp.json();
+            const allClasses = Array.isArray(allClassesData)
+              ? allClassesData
+              : (Array.isArray(allClassesData.data) ? allClassesData.data : []);
+
+            const normalize = (value = '') => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+            const userIdKey = String(user.id || '').trim();
+            const userFullName = normalize(`${user.firstName || ''} ${user.lastName || ''}`);
+
+            const derived = allClasses
+              .filter((cls) => {
+                const stList = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
+                return stList.some((st) => {
+                  const teacherIdMatch = String(st.teacher_id || '').trim() === userIdKey;
+                  const teacherNameMatch = userFullName && normalize(st.teacher_name || '') === userFullName;
+                  return teacherIdMatch || teacherNameMatch;
+                });
+              })
+              .map((cls) => ({
+                ...cls,
+                role_in_class: 'subject_teacher'
+              }));
+
+            subjectTeacherClasses = derived;
+            console.log(`✓ Subject teacher classes via /classes fallback: ${subjectTeacherClasses.length}`, subjectTeacherClasses);
+          }
+        } catch (fallbackErr) {
+          console.warn('Subject teacher /classes fallback failed:', fallbackErr);
+        }
+      }
+
       // Combine both adviser and subject teacher classes (remove duplicates)
       const combinedClasses = [...adviserClasses, ...subjectTeacherClasses];
       const uniqueClasses = dedupeTeacherClasses(combinedClasses);
