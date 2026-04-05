@@ -3,9 +3,22 @@ const { pool, query } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
+async function ensurePlainPasswordColumn() {
+  try {
+    const columns = await query('SHOW COLUMNS FROM users');
+    const hasPlainPassword = columns.some(col => col.Field === 'plain_password');
+    if (!hasPlainPassword) {
+      await query('ALTER TABLE users ADD COLUMN plain_password VARCHAR(255) NULL AFTER password');
+    }
+  } catch (error) {
+    console.warn('[users] plain_password column check/creation skipped:', error.message);
+  }
+}
+
 // Signup new user (Admin, Student, Teacher, or Adviser)
 exports.signup = async (req, res) => {
   try {
+    await ensurePlainPasswordColumn();
     const { firstName, lastName, username, email, password, role = 'admin' } = req.body;
 
     // Validate input
@@ -385,6 +398,7 @@ exports.deleteUser = async (req, res) => {
 // Update user by ID
 exports.updateUser = async (req, res) => {
   try {
+    await ensurePlainPasswordColumn();
     const { id } = req.params;
     const { firstName, lastName, username, email, phone, profile_pic, password } = req.body;
 
@@ -498,6 +512,7 @@ exports.updateUser = async (req, res) => {
 // Get user credentials (admin/super_admin accounts)
 exports.getUserCredentials = async (req, res) => {
   try {
+    await ensurePlainPasswordColumn();
     const { id } = req.params;
 
     const columns = await query('SHOW COLUMNS FROM users');

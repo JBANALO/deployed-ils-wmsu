@@ -229,6 +229,14 @@ exports.login = async (req, res) => {
         passwordMatch = password === user.password;
         authenticatedFrom = 'database (plain)';
       }
+
+      // Additional fallback: use plain_password when present.
+      if (!passwordMatch && typeof user.plain_password === 'string' && user.plain_password.length > 0) {
+        passwordMatch = password === user.plain_password;
+        if (passwordMatch) {
+          authenticatedFrom = 'database (plain_password)';
+        }
+      }
     } else {
       // JSON file user - use plain text comparison
       passwordMatch = password === user.password;
