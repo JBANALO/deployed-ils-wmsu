@@ -742,9 +742,11 @@ const assignAdviserToClass = async (req, res) => {
     await ensureClassAssignmentsTable();
 
     const [existingAssignmentRows] = await pool.query(
-      `SELECT id FROM class_assignments
-       WHERE grade_level = ? AND section = ? AND school_year_id = ?
-       ORDER BY id DESC LIMIT 1`,
+      `SELECT id, school_year_id
+       FROM class_assignments
+       WHERE grade_level = ? AND section = ?
+       ORDER BY (school_year_id = ?) DESC, id DESC
+       LIMIT 1`,
       [gradeLevel, classSection, targetSy.id]
     );
 
