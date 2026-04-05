@@ -1254,6 +1254,7 @@ export default function AdminSchoolYear() {
           quarter="q4"
           gradeLevel={reportCardStudent.gradeLevel}
           section={reportCardStudent.section}
+          schoolYearId={viewingSchoolYear?.id || activeSchoolYear?.id || undefined}
           onClose={() => {
             setShowReportCard(false);
             setReportCardStudent(null);

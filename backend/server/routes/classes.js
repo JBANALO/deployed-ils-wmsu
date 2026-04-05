@@ -4,6 +4,24 @@ const router = express.Router();
 const pool = require('../config/db');
 const { verifyUser } = require('../middleware/auth');
 
+const resolveSchoolYearId = async (req) => {
+  const requestedId = req?.query?.schoolYearId || req?.body?.schoolYearId;
+  if (requestedId) {
+    const [rows] = await pool.query(
+      'SELECT id FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1',
+      [requestedId]
+    );
+    if (rows.length > 0) return rows[0].id;
+  }
+
+  const [activeRows] = await pool.query(
+    'SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1'
+  );
+  return activeRows[0]?.id || null;
+};
+
+const normalizeClassId = (value = '') => String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
+
 // Fallback class data when MySQL is unavailable
 const FALLBACK_CLASSES = [
   {
@@ -70,14 +88,20 @@ router.get('/debug/class-ids', async (req, res) => {
 // Get all classes with their subjects
 router.get('/', async (req, res) => {
   try {
+    const targetSyId = await resolveSchoolYearId(req);
+    if (!targetSyId) return res.status(400).json({ error: 'No active school year found' });
+
     const [classes] = await pool.query(`
       SELECT DISTINCT c.*, 
              GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects
       FROM classes c
-      LEFT JOIN subject_teachers st ON c.id = st.class_id
+      LEFT JOIN subject_teachers st
+        ON c.id = st.class_id
+       AND st.school_year_id = ?
+      WHERE c.school_year_id = ?
       GROUP BY c.id
       ORDER BY c.grade, c.section
-    `);
+    `, [targetSyId, targetSyId]);
     
     // Log class IDs for debugging
     console.log('Available class IDs:', classes.map(c => ({ id: c.id, grade: c.grade, section: c.section })));
@@ -102,13 +126,16 @@ router.get('/', async (req, res) => {
 router.get('/:classId/subjects', async (req, res) => {
   try {
     const { classId } = req.params;
+    const targetSyId = await resolveSchoolYearId(req);
+    if (!targetSyId) return res.status(400).json({ error: 'No active school year found' });
     
     const [subjects] = await pool.query(`
       SELECT DISTINCT subject
       FROM subject_teachers
       WHERE class_id = ?
+        AND school_year_id = ?
       ORDER BY subject
-    `, [classId]);
+    `, [classId, targetSyId]);
     
     const subjectList = subjects.map(s => s.subject);
     
@@ -135,15 +162,20 @@ router.get('/:classId/subjects', async (req, res) => {
 router.get('/:classId', async (req, res) => {
   try {
     const { classId } = req.params;
+    const targetSyId = await resolveSchoolYearId(req);
+    if (!targetSyId) return res.status(400).json({ error: 'No active school year found' });
     
     const [[classData]] = await pool.query(`
       SELECT c.*, 
              GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects
       FROM classes c
-      LEFT JOIN subject_teachers st ON c.id = st.class_id
+      LEFT JOIN subject_teachers st
+        ON c.id = st.class_id
+       AND st.school_year_id = ?
       WHERE c.id = ?
+        AND c.school_year_id = ?
       GROUP BY c.id
-    `, [classId]);
+    `, [targetSyId, classId, targetSyId]);
     
     if (!classData) {
       return res.status(404).json({ error: 'Class not found' });
@@ -187,19 +219,24 @@ function mapClassRows(classes) {
 router.get('/adviser/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
+    const targetSyId = await resolveSchoolYearId(req);
+    if (!targetSyId) return res.status(400).json({ error: 'No active school year found' });
     
     const CLASS_QUERY = `
       SELECT c.*, 
              GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects,
              GROUP_CONCAT(DISTINCT CONCAT_WS(':', st.teacher_id, st.teacher_name, st.subject) SEPARATOR '|') as subject_teachers_list
       FROM classes c
-      LEFT JOIN subject_teachers st ON c.id = st.class_id
+      LEFT JOIN subject_teachers st
+        ON c.id = st.class_id
+       AND st.school_year_id = ?
       WHERE c.adviser_id = ?
+        AND c.school_year_id = ?
       GROUP BY c.id
       ORDER BY c.grade, c.section
     `;
 
-    let [classes] = await pool.query(CLASS_QUERY, [userId]);
+    let [classes] = await pool.query(CLASS_QUERY, [targetSyId, userId, targetSyId]);
 
     // Fallback: if no results by adviser_id, look up the user's name and search by adviser_name.
     // This handles mismatched IDs (e.g. duplicate accounts, old vs new UUID).
@@ -236,11 +273,14 @@ router.get('/adviser/:userId', async (req, res) => {
                  GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects,
                  GROUP_CONCAT(DISTINCT CONCAT_WS(':', st.teacher_id, st.teacher_name, st.subject) SEPARATOR '|') as subject_teachers_list
           FROM classes c
-          LEFT JOIN subject_teachers st ON c.id = st.class_id
+          LEFT JOIN subject_teachers st
+            ON c.id = st.class_id
+           AND st.school_year_id = ?
           WHERE c.adviser_name LIKE ? AND c.adviser_name LIKE ?
+            AND c.school_year_id = ?
           GROUP BY c.id
           ORDER BY c.grade, c.section
-        `, [`%${firstName}%`, `%${lastName}%`]);
+        `, [targetSyId, `%${firstName}%`, `%${lastName}%`, targetSyId]);
         console.log(`Name fallback found ${classes.length} class(es)`);
       } else {
         console.log(`adviser/:userId — no ID match and user lookup returned no name for ${userId}`);
@@ -258,17 +298,39 @@ router.get('/adviser/:userId', async (req, res) => {
 router.get('/subject-teacher/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
+    const targetSyId = await resolveSchoolYearId(req);
+    if (!targetSyId) return res.status(400).json({ error: 'No active school year found' });
+
+    const [teacherRows] = await pool.query(
+      `SELECT firstName, lastName, first_name, last_name
+       FROM users
+       WHERE CAST(id AS CHAR) = ?
+       LIMIT 1`,
+      [String(userId)]
+    );
+    const teacherNameCandidate = teacherRows.length > 0
+      ? `${teacherRows[0].firstName || teacherRows[0].first_name || ''} ${teacherRows[0].lastName || teacherRows[0].last_name || ''}`.trim()
+      : '';
     
     let [classes] = await pool.query(`
       SELECT DISTINCT c.*, 
              GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects,
              GROUP_CONCAT(DISTINCT CONCAT_WS(':', st.teacher_id, st.teacher_name, st.subject) SEPARATOR '|') as subject_teachers_list
       FROM classes c
-      INNER JOIN subject_teachers st ON c.id = st.class_id
-      WHERE st.teacher_id = ?
+      INNER JOIN subject_teachers st
+        ON (
+          LOWER(REPLACE(TRIM(CAST(c.id AS CHAR)), ' ', '-')) = LOWER(REPLACE(TRIM(st.class_id), ' ', '-'))
+          OR LOWER(REPLACE(CONCAT(TRIM(c.grade), '-', TRIM(c.section)), ' ', '-')) = LOWER(REPLACE(TRIM(st.class_id), ' ', '-'))
+        )
+      WHERE (
+          LOWER(TRIM(CAST(st.teacher_id AS CHAR))) = LOWER(TRIM(?))
+          OR (? <> '' AND LOWER(TRIM(st.teacher_name)) = LOWER(TRIM(?)))
+        )
+        AND st.school_year_id = ?
+        AND c.school_year_id = ?
       GROUP BY c.id
       ORDER BY c.grade, c.section
-    `, [userId]);
+    `, [String(userId), teacherNameCandidate, teacherNameCandidate, targetSyId, targetSyId]);
 
     // Fallback: if no results by teacher_id, look up user's name and search by teacher_name
     if (classes.length === 0) {
@@ -290,11 +352,17 @@ router.get('/subject-teacher/:userId', async (req, res) => {
                  GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects,
                  GROUP_CONCAT(DISTINCT CONCAT_WS(':', st.teacher_id, st.teacher_name, st.subject) SEPARATOR '|') as subject_teachers_list
           FROM classes c
-          INNER JOIN subject_teachers st ON c.id = st.class_id
+          INNER JOIN subject_teachers st
+            ON (
+              LOWER(REPLACE(TRIM(CAST(c.id AS CHAR)), ' ', '-')) = LOWER(REPLACE(TRIM(st.class_id), ' ', '-'))
+              OR LOWER(REPLACE(CONCAT(TRIM(c.grade), '-', TRIM(c.section)), ' ', '-')) = LOWER(REPLACE(TRIM(st.class_id), ' ', '-'))
+            )
           WHERE st.teacher_name LIKE ? AND st.teacher_name LIKE ?
+            AND st.school_year_id = ?
+            AND c.school_year_id = ?
           GROUP BY c.id
           ORDER BY c.grade, c.section
-        `, [`%${firstName}%`, `%${lastName}%`]);
+        `, [`%${firstName}%`, `%${lastName}%`, targetSyId, targetSyId]);
         console.log(`Subject teacher name fallback found ${classes.length} class(es)`);
       }
     }
@@ -311,6 +379,8 @@ router.put('/:classId/assign', async (req, res) => {
   try {
     const { classId } = req.params;
     const { adviser_id, adviser_name, grade, section } = req.body;
+    const targetSyId = await resolveSchoolYearId(req);
+    if (!targetSyId) return res.status(400).json({ error: 'No active school year found' });
 
     console.log('\n=== ADVISER ASSIGNMENT ===');
     console.log('Request params:', { classId, adviser_id, adviser_name, grade, section });
@@ -321,8 +391,8 @@ router.put('/:classId/assign', async (req, res) => {
 
     // Check if class exists first
     const [[existingClass]] = await pool.query(
-      'SELECT id, grade, section FROM classes WHERE id = ?',
-      [classId]
+      'SELECT id, grade, section FROM classes WHERE id = ? AND school_year_id = ?',
+      [classId, targetSyId]
     );
 
     if (!existingClass) {
@@ -337,8 +407,8 @@ router.put('/:classId/assign', async (req, res) => {
 
     // 1. Update the class with adviser info
     const [classResult] = await pool.query(
-      'UPDATE classes SET adviser_id = ?, adviser_name = ? WHERE id = ?',
-      [adviser_id, adviser_name, classId]
+      'UPDATE classes SET adviser_id = ?, adviser_name = ? WHERE id = ? AND school_year_id = ?',
+      [adviser_id, adviser_name, classId, targetSyId]
     );
 
     console.log('Class update result:', { affectedRows: classResult.affectedRows });
@@ -365,8 +435,8 @@ router.put('/:classId/assign', async (req, res) => {
 
     // Verify the update
     const [[verifyClass]] = await pool.query(
-      'SELECT adviser_id, adviser_name FROM classes WHERE id = ?',
-      [classId]
+      'SELECT adviser_id, adviser_name FROM classes WHERE id = ? AND school_year_id = ?',
+      [classId, targetSyId]
     );
     console.log('Verification - Class now has adviser:', verifyClass);
     console.log('=== ASSIGNMENT COMPLETE ===\n');
@@ -388,19 +458,21 @@ router.put('/:classId/assign', async (req, res) => {
 router.put('/:classId/unassign', async (req, res) => {
   try {
     const { classId } = req.params;
+    const targetSyId = await resolveSchoolYearId(req);
+    if (!targetSyId) return res.status(400).json({ error: 'No active school year found' });
 
     console.log('Unassigning adviser from class:', classId);
 
     // 1. Get the class info first to find the adviser
     const [[classData]] = await pool.query(
-      'SELECT adviser_id, grade, section FROM classes WHERE id = ?',
-      [classId]
+      'SELECT adviser_id, grade, section FROM classes WHERE id = ? AND school_year_id = ?',
+      [classId, targetSyId]
     );
 
     // 2. Unassign from the class
     const [classResult] = await pool.query(
-      'UPDATE classes SET adviser_id = NULL, adviser_name = NULL WHERE id = ?',
-      [classId]
+      'UPDATE classes SET adviser_id = NULL, adviser_name = NULL WHERE id = ? AND school_year_id = ?',
+      [classId, targetSyId]
     );
 
     if (classResult.affectedRows === 0) {
@@ -436,6 +508,8 @@ router.put('/:classId/assign-subject-teacher', async (req, res) => {
   try {
     const { classId } = req.params;
     const { teacher_id, teacher_name, subject, day, start_time, end_time } = req.body;
+    const targetSyId = await resolveSchoolYearId(req);
+    if (!targetSyId) return res.status(400).json({ error: 'No active school year found' });
 
     console.log('\n=== SUBJECT TEACHER ASSIGNMENT ===');
     console.log('✅ Route hit - /api/classes/:classId/assign-subject-teacher');
@@ -448,8 +522,8 @@ router.put('/:classId/assign-subject-teacher', async (req, res) => {
 
     // Check if class exists
     const [[classData]] = await pool.query(
-      'SELECT id, grade, section FROM classes WHERE id = ?',
-      [classId]
+      'SELECT id, grade, section FROM classes WHERE id = ? AND school_year_id = ?',
+      [classId, targetSyId]
     );
 
     if (!classData) {
@@ -463,12 +537,13 @@ router.put('/:classId/assign-subject-teacher', async (req, res) => {
       `SELECT st.id, st.teacher_id, st.subject, st.day, st.start_time, st.end_time
        FROM subject_teachers st
        WHERE st.class_id = ? 
+       AND st.school_year_id = ?
        AND st.day = ?
        AND (
          (st.start_time < ? AND st.end_time > ?) OR
          (st.start_time < ? AND st.end_time > ?)
        )`,
-      [classId, day, end_time, start_time, end_time, start_time]
+      [classId, targetSyId, day, end_time, start_time, end_time, start_time]
     );
 
     if (conflicts.length > 0) {
@@ -481,8 +556,8 @@ router.put('/:classId/assign-subject-teacher', async (req, res) => {
 
     // Check if this teacher already teaches the same subject to this class
     const [[duplicate]] = await pool.query(
-      'SELECT id FROM subject_teachers WHERE class_id = ? AND teacher_id = ? AND subject = ?',
-      [classId, teacher_id, subject]
+      'SELECT id FROM subject_teachers WHERE class_id = ? AND teacher_id = ? AND subject = ? AND school_year_id = ?',
+      [classId, teacher_id, subject, targetSyId]
     );
 
     if (duplicate) {
@@ -491,12 +566,39 @@ router.put('/:classId/assign-subject-teacher', async (req, res) => {
       });
     }
 
-    // Insert the subject teacher assignment
-    const [result] = await pool.query(
-      `INSERT INTO subject_teachers (class_id, teacher_id, teacher_name, subject, day, start_time, end_time, assignedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
-      [classId, teacher_id, teacher_name, subject, day, start_time, end_time]
+    // Replace any existing teacher for the same class+subject in this school year.
+    const [existingSubjectRows] = await pool.query(
+      `SELECT id
+       FROM subject_teachers
+       WHERE LOWER(REPLACE(TRIM(class_id), ' ', '-')) = ?
+         AND subject = ?
+         AND school_year_id = ?
+       ORDER BY id ASC`,
+      [normalizeClassId(classId), subject, targetSyId]
     );
+
+    let result;
+    if (existingSubjectRows.length > 0) {
+      const keepId = existingSubjectRows[0].id;
+      [result] = await pool.query(
+        `UPDATE subject_teachers
+         SET class_id = ?, teacher_id = ?, teacher_name = ?, day = ?, start_time = ?, end_time = ?
+         WHERE id = ?`,
+        [classId, teacher_id, teacher_name, day, start_time, end_time, keepId]
+      );
+
+      if (existingSubjectRows.length > 1) {
+        const duplicateIds = existingSubjectRows.slice(1).map((item) => item.id);
+        const placeholders = duplicateIds.map(() => '?').join(', ');
+        await pool.query(`DELETE FROM subject_teachers WHERE id IN (${placeholders})`, duplicateIds);
+      }
+    } else {
+      [result] = await pool.query(
+        `INSERT INTO subject_teachers (class_id, teacher_id, teacher_name, subject, day, start_time, end_time, school_year_id, assignedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [classId, teacher_id, teacher_name, subject, day, start_time, end_time, targetSyId]
+      );
+    }
 
     console.log('✅ Subject teacher assigned:', { insertId: result.insertId, affectedRows: result.affectedRows });
 
@@ -523,12 +625,14 @@ router.put('/:classId/assign-subject-teacher', async (req, res) => {
 router.put('/:classId/unassign-subject-teacher/:teacherId', async (req, res) => {
   try {
     const { classId, teacherId } = req.params;
+    const targetSyId = await resolveSchoolYearId(req);
+    if (!targetSyId) return res.status(400).json({ error: 'No active school year found' });
 
     console.log('Unassigning subject teacher:', { classId, teacherId });
 
     const [result] = await pool.query(
-      'DELETE FROM subject_teachers WHERE class_id = ? AND teacher_id = ?',
-      [classId, teacherId]
+      'DELETE FROM subject_teachers WHERE class_id = ? AND teacher_id = ? AND school_year_id = ?',
+      [classId, teacherId, targetSyId]
     );
 
     if (result.affectedRows === 0) {

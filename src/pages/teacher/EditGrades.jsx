@@ -1283,6 +1283,7 @@ export default function EditGrades() {
                   ? `${selectedGradeLevel.toLowerCase().replace(/\s+/g, '-')}-${selectedSection.toLowerCase().replace(/\s+/g, '-')}`
                   : null))
           }
+          schoolYearId={selectedSchoolYearId || activeSchoolYearId || undefined}
           onClose={() => { setShowReportCard(false); setReportCardStudent(null); }}
         />
       )}
