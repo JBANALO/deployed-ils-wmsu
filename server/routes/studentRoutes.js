@@ -336,16 +336,62 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
     const normalizedRole = normalizeRole(user?.role);
     if ((normalizedRole === 'teacher' || normalizedRole === 'subject_teacher') && subjectsWithGrades.length > 0) {
       try {
+        const studentGradeValue = student.grade_level || student.gradeLevel;
         const classRows = await query(
           `SELECT id, adviser_id, adviser_name
            FROM classes
-           WHERE grade = ? AND section = ? AND school_year_id = ?
+           WHERE section = ?
+             AND school_year_id = ?
+             AND (
+               LOWER(TRIM(grade)) = LOWER(TRIM(?))
+               OR LOWER(REPLACE(TRIM(grade), 'Grade ', '')) = LOWER(REPLACE(TRIM(?), 'Grade ', ''))
+             )
            LIMIT 1`,
-          [student.grade_level || student.gradeLevel, student.section, targetSyId]
+          [student.section, targetSyId, studentGradeValue, studentGradeValue]
         );
         const classRow = classRows?.[0];
+        let adviserTargetId = classRow?.adviser_id ? String(classRow.adviser_id).trim() : '';
 
-        if (classRow?.adviser_id && String(classRow.adviser_id) !== String(user.id)) {
+        if (!adviserTargetId && classRow?.adviser_name) {
+          const adviserName = String(classRow.adviser_name || '').trim();
+          const nameParts = adviserName.split(/\s+/).filter(Boolean);
+          const firstName = nameParts[0] || '';
+          const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+
+          if (firstName || lastName) {
+            const adviserUsers = await query(
+              `SELECT id
+               FROM users
+               WHERE role IN ('adviser', 'teacher', 'subject_teacher')
+                 AND (
+                   (? <> '' AND LOWER(TRIM(first_name)) = LOWER(TRIM(?)) AND LOWER(TRIM(last_name)) = LOWER(TRIM(?)))
+                   OR (? <> '' AND LOWER(TRIM(CONCAT(first_name, ' ', last_name))) = LOWER(TRIM(?)))
+                 )
+               LIMIT 1`,
+              [firstName, firstName, lastName, adviserName, adviserName]
+            );
+
+            if (adviserUsers?.length > 0) {
+              adviserTargetId = String(adviserUsers[0].id || '').trim();
+            } else {
+              const adviserTeachers = await query(
+                `SELECT id
+                 FROM teachers
+                 WHERE (
+                   (? <> '' AND LOWER(TRIM(first_name)) = LOWER(TRIM(?)) AND LOWER(TRIM(last_name)) = LOWER(TRIM(?)))
+                   OR (? <> '' AND LOWER(TRIM(CONCAT(first_name, ' ', last_name))) = LOWER(TRIM(?)))
+                 )
+                 LIMIT 1`,
+                [firstName, firstName, lastName, adviserName, adviserName]
+              );
+              if (adviserTeachers?.length > 0) {
+                adviserTargetId = String(adviserTeachers[0].id || '').trim();
+              }
+            }
+          }
+        }
+
+        if (adviserTargetId && adviserTargetId !== String(user.id)) {
           let submitterName = '';
           try {
             const userRows = await query(
@@ -370,7 +416,7 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
             `INSERT INTO notifications (user_id, type, title, message, meta_json, is_read)
              VALUES (?, 'grade_submission', ?, ?, ?, 0)`,
             [
-              String(classRow.adviser_id),
+              adviserTargetId,
               title,
               message,
               JSON.stringify({
@@ -389,7 +435,7 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
           );
 
           try {
-            const adviserId = String(classRow.adviser_id);
+            const adviserId = adviserTargetId;
             const schoolYearRows = await query(
               'SELECT label FROM school_years WHERE id = ? LIMIT 1',
               [targetSyId]
