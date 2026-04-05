@@ -1015,8 +1015,24 @@ app.post('/api/auth/login', async (req, res) => {
           [loginKey, loginKey]
         );
 
-        if (dbTeachers.length > 0) {
-          const dbTeacher = dbTeachers[0];
+        let matchedTeachers = dbTeachers;
+
+        if ((!matchedTeachers || matchedTeachers.length === 0) && user.firstName && user.lastName) {
+          const firstNameKey = String(user.firstName || '').trim().toLowerCase();
+          const lastNameKey = String(user.lastName || '').trim().toLowerCase();
+
+          matchedTeachers = await query(
+            `SELECT id, first_name, last_name, username, email, role, grade_level, section
+             FROM teachers
+             WHERE LOWER(TRIM(first_name)) = ? AND LOWER(TRIM(last_name)) = ?
+             ORDER BY updated_at DESC
+             LIMIT 1`,
+            [firstNameKey, lastNameKey]
+          );
+        }
+
+        if (matchedTeachers.length > 0) {
+          const dbTeacher = matchedTeachers[0];
           user = {
             ...user,
             id: dbTeacher.id,
