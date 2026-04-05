@@ -406,7 +406,8 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
 
     // Notify class adviser when a subject teacher/teacher submits grades for their assigned subjects.
     const normalizedRole = normalizeRole(user?.role);
-    if ((normalizedRole === 'teacher' || normalizedRole === 'subject_teacher') && subjectsWithGrades.length > 0) {
+    const canTriggerAdviserNotification = ['teacher', 'subject_teacher', 'adviser'].includes(normalizedRole);
+    if (canTriggerAdviserNotification && subjectsWithGrades.length > 0) {
       try {
         const studentGradeValue = student.grade_level || student.gradeLevel;
         const classRows = await query(
