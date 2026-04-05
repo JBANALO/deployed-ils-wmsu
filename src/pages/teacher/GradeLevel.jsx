@@ -60,7 +60,8 @@ export default function GradeLevel() {
           const nextActiveId = String(activeSy.id);
           setActiveSchoolYearId(nextActiveId);
           setTeacherActiveSchoolYearId(nextActiveId);
-          if (!selectedSchoolYearId) {
+          // Always align GradeLevel view to active school year to prevent stale localStorage scope.
+          if (String(selectedSchoolYearId || '') !== nextActiveId) {
             setSelectedSchoolYearId(nextActiveId);
             setTeacherViewingSchoolYearId(nextActiveId);
           }
@@ -102,10 +103,12 @@ export default function GradeLevel() {
         return;
       }
 
+      const schoolYearForRequests = selectedSchoolYearId || activeSchoolYearId;
+
       // Fetch students (optional, do not block class display if fails)
       try {
         console.log('🔄 Fetching students from API...');
-        const response = await fetch(appendSchoolYearId(`${API_BASE_URL}/students`, selectedSchoolYearId));
+        const response = await fetch(appendSchoolYearId(`${API_BASE_URL}/students`, schoolYearForRequests));
         console.log('📡 Students API response status:', response.status);
         if (response.ok) {
           const result = await response.json();
@@ -123,7 +126,7 @@ export default function GradeLevel() {
 
       // Fetch classes assigned to this adviser
       console.log(`Fetching adviser classes for user: ${user.id}`);
-      const classesResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/adviser/${user.id}`, selectedSchoolYearId));
+      const classesResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/adviser/${user.id}`, schoolYearForRequests));
       let adviserClasses = [];
       if (classesResponse.ok) {
         const classesData = await classesResponse.json();
@@ -142,7 +145,7 @@ export default function GradeLevel() {
       if (adviserClasses.length === 0 && user.firstName && user.lastName) {
         try {
           console.log('⚠️ No adviser classes by ID — trying name fallback...');
-          const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, selectedSchoolYearId));
+          const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, schoolYearForRequests));
           if (allClassesResp.ok) {
             const allClassesData = await allClassesResp.json();
             const allClasses = Array.isArray(allClassesData) ? allClassesData : (Array.isArray(allClassesData.data) ? allClassesData.data : []);
@@ -160,7 +163,7 @@ export default function GradeLevel() {
 
       // Fetch classes assigned to this subject teacher
       console.log(`Fetching subject teacher classes for user: ${user.id}`);
-      const subjectTeacherResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${user.id}`, selectedSchoolYearId));
+      const subjectTeacherResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${user.id}`, schoolYearForRequests));
       let subjectTeacherClasses = [];
       if (subjectTeacherResponse.ok) {
         const stData = await subjectTeacherResponse.json();
@@ -177,7 +180,7 @@ export default function GradeLevel() {
       // even when /classes already includes matching subject_teachers.
       if (subjectTeacherClasses.length === 0) {
         try {
-          const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, selectedSchoolYearId));
+          const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, schoolYearForRequests));
           if (allClassesResp.ok) {
             const allClassesData = await allClassesResp.json();
             const allClasses = Array.isArray(allClassesData)

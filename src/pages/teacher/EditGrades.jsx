@@ -25,6 +25,26 @@ import {
 export default function EditGrades() {
   const getStudentGradeLevel = (student) => student?.gradeLevel || student?.grade_level || "";
   const getStudentSection = (student) => student?.section || student?.Section || "";
+  const normalizeText = (value) => String(value || "").trim().toLowerCase();
+  const normalizeClassSlug = (grade, section) => `${String(grade || '').toLowerCase().replace(/\s+/g, '-')}-${String(section || '').toLowerCase().replace(/\s+/g, '-')}`;
+  const parseSubjectList = (rawValue) => {
+    if (Array.isArray(rawValue)) return rawValue.map((item) => String(item || '').trim()).filter(Boolean);
+    if (typeof rawValue === 'string') {
+      return rawValue.split(',').map((item) => item.trim()).filter(Boolean);
+    }
+    return [];
+  };
+  const dedupeSubjects = (values = []) => {
+    const seen = new Set();
+    const result = [];
+    values.forEach((item) => {
+      const key = normalizeText(item);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      result.push(item);
+    });
+    return result;
+  };
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedSubject, setSelectedSubject] = useState("Mathematics");
@@ -97,7 +117,8 @@ export default function EditGrades() {
           const nextActiveId = String(activeSy.id);
           setActiveSchoolYearId(nextActiveId);
           setTeacherActiveSchoolYearId(nextActiveId);
-          if (!selectedSchoolYearId) {
+          // Keep edit flow pinned to active school year to avoid stale localStorage scope.
+          if (String(selectedSchoolYearId || '') !== nextActiveId) {
             setSelectedSchoolYearId(nextActiveId);
             setTeacherViewingSchoolYearId(nextActiveId);
           }
@@ -194,10 +215,12 @@ export default function EditGrades() {
         return;
       }
 
+      const schoolYearForRequests = selectedSchoolYearId || activeSchoolYearId;
+
       // Fetch adviser classes
       let adviserClasses = [];
       try {
-        const adviserResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/adviser/${userId}`, selectedSchoolYearId));
+        const adviserResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/adviser/${userId}`, schoolYearForRequests));
         if (adviserResponse.ok) {
           const data = await adviserResponse.json();
           adviserClasses = Array.isArray(data.data) ? data.data : [];
@@ -211,7 +234,7 @@ export default function EditGrades() {
         try {
           const user = JSON.parse(userStr);
           if (user.firstName && user.lastName) {
-            const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, selectedSchoolYearId));
+            const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, schoolYearForRequests));
             if (allClassesResp.ok) {
               const allClassesData = await allClassesResp.json();
               const allClasses = Array.isArray(allClassesData)
@@ -232,7 +255,7 @@ export default function EditGrades() {
       // Fetch subject teacher classes
       let subjectTeacherClasses = [];
       try {
-        const stResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${userId}`, selectedSchoolYearId));
+        const stResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${userId}`, schoolYearForRequests));
         if (stResponse.ok) {
           const data = await stResponse.json();
           subjectTeacherClasses = Array.isArray(data.data) ? data.data : [];
@@ -250,9 +273,7 @@ export default function EditGrades() {
 
       // Track adviser class IDs as slugs matching studentClassId format in openGradeModal
       const adviserIds = adviserClasses.map(c => {
-        const grade = (c.grade || c.grade_level || '').toLowerCase().replace(/\s+/g, '-');
-        const section = (c.section || '').toLowerCase().replace(/\s+/g, '-');
-        return `${grade}-${section}`;
+        return normalizeClassSlug(c.grade || c.grade_level, c.section);
       });
       setAdviserClassIds(adviserIds);
       console.log('EditGrades - Adviser class slugs:', adviserIds);
@@ -262,13 +283,10 @@ export default function EditGrades() {
       const classSubjectMap = {};
       subjectTeacherClasses.forEach(cls => {
         const raw = cls.subjects_teaching || cls.subjects || '';
-        const clsSubjects = Array.isArray(raw) ? raw : (raw ? raw.split(',') : []);
+        const clsSubjects = parseSubjectList(raw);
         if (clsSubjects.length > 0) {
-          // Key by slug: matches studentClassId computed in openGradeModal
-          const grade = (cls.grade || cls.grade_level || '').toLowerCase().replace(/\s+/g, '-');
-          const section = (cls.section || '').toLowerCase().replace(/\s+/g, '-');
-          const slug = `${grade}-${section}`;
-          classSubjectMap[slug] = clsSubjects.map(s => s.trim()).filter(s => s);
+          const slug = normalizeClassSlug(cls.grade || cls.grade_level, cls.section);
+          classSubjectMap[slug] = dedupeSubjects(clsSubjects);
         }
       });
       setSubjectsByClass(classSubjectMap);
@@ -277,10 +295,10 @@ export default function EditGrades() {
       // Extract all subjects the teacher can edit (global list, for backward compatibility)
       const subjects = [];
       subjectTeacherClasses.forEach(cls => {
-        const clsSubjects = Array.isArray(cls.subjects) ? cls.subjects : (cls.subjects ? cls.subjects.split(',') : []);
+        const clsSubjects = parseSubjectList(cls.subjects_teaching || cls.subjects || '');
         clsSubjects.forEach(s => {
           const trimmed = s.trim();
-          if (trimmed && !subjects.includes(trimmed)) {
+          if (trimmed && !subjects.some((item) => normalizeText(item) === normalizeText(trimmed))) {
             subjects.push(trimmed);
           }
         });
@@ -296,7 +314,7 @@ export default function EditGrades() {
       fetchProgress(selectedQuarter);
 
       // Fetch all students
-      const response = await api.get('/students', { params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {} });
+      const response = await api.get('/students', { params: schoolYearForRequests ? { schoolYearId: schoolYearForRequests } : {} });
       const allStudents = response.data.data || response.data;
       
       // Filter students to only show those in assigned classes
@@ -379,7 +397,7 @@ export default function EditGrades() {
     }
     
     // Determine student's class ID
-    const studentClassId = `${(getStudentGradeLevel(student) || '').toLowerCase().replace(/\s+/g, '-')}-${(getStudentSection(student) || '').toLowerCase().replace(/\s+/g, '-')}`;
+    const studentClassId = normalizeClassSlug(getStudentGradeLevel(student), getStudentSection(student));
     console.log('Opening grades for student class:', studentClassId, 'Adviser classes:', adviserClassIds);
     
     // Check if user is adviser for this class
@@ -406,19 +424,17 @@ export default function EditGrades() {
     try {
       const userStr = localStorage.getItem('user');
       const freshUserId = userStr ? (JSON.parse(userStr).id) : null;
+      const schoolYearForRequests = selectedSchoolYearId || activeSchoolYearId;
       if (freshUserId) {
-        const stResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${freshUserId}`, selectedSchoolYearId));
+        const stResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${freshUserId}`, schoolYearForRequests));
         if (stResp.ok) {
           const stData = await stResp.json();
           const stClasses = Array.isArray(stData.data) ? stData.data : [];
           const matchingClass = stClasses.find(cls => {
-            const g = (cls.grade || cls.grade_level || '').toLowerCase().replace(/\s+/g, '-');
-            const s2 = (cls.section || '').toLowerCase().replace(/\s+/g, '-');
-            return `${g}-${s2}` === studentClassId;
+            return normalizeClassSlug(cls.grade || cls.grade_level, cls.section) === studentClassId;
           });
           if (matchingClass) {
-            const raw = matchingClass.subjects_teaching || matchingClass.subjects || '';
-            const freshList = Array.isArray(raw) ? raw : (raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : []);
+            const freshList = dedupeSubjects(parseSubjectList(matchingClass.subjects_teaching || matchingClass.subjects || ''));
             if (freshList.length > 0) {
               freshSubjectsForClass = freshList;
               setSubjectsByClass(prev => ({ ...prev, [studentClassId]: freshList }));
@@ -428,6 +444,41 @@ export default function EditGrades() {
       }
     } catch (e) {
       console.warn('Could not refresh subject assignments:', e.message);
+    }
+
+    // Fallback: if endpoint did not return assignments, derive from active-year class payload.
+    if (freshSubjectsForClass.length === 0) {
+      try {
+        const userStr = localStorage.getItem('user');
+        const activeUser = userStr ? JSON.parse(userStr) : null;
+        const fullName = `${activeUser?.firstName || ''} ${activeUser?.lastName || ''}`.trim().toLowerCase();
+        const schoolYearForRequests = selectedSchoolYearId || activeSchoolYearId;
+        const classesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, schoolYearForRequests));
+        if (classesResp.ok) {
+          const classesPayload = await classesResp.json();
+          const allClasses = Array.isArray(classesPayload)
+            ? classesPayload
+            : (Array.isArray(classesPayload?.data) ? classesPayload.data : []);
+          const match = allClasses.find((cls) => normalizeClassSlug(cls.grade || cls.grade_level, cls.section) === studentClassId);
+          const stRows = Array.isArray(match?.subject_teachers) ? match.subject_teachers : [];
+          const derived = dedupeSubjects(
+            stRows
+              .filter((row) => {
+                const byId = String(row.teacher_id || '').trim() === String(activeUser?.id || '').trim();
+                const byName = fullName && String(row.teacher_name || '').trim().toLowerCase() === fullName;
+                return byId || byName;
+              })
+              .map((row) => row.subject)
+              .filter(Boolean)
+          );
+          if (derived.length > 0) {
+            freshSubjectsForClass = derived;
+            setSubjectsByClass(prev => ({ ...prev, [studentClassId]: derived }));
+          }
+        }
+      } catch (fallbackError) {
+        console.warn('Could not derive assignments from classes fallback:', fallbackError.message);
+      }
     }
     // Subjects this teacher can EDIT — only their specifically assigned subjects, regardless of adviser status
     const editableSubjectsForClass = freshSubjectsForClass;

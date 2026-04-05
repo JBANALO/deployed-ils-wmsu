@@ -101,6 +101,8 @@ const canEnterGrade = async (user, student, subject, schoolYearId) => {
   if (user.role === 'teacher' || user.role === 'adviser' || user.role === 'subject_teacher') {
     const studentGrade = student.grade_level || student.gradeLevel;
     const studentSection = student.section;
+    const normalizeClassId = (value = '') => String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
+    const normalizeSubject = (value = '') => String(value || '').trim().toLowerCase();
     
     // Check if user is adviser for this class (classes table uses 'grade' not 'grade_level')
     const adviserClasses = await query(
@@ -110,21 +112,64 @@ const canEnterGrade = async (user, student, subject, schoolYearId) => {
     console.log('Adviser check:', { userId: user.id, studentGrade, studentSection, found: adviserClasses?.length });
     if (adviserClasses && adviserClasses.length > 0) return true;
     
-    // Check if user is subject teacher for this class and subject
-    const classId = `${studentGrade.toLowerCase().replace(/\s+/g, '-')}-${studentSection.toLowerCase()}`;
-    console.log('Subject teacher check - classId:', classId, 'subject:', subject);
-    
-    const subjectTeacherRecords = await query(
-      'SELECT * FROM subject_teachers WHERE teacher_id = ? AND class_id = ? AND school_year_id = ?',
-      [user.id, classId, schoolYearId]
+    // Check if user is subject teacher for this class and subject.
+    // class_id may be stored as DB class.id OR as grade-section slug.
+    const classSlug = `${String(studentGrade || '').toLowerCase().replace(/\s+/g, '-')}-${String(studentSection || '').toLowerCase().replace(/\s+/g, '-')}`;
+    const classRows = await query(
+      'SELECT id FROM classes WHERE grade = ? AND section = ? AND school_year_id = ?',
+      [studentGrade, studentSection, schoolYearId]
     );
+    const classIdentifiers = [normalizeClassId(classSlug), ...classRows.map((row) => normalizeClassId(row.id))]
+      .filter(Boolean);
+    const classPlaceholders = classIdentifiers.map(() => '?').join(', ');
+
+    let teacherName = '';
+    try {
+      const userRows = await query(
+        `SELECT firstName, lastName, first_name, last_name
+         FROM users
+         WHERE id = ?
+         LIMIT 1`,
+        [user.id]
+      );
+      if (userRows?.length) {
+        const row = userRows[0];
+        teacherName = `${row.firstName || row.first_name || ''} ${row.lastName || row.last_name || ''}`.trim();
+      }
+      if (!teacherName) {
+        const teacherRows = await query(
+          'SELECT first_name, last_name FROM teachers WHERE id = ? LIMIT 1',
+          [user.id]
+        );
+        if (teacherRows?.length) {
+          teacherName = `${teacherRows[0].first_name || ''} ${teacherRows[0].last_name || ''}`.trim();
+        }
+      }
+    } catch (nameLookupError) {
+      console.log('Subject teacher name lookup skipped:', nameLookupError.message);
+    }
+
+    console.log('Subject teacher check - class identifiers:', classIdentifiers, 'subject:', subject, 'teacherName:', teacherName);
+
+    const subjectTeacherRecords = classIdentifiers.length > 0
+      ? await query(
+          `SELECT subject
+           FROM subject_teachers
+           WHERE LOWER(REPLACE(TRIM(class_id), ' ', '-')) IN (${classPlaceholders})
+             AND school_year_id = ?
+             AND (
+               LOWER(TRIM(CAST(teacher_id AS CHAR))) = LOWER(TRIM(?))
+               OR (? <> '' AND LOWER(TRIM(teacher_name)) = LOWER(TRIM(?)))
+             )`,
+          [...classIdentifiers, schoolYearId, String(user.id), teacherName, teacherName]
+        )
+      : [];
     console.log('Subject teacher records:', subjectTeacherRecords);
     
     if (subjectTeacherRecords && subjectTeacherRecords.length > 0) {
       for (const record of subjectTeacherRecords) {
-        // Each record has a single subject in 'subject' column (not 'subjects')
         console.log('Comparing:', record.subject, 'vs', subject);
-        if (record.subject === subject) return true;
+        if (normalizeSubject(record.subject) === normalizeSubject(subject)) return true;
       }
     }
   }

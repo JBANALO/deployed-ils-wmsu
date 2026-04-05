@@ -91,6 +91,29 @@ const getPreviousSchoolYear = async (activeStartDate) => {
   return rows[0] || null;
 };
 
+const dedupeSubjectTeacherRows = (rows = []) => {
+  const seen = new Set();
+  const normalized = [];
+
+  rows.forEach((row) => {
+    if (!row) return;
+    const key = [
+      String(row.teacher_id || '').trim().toLowerCase(),
+      String(row.teacher_name || '').trim().toLowerCase(),
+      String(row.subject || '').trim().toLowerCase(),
+      String(row.day || '').trim().toLowerCase(),
+      String(row.start_time || '').trim().toLowerCase(),
+      String(row.end_time || '').trim().toLowerCase()
+    ].join('|');
+
+    if (seen.has(key)) return;
+    seen.add(key);
+    normalized.push(row);
+  });
+
+  return normalized;
+};
+
 /**
  * Get classes visible to a specific teacher based on their role
  * - If adviser: shows the class they advise
@@ -289,7 +312,7 @@ const getAllClasses = async (req, res) => {
 
           const stById = subjectTeachersMap[normalizeClassId(cls.id)] || [];
           const stBySlug = subjectTeachersMap[normalizeClassId(classSlug(cls.grade, cls.section))] || [];
-          const mergedSubjectTeachers = [...stById, ...stBySlug];
+          const mergedSubjectTeachers = dedupeSubjectTeacherRows([...stById, ...stBySlug]);
 
           return {
             ...cls,
@@ -387,10 +410,10 @@ const getAllClasses = async (req, res) => {
             (adviser ? `${adviser.first_name || ''} ${adviser.last_name || ''}`.trim() : '');
 
           const classSlug = normalizeClassId(slugKey(row.grade_level, row.section));
-          const subjectTeachers = [
+          const subjectTeachers = dedupeSubjectTeacherRows([
             ...(subjectTeachersByClassKey[classSlug] || []),
             ...(subjectTeachersByClassKey[normalizeClassId(classKey(row.grade_level, row.section))] || [])
-          ];
+          ]);
 
           return {
             id: `${gradeSlug}-${sectionSlug}`,
@@ -1023,6 +1046,41 @@ const assignSubjectTeacher = async (req, res) => {
     }
 
     const storedClassId = classMeta?.id ? String(classMeta.id) : String(classId);
+
+    // Replace existing assignment for the same class+subject in this school year.
+    // This prevents stale/old teachers from staying visible after reassignment.
+    const [existingSubjectRows] = await pool.query(
+      `SELECT id
+       FROM subject_teachers
+       WHERE LOWER(REPLACE(TRIM(class_id), ' ', '-')) IN (${classPlaceholders})
+         AND subject = ?
+         AND school_year_id = ?
+       ORDER BY id ASC`,
+      [...classIdentifierList, subject, targetSy.id]
+    );
+
+    if (existingSubjectRows.length > 0) {
+      const keepId = existingSubjectRows[0].id;
+
+      await pool.query(
+        `UPDATE subject_teachers
+         SET class_id = ?, teacher_id = ?, teacher_name = ?, day = ?, start_time = ?, end_time = ?, school_year_id = ?
+         WHERE id = ?`,
+        [storedClassId, String(teacher_id), teacher_name || '', assignmentDay, assignmentStart, assignmentEnd, targetSy.id, keepId]
+      );
+
+      if (existingSubjectRows.length > 1) {
+        const duplicateIds = existingSubjectRows.slice(1).map((item) => item.id);
+        const duplicatePlaceholders = duplicateIds.map(() => '?').join(', ');
+        await pool.query(`DELETE FROM subject_teachers WHERE id IN (${duplicatePlaceholders})`, duplicateIds);
+      }
+
+      return res.json({
+        success: true,
+        message: 'Subject teacher assignment updated successfully',
+        data: { classId: storedClassId, teacher_id, teacher_name, subject, day: assignmentDay, start_time: assignmentStart, end_time: assignmentEnd }
+      });
+    }
 
     // Insert new assignment
     await pool.query(
