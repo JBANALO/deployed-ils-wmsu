@@ -4,7 +4,7 @@ const studentController = require('../controllers/studentController');
 const { query } = require('../config/database');
 const jwt = require('jsonwebtoken');
 const { readUsers } = require('../utils/fileStorage');
-const { sendGradeReportEmail } = require('../utils/emailService');
+const { sendGradeReportEmail, sendAdviserGradeSubmissionEmail } = require('../utils/emailService');
 
 // Ensure grades and students are school-year scoped
 let gradesSyEnsured = false;
@@ -387,6 +387,68 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
               })
             ]
           );
+
+          try {
+            const adviserId = String(classRow.adviser_id);
+            const schoolYearRows = await query(
+              'SELECT label FROM school_years WHERE id = ? LIMIT 1',
+              [targetSyId]
+            );
+            const schoolYearLabel = schoolYearRows?.[0]?.label || null;
+
+            let adviserInfo = null;
+            const adviserUsers = await query(
+              `SELECT email, first_name, last_name, firstName, lastName
+               FROM users
+               WHERE id = ?
+               LIMIT 1`,
+              [adviserId]
+            );
+
+            if (adviserUsers?.length > 0) {
+              const row = adviserUsers[0];
+              adviserInfo = {
+                email: row.email || '',
+                name: `${row.first_name || row.firstName || ''} ${row.last_name || row.lastName || ''}`.trim()
+              };
+            }
+
+            if (!adviserInfo?.email) {
+              const adviserTeachers = await query(
+                `SELECT email, first_name, last_name
+                 FROM teachers
+                 WHERE id = ?
+                 LIMIT 1`,
+                [adviserId]
+              );
+              if (adviserTeachers?.length > 0) {
+                adviserInfo = {
+                  email: adviserTeachers[0].email || '',
+                  name: `${adviserTeachers[0].first_name || ''} ${adviserTeachers[0].last_name || ''}`.trim()
+                };
+              }
+            }
+
+            if (adviserInfo?.email) {
+              const sendResult = await sendAdviserGradeSubmissionEmail({
+                adviserEmail: adviserInfo.email,
+                adviserName: adviserInfo.name || classRow.adviser_name || 'Class Adviser',
+                submitterName: submitterName || 'Subject teacher',
+                studentName,
+                gradeLevel: student.grade_level || student.gradeLevel,
+                section: student.section,
+                subjects: subjectsWithGrades,
+                quarter: quarter || null,
+                schoolYearLabel
+              });
+
+              if (!sendResult?.success) {
+                console.error('Adviser grade submission email warning:', sendResult?.error || 'Unknown email error');
+              }
+            }
+          } catch (emailError) {
+            console.error('Adviser grade submission email warning:', emailError.message);
+          }
         }
       } catch (notificationError) {
         console.error('Grade notification warning:', notificationError.message);

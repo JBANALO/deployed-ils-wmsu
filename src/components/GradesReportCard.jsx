@@ -44,7 +44,6 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
       return '';
     }
   })();
-  const currentUserId = String(currentUser?.id || '').trim();
   const currentUser = (() => {
     try {
       const raw = localStorage.getItem('user');
@@ -53,6 +52,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
       return null;
     }
   })();
+  const currentUserId = String(currentUser?.id || '').trim();
   const normalizeRole = (value) => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   const currentUserRole = normalizeRole(currentUser?.role);
 

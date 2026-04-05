@@ -4,6 +4,8 @@ const gradeController = require('../controllers/gradeControllerMySQL');
 const { query } = require('../config/database');
 const jwt = require('jsonwebtoken');
 
+const normalizeRole = (value = '') => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+
 // Middleware to verify user
 const verifyUser = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -25,10 +27,11 @@ const verifyUser = (req, res, next) => {
 // Check if teacher can enter grades for this student and subject
 const canEnterGrade = async (user, student, subject) => {
   if (!user || !user.role) return false;
+  const normalizedRole = normalizeRole(user.role);
   
-  if (user.role === 'admin') return true;
+  if (normalizedRole === 'admin') return true;
   
-  if (user.role === 'teacher' || user.role === 'adviser' || user.role === 'subject_teacher') {
+  if (normalizedRole === 'teacher' || normalizedRole === 'adviser' || normalizedRole === 'subject_teacher') {
     const studentGrade = student.grade_level || student.gradeLevel;
     const studentSection = student.section;
     
@@ -62,12 +65,13 @@ const canEnterGrade = async (user, student, subject) => {
 router.get('/progress', verifyUser, async (req, res) => {
   try {
     const user = req.user;
+    const userRole = normalizeRole(user?.role);
     if (!user?.id) {
       return res.status(401).json({ success: false, message: 'User not found in token' });
     }
 
     // Allow only teaching roles
-    if (!['teacher', 'adviser', 'subject_teacher', 'admin'].includes(user.role)) {
+    if (!['teacher', 'adviser', 'subject_teacher', 'admin'].includes(userRole)) {
       return res.status(403).json({ success: false, message: 'Unauthorized role' });
     }
 
@@ -87,7 +91,7 @@ router.get('/progress', verifyUser, async (req, res) => {
 
     // If adviser, also include their advisory classes for all subjects (progress will be aggregated across subjects)
     let adviserClasses = [];
-    if (user.role === 'adviser' || user.role === 'admin') {
+    if (userRole === 'adviser' || userRole === 'admin') {
       adviserClasses = await query(
         'SELECT id as class_id, grade, section FROM classes WHERE adviser_id = ?',
         [user.id]

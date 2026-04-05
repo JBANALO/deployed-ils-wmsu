@@ -338,4 +338,76 @@ const sendGradeReportEmail = async ({ parentEmail, studentName, gradeLevel, sect
   );
 };
 
-module.exports = { sendAttendanceEmail, sendGradeReportEmail };
+const sendAdviserGradeSubmissionEmail = async ({
+  adviserEmail,
+  adviserName,
+  submitterName,
+  studentName,
+  gradeLevel,
+  section,
+  subjects,
+  quarter,
+  schoolYearLabel
+}) => {
+  if (!adviserEmail) return { success: false, error: 'No adviser email provided' };
+
+  const subjectList = (Array.isArray(subjects) ? subjects : [])
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+    .join(', ');
+
+  const cleanQuarter = String(quarter || '').trim().toUpperCase() || 'CURRENT QUARTER';
+  const nowText = new Date().toLocaleString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+
+  const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',sans-serif;background:#f3f4f6;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;margin:0 auto;background:#fff;">
+  <tr><td style="background:#8B0000;padding:24px;text-align:center;">
+    <h1 style="color:#fff;margin:0;font-size:21px;">WMSU ILS - Grade Submission Notice</h1>
+    <p style="color:#fecaca;margin:6px 0 0;font-size:13px;">Elementary Department</p>
+  </td></tr>
+  <tr><td style="padding:24px;">
+    <p style="margin:0 0 10px;font-size:15px;color:#111827;">Dear ${adviserName || 'Class Adviser'},</p>
+    <p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.6;">
+      <strong>${submitterName || 'Subject teacher'}</strong> submitted grades for
+      <strong>${studentName || 'a student'}</strong>.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f9fafb;border:1px solid #e5e7eb;">
+      <tr><td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280;width:38%;">Student</td><td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#111827;font-weight:600;">${studentName || 'N/A'}</td></tr>
+      <tr><td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280;">Grade & Section</td><td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#111827;">${gradeLevel || 'N/A'} - ${section || 'N/A'}</td></tr>
+      <tr><td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280;">Quarter</td><td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#111827;">${cleanQuarter}</td></tr>
+      <tr><td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280;">Subjects Submitted</td><td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#111827;">${subjectList || 'N/A'}</td></tr>
+      <tr><td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280;">School Year</td><td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#111827;">${schoolYearLabel || 'Active school year'}</td></tr>
+      <tr><td style="padding:10px 12px;font-size:13px;color:#6b7280;">Submitted At</td><td style="padding:10px 12px;font-size:13px;color:#111827;">${nowText}</td></tr>
+    </table>
+    <p style="margin:14px 0 0;font-size:12px;color:#6b7280;">This is an automated notification from WMSU ILS.</p>
+  </td></tr>
+</table></body></html>`;
+
+  const textContent = [
+    'WMSU ILS - Grade Submission Notice',
+    '',
+    `${submitterName || 'Subject teacher'} submitted grades.`,
+    `Student: ${studentName || 'N/A'}`,
+    `Grade & Section: ${gradeLevel || 'N/A'} - ${section || 'N/A'}`,
+    `Quarter: ${cleanQuarter}`,
+    `Subjects: ${subjectList || 'N/A'}`,
+    `School Year: ${schoolYearLabel || 'Active school year'}`,
+    `Submitted At: ${nowText}`
+  ].join('\n');
+
+  return sendViaBrevo(
+    adviserEmail,
+    `Grade Submission Alert: ${studentName || 'Student'} (${cleanQuarter})`,
+    htmlContent,
+    textContent
+  );
+};
+
+module.exports = { sendAttendanceEmail, sendGradeReportEmail, sendAdviserGradeSubmissionEmail };
