@@ -3,7 +3,7 @@ const mysql = require('mysql2/promise');
 async function run() {
   const conn = await mysql.createConnection({
     host: 'metro.proxy.rlwy.net', user: 'root',
-    password: 'REPLACE_ME_DB_PASSWORD', database: 'railway', port: 25385
+    password: 'SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu', database: 'railway', port: 25385
   });
   
   // Check exact id lookup for admin

@@ -9,7 +9,7 @@ async function continueSetup() {
   const connection = await mysql.createConnection({
     host: 'metro.proxy.rlwy.net',
     user: 'root',
-    password: 'REPLACE_ME_DB_PASSWORD',
+    password: 'SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu',
     database: 'railway',
     port: 25385,
     multipleStatements: true

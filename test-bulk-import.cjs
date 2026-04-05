@@ -8,7 +8,7 @@ async function testBulkImportFlow() {
     host: 'metro.proxy.rlwy.net',
     port: 25385,
     user: 'root',
-    password: 'REPLACE_ME_DB_PASSWORD',
+    password: 'SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu',
     database: 'railway'
   };
 

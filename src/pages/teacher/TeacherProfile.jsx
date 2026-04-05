@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { UserCircleIcon, PencilIcon, PlusIcon, TrashIcon } from "@heroicons/react/24/solid";
-import { toast } from 'react-hot-toast';
 import { authService } from "../../api/userService";
 import api from "../../api/axiosConfig";
 import { appendSchoolYearId, getTeacherViewingSchoolYearId } from "../../utils/teacherSchoolYear";
@@ -199,7 +198,7 @@ export default function TeacherProfile() {
       // Get user ID from localStorage
       const userStr = localStorage.getItem("user");
       if (!userStr) {
-        toast.error('User not found. Please log in again.');
+        alert("User not found. Please log in again.");
         return;
       }
 
@@ -213,8 +212,8 @@ export default function TeacherProfile() {
         // Add other fields if needed
       });
 
-      if (response.data?.status === 'success' || response.status === 200) {
-        // Update localStorage with new data and update component state
+      if (response.data.status === 'success' || response.status === 200) {
+        // Update localStorage with new data
         const updatedUser = {
           ...user,
           firstName: profileData.firstName,
@@ -222,15 +221,18 @@ export default function TeacherProfile() {
           email: profileData.email,
         };
         localStorage.setItem('user', JSON.stringify(updatedUser));
-        setProfileData(prev => ({ ...prev, firstName: profileData.firstName, lastName: profileData.lastName, email: profileData.email }));
-        toast.success('Profile updated successfully!');
+        
+        alert("Profile updated successfully!");
         setIsEditing(false);
+        
+        // Refresh data
+        window.location.reload();
       } else {
-        toast.error('Failed to update profile. Please try again.');
+        alert("Failed to update profile. Please try again.");
       }
     } catch (error) {
       console.error("Error saving profile:", error);
-      toast.error("Error updating profile: " + (error.response?.data?.message || error.message));
+      alert("Error updating profile: " + (error.response?.data?.message || error.message));
     }
   };
 
@@ -515,21 +517,6 @@ export default function TeacherProfile() {
                 className="bg-red-800 text-white px-8 py-3 rounded-lg hover:bg-red-900 transition font-semibold shadow-md"
               >
                 Save Changes
-              </button>
-              <button
-                onClick={async () => {
-                  if (!profileData.email) return toast.error('No email available for this account');
-                  try {
-                    await api.post('/auth/forgot-password', { email: profileData.email });
-                    toast.success('If an account exists, a reset link has been sent to the email');
-                  } catch (err) {
-                    console.error('Error requesting password reset:', err);
-                    toast.error('Failed to send password reset link');
-                  }
-                }}
-                className="bg-white text-red-800 px-6 py-3 rounded-lg border border-red-800 hover:bg-gray-50 transition font-semibold shadow-md"
-              >
-                Send Change Password Link
               </button>
               <button
                 onClick={handleCancel}

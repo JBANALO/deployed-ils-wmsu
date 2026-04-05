@@ -3,7 +3,7 @@
 const mysql = require('mysql2/promise');
 
 async function getAPIResponse() {
-  const dbUrl = 'REPLACE_ME_DATABASE_URL';
+  const dbUrl = 'mysql://root:SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu@metro.proxy.rlwy.net:25385/railway';
   const urlObj = new URL(dbUrl);
 
   const config = {

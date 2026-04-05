@@ -429,54 +429,11 @@ exports.updateUser = async (req, res) => {
       values
     );
 
-    // If no rows were updated in users table, try updating teachers table (for teacher/adviser accounts)
     if (result.affectedRows === 0) {
-      try {
-        // Build teachers update query
-        const teacherUpdates = [];
-        const teacherValues = [];
-        if (firstName !== undefined) { teacherUpdates.push('first_name = ?'); teacherValues.push(firstName); }
-        if (lastName !== undefined) { teacherUpdates.push('last_name = ?'); teacherValues.push(lastName); }
-        if (username !== undefined) { teacherUpdates.push('username = ?'); teacherValues.push(username); }
-        if (email !== undefined) { teacherUpdates.push('email = ?'); teacherValues.push(email); }
-        if (phone !== undefined) { teacherUpdates.push('phone = ?'); teacherValues.push(phone); }
-        if (profile_pic !== undefined) { teacherUpdates.push('profile_pic = ?'); teacherValues.push(profile_pic); }
-
-        if (teacherUpdates.length > 0) {
-          teacherValues.push(id);
-          const teacherRes = await query(
-            `UPDATE teachers SET ${teacherUpdates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-            teacherValues
-          );
-
-          if (teacherRes.affectedRows === 0) {
-            return res.status(404).json({ status: 'fail', message: 'User not found' });
-          }
-
-          // Fetch updated teacher
-          const updatedTeachers = await query(
-            `SELECT id, first_name, middle_name, last_name, username, email, phone, profile_pic, role FROM teachers WHERE id = ?`,
-            [id]
-          );
-          const t = updatedTeachers[0];
-          const formattedTeacher = {
-            id: t.id,
-            firstName: t.first_name,
-            middleName: t.middle_name || '',
-            lastName: t.last_name,
-            username: t.username,
-            email: t.email,
-            phone: t.phone,
-            profile_pic: t.profile_pic,
-            role: t.role || 'teacher'
-          };
-
-          return res.status(200).json({ status: 'success', message: 'User updated successfully', data: formattedTeacher });
-        }
-      } catch (teacherErr) {
-        console.error('Error updating teacher fallback:', teacherErr);
-        return res.status(500).json({ status: 'error', message: 'Error updating user', error: teacherErr.message });
-      }
+      return res.status(404).json({ 
+        status: 'fail',
+        message: 'User not found' 
+      });
     }
 
     // Fetch updated user with dynamic column names

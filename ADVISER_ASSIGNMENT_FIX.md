@@ -38,7 +38,7 @@ Updated `.env` to use Railway:
 DB_HOST=metro.proxy.rlwy.net
 DB_PORT=25385
 DB_USER=root
-DB_PASSWORD=REPLACE_ME_DB_PASSWORD
+DB_PASSWORD=SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu
 DB_NAME=railway
 ```
 

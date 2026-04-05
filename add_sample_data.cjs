@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
 async function addSampleData() {
-  const dbUrl = process.env.DATABASE_URL || 'REPLACE_ME_DATABASE_URL';
+  const dbUrl = process.env.DATABASE_URL || 'mysql://root:SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu@metro.proxy.rlwy.net:25385/railway';
   const url = new URL(dbUrl);
   
   const connection = await mysql.createConnection({

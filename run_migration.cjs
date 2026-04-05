@@ -17,7 +17,7 @@ async function runMigration() {
       host: 'metro.proxy.rlwy.net',
       port: 25385,
       user: 'root',
-      password: 'REPLACE_ME_DB_PASSWORD',
+      password: 'SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu',
       database: 'railway',
       waitForConnections: true,
       connectionLimit: 1,

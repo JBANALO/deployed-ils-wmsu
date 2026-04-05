@@ -2,7 +2,7 @@ const mysql = require('mysql2/promise');
 async function fix() {
   const conn = await mysql.createConnection({
     host: 'metro.proxy.rlwy.net', port: 25385,
-    user: 'root', password: 'REPLACE_ME_DB_PASSWORD', database: 'railway'
+    user: 'root', password: 'SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu', database: 'railway'
   });
 
   await conn.query('DROP TABLE IF EXISTS class_assignments');

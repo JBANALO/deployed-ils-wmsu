@@ -4,7 +4,7 @@ const mysql = require('mysql2/promise');
 const QRCode = require('qrcode');
 
 async function generateQRCodesForDatabase() {
-  const dbUrl = 'REPLACE_ME_DATABASE_URL';
+  const dbUrl = 'mysql://root:SnBjHirVrIYZTNIPXZhmVMzOyqmsMznu@metro.proxy.rlwy.net:25385/railway';
   const urlObj = new URL(dbUrl);
 
   const config = {

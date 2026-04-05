@@ -52,8 +52,8 @@ router.post('/signup', async (req, res) => {
       });
     }
 
-    // Check if user already exists (check sample + in-memory fallback)
-    const existingUser = [...sampleUsers, ...inMemoryUsers].find(user =>
+    // Check if user already exists
+    const existingUser = users.find(user => 
       user.email === email || user.username === username
     );
 
@@ -68,17 +68,15 @@ router.post('/signup', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 12);
 
     // Create new user
-    const roleValue = role || 'teacher';
     const newUser = {
       id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       firstName,
       lastName,
-      fullName: `${firstName} ${lastName}`,
       username,
       email,
       password: hashedPassword,
-      role: roleValue,
-      approval_status: roleValue.toLowerCase() === 'admin' ? 'approved' : 'pending', // Auto-approve admins
+      role: role || 'teacher', // Default to teacher if not specified
+      approval_status: role.toLowerCase() === 'admin' ? 'approved' : 'pending', // Auto-approve admins
       createdAt: new Date().toISOString()
     };
 
@@ -113,11 +111,11 @@ router.post('/signup', async (req, res) => {
       
       const [result] = await connection.query(insertQuery, insertParams);
       console.log('Insert result:', result);
-      console.log('Affected rows:', result.affectedRows);
-
+      console.log('Affected rows:', result[0]?.affectedRows);
+      
       connection.release();
-
-      if (result.affectedRows > 0) {
+      
+      if (result[0]?.affectedRows > 0) {
         console.log('✅ User saved to database:', { id: newUser.id, email: newUser.email });
       } else {
         console.log('❌ Database save failed - no rows affected');
@@ -159,9 +157,10 @@ router.post('/signup', async (req, res) => {
   }
 });
 
-// Export in-memory users accessors for other modules
+// Export users array for auth.js to access
+let users = []; // Make users accessible
 const addUser = (user) => {
-  inMemoryUsers.push(user);
+  users.push(user);
   console.log('User added to in-memory storage:', {
     id: user.id,
     email: user.email,
@@ -171,7 +170,7 @@ const addUser = (user) => {
 };
 
 const getUsers = () => {
-  return inMemoryUsers;
+  return users;
 };
 
 // GET /users/me - Get current user profile
