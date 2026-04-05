@@ -694,6 +694,45 @@ app.post('/api/auth/login', async (req, res) => {
 
     const loginField = email || username;
 
+    const lookupTeacherInDb = async (loginValue) => {
+      try {
+        const rows = await query(
+          `SELECT id,
+                  first_name AS firstName,
+                  last_name AS lastName,
+                  username,
+                  email,
+                  password,
+                  role,
+                  grade_level AS gradeLevel,
+                  section
+           FROM teachers
+           WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [loginValue, loginValue]
+        );
+
+        if (!rows || rows.length === 0) return null;
+
+        const teacher = rows[0];
+        return {
+          id: teacher.id,
+          firstName: teacher.firstName || '',
+          lastName: teacher.lastName || '',
+          email: teacher.email || '',
+          username: teacher.username || '',
+          role: teacher.role || 'teacher',
+          gradeLevel: teacher.gradeLevel || '',
+          section: teacher.section || '',
+          password: teacher.password || ''
+        };
+      } catch (lookupErr) {
+        console.log('Teacher DB lookup failed:', lookupErr.message);
+        return null;
+      }
+    };
+
     
 
     if (!loginField || !password) {
@@ -946,6 +985,22 @@ app.post('/api/auth/login', async (req, res) => {
 
     if (!user) {
 
+      // If not found in JSON/students, check MySQL teachers table directly.
+      const teacherFromDb = await lookupTeacherInDb(loginField);
+      if (teacherFromDb) {
+        user = teacherFromDb;
+        console.log('✅ Found teacher in MySQL teachers table:', {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          role: user.role
+        });
+      }
+
+    }
+
+    if (!user) {
+
       console.log('User not found:', loginField);
 
       return res.status(401).json({ status: 'fail', message: 'Incorrect email or password' });
@@ -991,6 +1046,26 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     
+
+    if (!passwordMatch) {
+
+      // Fallback: teacher credentials may be newer in MySQL than users.json.
+      const teacherFromDb = await lookupTeacherInDb(loginField);
+      if (teacherFromDb && teacherFromDb.password) {
+        if (teacherFromDb.password.startsWith('$2a$') || teacherFromDb.password.startsWith('$2b$')) {
+          const bcrypt = require('bcryptjs');
+          passwordMatch = await bcrypt.compare(password, teacherFromDb.password);
+        } else {
+          passwordMatch = teacherFromDb.password === password;
+        }
+
+        if (passwordMatch) {
+          user = teacherFromDb;
+          console.log('✅ Password matched via teacher DB fallback');
+        }
+      }
+
+    }
 
     if (!passwordMatch) {
 
