@@ -24,16 +24,38 @@ export default function TeacherAccounts() {
 
   useEffect(() => {
     fetchTeachers();
+
+    const interval = setInterval(() => {
+      fetchTeachers(true);
+    }, 15000);
+
+    return () => clearInterval(interval);
   }, []);
 
-  const fetchTeachers = async () => {
+  const normalizeTeacherRecord = (teacher) => ({
+    ...teacher,
+    firstName: teacher.firstName || teacher.first_name || "",
+    lastName: teacher.lastName || teacher.last_name || "",
+    status: teacher.status || teacher.verification_status || teacher.approval_status || 'approved',
+    role: String(teacher.role || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  });
+
+  const fetchTeachers = async (silent = false) => {
     try {
       setLoading(true);
-      const response = await api.get("/api/admin/teachers");
-      setTeachers(response.data.teachers || []);
+      const response = await api.get('/teachers');
+      const raw = response.data?.data?.teachers || response.data?.teachers || response.data?.data || [];
+      const list = Array.isArray(raw)
+        ? raw.map(normalizeTeacherRecord).filter((t) => ['teacher', 'adviser', 'subject_teacher'].includes(t.role))
+        : [];
+      setTeachers(list);
+      if (!silent) {
+        toast.success(`Loaded ${list.length} teachers`);
+      }
     } catch (error) {
       console.error("Error fetching teachers:", error);
       toast.error("Failed to fetch teacher accounts");
+      setTeachers([]);
     } finally {
       setLoading(false);
     }
@@ -48,7 +70,18 @@ export default function TeacherAccounts() {
   const handleCreateTeacher = async (e) => {
     e.preventDefault();
     try {
-      const response = await api.post("/api/admin/create-teacher", formData);
+      const username = String(formData.email || '').includes('@')
+        ? String(formData.email).split('@')[0]
+        : (formData.employeeId || `${formData.firstName}${formData.lastName}`).toLowerCase().replace(/\s+/g, '');
+
+      await api.post('/teachers', {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: String(formData.email || '').trim().toLowerCase(),
+        username,
+        password: formData.password,
+        role: 'teacher'
+      });
       toast.success("Teacher account created successfully");
       setShowCreateModal(false);
       setFormData({
@@ -60,7 +93,7 @@ export default function TeacherAccounts() {
         contactNumber: "",
         employeeId: ""
       });
-      fetchTeachers();
+      fetchTeachers(true);
     } catch (error) {
       console.error("Error creating teacher:", error);
       toast.error(error.response?.data?.message || "Failed to create teacher account");
@@ -70,7 +103,12 @@ export default function TeacherAccounts() {
   const handleUpdateTeacher = async (e) => {
     e.preventDefault();
     try {
-      await api.put(`/api/admin/teachers/${selectedTeacher.id}`, formData);
+      await api.put(`/teachers/${selectedTeacher.id}`, {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: String(formData.email || '').trim().toLowerCase(),
+        ...(formData.password ? { password: formData.password } : {})
+      });
       toast.success("Teacher account updated successfully");
       setShowEditModal(false);
       setSelectedTeacher(null);
@@ -83,7 +121,7 @@ export default function TeacherAccounts() {
         contactNumber: "",
         employeeId: ""
       });
-      fetchTeachers();
+      fetchTeachers(true);
     } catch (error) {
       console.error("Error updating teacher:", error);
       toast.error(error.response?.data?.message || "Failed to update teacher account");
@@ -92,11 +130,11 @@ export default function TeacherAccounts() {
 
   const handleDeleteTeacher = async () => {
     try {
-      await api.delete(`/api/admin/teachers/${selectedTeacher.id}`);
+      await api.delete(`/teachers/${selectedTeacher.id}`);
       toast.success("Teacher account deleted successfully");
       setShowDeleteModal(false);
       setSelectedTeacher(null);
-      fetchTeachers();
+      fetchTeachers(true);
     } catch (error) {
       console.error("Error deleting teacher:", error);
       toast.error(error.response?.data?.message || "Failed to delete teacher account");
@@ -105,9 +143,9 @@ export default function TeacherAccounts() {
 
   const handleApproveTeacher = async (teacherId) => {
     try {
-      await api.post(`/api/admin/teachers/${teacherId}/approve`, { approved: true });
+      await api.put(`/teachers/${teacherId}/approve`);
       toast.success("Teacher account approved successfully");
-      fetchTeachers();
+      fetchTeachers(true);
     } catch (error) {
       console.error("Error approving teacher:", error);
       toast.error("Failed to approve teacher account");
@@ -116,9 +154,9 @@ export default function TeacherAccounts() {
 
   const handleRejectTeacher = async (teacherId) => {
     try {
-      await api.post(`/api/admin/teachers/${teacherId}/approve`, { approved: false });
+      await api.put(`/teachers/${teacherId}/decline`);
       toast.success("Teacher account rejected successfully");
-      fetchTeachers();
+      fetchTeachers(true);
     } catch (error) {
       console.error("Error rejecting teacher:", error);
       toast.error("Failed to reject teacher account");

@@ -1023,13 +1023,29 @@ exports.getPromotionPreview = async (req, res) => {
 // Get promotion history logs
 exports.getPromotionHistory = async (req, res) => {
   try {
-    const rows = await query(
-      `SELECT id, school_year_label, student_id, lrn, student_name, from_grade, from_section, to_grade, to_section,
-              average, status, reason, created_at
-       FROM promotion_history
-       ORDER BY created_at DESC
-       LIMIT 500`
-    );
+    const schoolYearId = req.query?.schoolYearId;
+    let rows;
+
+    if (schoolYearId) {
+      rows = await query(
+        `SELECT id, school_year_id, school_year_label, student_id, lrn, student_name, from_grade, from_section, to_grade, to_section,
+                average, status, reason, created_at
+         FROM promotion_history
+         WHERE school_year_id = ?
+         ORDER BY created_at DESC
+         LIMIT 500`,
+        [schoolYearId]
+      );
+    } else {
+      rows = await query(
+        `SELECT id, school_year_id, school_year_label, student_id, lrn, student_name, from_grade, from_section, to_grade, to_section,
+                average, status, reason, created_at
+         FROM promotion_history
+         ORDER BY created_at DESC
+         LIMIT 500`
+      );
+    }
+
     res.json({ success: true, data: rows });
   } catch (error) {
     // If table doesn't exist yet on a fresh DB, return empty list instead of failing page load

@@ -21,6 +21,62 @@ const resolveSchoolYearId = async (req) => {
 };
 
 const normalizeClassId = (value = '') => String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
+const normalizeName = (value = '') => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+const getTeacherScopeForSchoolYear = async (schoolYearId) => {
+  const idSet = new Set();
+  const nameSet = new Set();
+
+  try {
+    const [teacherRows] = await pool.query(
+      `SELECT CAST(id AS CHAR) AS teacher_id, first_name, last_name
+       FROM teachers
+       WHERE role IN ('teacher', 'adviser', 'subject_teacher', 'Teacher', 'Adviser', 'Subject Teacher')
+         AND school_year_id = ?`,
+      [schoolYearId]
+    );
+
+    teacherRows.forEach((row) => {
+      const idKey = String(row.teacher_id || '').trim().toLowerCase();
+      if (idKey) idSet.add(idKey);
+      const fullName = normalizeName(`${row.first_name || ''} ${row.last_name || ''}`);
+      if (fullName) nameSet.add(fullName);
+    });
+  } catch (error) {
+    console.log('Teacher scope lookup (teachers) skipped:', error.message);
+  }
+
+  try {
+    const [userRows] = await pool.query(
+      `SELECT CAST(id AS CHAR) AS user_id, firstName, lastName, first_name, last_name
+       FROM users
+       WHERE role IN ('teacher', 'adviser', 'subject_teacher')
+         AND school_year_id = ?`,
+      [schoolYearId]
+    );
+
+    userRows.forEach((row) => {
+      const idKey = String(row.user_id || '').trim().toLowerCase();
+      if (idKey) idSet.add(idKey);
+      const fullName = normalizeName(`${row.firstName || row.first_name || ''} ${row.lastName || row.last_name || ''}`);
+      if (fullName) nameSet.add(fullName);
+    });
+  } catch (error) {
+    console.log('Teacher scope lookup (users) skipped:', error.message);
+  }
+
+  const enforce = idSet.size > 0 || nameSet.size > 0;
+  return { idSet, nameSet, enforce };
+};
+
+const isTeacherInScope = (scope, teacherId, teacherName) => {
+  if (!scope || !scope.enforce) return true;
+  const idKey = String(teacherId || '').trim().toLowerCase();
+  const nameKey = normalizeName(teacherName);
+  if (idKey && scope.idSet.has(idKey)) return true;
+  if (nameKey && scope.nameSet.has(nameKey)) return true;
+  return false;
+};
 
 // Fallback class data when MySQL is unavailable
 const FALLBACK_CLASSES = [
@@ -90,10 +146,12 @@ router.get('/', async (req, res) => {
   try {
     const targetSyId = await resolveSchoolYearId(req);
     if (!targetSyId) return res.status(400).json({ error: 'No active school year found' });
+    const teacherScope = await getTeacherScopeForSchoolYear(targetSyId);
 
     const [classes] = await pool.query(`
       SELECT DISTINCT c.*, 
-             GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects
+             GROUP_CONCAT(DISTINCT st.subject ORDER BY st.subject) as subjects,
+             GROUP_CONCAT(DISTINCT CONCAT_WS(':', st.teacher_id, st.teacher_name, st.subject) SEPARATOR '|') as subject_teachers_list
       FROM classes c
       LEFT JOIN subject_teachers st
         ON c.id = st.class_id
@@ -106,13 +164,8 @@ router.get('/', async (req, res) => {
     // Log class IDs for debugging
     console.log('Available class IDs:', classes.map(c => ({ id: c.id, grade: c.grade, section: c.section })));
     
-    // Parse subjects into arrays
-    const classesWithSubjects = classes.map(cls => ({
-      ...cls,
-      subjects: cls.subjects ? cls.subjects.split(',') : [],
-      adviser_id: cls.adviser_id,
-      adviser_name: cls.adviser_name
-    }));
+    // Parse subjects and hide adviser/subject teacher data not valid for selected school year.
+    const classesWithSubjects = mapClassRows(classes, teacherScope);
     
     res.json(classesWithSubjects);
   } catch (err) {
@@ -164,6 +217,7 @@ router.get('/:classId', async (req, res) => {
     const { classId } = req.params;
     const targetSyId = await resolveSchoolYearId(req);
     if (!targetSyId) return res.status(400).json({ error: 'No active school year found' });
+    const teacherScope = await getTeacherScopeForSchoolYear(targetSyId);
     
     const [[classData]] = await pool.query(`
       SELECT c.*, 
@@ -181,11 +235,13 @@ router.get('/:classId', async (req, res) => {
       return res.status(404).json({ error: 'Class not found' });
     }
     
+    const adviserAllowed = isTeacherInScope(teacherScope, classData.adviser_id, classData.adviser_name);
+
     const classWithSubjects = {
       ...classData,
       subjects: classData.subjects ? classData.subjects.split(',') : [],
-      adviser_id: classData.adviser_id,
-      adviser_name: classData.adviser_name
+      adviser_id: adviserAllowed ? classData.adviser_id : null,
+      adviser_name: adviserAllowed ? classData.adviser_name : null
     };
     
     res.json(classWithSubjects);
@@ -202,7 +258,7 @@ router.get('/:classId', async (req, res) => {
 });
 
 // Helper to map raw class rows to structured objects
-function mapClassRows(classes) {
+function mapClassRows(classes, teacherScope) {
   return classes.map(cls => {
     const subjects = cls.subjects ? cls.subjects.split(',') : [];
     const subjectTeachersList = cls.subject_teachers_list
@@ -211,7 +267,18 @@ function mapClassRows(classes) {
           return { teacher_id, teacher_name, subject };
         })
       : [];
-    return { ...cls, subjects, subject_teachers: subjectTeachersList };
+    const filteredSubjectTeachers = subjectTeachersList.filter((entry) =>
+      isTeacherInScope(teacherScope, entry.teacher_id, entry.teacher_name)
+    );
+    const adviserAllowed = isTeacherInScope(teacherScope, cls.adviser_id, cls.adviser_name);
+
+    return {
+      ...cls,
+      adviser_id: adviserAllowed ? cls.adviser_id : null,
+      adviser_name: adviserAllowed ? cls.adviser_name : null,
+      subjects,
+      subject_teachers: filteredSubjectTeachers
+    };
   });
 }
 
@@ -221,6 +288,7 @@ router.get('/adviser/:userId', async (req, res) => {
     const { userId } = req.params;
     const targetSyId = await resolveSchoolYearId(req);
     if (!targetSyId) return res.status(400).json({ error: 'No active school year found' });
+    const teacherScope = await getTeacherScopeForSchoolYear(targetSyId);
     
     const CLASS_QUERY = `
       SELECT c.*, 
@@ -287,7 +355,7 @@ router.get('/adviser/:userId', async (req, res) => {
       }
     }
 
-    res.json({ data: mapClassRows(classes) });
+    res.json({ data: mapClassRows(classes, teacherScope) });
   } catch (err) {
     console.error('Error fetching adviser classes:', err);
     res.status(500).json({ error: 'Failed to fetch adviser classes' });
@@ -300,6 +368,7 @@ router.get('/subject-teacher/:userId', async (req, res) => {
     const { userId } = req.params;
     const targetSyId = await resolveSchoolYearId(req);
     if (!targetSyId) return res.status(400).json({ error: 'No active school year found' });
+    const teacherScope = await getTeacherScopeForSchoolYear(targetSyId);
 
     const [teacherRows] = await pool.query(
       `SELECT firstName, lastName, first_name, last_name
@@ -367,7 +436,7 @@ router.get('/subject-teacher/:userId', async (req, res) => {
       }
     }
     
-    res.json({ data: mapClassRows(classes) });
+    res.json({ data: mapClassRows(classes, teacherScope) });
   } catch (err) {
     console.error('Error fetching subject teacher classes:', err);
     res.status(500).json({ error: 'Failed to fetch subject teacher classes' });

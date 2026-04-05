@@ -44,6 +44,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
       return '';
     }
   })();
+  const currentUserId = String(currentUser?.id || '').trim();
   const currentUser = (() => {
     try {
       const raw = localStorage.getItem('user');
@@ -52,7 +53,8 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
       return null;
     }
   })();
-  const currentUserRole = String(currentUser?.role || '').toLowerCase();
+  const normalizeRole = (value) => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const currentUserRole = normalizeRole(currentUser?.role);
 
   useEffect(() => {
     const fetchSubjectTeacherSubjects = async () => {
@@ -192,7 +194,10 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
           : (Array.isArray(classesResp.data?.data) ? classesResp.data.data : []);
         const adviserMap = {};
         classes.forEach((cls) => {
-          adviserMap[toClassKey(cls.grade, cls.section)] = cls.adviser_name || '';
+          adviserMap[toClassKey(cls.grade, cls.section)] = {
+            adviser_name: cls.adviser_name || '',
+            adviser_id: cls.adviser_id ? String(cls.adviser_id) : ''
+          };
         });
         setClassAdviserMap(adviserMap);
       } catch (error) {
@@ -281,8 +286,13 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
             const studentGradeLevel = studentGrade(student);
             const studentGradeKey = toGradeKey(studentGradeLevel);
             const studentClassKey = toClassKey(studentGradeLevel, studentSection(student));
-            const classAdviserName = classAdviserMap[studentClassKey] || student.adviser_name || currentUserName || '_______________';
-            const isAdviserForClass = normalizeSubjectName(classAdviserName) === normalizeSubjectName(currentUserName);
+            const adviserInfo = classAdviserMap[studentClassKey] || {};
+            const classAdviserName = adviserInfo.adviser_name || student.adviser_name || '_______________';
+            const classAdviserId = String(adviserInfo.adviser_id || student.adviser_id || '').trim();
+            const isCurrentUserClassAdviser = Boolean(
+              (currentUserId && classAdviserId && currentUserId === classAdviserId) ||
+              (classAdviserName && currentUserName && normalizeSubjectName(classAdviserName) === normalizeSubjectName(currentUserName))
+            );
             // Prefer subjects that actually have grade data; fall back to class/grade subject list
             const gradeKeys = Object.keys(gradeObj).filter(k => {
               const g = gradeObj[k];
@@ -293,8 +303,9 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
 
             // Subject-teacher view: only show assigned subjects (and existing graded entries for those subjects).
             // Adviser/admin/student view: show full grade subjects + graded entries.
+            const isPrivilegedFullView = ['admin', 'adviser', 'student'].includes(currentUserRole);
             const isSubjectTeacherRestrictedView =
-              (currentUserRole === 'teacher' || currentUserRole === 'subject_teacher') && !isAdviserForClass;
+              (currentUserRole === 'teacher' || currentUserRole === 'subject_teacher') && !isPrivilegedFullView && !isCurrentUserClassAdviser;
 
             const studentSubjects = isSubjectTeacherRestrictedView
               ? uniqueSubjects([

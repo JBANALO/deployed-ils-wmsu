@@ -4,6 +4,7 @@ const pool = require('../config/db');
 const getUserId = (user = {}) => user.userId || user.id || null;
 const normalizeClassId = (value = '') => String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
 const normalizeSubject = (value = '') => String(value || '').trim().toLowerCase();
+const normalizeRole = (value = '') => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 
 const getSchoolYearById = async (schoolYearId) => {
   if (!schoolYearId) return null;
@@ -257,7 +258,7 @@ const getStudentGrades = async (req, res) => {
     );
 
     let visibleRows = rows;
-    const role = String(user.role || '').toLowerCase();
+    const role = normalizeRole(user.role || '');
     if ((role === 'teacher' || role === 'subject_teacher') && userId) {
       const assignedSubjects = await getAssignedSubjectsForTeacher(userId, student, targetSchoolYearId);
       if (assignedSubjects.length > 0) {

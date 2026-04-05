@@ -9,6 +9,9 @@ const { sendGradeReportEmail } = require('../utils/emailService');
 // Ensure grades and students are school-year scoped
 let gradesSyEnsured = false;
 let studentSyEnsured = false;
+let notificationsEnsured = false;
+
+const normalizeRole = (value = '') => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 
 const ensureGradesSchoolYearColumn = async () => {
   if (gradesSyEnsured) return;
@@ -30,6 +33,25 @@ const ensureStudentSchoolYearColumn = async () => {
     await query('CREATE INDEX idx_students_school_year ON students (school_year_id)');
   }
   studentSyEnsured = true;
+};
+
+const ensureNotificationsTable = async () => {
+  if (notificationsEnsured) return;
+  await query(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id VARCHAR(100) NOT NULL,
+      type VARCHAR(50) NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      message TEXT NOT NULL,
+      meta_json JSON NULL,
+      is_read TINYINT(1) DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_notifications_user_created (user_id, created_at),
+      INDEX idx_notifications_user_unread (user_id, is_read)
+    )
+  `);
+  notificationsEnsured = true;
 };
 
 const getActiveSchoolYear = async () => {
@@ -93,12 +115,13 @@ const verifyUserForGrades = async (req, res, next) => {
 // Check if teacher can enter grades
 const canEnterGrade = async (user, student, subject, schoolYearId) => {
   console.log('canEnterGrade check:', { userId: user?.id, userRole: user?.role, subject });
+  const normalizedRole = normalizeRole(user?.role);
   
   if (!user || !user.role) return false;
-  if (user.role === 'admin') return true;
+  if (normalizedRole === 'admin') return true;
   
   // Allow adviser, teacher, or subject_teacher roles
-  if (user.role === 'teacher' || user.role === 'adviser' || user.role === 'subject_teacher') {
+  if (normalizedRole === 'teacher' || normalizedRole === 'adviser' || normalizedRole === 'subject_teacher') {
     const studentGrade = student.grade_level || student.gradeLevel;
     const studentSection = student.section;
     const normalizeClassId = (value = '') => String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
@@ -111,6 +134,37 @@ const canEnterGrade = async (user, student, subject, schoolYearId) => {
     );
     console.log('Adviser check:', { userId: user.id, studentGrade, studentSection, found: adviserClasses?.length });
     if (adviserClasses && adviserClasses.length > 0) return true;
+
+    // Fallback: adviser assignment may still use older account ID; try adviser_name match.
+    if (!adviserClasses || adviserClasses.length === 0) {
+      try {
+        const nameRows = await query(
+          `SELECT first_name, last_name, firstName, lastName
+           FROM users
+           WHERE id = ?
+           LIMIT 1`,
+          [user.id]
+        );
+        const nameRow = nameRows?.[0];
+        const first = String(nameRow?.first_name || nameRow?.firstName || '').trim();
+        const last = String(nameRow?.last_name || nameRow?.lastName || '').trim();
+        if (first && last) {
+          const adviserByName = await query(
+            `SELECT id
+             FROM classes
+             WHERE grade = ? AND section = ? AND school_year_id = ?
+               AND adviser_name LIKE ? AND adviser_name LIKE ?
+             LIMIT 1`,
+            [studentGrade, studentSection, schoolYearId, `%${first}%`, `%${last}%`]
+          );
+          if (adviserByName?.length > 0) {
+            return true;
+          }
+        }
+      } catch (nameFallbackError) {
+        console.log('Adviser name fallback skipped:', nameFallbackError.message);
+      }
+    }
     
     // Check if user is subject teacher for this class and subject.
     // class_id may be stored as DB class.id OR as grade-section slug.
@@ -182,6 +236,7 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
   try {
     await ensureStudentSchoolYearColumn();
     await ensureGradesSchoolYearColumn();
+    await ensureNotificationsTable();
     const { id } = req.params;
     const { grades, average, quarter } = req.body;
     const user = req.user;
@@ -277,6 +332,67 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
 
     await query('UPDATE students SET average = ? WHERE id = ?', [average || 0, id]);
 
+    // Notify class adviser when a subject teacher/teacher submits grades for their assigned subjects.
+    const normalizedRole = normalizeRole(user?.role);
+    if ((normalizedRole === 'teacher' || normalizedRole === 'subject_teacher') && subjectsWithGrades.length > 0) {
+      try {
+        const classRows = await query(
+          `SELECT id, adviser_id, adviser_name
+           FROM classes
+           WHERE grade = ? AND section = ? AND school_year_id = ?
+           LIMIT 1`,
+          [student.grade_level || student.gradeLevel, student.section, targetSyId]
+        );
+        const classRow = classRows?.[0];
+
+        if (classRow?.adviser_id && String(classRow.adviser_id) !== String(user.id)) {
+          let submitterName = '';
+          try {
+            const userRows = await query(
+              `SELECT first_name, last_name, firstName, lastName
+               FROM users
+               WHERE id = ?
+               LIMIT 1`,
+              [user.id]
+            );
+            if (userRows?.length > 0) {
+              const row = userRows[0];
+              submitterName = `${row.first_name || row.firstName || ''} ${row.last_name || row.lastName || ''}`.trim();
+            }
+          } catch (_) {}
+
+          const studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim() || `Student ${id}`;
+          const subjectLabel = subjectsWithGrades.join(', ');
+          const title = 'Subject grades submitted';
+          const message = `${submitterName || 'Subject teacher'} submitted grades for ${studentName} in ${subjectLabel}.`;
+
+          await query(
+            `INSERT INTO notifications (user_id, type, title, message, meta_json, is_read)
+             VALUES (?, 'grade_submission', ?, ?, ?, 0)`,
+            [
+              String(classRow.adviser_id),
+              title,
+              message,
+              JSON.stringify({
+                student_id: String(id),
+                student_name: studentName,
+                class_id: classRow.id,
+                class_grade: student.grade_level || student.gradeLevel,
+                class_section: student.section,
+                subjects: subjectsWithGrades,
+                school_year_id: targetSyId,
+                submitted_by: String(user.id),
+                submitted_by_name: submitterName || null,
+                quarter: quarter || null
+              })
+            ]
+          );
+        }
+      } catch (notificationError) {
+        console.error('Grade notification warning:', notificationError.message);
+      }
+    }
+
     res.json({ success: true, message: `${quarter || 'Q1'} grades updated`, average });
   } catch (err) {
     console.error('Error saving grades:', err);
@@ -291,9 +407,25 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
     await ensureGradesSchoolYearColumn();
     const { id } = req.params;
     const { schoolYearId } = req.query;
-    const [studentRow] = await query('SELECT school_year_id FROM students WHERE id = ?', [id]);
+    const [studentRow] = await query('SELECT id, school_year_id, grade_level, section FROM students WHERE id = ?', [id]);
     const targetSyId = schoolYearId || studentRow?.school_year_id || (await getActiveSchoolYear())?.id;
-    const grades = await query('SELECT * FROM grades WHERE student_id = ? AND (school_year_id = ? OR school_year_id IS NULL)', [id, targetSyId]);
+    const allGrades = await query('SELECT * FROM grades WHERE student_id = ? AND (school_year_id = ? OR school_year_id IS NULL)', [id, targetSyId]);
+
+    const user = req.user || {};
+    const normalizedRole = normalizeRole(user.role || '');
+    let grades = allGrades;
+
+    if ((normalizedRole === 'teacher' || normalizedRole === 'subject_teacher') && studentRow) {
+      const uniqueSubjects = [...new Set(allGrades.map((g) => g.subject).filter(Boolean))];
+      const allowed = new Set();
+
+      for (const subjectName of uniqueSubjects) {
+        const canView = await canEnterGrade(user, studentRow, subjectName, targetSyId);
+        if (canView) allowed.add(String(subjectName));
+      }
+
+      grades = allGrades.filter((g) => allowed.has(String(g.subject)));
+    }
 
     // grades table: each row is one subject + quarter combo
     // Need to restructure: { "Filipino": { q1: 90, q2: 85, ... }, "English": { q1: 88, ... } }

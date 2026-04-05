@@ -149,6 +149,16 @@ export default function AdminTeachers() {
     }
   }, [selectedSchoolYearId]);
 
+  useEffect(() => {
+    if (!selectedSchoolYearId) return;
+
+    const interval = setInterval(() => {
+      fetchTeachers(true);
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [selectedSchoolYearId]);
+
   // Helper function to fix mixed up grade level and section data
   const fixGradeAndSection = (teacher) => {
     const gradeLevel = teacher.grade_level || teacher.gradeLevel || '';
@@ -464,10 +474,12 @@ export default function AdminTeachers() {
         return allTeachers;
       });
       
-      if (allTeachers.length === 0) {
-        toast.warning('No teachers found in the system');
-      } else {
-        toast.success(`Loaded ${allTeachers.length} teachers`);
+      if (!isRefresh) {
+        if (allTeachers.length === 0) {
+          toast.warning('No teachers found in the system');
+        } else {
+          toast.success(`Loaded ${allTeachers.length} teachers`);
+        }
       }
     } catch (error) {
       console.error('Error in fetchTeachers:', error);

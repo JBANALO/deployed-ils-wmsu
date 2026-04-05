@@ -503,6 +503,7 @@ const gradeRoutes = require('./routes/grades');
 const teacherRoutes = require('./routes/teacherRoutes');
 
 const schoolYearRoutes = require('./routes/schoolYearRoutes');
+const notificationsRoutes = require('./routes/notifications');
 
 const subjectRoutes = require('./routes/subjectRoutes');
 
@@ -2143,6 +2144,8 @@ app.use('/api/teachers', teacherRoutes);
 app.use('/api/users', userRoutes);
 
 app.use('/api/school-years', schoolYearRoutes);
+
+app.use('/api/notifications', notificationsRoutes);
 
 app.use('/api/subjects', subjectRoutes);
 

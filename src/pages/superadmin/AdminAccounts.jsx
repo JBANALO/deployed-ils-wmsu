@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { UsersIcon, PlusIcon, PencilIcon, TrashIcon, EyeIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { UsersIcon, PlusIcon, PencilIcon, TrashIcon, EyeIcon, EyeSlashIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { toast } from 'react-toastify';
 import api from "../../api/axiosConfig";
 
@@ -10,6 +10,8 @@ export default function AdminAccounts() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
+  const [showEditPassword, setShowEditPassword] = useState(false);
   const [selectedAdmin, setSelectedAdmin] = useState(null);
   const [formData, setFormData] = useState({
     firstName: "",
@@ -66,6 +68,7 @@ export default function AdminAccounts() {
         department: "",
         contactNumber: ""
       });
+      setShowCreatePassword(false);
       fetchAdmins();
     } catch (error) {
       console.error("Error creating admin:", error);
@@ -80,7 +83,8 @@ export default function AdminAccounts() {
         firstName: formData.firstName,
         lastName: formData.lastName,
         username: formData.username,
-        email: formData.email
+        email: formData.email,
+        ...(formData.password ? { password: formData.password } : {})
       });
       toast.success("Admin account updated successfully");
       setShowEditModal(false);
@@ -94,6 +98,7 @@ export default function AdminAccounts() {
         department: "",
         contactNumber: ""
       });
+      setShowEditPassword(false);
       fetchAdmins();
     } catch (error) {
       console.error("Error updating admin:", error);
@@ -125,6 +130,7 @@ export default function AdminAccounts() {
       department: admin.department || "",
       contactNumber: admin.contactNumber || ""
     });
+    setShowEditPassword(false);
     setShowEditModal(true);
   };
 
@@ -301,13 +307,23 @@ export default function AdminAccounts() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Password</label>
-                  <input
-                    type="password"
-                    required
-                    value={formData.password}
-                    onChange={(e) => setFormData({...formData, password: e.target.value})}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
-                  />
+                  <div className="relative mt-1">
+                    <input
+                      type={showCreatePassword ? "text" : "password"}
+                      required
+                      value={formData.password}
+                      onChange={(e) => setFormData({...formData, password: e.target.value})}
+                      className="block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCreatePassword((prev) => !prev)}
+                      className="absolute inset-y-0 right-0 px-3 text-gray-500 hover:text-gray-700"
+                      aria-label={showCreatePassword ? "Hide password" : "Show password"}
+                    >
+                      {showCreatePassword ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Department</label>
@@ -337,7 +353,10 @@ export default function AdminAccounts() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => {
+                    setShowCreatePassword(false);
+                    setShowCreateModal(false);
+                  }}
                   className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 transition-colors"
                 >
                   Cancel
@@ -396,12 +415,22 @@ export default function AdminAccounts() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">New Password (leave blank to keep current)</label>
-                  <input
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({...formData, password: e.target.value})}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
-                  />
+                  <div className="relative mt-1">
+                    <input
+                      type={showEditPassword ? "text" : "password"}
+                      value={formData.password}
+                      onChange={(e) => setFormData({...formData, password: e.target.value})}
+                      className="block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEditPassword((prev) => !prev)}
+                      className="absolute inset-y-0 right-0 px-3 text-gray-500 hover:text-gray-700"
+                      aria-label={showEditPassword ? "Hide password" : "Show password"}
+                    >
+                      {showEditPassword ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Department</label>
@@ -431,7 +460,10 @@ export default function AdminAccounts() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowEditModal(false)}
+                  onClick={() => {
+                    setShowEditPassword(false);
+                    setShowEditModal(false);
+                  }}
                   className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 transition-colors"
                 >
                   Cancel
