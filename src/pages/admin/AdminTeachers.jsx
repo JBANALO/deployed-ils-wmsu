@@ -77,6 +77,22 @@ export default function AdminTeachers() {
     "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "EPP", "Music", "Arts", "Physical Education", "Health"]
   };
 
+  const normalizeTeacherRole = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, '_');
+
+  const normalizeTeacherStatus = (teacher) => {
+    const rawStatus = teacher?.status ?? teacher?.approval_status ?? 'approved';
+    return String(rawStatus).trim().toLowerCase();
+  };
+
+  const normalizeTeacherRecord = (teacher) => ({
+    ...teacher,
+    firstName: teacher.firstName || teacher.first_name || '',
+    lastName: teacher.lastName || teacher.last_name || '',
+    email: teacher.email || '',
+    role: normalizeTeacherRole(teacher.role || teacher.position || teacher.role_in_class),
+    status: normalizeTeacherStatus(teacher)
+  });
+
   const fetchSchoolYears = async () => {
     try {
       const res = await api.get('/school-years');
@@ -390,8 +406,10 @@ export default function AdminTeachers() {
         
         // Only show approved teachers (not pending or declined)
         allTeachers = Array.isArray(teachersData) 
-          ? teachersData.filter(teacher => {
-              const status = (teacher.status || 'approved').toLowerCase();
+          ? teachersData
+              .map(normalizeTeacherRecord)
+              .filter(teacher => {
+              const status = teacher.status;
               const role = teacher.role;
               console.log('Checking teacher:', teacher.firstName, role, status);
               const isRoleMatch = role === 'adviser' || role === 'subject_teacher' || role === 'teacher';
@@ -413,8 +431,10 @@ export default function AdminTeachers() {
           console.log('Users fetched from /users:', usersData);
           
           allTeachers = Array.isArray(usersData)
-            ? usersData.filter(u => {
-                const status = (u.status || 'approved').toLowerCase();
+            ? usersData
+              .map(normalizeTeacherRecord)
+              .filter(u => {
+                const status = u.status;
                 const role = u.role;
                 console.log('Checking user from fallback:', u.firstName, role, status);
                 const isRoleMatch = role === 'adviser' || role === 'subject_teacher' || role === 'teacher';
