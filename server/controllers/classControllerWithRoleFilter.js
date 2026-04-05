@@ -753,6 +753,44 @@ const assignSubjectTeacher = async (req, res) => {
       });
     }
 
+    const normalizeClassIdentifier = (value = '') =>
+      String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
+
+    // Resolve class metadata and normalize equivalent identifiers (slug + raw id).
+    let classMeta = null;
+    try {
+      const normalizedClassId = normalizeClassIdentifier(classId);
+      const classLookupSql = classesHasSchoolYearColumn
+        ? `SELECT id, grade, section
+           FROM classes
+           WHERE school_year_id = ?
+             AND (
+               LOWER(REPLACE(TRIM(CAST(id AS CHAR)), ' ', '-')) = ?
+               OR LOWER(REPLACE(CONCAT(TRIM(grade), '-', TRIM(section)), ' ', '-')) = ?
+             )
+           LIMIT 1`
+        : `SELECT id, grade, section
+           FROM classes
+           WHERE LOWER(REPLACE(TRIM(CAST(id AS CHAR)), ' ', '-')) = ?
+              OR LOWER(REPLACE(CONCAT(TRIM(grade), '-', TRIM(section)), ' ', '-')) = ?
+           LIMIT 1`;
+      const classLookupParams = classesHasSchoolYearColumn
+        ? [targetSy.id, normalizedClassId, normalizedClassId]
+        : [normalizedClassId, normalizedClassId];
+      const [classRows] = await pool.query(classLookupSql, classLookupParams);
+      classMeta = classRows[0] || null;
+    } catch (classLookupError) {
+      console.log('assignSubjectTeacher class lookup skipped:', classLookupError.message);
+    }
+
+    const classIdentifiers = new Set([normalizeClassIdentifier(classId)]);
+    if (classMeta) {
+      classIdentifiers.add(normalizeClassIdentifier(classMeta.id));
+      classIdentifiers.add(normalizeClassIdentifier(`${classMeta.grade}-${classMeta.section}`));
+    }
+    const classIdentifierList = Array.from(classIdentifiers).filter(Boolean);
+    const classPlaceholders = classIdentifierList.map(() => '?').join(', ');
+
     // Ensure subject_teachers table exists
     await pool.query(`
       CREATE TABLE IF NOT EXISTS subject_teachers (
@@ -781,59 +819,50 @@ const assignSubjectTeacher = async (req, res) => {
     }
 
     // Check for class-level schedule conflict on the same day/time
-    const classConflictSql = classesHasSchoolYearColumn
-      ? `SELECT c.grade, c.section, st.teacher_name, st.subject, st.day, st.start_time, st.end_time
-         FROM subject_teachers st
-         JOIN classes c ON st.class_id = c.id
-         WHERE st.class_id = ? AND st.day = ? AND st.school_year_id = ? AND c.school_year_id = ?
-         AND NOT (st.end_time <= ? OR st.start_time >= ?)`
-      : `SELECT c.grade, c.section, st.teacher_name, st.subject, st.day, st.start_time, st.end_time
-         FROM subject_teachers st
-         JOIN classes c ON st.class_id = c.id
-         WHERE st.class_id = ? AND st.day = ? AND st.school_year_id = ?
+    const classConflictSql = `SELECT st.teacher_name, st.subject, st.day, st.start_time, st.end_time
+       FROM subject_teachers st
+       WHERE LOWER(REPLACE(TRIM(st.class_id), ' ', '-')) IN (${classPlaceholders})
+         AND st.day = ?
+         AND st.school_year_id = ?
          AND NOT (st.end_time <= ? OR st.start_time >= ?)`;
-    const classConflictParams = classesHasSchoolYearColumn
-      ? [classId, assignmentDay, targetSy.id, targetSy.id, assignmentStart, assignmentEnd]
-      : [classId, assignmentDay, targetSy.id, assignmentStart, assignmentEnd];
+    const classConflictParams = [...classIdentifierList, assignmentDay, targetSy.id, assignmentStart, assignmentEnd];
     const [classConflicts] = await pool.query(classConflictSql, classConflictParams);
 
     if (classConflicts.length > 0) {
       const conflict = classConflicts[0];
       return res.status(400).json({
         success: false,
-        message: `Time conflict: ${conflict.teacher_name || 'Another teacher'} already teaches ${conflict.subject} in ${conflict.grade} - ${conflict.section} on ${conflict.day} from ${conflict.start_time} to ${conflict.end_time}`
+        message: `Time conflict: ${conflict.teacher_name || 'Another teacher'} already teaches ${conflict.subject} on ${conflict.day} from ${conflict.start_time} to ${conflict.end_time}`
       });
     }
 
     // Check for teacher-level schedule conflict on the same day/time across any class
-    const teacherConflictSql = classesHasSchoolYearColumn
-      ? `SELECT c.grade, c.section, st.subject, st.day, st.start_time, st.end_time
-         FROM subject_teachers st
-         JOIN classes c ON st.class_id = c.id
-         WHERE st.teacher_id = ? AND st.day = ? AND st.school_year_id = ? AND c.school_year_id = ?
-         AND NOT (st.end_time <= ? OR st.start_time >= ?)`
-      : `SELECT c.grade, c.section, st.subject, st.day, st.start_time, st.end_time
-         FROM subject_teachers st
-         JOIN classes c ON st.class_id = c.id
-         WHERE st.teacher_id = ? AND st.day = ? AND st.school_year_id = ?
+    const teacherConflictSql = `SELECT st.class_id, st.subject, st.day, st.start_time, st.end_time
+       FROM subject_teachers st
+       WHERE st.teacher_id = ?
+         AND st.day = ?
+         AND st.school_year_id = ?
          AND NOT (st.end_time <= ? OR st.start_time >= ?)`;
-    const teacherConflictParams = classesHasSchoolYearColumn
-      ? [teacher_id, assignmentDay, targetSy.id, targetSy.id, assignmentStart, assignmentEnd]
-      : [teacher_id, assignmentDay, targetSy.id, assignmentStart, assignmentEnd];
+    const teacherConflictParams = [teacher_id, assignmentDay, targetSy.id, assignmentStart, assignmentEnd];
     const [teacherConflicts] = await pool.query(teacherConflictSql, teacherConflictParams);
 
     if (teacherConflicts.length > 0) {
       const conflict = teacherConflicts[0];
       return res.status(400).json({
         success: false,
-        message: `Time conflict: Teacher is already assigned to ${conflict.grade} - ${conflict.section} (${conflict.subject}) on ${conflict.day} from ${conflict.start_time} to ${conflict.end_time}`
+        message: `Time conflict: Teacher is already assigned to ${conflict.subject} (${conflict.class_id}) on ${conflict.day} from ${conflict.start_time} to ${conflict.end_time}`
       });
     }
 
     // Check if already assigned
     const [existing] = await pool.query(
-      `SELECT id FROM subject_teachers WHERE class_id = ? AND teacher_id = ? AND subject = ? AND school_year_id = ?`,
-      [classId, teacher_id, subject, targetSy.id]
+      `SELECT id
+       FROM subject_teachers
+       WHERE LOWER(REPLACE(TRIM(class_id), ' ', '-')) IN (${classPlaceholders})
+         AND teacher_id = ?
+         AND subject = ?
+         AND school_year_id = ?`,
+      [...classIdentifierList, teacher_id, subject, targetSy.id]
     );
 
     if (existing.length > 0) {
@@ -843,11 +872,13 @@ const assignSubjectTeacher = async (req, res) => {
       });
     }
 
+    const storedClassId = classMeta?.id ? String(classMeta.id) : String(classId);
+
     // Insert new assignment
     await pool.query(
       `INSERT INTO subject_teachers (class_id, teacher_id, teacher_name, subject, school_year_id, day, start_time, end_time)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [classId, teacher_id, teacher_name || '', subject, targetSy.id, assignmentDay, assignmentStart, assignmentEnd]
+      [storedClassId, teacher_id, teacher_name || '', subject, targetSy.id, assignmentDay, assignmentStart, assignmentEnd]
     );
 
     console.log('✅ Subject teacher assigned successfully');
@@ -855,7 +886,7 @@ const assignSubjectTeacher = async (req, res) => {
     return res.json({
       success: true,
       message: 'Subject teacher assigned successfully',
-      data: { classId, teacher_id, teacher_name, subject, day: assignmentDay, start_time: assignmentStart, end_time: assignmentEnd }
+      data: { classId: storedClassId, teacher_id, teacher_name, subject, day: assignmentDay, start_time: assignmentStart, end_time: assignmentEnd }
     });
 
   } catch (error) {
