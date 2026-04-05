@@ -191,12 +191,14 @@ router.post('/reset-password', async (req, res) => {
       return res.status(400).json({ message: 'Reset token has expired' });
     }
 
-    console.log('Password reset for:', tokenData.email, 'Role:', tokenData.role);
+    console.log('🔄 Password reset for:', tokenData.email, 'Role:', tokenData.role, 'Source:', tokenData.source);
 
     // Hash new password
     const hashedPassword = await bcrypt.hash(password, 12);
+    console.log('🔐 Password hashed successfully');
 
     // Update password based on user role and source
+    let updateSuccess = false;
     if (tokenData.role === 'teacher') {
       // For teachers: ALWAYS update BOTH users.json AND Railway database for redundancy
       console.log('🔄 Teacher password reset: updating both users.json and Railway database');
@@ -211,6 +213,7 @@ router.post('/reset-password', async (req, res) => {
           users[userIndex].updatedAt = new Date().toISOString();
           writeUsers(users);
           console.log('✅ Teacher password updated in users.json');
+          updateSuccess = true;
         }
       } catch (jsonError) {
         console.error('Error updating users.json:', jsonError);
@@ -223,40 +226,58 @@ router.post('/reset-password', async (req, res) => {
           [hashedPassword, tokenData.userId]
         );
         console.log('✅ Teacher password updated in Railway teachers database');
+        updateSuccess = true;
       } catch (dbError) {
         console.error('Error updating Railway database:', dbError);
       }
       
     } else if (tokenData.source === 'json') {
       // Handle advisers, subject_teachers from users.json only
-      const users = readUsers();
-      const userIndex = users.findIndex(u => u.id === tokenData.userId);
-      
-      if (userIndex !== -1) {
-        users[userIndex].password = hashedPassword;
-        users[userIndex].updatedAt = new Date().toISOString();
-        writeUsers(users);
-        console.log(`✅ ${tokenData.role} password updated in users.json`);
-      } else {
-        return res.status(404).json({ message: 'User not found' });
+      try {
+        const users = readUsers();
+        const userIndex = users.findIndex(u => u.id === tokenData.userId);
+        
+        if (userIndex !== -1) {
+          users[userIndex].password = hashedPassword;
+          users[userIndex].updatedAt = new Date().toISOString();
+          writeUsers(users);
+          console.log(`✅ ${tokenData.role} password updated in users.json`);
+          updateSuccess = true;
+        } else {
+          return res.status(404).json({ message: 'User not found' });
+        }
+      } catch (jsonError) {
+        console.error('Error updating users.json:', jsonError);
+        return res.status(500).json({ message: 'Error updating password in file storage' });
       }
     } else {
       // Handle database users (students, admins, super_admin)
-      if (tokenData.role === 'student') {
-        // Update student in users table (main users table)
-        await query(
-          'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-          [hashedPassword, tokenData.userId]
-        );
-        console.log('✅ Student password updated in users database');
-      } else if (tokenData.role === 'admin' || tokenData.role === 'super_admin') {
-        // Update admin/super_admin in users table
-        await query(
-          'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-          [hashedPassword, tokenData.userId]
-        );
-        console.log(`✅ ${tokenData.role} password updated in users database`);
+      try {
+        if (tokenData.role === 'student') {
+          // Update student in users table (main users table)
+          await query(
+            'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            [hashedPassword, tokenData.userId]
+          );
+          console.log('✅ Student password updated in users database');
+          updateSuccess = true;
+        } else if (tokenData.role === 'admin' || tokenData.role === 'super_admin') {
+          // Update admin/super_admin in users table
+          await query(
+            'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            [hashedPassword, tokenData.userId]
+          );
+          console.log(`✅ ${tokenData.role} password updated in users database`);
+          updateSuccess = true;
+        }
+      } catch (dbError) {
+        console.error('Error updating database:', dbError);
+        return res.status(500).json({ message: 'Error updating password in database' });
       }
+    }
+
+    if (!updateSuccess) {
+      return res.status(500).json({ message: 'Failed to update password in any storage location' });
     }
 
     // Clean up token

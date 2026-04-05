@@ -49,26 +49,28 @@ export default function AdminProfile() {
     }
   }, [adminUser]);
 
-  // Fetch complete user data on component mount if missing phone or profileImage
+  // Fetch complete user data on component mount to ensure fresh data
   useEffect(() => {
     const fetchCompleteUserData = async () => {
-      if (adminUser && (!adminUser.phone || !adminUser.profileImage)) {
+      if (adminUser) {
         try {
-          console.log('AdminProfile - fetching complete user data...');
+          console.log('AdminProfile - fetching fresh user data...');
           const response = await axios.get('/auth/me');
           if (response.data?.data?.user) {
-            const completeUser = response.data.data.user;
-            console.log('AdminProfile - fetched complete user:', completeUser);
-            updateUser(completeUser);
+            const freshUser = response.data.data.user;
+            console.log('AdminProfile - fetched fresh user:', freshUser);
+            
+            // Update context with fresh data
+            updateUser(freshUser);
           }
         } catch (error) {
-          console.error('AdminProfile - Error fetching complete user data:', error);
+          console.error('AdminProfile - Error fetching fresh user data:', error);
         }
       }
     };
 
     fetchCompleteUserData();
-  }, [adminUser]);
+  }, [adminUser?.id]); // Only run when user ID changes (login/logout)
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;

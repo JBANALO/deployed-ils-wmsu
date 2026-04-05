@@ -38,17 +38,25 @@ exports.signup = async (req, res) => {
     const columns = await query('SHOW COLUMNS FROM users');
     const hasFirstName = columns.some(col => col.Field === 'firstName');
     const hasFirstNameUnderscore = columns.some(col => col.Field === 'first_name');
+    const hasStatus = columns.some(col => col.Field === 'status');
     
-    console.log('🔍 Database columns - firstName:', hasFirstName, 'first_name:', hasFirstNameUnderscore);
+    console.log('🔍 Database columns - firstName:', hasFirstName, 'first_name:', hasFirstNameUnderscore, 'status:', hasStatus);
     
     // Use appropriate column names based on database schema
     const firstNameCol = hasFirstName ? 'firstName' : 'first_name';
     const lastNameCol = hasFirstName ? 'lastName' : 'last_name';
     
-    await query(
-      `INSERT INTO users (id, ${firstNameCol}, ${lastNameCol}, username, email, password, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-      [userId, firstName || '', lastName || '', username || '', email || '', hashedPassword, role || 'admin']
-    );
+    // Build query with status column if it exists
+    let insertQuery, insertParams;
+    if (hasStatus) {
+      insertQuery = `INSERT INTO users (id, ${firstNameCol}, ${lastNameCol}, username, email, password, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
+      insertParams = [userId, firstName || '', lastName || '', username || '', email || '', hashedPassword, role || 'admin', 'approved'];
+    } else {
+      insertQuery = `INSERT INTO users (id, ${firstNameCol}, ${lastNameCol}, username, email, password, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
+      insertParams = [userId, firstName || '', lastName || '', username || '', email || '', hashedPassword, role || 'admin'];
+    }
+    
+    await query(insertQuery, insertParams);
 
     res.status(201).json({ 
       message: 'Admin account created successfully!',

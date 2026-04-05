@@ -20,7 +20,7 @@ exports.googleCallback = async (req, res) => {
 
     // Only allow @wmsu.edu.ph emails for Google OAuth
     if (!email.includes('@wmsu.edu.ph')) {
-      return res.redirect(`${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu.vercel.app'}?error=email_domain_not_allowed`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu-production.up.railway.app'}?error=email_domain_not_allowed`);
     }
 
     // Check if user exists by email in any table
@@ -84,7 +84,7 @@ exports.googleCallback = async (req, res) => {
         }
       } else {
         // Reject non-@wmsu.edu.ph emails
-        return res.redirect(`${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu.vercel.app'}?error=email_domain_not_allowed`);
+        return res.redirect(`${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu-production.up.railway.app'}?error=email_domain_not_allowed`);
       }
 
       // Create new user with Google data in the appropriate table
@@ -156,7 +156,7 @@ exports.googleCallback = async (req, res) => {
         user = users[0];
       } catch (insertError) {
         console.error('Error creating user:', insertError);
-        return res.redirect(`${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu.vercel.app'}?error=unable_to_create_account`);
+        return res.redirect(`${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu-production.up.railway.app'}?error=unable_to_create_account`);
       }
     }
 
@@ -164,7 +164,7 @@ exports.googleCallback = async (req, res) => {
     const token = signToken(user.id);
 
     // Redirect to frontend with token
-    const frontendUrl = process.env.FRONTEND_URL || 'https://deployed-ils-wmsu.vercel.app';
+    const frontendUrl = process.env.FRONTEND_URL || 'https://deployed-ils-wmsu-production.up.railway.app';
     res.redirect(
       `${frontendUrl}/auth/google-callback?token=${token}&user=${encodeURIComponent(
         JSON.stringify({
@@ -179,7 +179,7 @@ exports.googleCallback = async (req, res) => {
     );
   } catch (error) {
     console.error('Google OAuth error:', error);
-    res.redirect(`${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu.vercel.app'}?error=auth_failed`);
+    res.redirect(`${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu-production.up.railway.app'}?error=auth_failed`);
   }
 };
 
@@ -221,8 +221,9 @@ exports.getCurrentUser = async (req, res) => {
           lastName: user.lastName || user.last_name || '',
           name: user.name || `${user.firstName || user.first_name} ${user.lastName || user.last_name}`,
           email: user.email,
+          phone: user.phone || '',
+          profileImage: user.profile_pic || user.avatar || null,
           role: user.role,
-          avatar: user.avatar || user.profile_pic || null,
         },
       },
     });

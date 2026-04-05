@@ -214,13 +214,28 @@ exports.login = async (req, res) => {
 
     const user = users[0];
 
-    // Password comparison
+    // Password comparison with database priority
     let passwordMatch = false;
-    if (typeof user.password === 'string' && user.password.startsWith('$2')) {
-      passwordMatch = await bcrypt.compare(password, user.password); // hashed password from DB
+    let authenticatedFrom = '';
+    
+    // For database users, always use database password
+    if (user.source === 'database' || (user.id && !user.id.startsWith('user-'))) {
+      // Database user - use hashed password comparison
+      if (typeof user.password === 'string' && user.password.startsWith('$2')) {
+        passwordMatch = await bcrypt.compare(password, user.password);
+        authenticatedFrom = 'database (hashed)';
+      } else {
+        // Fallback for unhashed database passwords
+        passwordMatch = password === user.password;
+        authenticatedFrom = 'database (plain)';
+      }
     } else {
-      passwordMatch = password === user.password; // JSON file plain text
+      // JSON file user - use plain text comparison
+      passwordMatch = password === user.password;
+      authenticatedFrom = 'json file';
     }
+    
+    console.log(`🔐 Password check for ${loginField}: ${passwordMatch ? '✅' : '❌'} from ${authenticatedFrom}`);
 
     // Extra safeguards for students: accept LRN-derived default and WMSU pattern
     if (!passwordMatch && user.lrn) {
@@ -249,6 +264,15 @@ exports.login = async (req, res) => {
     // Check student status - only approved students can login
     if (user.lrn && user.status && user.status !== 'approved' && user.status !== 'Active') {
       console.log('Student login blocked - status:', user.status);
+      return res.status(401).json({ 
+        status: 'fail', 
+        message: `Your account is ${user.status}. Please contact admin for approval.` 
+      });
+    }
+
+    // Check admin/teacher status - only approved admins/teachers can login
+    if (!user.lrn && user.status && user.status !== 'approved' && user.status !== 'Active') {
+      console.log('Admin/Teacher login blocked - status:', user.status);
       return res.status(401).json({ 
         status: 'fail', 
         message: `Your account is ${user.status}. Please contact admin for approval.` 
