@@ -22,7 +22,7 @@ const ensureTeacherSchoolYearColumn = async () => {
 };
 
 const getActiveSchoolYear = async () => {
-  const rows = await query('SELECT id, label, start_date FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+  const rows = await query('SELECT id, label, start_date, end_date FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
   if (!rows.length) throw new Error('No active school year found');
   return rows[0];
 };
@@ -30,7 +30,7 @@ const getActiveSchoolYear = async () => {
 const getSchoolYearById = async (schoolYearId) => {
   if (!schoolYearId) return null;
   const rows = await query(
-    'SELECT id, label, start_date FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1',
+    'SELECT id, label, start_date, end_date FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1',
     [schoolYearId]
   );
   return rows[0] || null;
@@ -82,6 +82,25 @@ const parseSubjects = (subjects) => {
   return [];
 };
 
+const belongsToSchoolYear = (record = {}, schoolYear = null) => {
+  if (!schoolYear) return true;
+
+  const recordSchoolYearId = record.school_year_id ?? record.schoolYearId;
+  if (recordSchoolYearId !== undefined && recordSchoolYearId !== null && String(recordSchoolYearId) === String(schoolYear.id)) {
+    return true;
+  }
+
+  const recordCreatedAt = record.created_at || record.createdAt;
+  if (!recordCreatedAt || !schoolYear.start_date || !schoolYear.end_date) {
+    return false;
+  }
+
+  const createdAt = new Date(recordCreatedAt);
+  const startDate = new Date(`${schoolYear.start_date}T00:00:00`);
+  const endDate = new Date(`${schoolYear.end_date}T23:59:59.999`);
+  return createdAt >= startDate && createdAt <= endDate;
+};
+
 // Get all teachers/advisers from users.json
 const getAllTeachers = async (req, res) => {
   try {
@@ -92,11 +111,10 @@ const getAllTeachers = async (req, res) => {
 
       const dbTeachers = await query(
         `SELECT id, first_name, middle_name, last_name, username, email, role,
-                grade_level, section, subjects, bio, profile_pic, verification_status, created_at
+                grade_level, section, subjects, bio, profile_pic, verification_status,
+                school_year_id, created_at
          FROM teachers
-         WHERE school_year_id = ?
-         ORDER BY first_name, last_name`,
-        [targetSy.id]
+         ORDER BY first_name, last_name`
       );
 
       let classAssignments = [];
@@ -150,7 +168,9 @@ const getAllTeachers = async (req, res) => {
         subjectTeachers = [];
       }
 
-      const dbFormatted = dbTeachers.map((teacher) => {
+      const dbFormatted = dbTeachers
+        .filter((teacher) => belongsToSchoolYear(teacher, targetSy))
+        .map((teacher) => {
         const fullName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim();
         const normalizedFullName = normalizeName(fullName);
 
@@ -195,7 +215,8 @@ const getAllTeachers = async (req, res) => {
           bio: teacher.bio || '',
           profilePic: teacher.profile_pic || '',
           status: teacher.verification_status || 'approved',
-          createdAt: teacher.created_at
+          createdAt: teacher.created_at,
+          school_year_id: teacher.school_year_id || null
         };
       });
 
@@ -301,7 +322,8 @@ const getAllTeachers = async (req, res) => {
         u.role === 'teacher' || 
         u.role === 'subject_teacher' ||
         (u.position && u.position.includes('Adviser'))) &&
-        !u.archived
+          !u.archived &&
+          belongsToSchoolYear(u, targetSy)
       )
       .map(u => ({
         id: u.id,
@@ -319,7 +341,8 @@ const getAllTeachers = async (req, res) => {
         subjects: u.subjects || [],
         bio: u.bio || '',
         status: u.status,
-        createdAt: u.createdAt
+          createdAt: u.createdAt,
+          school_year_id: u.school_year_id || null
       }));
     
     console.log(`getAllTeachers: Found ${teachers.length} teachers from users.json`);
@@ -745,7 +768,7 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
 };
 
 // Create a new teacher
-const createTeacher = (req, res) => {
+const createTeacher = async (req, res) => {
   try {
     const {
       firstName,
@@ -761,6 +784,7 @@ const createTeacher = (req, res) => {
     } = req.body;
     
     const users = readUsers();
+    const activeSchoolYear = await getActiveSchoolYear();
     
     // Check if email or username already exists
     const existingUser = users.find(u => u.email === email || u.username === username);
@@ -786,7 +810,8 @@ const createTeacher = (req, res) => {
       bio: bio || '',
       status: 'approved',
       archived: false,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      school_year_id: activeSchoolYear.id
     };
     
     users.push(newTeacher);
