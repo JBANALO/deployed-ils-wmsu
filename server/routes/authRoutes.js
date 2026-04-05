@@ -38,86 +38,10 @@ router.post('/login', async (req, res) => {
     await authController.login(req, res);
   } catch (error) {
     console.error(' Auth controller error:', error);
-    // Fallback path: keep admin login available even when controller throws.
-    try {
-      const { query } = require('../config/database');
-      const bcrypt = require('bcryptjs');
-      const jwt = require('jsonwebtoken');
-
-      const { email, username, password } = req.body || {};
-      const loginField = String(email || username || '').trim();
-
-      if (!loginField || !password) {
-        return res.status(400).json({
-          status: 'fail',
-          message: 'Please provide email/username and password!'
-        });
-      }
-
-      const users = await query(
-        `SELECT id, first_name, last_name, username, email, password, plain_password, role, status
-         FROM users
-         WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)
-         LIMIT 1`,
-        [loginField, loginField]
-      );
-
-      if (!users || users.length === 0) {
-        return res.status(401).json({ status: 'fail', message: 'Incorrect email or password' });
-      }
-
-      const user = users[0];
-      let passwordMatch = false;
-
-      if (typeof user.password === 'string' && user.password.startsWith('$2')) {
-        passwordMatch = await bcrypt.compare(password, user.password);
-      } else {
-        passwordMatch = password === user.password;
-      }
-
-      if (!passwordMatch && typeof user.plain_password === 'string' && user.plain_password.length > 0) {
-        passwordMatch = password === user.plain_password;
-      }
-
-      if (!passwordMatch) {
-        return res.status(401).json({ status: 'fail', message: 'Incorrect email or password' });
-      }
-
-      if (user.status && user.status !== 'approved' && user.status !== 'Active') {
-        return res.status(401).json({
-          status: 'fail',
-          message: `Your account is ${user.status}. Please contact admin for approval.`
-        });
-      }
-
-      const token = jwt.sign(
-        { id: user.id },
-        process.env.JWT_SECRET || 'your-secret-key',
-        { expiresIn: '90d' }
-      );
-
-      return res.status(200).json({
-        status: 'success',
-        token,
-        data: {
-          user: {
-            id: user.id,
-            firstName: user.first_name || '',
-            lastName: user.last_name || '',
-            name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
-            username: user.username || '',
-            email: user.email,
-            role: user.role || 'admin'
-          }
-        }
-      });
-    } catch (fallbackError) {
-      console.error(' Auth fallback login error:', fallbackError);
-      return res.status(500).json({
-        status: 'error',
-        message: 'Internal server error during login'
-      });
-    }
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error during login'
+    });
   }
 });
 
