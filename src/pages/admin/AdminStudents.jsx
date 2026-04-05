@@ -181,8 +181,8 @@ export default function AdminStudents() {
     return isG4to6;
   });
 
-  // Get all unique sections
-  const allSections = [...new Set(k3Students.map(s => s.section).filter(Boolean))];
+  // Get all unique sections across all loaded students (not only K-3)
+  const allSections = [...new Set(students.map(s => s.section).filter(Boolean))];
 
   // Search and filter K-3 students
   const filteredK3Students = k3Students.filter(student => {
@@ -194,6 +194,18 @@ export default function AdminStudents() {
     
     const matchesSection = selectedSection === 'All' || student.section === selectedSection;
     
+    return matchesSearch && matchesSection;
+  });
+
+  const filteredG4to6Students = g4to6Students.filter(student => {
+    const matchesSearch = searchQuery === '' ||
+      (student.fullName && student.fullName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (student.firstName && student.firstName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (student.lastName && student.lastName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (student.lrn && student.lrn.includes(searchQuery));
+
+    const matchesSection = selectedSection === 'All' || student.section === selectedSection;
+
     return matchesSearch && matchesSection;
   });
 
@@ -443,7 +455,7 @@ export default function AdminStudents() {
 
     // Update main selectAll state (both tables must be fully selected)
     const allK3Selected = filteredK3Students.every(s => newSelection.has(s.id));
-    const allG4to6Selected = g4to6Students.every(s => selectedG4to6Students.has(s.id));
+    const allG4to6Selected = filteredG4to6Students.every(s => selectedG4to6Students.has(s.id));
     setSelectAll(allK3Selected && allG4to6Selected);
     
     // NOTE: Don't update selectAllK3 here to prevent individual 
@@ -462,7 +474,7 @@ export default function AdminStudents() {
 
     // Update main selectAll state (both tables must be fully selected)
     const allK3Selected = filteredK3Students.every(s => selectedK3Students.has(s.id));
-    const allG4to6Selected = g4to6Students.every(s => newSelection.has(s.id));
+    const allG4to6Selected = filteredG4to6Students.every(s => newSelection.has(s.id));
     setSelectAll(allK3Selected && allG4to6Selected);
     
     // NOTE: Don't update selectAllG4to6 here to prevent individual 
@@ -471,10 +483,10 @@ export default function AdminStudents() {
 
   // Keep original handler for backward compatibility
   const toggleStudentSelection = (studentId) => {
-    const student = [...filteredK3Students, ...g4to6Students].find(s => s.id === studentId);
+    const student = [...filteredK3Students, ...filteredG4to6Students].find(s => s.id === studentId);
     if (filteredK3Students.some(s => s.id === studentId)) {
       toggleK3StudentSelection(studentId);
-    } else if (g4to6Students.some(s => s.id === studentId)) {
+    } else if (filteredG4to6Students.some(s => s.id === studentId)) {
       toggleG4to6StudentSelection(studentId);
     }
   };
@@ -490,7 +502,7 @@ export default function AdminStudents() {
     } else {
       // Select all students from both tables
       setSelectedK3Students(new Set(filteredK3Students.map(s => s.id)));
-      setSelectedG4to6Students(new Set(g4to6Students.map(s => s.id)));
+      setSelectedG4to6Students(new Set(filteredG4to6Students.map(s => s.id)));
       setSelectAllK3(true);
       setSelectAllG4to6(true);
       setSelectAll(true);
@@ -512,13 +524,13 @@ export default function AdminStudents() {
     }
     
     // Update main selectAll state (both tables must be fully selected)
-    const allG4to6Selected = g4to6Students.length > 0 && g4to6Students.every(s => selectedG4to6Students.has(s.id));
+    const allG4to6Selected = filteredG4to6Students.length > 0 && filteredG4to6Students.every(s => selectedG4to6Students.has(s.id));
     const allK3Selected = filteredK3Students.length > 0 && filteredK3Students.every(s => selectedK3Students.has(s.id));
     setSelectAll(allK3Selected && allG4to6Selected);
   };
 
   const toggleSelectAllG4to6 = (sectionStudentIds = null) => {
-    const idsToToggle = sectionStudentIds || g4to6Students.map(s => s.id);
+    const idsToToggle = sectionStudentIds || filteredG4to6Students.map(s => s.id);
     const allSelectedInScope = idsToToggle.every(id => selectedG4to6Students.has(id));
 
     if (allSelectedInScope) {
@@ -533,7 +545,7 @@ export default function AdminStudents() {
     
     // Update main selectAll state (both tables must be fully selected)
     const allK3Selected = filteredK3Students.length > 0 && filteredK3Students.every(s => selectedK3Students.has(s.id));
-    const allG4to6Selected = g4to6Students.length > 0 && g4to6Students.every(s => selectedG4to6Students.has(s.id));
+    const allG4to6Selected = filteredG4to6Students.length > 0 && filteredG4to6Students.every(s => selectedG4to6Students.has(s.id));
     setSelectAll(allK3Selected && allG4to6Selected);
   };
 
@@ -640,8 +652,8 @@ export default function AdminStudents() {
           <div className="flex items-center gap-3">
             <div className="text-sm text-gray-600">
               {[...selectedK3Students, ...selectedG4to6Students].size > 0 
-                ? `Selected: ${[...selectedK3Students, ...selectedG4to6Students].size} / ${filteredK3Students.length + g4to6Students.length}` 
-                : `Total: ${filteredK3Students.length + g4to6Students.length}`
+                ? `Selected: ${[...selectedK3Students, ...selectedG4to6Students].size} / ${filteredK3Students.length + filteredG4to6Students.length}` 
+                : `Total: ${filteredK3Students.length + filteredG4to6Students.length}`
               }
             </div>
             {[...selectedK3Students, ...selectedG4to6Students].size > 0 ? (
@@ -712,7 +724,7 @@ export default function AdminStudents() {
             <div className="text-sm text-gray-600">
               {searchQuery && <span>Searching for "{searchQuery}" </span>}
               {selectedSection !== 'All' && <span>Section: {selectedSection} </span>}
-              <span className="font-semibold">{filteredK3Students.length} result{filteredK3Students.length !== 1 ? 's' : ''}</span>
+              <span className="font-semibold">{filteredK3Students.length + filteredG4to6Students.length} result{(filteredK3Students.length + filteredG4to6Students.length) !== 1 ? 's' : ''}</span>
             </div>
           )}
         </div>
@@ -852,7 +864,7 @@ export default function AdminStudents() {
           <div className="bg-white rounded-lg shadow">
             <div className="p-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-green-800 mb-4">
-                Grade 4-6 Students ({g4to6Students.length})
+                Grade 4-6 Students ({filteredG4to6Students.length})
               </h3>
             </div>
             
@@ -860,12 +872,14 @@ export default function AdminStudents() {
               <div className="p-6 text-center text-gray-500">
                 Loading students...
               </div>
-            ) : g4to6Students.length === 0 ? (
+            ) : filteredG4to6Students.length === 0 ? (
               <div className="p-6 text-center text-gray-500">
-                No Grade 4-6 students found.
+                {searchQuery || selectedSection !== 'All'
+                  ? 'No Grade 4-6 students match your search criteria.'
+                  : 'No Grade 4-6 students found.'}
               </div>
             ) : (
-              Object.entries(groupStudentsBySection(g4to6Students)).map(([sectionKey, { grade, section, students: sectionStudents }]) => (
+              Object.entries(groupStudentsBySection(filteredG4to6Students)).map(([sectionKey, { grade, section, students: sectionStudents }]) => (
                 <div key={sectionKey} className="mb-0">
                   <div className="bg-green-50 px-4 py-2 border-b border-green-200">
                     <h4 className="text-md font-semibold text-green-700">
