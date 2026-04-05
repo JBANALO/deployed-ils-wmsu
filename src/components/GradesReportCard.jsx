@@ -252,9 +252,9 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto" id="report-card-modal">
         {/* Header with buttons */}
-        <div className="sticky top-0 bg-gray-50 border-b p-4 flex justify-between items-center">
+        <div className="sticky top-0 bg-gray-50 border-b p-4 flex justify-between items-center print:hidden">
           <h2 className="text-xl font-bold">
             {students.length === 1
               ? `Report Card — ${students[0].fullName || students[0].firstName}`
@@ -475,6 +475,41 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
       {/* Print styles */}
       <style>{`
         @media print {
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
+            width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+
+          body * {
+            visibility: hidden !important;
+          }
+
+          #report-card,
+          #report-card * {
+            visibility: visible !important;
+          }
+
+          #report-card {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
+          }
+
+          #report-card-modal {
+            max-height: none !important;
+            overflow: visible !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+          }
+
           body {
             margin: 0;
             padding: 0;
