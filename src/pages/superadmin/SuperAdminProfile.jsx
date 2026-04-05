@@ -18,8 +18,6 @@ export default function SuperAdminProfile() {
     username: adminUser?.username || '',
     email: adminUser?.email || '',
     phone: adminUser?.phone || '',
-    department: adminUser?.department || '',
-    employeeId: adminUser?.employeeId || '',
     profileImage: adminUser?.profileImage || ''
   });
   const navigate = useNavigate();
@@ -44,13 +42,32 @@ export default function SuperAdminProfile() {
         username: adminUser.username || '',
         email: adminUser.email || '',
         phone: adminUser.phone || '',
-        department: adminUser.department || '',
-        employeeId: adminUser.employeeId || '',
         profileImage: (adminUser.profileImage && adminUser.profileImage !== 'null' && adminUser.profileImage !== 'undefined') ? adminUser.profileImage : ''
       };
       console.log('SuperAdminProfile - setting formData to:', newFormData);
       setFormData(newFormData);
     }
+  }, [adminUser]);
+
+  // Fetch complete user data on component mount if missing phone, department, or profileImage
+  useEffect(() => {
+    const fetchCompleteUserData = async () => {
+      if (adminUser && (!adminUser.phone || !adminUser.profileImage)) {
+        try {
+          console.log('SuperAdminProfile - fetching complete superadmin user data...');
+          const response = await axios.get('/super-admin/me');
+          if (response.data?.data?.user) {
+            const completeUser = response.data.data.user;
+            console.log('SuperAdminProfile - fetched complete superadmin user:', completeUser);
+            updateUser(completeUser);
+          }
+        } catch (error) {
+          console.error('SuperAdminProfile - Error fetching complete superadmin user data:', error);
+        }
+      }
+    };
+
+    fetchCompleteUserData();
   }, [adminUser]);
 
   const handleInputChange = (e) => {
@@ -94,14 +111,12 @@ export default function SuperAdminProfile() {
       formDataToSend.append('username', formData.username);
       formDataToSend.append('email', formData.email);
       formDataToSend.append('phone', formData.phone);
-      formDataToSend.append('department', formData.department);
-      formDataToSend.append('employeeId', formData.employeeId);
       
       if (formData.profileImage && typeof formData.profileImage === 'object') {
         formDataToSend.append('profileImage', formData.profileImage);
       }
 
-      const response = await axios.put('/api/admin/update-profile', formDataToSend, {
+      const response = await axios.put('/super-admin/update-profile', formDataToSend, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -134,8 +149,6 @@ export default function SuperAdminProfile() {
         username: adminUser.username || '',
         email: adminUser.email || '',
         phone: adminUser.phone || '',
-        department: adminUser.department || '',
-        employeeId: adminUser.employeeId || '',
         profileImage: adminUser.profileImage || ''
       });
     }
@@ -337,41 +350,6 @@ export default function SuperAdminProfile() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Employee ID
-                  </label>
-                  <input
-                    type="text"
-                    name="employeeId"
-                    value={formData.employeeId}
-                    onChange={handleInputChange}
-                    disabled={!editMode}
-                    className={`w-full px-3 py-2 border rounded-md focus:ring-red-500 focus:border-red-500 ${
-                      editMode 
-                        ? 'border-gray-300 bg-white' 
-                        : 'border-gray-200 bg-gray-50'
-                    }`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Department
-                  </label>
-                  <input
-                    type="text"
-                    name="department"
-                    value={formData.department}
-                    onChange={handleInputChange}
-                    disabled={!editMode}
-                    className={`w-full px-3 py-2 border rounded-md focus:ring-red-500 focus:border-red-500 ${
-                      editMode 
-                        ? 'border-gray-300 bg-white' 
-                        : 'border-gray-200 bg-gray-50'
-                    }`}
-                  />
-                </div>
               </div>
             </div>
 

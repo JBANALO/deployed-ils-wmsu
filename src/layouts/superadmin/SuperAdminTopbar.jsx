@@ -2,7 +2,8 @@ import React, { useState, useEffect, useContext, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   BellIcon, UserCircleIcon, ChevronDownIcon, 
-  CheckCircleIcon, XCircleIcon, UserPlusIcon, ExclamationTriangleIcon 
+  CheckCircleIcon, XCircleIcon, UserPlusIcon, ExclamationTriangleIcon,
+  Cog6ToothIcon
 } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
 import { toast } from 'react-toastify';
@@ -158,7 +159,7 @@ export default function SuperAdminTopbar() {
           <h1 className="text-sm font-semibold text-gray-900">WMSU ILS - Elementary (Super Admin)</h1>
         </div>
 
-        <div className="flex items-center gap-4 md:gap-6">
+        <div className="flex items-center gap-2 md:gap-3">
           {/* Notification Bell */}
           <div className="relative">
             <button
@@ -334,6 +335,18 @@ export default function SuperAdminTopbar() {
               </div>
             )}
           </div>
+
+          {/* Vertical Divider */}
+          <div className="w-px h-6 bg-gray-300"></div>
+
+          {/* Settings Button */}
+          <button
+            className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            onClick={() => navigate("/admin/super-settings")}
+            aria-label="Settings"
+          >
+            <Cog6ToothIcon className="w-5 h-5 md:w-6 md:h-6 text-red-800 cursor-pointer hover:scale-110 transition-all shrink-0" />
+          </button>
         </div>
       </div>
     </header>

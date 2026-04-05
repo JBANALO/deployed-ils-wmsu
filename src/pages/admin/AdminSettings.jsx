@@ -68,6 +68,33 @@ export default function AdminSettings() {
     fetchBackupHistory();
   }, []);
 
+  // Fetch current admin user data to get correct email
+  useEffect(() => {
+    const fetchCurrentAdmin = async () => {
+      if (adminUser?.email) {
+        setSettings(prev => ({
+          ...prev,
+          adminEmail: adminUser.email
+        }));
+      } else {
+        // Fallback: fetch current user data
+        try {
+          const response = await api.get('/auth/me');
+          if (response.data?.data?.user?.email) {
+            setSettings(prev => ({
+              ...prev,
+              adminEmail: response.data.data.user.email
+            }));
+          }
+        } catch (error) {
+          console.error('Error fetching current admin:', error);
+        }
+      }
+    };
+
+    fetchCurrentAdmin();
+  }, [adminUser]);
+
   // Sync admin email with current logged-in admin
   useEffect(() => {
     if (adminUser?.email) {

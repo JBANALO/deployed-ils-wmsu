@@ -52,7 +52,7 @@ export default function SuperAdminSidebar({ sidebarOpen, setSidebarOpen }) {
         </button>
       </div>
 
-      <nav className="flex flex-col mt-2 space-y-1 flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#b91c1c transparent' }}>
+      <nav className="flex flex-col mt-2 space-y-1 flex-1">
         {menuItems.map((item) => (
           <div
             key={item.name}
@@ -62,7 +62,7 @@ export default function SuperAdminSidebar({ sidebarOpen, setSidebarOpen }) {
           >
             <button
               onClick={() => navigate(item.path)}
-              className={`flex items-center gap-4 px-5 py-3 w-full text-left transition-all duration-300 ease-in-out rounded-md ${
+              className={`flex items-center gap-4 px-5 py-2 w-full text-left transition-all duration-300 ease-in-out rounded-md ${
                 location.pathname === item.path
                   ? "bg-red-700"
                   : "hover:bg-red-700"
@@ -88,30 +88,6 @@ export default function SuperAdminSidebar({ sidebarOpen, setSidebarOpen }) {
         ))}
       </nav>
 
-      <div
-        onClick={() => navigate("/admin/super-settings")}
-        className={`relative px-5 py-3 flex items-center gap-4 w-full text-left transition-all duration-300 ease-in-out rounded-md cursor-pointer ${
-          location.pathname === "/admin/super-settings"
-            ? "bg-red-700"
-            : "hover:bg-red-700"
-        }`}
-        onMouseEnter={() => setHoveredItem("Settings")}
-        onMouseLeave={() => setHoveredItem(null)}
-      >
-        <Cog6ToothIcon className="w-6 h-6" />
-
-        {sidebarOpen && (
-          <span className="text-sm transition-all duration-300 ease-in-out">
-            Settings
-          </span>
-        )}
-
-        {!sidebarOpen && hoveredItem === "Settings" && (
-          <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 bg-black text-white text-xs rounded px-2 py-1 whitespace-nowrap shadow-lg">
-            Settings
-          </div>
-        )}
-      </div>
-    </aside>
+      </aside>
   );
 }

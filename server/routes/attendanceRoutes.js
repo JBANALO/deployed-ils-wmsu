@@ -8,13 +8,13 @@ let attendanceSyEnsured = false;
 let studentsSyChecked = false;
 
 const getActiveSchoolYear = async () => {
-  const rows = await query('SELECT id, label FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+  const rows = await query('SELECT id, name as label FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
   return rows[0] || null;
 };
 
 const getSchoolYearById = async (id) => {
   if (!id) return null;
-  const rows = await query('SELECT id, label FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1', [id]);
+  const rows = await query('SELECT id, name as label FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1', [id]);
   return rows[0] || null;
 };
 
