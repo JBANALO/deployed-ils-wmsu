@@ -77,6 +77,14 @@ const quarterLabel = (qKey = '') => {
   return map[String(qKey || '').toLowerCase()] || String(qKey || '').toUpperCase();
 };
 
+const sanitizeEmail = (value = '') => {
+  const email = String(value || '').trim();
+  if (!email) return '';
+  return email.replace(/@wmsu\.edu\.ph@wmsu\.edu\.ph$/i, '@wmsu.edu.ph');
+};
+
+const isValidEmail = (value = '') => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+
 const getActiveSchoolYear = async () => {
   const rows = await query('SELECT id, label FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
   return rows[0] || null;
@@ -423,7 +431,36 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
           [student.section, targetSyId, studentGradeValue, studentGradeValue]
         );
         const classRow = classRows?.[0];
+        let classIdentifier = classRow?.id || null;
+        let adviserDisplayName = classRow?.adviser_name || '';
         let adviserTargetId = classRow?.adviser_id ? String(classRow.adviser_id).trim() : '';
+
+        // Fallback: class assignments table may hold adviser mapping when classes row is missing adviser_id.
+        if (!adviserTargetId) {
+          try {
+            const assignmentRows = await query(
+              `SELECT id, adviser_id, adviser_name
+               FROM class_assignments
+               WHERE section = ?
+                 AND (school_year_id = ? OR school_year_id IS NULL)
+                 AND (
+                   LOWER(TRIM(grade_level)) = LOWER(TRIM(?))
+                   OR LOWER(REPLACE(TRIM(grade_level), 'Grade ', '')) = LOWER(REPLACE(TRIM(?), 'Grade ', ''))
+                 )
+               LIMIT 1`,
+              [student.section, targetSyId, studentGradeValue, studentGradeValue]
+            );
+
+            const assignment = assignmentRows?.[0];
+            if (assignment?.adviser_id) {
+              adviserTargetId = String(assignment.adviser_id).trim();
+              adviserDisplayName = adviserDisplayName || assignment.adviser_name || '';
+              classIdentifier = classIdentifier || assignment.id || null;
+            }
+          } catch (assignmentFallbackError) {
+            console.error('Class assignment fallback warning:', assignmentFallbackError.message);
+          }
+        }
 
         if (!adviserTargetId && classRow?.adviser_name) {
           const adviserName = String(classRow.adviser_name || '').trim();
@@ -495,7 +532,7 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
               JSON.stringify({
                 student_id: String(id),
                 student_name: studentName,
-                class_id: classRow.id,
+                class_id: classIdentifier,
                 class_grade: student.grade_level || student.gradeLevel,
                 class_section: student.section,
                 subjects: subjectsWithGrades,
@@ -527,7 +564,7 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
             if (adviserUsers?.length > 0) {
               const row = adviserUsers[0];
               adviserInfo = {
-                email: row.email || '',
+                email: sanitizeEmail(row.email || ''),
                 name: `${row.first_name || row.firstName || ''} ${row.last_name || row.lastName || ''}`.trim()
               };
             }
@@ -542,16 +579,51 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
               );
               if (adviserTeachers?.length > 0) {
                 adviserInfo = {
-                  email: adviserTeachers[0].email || '',
+                  email: sanitizeEmail(adviserTeachers[0].email || ''),
                   name: `${adviserTeachers[0].first_name || ''} ${adviserTeachers[0].last_name || ''}`.trim()
                 };
               }
             }
 
-            if (adviserInfo?.email) {
+            if ((!adviserInfo?.email || !isValidEmail(adviserInfo.email)) && adviserDisplayName) {
+              try {
+                const nameParts = String(adviserDisplayName).trim().split(/\s+/).filter(Boolean);
+                const firstName = nameParts[0] || '';
+                const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+
+                let byNameRows = [];
+                if (firstName || lastName) {
+                  byNameRows = await query(
+                    `SELECT email, first_name, last_name
+                     FROM teachers
+                     WHERE (
+                       (? <> '' AND LOWER(TRIM(first_name)) = LOWER(TRIM(?)) AND LOWER(TRIM(last_name)) = LOWER(TRIM(?)))
+                       OR (? <> '' AND LOWER(TRIM(CONCAT(first_name, ' ', last_name))) = LOWER(TRIM(?)))
+                     )
+                     LIMIT 1`,
+                    [firstName, firstName, lastName, adviserDisplayName, adviserDisplayName]
+                  );
+                }
+
+                if (byNameRows?.length > 0) {
+                  const row = byNameRows[0];
+                  const candidateEmail = sanitizeEmail(row.email || '');
+                  if (isValidEmail(candidateEmail)) {
+                    adviserInfo = {
+                      email: candidateEmail,
+                      name: `${row.first_name || ''} ${row.last_name || ''}`.trim() || adviserDisplayName
+                    };
+                  }
+                }
+              } catch (nameEmailFallbackError) {
+                console.error('Adviser email name fallback warning:', nameEmailFallbackError.message);
+              }
+            }
+
+            if (adviserInfo?.email && isValidEmail(adviserInfo.email)) {
               const sendResult = await sendAdviserGradeSubmissionEmail({
                 adviserEmail: adviserInfo.email,
-                adviserName: adviserInfo.name || classRow.adviser_name || 'Class Adviser',
+                adviserName: adviserInfo.name || adviserDisplayName || 'Class Adviser',
                 submitterName: submitterName || 'Subject teacher',
                 studentName,
                 gradeLevel: student.grade_level || student.gradeLevel,
