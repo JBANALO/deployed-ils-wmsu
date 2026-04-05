@@ -104,10 +104,11 @@ const belongsToSchoolYear = (record = {}, schoolYear = null) => {
 // Get all teachers/advisers from users.json
 const getAllTeachers = async (req, res) => {
   try {
+    const targetSy = await resolveSchoolYear(req);
+    const isExplicitSchoolYearScope = Boolean(req?.query?.schoolYearId || req?.body?.schoolYearId);
+
     try {
       await ensureTeacherSchoolYearColumn();
-      const targetSy = await resolveSchoolYear(req);
-      const isExplicitSchoolYearScope = Boolean(req?.query?.schoolYearId || req?.body?.schoolYearId);
 
       const dbTeachers = await query(
         `SELECT id, first_name, middle_name, last_name, username, email, role,
@@ -299,14 +300,63 @@ const getAllTeachers = async (req, res) => {
 
       const mergedTeachers = [...dbFormatted, ...Array.from(supplementalByKey.values())];
 
-      console.log(`getAllTeachers: Returning ${mergedTeachers.length} teachers for school year ${targetSy.id}`);
+      // Merge in file-backed teachers too, because some create/import flows still persist in users.json.
+      const fileUsers = readUsers();
+      const fileTeachers = fileUsers
+        .filter((u) =>
+          (u.role === 'adviser' || u.role === 'teacher' || u.role === 'subject_teacher' ||
+            (u.position && u.position.includes('Adviser'))) &&
+          !u.archived &&
+          belongsToSchoolYear(u, targetSy)
+        )
+        .map((u) => ({
+          id: u.id,
+          firstName: u.firstName || u.first_name || '',
+          middleName: u.middleName || u.middle_name || '',
+          lastName: u.lastName || u.last_name || '',
+          fullName: `${u.firstName || u.first_name || ''} ${u.lastName || u.last_name || ''}`.trim(),
+          username: u.username,
+          email: u.email,
+          role: u.role || 'teacher',
+          gradeLevel: u.gradeLevel || u.grade_level || '',
+          section: u.section || '',
+          position: u.position || u.role || 'teacher',
+          department: u.department,
+          subjectsHandled: u.subjectsHandled || u.subjects || [],
+          subjects: u.subjects || [],
+          bio: u.bio || '',
+          profilePic: u.profilePic || u.profile_pic || '',
+          status: u.status || 'approved',
+          createdAt: u.createdAt || u.created_at || null,
+          school_year_id: u.school_year_id || null
+        }));
+
+      const mergedByIdentity = new Map();
+      const makeIdentityKey = (teacher) => {
+        const emailKey = (teacher.email || '').toString().trim().toLowerCase();
+        if (emailKey) return `email:${emailKey}`;
+        const usernameKey = (teacher.username || '').toString().trim().toLowerCase();
+        if (usernameKey) return `username:${usernameKey}`;
+        return `name:${normalizeName(`${teacher.firstName || ''} ${teacher.lastName || ''}`)}`;
+      };
+
+      [...mergedTeachers, ...fileTeachers].forEach((teacher) => {
+        const key = makeIdentityKey(teacher);
+        if (!mergedByIdentity.has(key)) {
+          mergedByIdentity.set(key, teacher);
+        }
+      });
+
+      const unifiedTeachers = Array.from(mergedByIdentity.values());
+
+      console.log(`getAllTeachers: Returning ${unifiedTeachers.length} teachers for school year ${targetSy.id}`);
 
       return res.json({
         status: 'success',
         data: {
-          teachers: mergedTeachers
+          teachers: unifiedTeachers
         },
-        teachers: mergedTeachers,
+        teachers: unifiedTeachers,
         meta: { schoolYearId: targetSy.id }
       });
     } catch (dbError) {
@@ -772,6 +822,7 @@ const createTeacher = async (req, res) => {
   try {
     const {
       firstName,
+      middleName,
       lastName,
       email,
       username,
@@ -783,12 +834,23 @@ const createTeacher = async (req, res) => {
       bio
     } = req.body;
     
-    const users = readUsers();
     const activeSchoolYear = await getActiveSchoolYear();
+    const users = readUsers();
+
+    let dbDuplicate = false;
+    try {
+      const duplicateRows = await query(
+        'SELECT id FROM teachers WHERE email = ? OR username = ? LIMIT 1',
+        [email, username]
+      );
+      dbDuplicate = duplicateRows.length > 0;
+    } catch (error) {
+      console.log('Duplicate check in DB skipped:', error.message);
+    }
     
     // Check if email or username already exists
     const existingUser = users.find(u => u.email === email || u.username === username);
-    if (existingUser) {
+    if (existingUser || dbDuplicate) {
       return res.status(400).json({
         success: false,
         message: 'Email or username already exists'
@@ -799,6 +861,7 @@ const createTeacher = async (req, res) => {
     const newTeacher = {
       id: require('uuid').v4(),
       firstName,
+      middleName: middleName || '',
       lastName,
       email,
       username,
@@ -813,20 +876,53 @@ const createTeacher = async (req, res) => {
       createdAt: new Date().toISOString(),
       school_year_id: activeSchoolYear.id
     };
-    
+
+    let createdTeacherId = newTeacher.id;
+    let dbSaved = false;
+    try {
+      await ensureTeacherSchoolYearColumn();
+      const insertResult = await query(
+        `INSERT INTO teachers (
+           first_name, middle_name, last_name, username, email, password, role,
+           grade_level, section, subjects, bio, profile_pic, verification_status,
+           school_year_id, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        [
+          firstName,
+          middleName || '',
+          lastName,
+          username,
+          email,
+          password,
+          role || 'teacher',
+          gradeLevel || '',
+          section || '',
+          JSON.stringify(subjects || []),
+          bio || '',
+          '',
+          'approved',
+          activeSchoolYear.id
+        ]
+      );
+      createdTeacherId = insertResult?.insertId || createdTeacherId;
+      dbSaved = true;
+    } catch (error) {
+      console.log('DB insert skipped/fallback to file storage:', error.message);
+    }
+
     users.push(newTeacher);
-    
-    const success = writeUsers(users);
-    
-    if (success) {
+    const fileSaved = writeUsers(users);
+
+    if (dbSaved || fileSaved) {
       console.log(`Teacher ${firstName} ${lastName} created successfully`);
       res.status(201).json({
         success: true,
         message: 'Teacher created successfully',
         data: {
           teacher: {
-            id: newTeacher.id,
+            id: createdTeacherId,
             firstName: newTeacher.firstName,
+            middleName: newTeacher.middleName,
             lastName: newTeacher.lastName,
             email: newTeacher.email,
             username: newTeacher.username,
