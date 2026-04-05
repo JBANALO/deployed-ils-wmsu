@@ -139,10 +139,12 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
       setStep('complete');
       setIsImporting(false);
       
+      // Refresh the teachers table immediately, even if every CSV row already exists.
+      onSuccess();
+
       // Close modal and refresh teacher list
       setTimeout(() => {
         onClose();
-        onSuccess();
       }, 2000);
       
     } catch (error) {
@@ -164,7 +166,7 @@ export default function TeacherBulkImportModal({ isOpen, onClose, onSuccess }) {
   };
 
   const handleClose = () => {
-    if (step === 'complete' && successCount > 0) {
+    if (step === 'complete') {
       onSuccess();
     }
     handleReset();
