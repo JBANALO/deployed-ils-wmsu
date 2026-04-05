@@ -1627,7 +1627,7 @@ export default function AdminTeachers() {
         isOpen={showBulkImportModal}
         onClose={() => setShowBulkImportModal(false)}
         onSuccess={() => {
-          fetchTeachers();
+          fetchTeachers(true);
           setShowBulkImportModal(false);
         }}
       />
