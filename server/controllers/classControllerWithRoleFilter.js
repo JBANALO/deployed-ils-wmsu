@@ -5,6 +5,9 @@
 const { pool } = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
 
+let classesSchemaChecked = false;
+let classesHasSchoolYearColumn = false;
+
 const getActiveSchoolYear = async () => {
   const [rows] = await pool.query(
     'SELECT id, label, start_date FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1'
@@ -56,6 +59,30 @@ const ensureClassAssignmentsTable = async () => {
   }
 };
 
+const ensureClassesSchoolYearColumn = async () => {
+  if (classesSchemaChecked) return;
+
+  try {
+    const [columns] = await pool.query('SHOW COLUMNS FROM classes');
+    classesHasSchoolYearColumn = columns.some((column) => column.Field === 'school_year_id');
+
+    if (!classesHasSchoolYearColumn) {
+      try {
+        await pool.query('ALTER TABLE classes ADD COLUMN school_year_id INT NULL');
+        await pool.query('CREATE INDEX idx_classes_school_year ON classes (school_year_id)');
+        classesHasSchoolYearColumn = true;
+      } catch (alterError) {
+        console.log('ensureClassesSchoolYearColumn alter skipped:', alterError.message);
+      }
+    }
+  } catch (error) {
+    console.log('ensureClassesSchoolYearColumn check skipped:', error.message);
+    classesHasSchoolYearColumn = false;
+  }
+
+  classesSchemaChecked = true;
+};
+
 const getPreviousSchoolYear = async (activeStartDate) => {
   const [rows] = await pool.query(
     'SELECT id, label, start_date FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
@@ -72,6 +99,7 @@ const getPreviousSchoolYear = async (activeStartDate) => {
  */
 const getTeacherVisibleClasses = async (req, res) => {
   try {
+    await ensureClassesSchoolYearColumn();
     const { userId } = req.params;
     
     if (!userId) {
@@ -192,6 +220,8 @@ const getTeacherVisibleClasses = async (req, res) => {
  */
 const getAllClasses = async (req, res) => {
   try {
+    await ensureClassesSchoolYearColumn();
+    await ensureClassAssignmentsTable();
     console.log('getAllClasses - attempting database connection');
 
     try {
@@ -219,7 +249,7 @@ const getAllClasses = async (req, res) => {
           const [stRows] = await pool.query(
             `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time
              FROM subject_teachers
-             WHERE school_year_id = ? OR school_year_id IS NULL`,
+             WHERE school_year_id = ?`,
             [targetSy.id]
           );
           stRows.forEach(st => {
@@ -236,7 +266,7 @@ const getAllClasses = async (req, res) => {
           const [caRows] = await pool.query(
             `SELECT class_id, grade_level, section, adviser_id, adviser_name
              FROM class_assignments
-             WHERE school_year_id = ? OR school_year_id IS NULL`,
+             WHERE school_year_id = ?`,
             [targetSy.id]
           );
           caRows.forEach((ca) => {
@@ -303,7 +333,7 @@ const getAllClasses = async (req, res) => {
              WHERE role IN ('adviser', 'Adviser', 'teacher', 'subject_teacher')
                AND grade_level IS NOT NULL
                AND section IS NOT NULL
-               AND (school_year_id = ? OR school_year_id IS NULL)`,
+               AND school_year_id = ?`,
             [targetSy.id]
           );
           adviserRows = ar;
@@ -317,7 +347,7 @@ const getAllClasses = async (req, res) => {
           const [ca] = await pool.query(
             `SELECT grade_level, section, adviser_id, adviser_name
              FROM class_assignments
-             WHERE school_year_id = ? OR school_year_id IS NULL`,
+             WHERE school_year_id = ?`,
             [targetSy.id]
           );
           caRows = ca;
@@ -329,7 +359,7 @@ const getAllClasses = async (req, res) => {
           const [st] = await pool.query(
             `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time
              FROM subject_teachers
-             WHERE school_year_id = ? OR school_year_id IS NULL`,
+             WHERE school_year_id = ?`,
             [targetSy.id]
           );
           subjectTeacherRows = st;
@@ -402,6 +432,8 @@ const getAllClasses = async (req, res) => {
  */
 const getAdviserClasses = async (req, res) => {
   try {
+    await ensureClassesSchoolYearColumn();
+    await ensureClassAssignmentsTable();
     const { adviserId } = req.params;
     const targetSy = await resolveSchoolYear(req);
     console.log(`getAdviserClasses - adviserId: ${adviserId}`);
@@ -500,6 +532,7 @@ const getAdviserClasses = async (req, res) => {
  */
 const getSubjectTeacherClasses = async (req, res) => {
   try {
+    await ensureClassesSchoolYearColumn();
     const { userId } = req.params;
     const targetSy = await resolveSchoolYear(req);
     console.log(`getSubjectTeacherClasses - userId: ${userId}`);
@@ -515,7 +548,7 @@ const getSubjectTeacherClasses = async (req, res) => {
              OR LOWER(REPLACE(CONCAT(TRIM(c.grade), '-', TRIM(c.section)), ' ', '-')) = LOWER(REPLACE(TRIM(st.class_id), ' ', '-'))
            )
          WHERE st.teacher_id = ?
-           AND (st.school_year_id = ? OR st.school_year_id IS NULL)
+           AND st.school_year_id = ?
            AND c.school_year_id = ?
          GROUP BY c.id`,
         [userId, targetSy.id, targetSy.id]
@@ -544,6 +577,8 @@ const getSubjectTeacherClasses = async (req, res) => {
  */
 const assignAdviserToClass = async (req, res) => {
   try {
+    await ensureClassesSchoolYearColumn();
+    await ensureClassAssignmentsTable();
     const { classId } = req.params;
     const { adviser_id, adviser_name, grade, section } = req.body;
     const targetSy = await resolveSchoolYear(req);
@@ -560,7 +595,7 @@ const assignAdviserToClass = async (req, res) => {
 
     const [existingAssignmentRows] = await pool.query(
       `SELECT id FROM class_assignments
-       WHERE grade_level = ? AND section = ? AND (school_year_id = ? OR school_year_id IS NULL)
+       WHERE grade_level = ? AND section = ? AND school_year_id = ?
        ORDER BY id DESC LIMIT 1`,
       [gradeLevel, classSection, targetSy.id]
     );
@@ -622,6 +657,8 @@ const assignAdviserToClass = async (req, res) => {
  */
 const unassignAdviserFromClass = async (req, res) => {
   try {
+    await ensureClassesSchoolYearColumn();
+    await ensureClassAssignmentsTable();
     const { classId } = req.params;
     const { adviser_id, grade, section } = req.body;
     const targetSy = await resolveSchoolYear(req);
@@ -633,7 +670,7 @@ const unassignAdviserFromClass = async (req, res) => {
       try {
         await ensureClassAssignmentsTable();
         await pool.query(
-          `DELETE FROM class_assignments WHERE adviser_id = ? AND (school_year_id = ? OR school_year_id IS NULL)`,
+          `DELETE FROM class_assignments WHERE adviser_id = ? AND school_year_id = ?`,
           [String(adviser_id), targetSy.id]
         );
       } catch(e) { /* table may not exist */ }
@@ -651,7 +688,7 @@ const unassignAdviserFromClass = async (req, res) => {
       try {
         await ensureClassAssignmentsTable();
         await pool.query(
-          `DELETE FROM class_assignments WHERE LOWER(REPLACE(CONCAT(grade_level, '-', section), ' ', '-')) = ? AND (school_year_id = ? OR school_year_id IS NULL)`,
+          `DELETE FROM class_assignments WHERE LOWER(REPLACE(CONCAT(grade_level, '-', section), ' ', '-')) = ? AND school_year_id = ?`,
           [classId, targetSy.id]
         );
       } catch(e) { /* table may not exist */ }
@@ -692,6 +729,7 @@ const unassignAdviserFromClass = async (req, res) => {
  */
 const assignSubjectTeacher = async (req, res) => {
   try {
+    await ensureClassesSchoolYearColumn();
     const { classId } = req.params;
     const { teacher_id, teacher_name, subject, day, start_time, end_time } = req.body;
     const targetSy = await resolveSchoolYear(req);
@@ -743,14 +781,21 @@ const assignSubjectTeacher = async (req, res) => {
     }
 
     // Check for class-level schedule conflict on the same day/time
-    const [classConflicts] = await pool.query(
-      `SELECT c.grade, c.section, st.teacher_name, st.subject, st.day, st.start_time, st.end_time
-       FROM subject_teachers st
-       JOIN classes c ON st.class_id = c.id
-       WHERE st.class_id = ? AND st.day = ? AND st.school_year_id = ? AND c.school_year_id = ?
-       AND NOT (st.end_time <= ? OR st.start_time >= ?)`,
-      [classId, assignmentDay, targetSy.id, targetSy.id, assignmentStart, assignmentEnd]
-    );
+    const classConflictSql = classesHasSchoolYearColumn
+      ? `SELECT c.grade, c.section, st.teacher_name, st.subject, st.day, st.start_time, st.end_time
+         FROM subject_teachers st
+         JOIN classes c ON st.class_id = c.id
+         WHERE st.class_id = ? AND st.day = ? AND st.school_year_id = ? AND c.school_year_id = ?
+         AND NOT (st.end_time <= ? OR st.start_time >= ?)`
+      : `SELECT c.grade, c.section, st.teacher_name, st.subject, st.day, st.start_time, st.end_time
+         FROM subject_teachers st
+         JOIN classes c ON st.class_id = c.id
+         WHERE st.class_id = ? AND st.day = ? AND st.school_year_id = ?
+         AND NOT (st.end_time <= ? OR st.start_time >= ?)`;
+    const classConflictParams = classesHasSchoolYearColumn
+      ? [classId, assignmentDay, targetSy.id, targetSy.id, assignmentStart, assignmentEnd]
+      : [classId, assignmentDay, targetSy.id, assignmentStart, assignmentEnd];
+    const [classConflicts] = await pool.query(classConflictSql, classConflictParams);
 
     if (classConflicts.length > 0) {
       const conflict = classConflicts[0];
@@ -761,14 +806,21 @@ const assignSubjectTeacher = async (req, res) => {
     }
 
     // Check for teacher-level schedule conflict on the same day/time across any class
-    const [teacherConflicts] = await pool.query(
-      `SELECT c.grade, c.section, st.subject, st.day, st.start_time, st.end_time
-       FROM subject_teachers st
-       JOIN classes c ON st.class_id = c.id
-       WHERE st.teacher_id = ? AND st.day = ? AND st.school_year_id = ? AND c.school_year_id = ?
-       AND NOT (st.end_time <= ? OR st.start_time >= ?)`,
-      [teacher_id, assignmentDay, targetSy.id, targetSy.id, assignmentStart, assignmentEnd]
-    );
+    const teacherConflictSql = classesHasSchoolYearColumn
+      ? `SELECT c.grade, c.section, st.subject, st.day, st.start_time, st.end_time
+         FROM subject_teachers st
+         JOIN classes c ON st.class_id = c.id
+         WHERE st.teacher_id = ? AND st.day = ? AND st.school_year_id = ? AND c.school_year_id = ?
+         AND NOT (st.end_time <= ? OR st.start_time >= ?)`
+      : `SELECT c.grade, c.section, st.subject, st.day, st.start_time, st.end_time
+         FROM subject_teachers st
+         JOIN classes c ON st.class_id = c.id
+         WHERE st.teacher_id = ? AND st.day = ? AND st.school_year_id = ?
+         AND NOT (st.end_time <= ? OR st.start_time >= ?)`;
+    const teacherConflictParams = classesHasSchoolYearColumn
+      ? [teacher_id, assignmentDay, targetSy.id, targetSy.id, assignmentStart, assignmentEnd]
+      : [teacher_id, assignmentDay, targetSy.id, assignmentStart, assignmentEnd];
+    const [teacherConflicts] = await pool.query(teacherConflictSql, teacherConflictParams);
 
     if (teacherConflicts.length > 0) {
       const conflict = teacherConflicts[0];
@@ -820,6 +872,7 @@ const assignSubjectTeacher = async (req, res) => {
  */
 const unassignSubjectTeacher = async (req, res) => {
   try {
+    await ensureClassesSchoolYearColumn();
     const { classId, teacherId } = req.params;
     const targetSy = await resolveSchoolYear(req);
 
@@ -849,6 +902,7 @@ const unassignSubjectTeacher = async (req, res) => {
 // List classes from the previous (non-archived) school year
 const getPreviousYearClasses = async (req, res) => {
   try {
+    await ensureClassesSchoolYearColumn();
     const targetSy = await resolveSchoolYear(req);
     const prevSy = await getPreviousSchoolYear(targetSy.start_date);
     if (!prevSy) {
@@ -874,6 +928,7 @@ const getPreviousYearClasses = async (req, res) => {
 // Copy selected classes from previous school year into the active year
 const fetchClassesFromPreviousYear = async (req, res) => {
   try {
+    await ensureClassesSchoolYearColumn();
     const targetSy = await resolveSchoolYear(req);
     const activeSy = await getActiveSchoolYear();
     if (!targetSy || targetSy.id !== activeSy.id) {
