@@ -604,12 +604,12 @@ const getSubjectTeacherClasses = async (req, res) => {
          FROM classes c
          JOIN subject_teachers st
            ON (
-             LOWER(TRIM(CAST(c.id AS CHAR))) = LOWER(TRIM(st.class_id))
-             OR LOWER(REPLACE(CONCAT(TRIM(c.grade), '-', TRIM(c.section)), ' ', '-')) = LOWER(REPLACE(TRIM(st.class_id), ' ', '-'))
+             LOWER(TRIM(CAST(c.id AS CHAR))) COLLATE utf8mb4_general_ci = LOWER(TRIM(st.class_id)) COLLATE utf8mb4_general_ci
+             OR LOWER(REPLACE(CONCAT(TRIM(c.grade), '-', TRIM(c.section)), ' ', '-')) COLLATE utf8mb4_general_ci = LOWER(REPLACE(TRIM(st.class_id), ' ', '-')) COLLATE utf8mb4_general_ci
            )
          WHERE (
-             LOWER(TRIM(CAST(st.teacher_id AS CHAR))) = LOWER(TRIM(?))
-             OR ( ? <> '' AND LOWER(TRIM(st.teacher_name)) = LOWER(TRIM(?)) )
+             LOWER(TRIM(CAST(st.teacher_id AS CHAR))) COLLATE utf8mb4_general_ci = LOWER(TRIM(?)) COLLATE utf8mb4_general_ci
+             OR ( ? <> '' AND LOWER(TRIM(st.teacher_name)) COLLATE utf8mb4_general_ci = LOWER(TRIM(?)) COLLATE utf8mb4_general_ci )
            )
            AND st.school_year_id = ?
            AND c.school_year_id = ?
