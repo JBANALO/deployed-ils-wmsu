@@ -489,7 +489,6 @@ console.log('GOOGLE_CLIENT_ID:', process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET
 console.log('========================');
 
 const authRoutes = require('./routes/authRoutes');
-const authController = require('./controllers/authControllerMySQL');
 
 const studentRoutes = require('./routes/studentRoutes');
 
@@ -689,10 +688,6 @@ app.post('/api/auth/login', async (req, res) => {
   try {
 
     console.log('Login route called with body:', req.body);
-
-    // Delegate to the centralized auth controller so login behavior stays
-    // consistent with /api/auth routes and MySQL user account handling.
-    return await authController.login(req, res);
 
     
 
