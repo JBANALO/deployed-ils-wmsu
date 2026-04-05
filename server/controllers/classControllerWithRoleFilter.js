@@ -538,6 +538,39 @@ const getSubjectTeacherClasses = async (req, res) => {
     console.log(`getSubjectTeacherClasses - userId: ${userId}`);
 
     try {
+      const normalizedUserId = String(userId || '').trim();
+      let teacherNameCandidate = '';
+
+      try {
+        const [teacherRows] = await pool.query(
+          `SELECT first_name, last_name FROM teachers WHERE CAST(id AS CHAR) = ? LIMIT 1`,
+          [normalizedUserId]
+        );
+        if (teacherRows.length > 0) {
+          teacherNameCandidate = `${teacherRows[0].first_name || ''} ${teacherRows[0].last_name || ''}`.trim();
+        }
+      } catch (teacherNameErr) {
+        console.log('Teacher name lookup (teachers) skipped:', teacherNameErr.message);
+      }
+
+      if (!teacherNameCandidate) {
+        try {
+          const [userRows] = await pool.query(
+            `SELECT firstName, lastName, first_name, last_name
+             FROM users
+             WHERE CAST(id AS CHAR) = ?
+             LIMIT 1`,
+            [normalizedUserId]
+          );
+          if (userRows.length > 0) {
+            const row = userRows[0];
+            teacherNameCandidate = `${row.firstName || row.first_name || ''} ${row.lastName || row.last_name || ''}`.trim();
+          }
+        } catch (teacherNameUserErr) {
+          console.log('Teacher name lookup (users) skipped:', teacherNameUserErr.message);
+        }
+      }
+
       const normalizeClassId = (value = '') => String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
       const titleCaseToken = (value = '') => {
         const token = String(value || '').trim();
@@ -574,11 +607,14 @@ const getSubjectTeacherClasses = async (req, res) => {
              LOWER(TRIM(CAST(c.id AS CHAR))) = LOWER(TRIM(st.class_id))
              OR LOWER(REPLACE(CONCAT(TRIM(c.grade), '-', TRIM(c.section)), ' ', '-')) = LOWER(REPLACE(TRIM(st.class_id), ' ', '-'))
            )
-         WHERE st.teacher_id = ?
+         WHERE (
+             LOWER(TRIM(CAST(st.teacher_id AS CHAR))) = LOWER(TRIM(?))
+             OR ( ? <> '' AND LOWER(TRIM(st.teacher_name)) = LOWER(TRIM(?)) )
+           )
            AND st.school_year_id = ?
            AND c.school_year_id = ?
          GROUP BY c.id`,
-        [String(userId), targetSy.id, targetSy.id]
+        [normalizedUserId, teacherNameCandidate, teacherNameCandidate, targetSy.id, targetSy.id]
       );
 
       if (rows.length > 0) {
@@ -590,10 +626,13 @@ const getSubjectTeacherClasses = async (req, res) => {
       const [stRows] = await pool.query(
         `SELECT class_id, GROUP_CONCAT(DISTINCT subject) AS subjects_teaching
          FROM subject_teachers
-         WHERE teacher_id = ?
+         WHERE (
+             LOWER(TRIM(CAST(teacher_id AS CHAR))) = LOWER(TRIM(?))
+             OR ( ? <> '' AND LOWER(TRIM(teacher_name)) = LOWER(TRIM(?)) )
+           )
            AND school_year_id = ?
          GROUP BY class_id`,
-        [String(userId), targetSy.id]
+        [normalizedUserId, teacherNameCandidate, teacherNameCandidate, targetSy.id]
       );
 
       if (stRows.length === 0) {
