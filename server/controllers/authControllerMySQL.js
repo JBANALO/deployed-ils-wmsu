@@ -215,13 +215,14 @@ exports.login = async (req, res) => {
     }
 
     const user = users[0];
+    const userIdText = String(user?.id ?? '');
 
     // Password comparison with database priority
     let passwordMatch = false;
     let authenticatedFrom = '';
     
     // For database users, always use database password
-    if (user.source === 'database' || (user.id && !user.id.startsWith('user-'))) {
+    if (user.source === 'database' || (userIdText && !userIdText.startsWith('user-'))) {
       // Database user - use hashed password comparison
       if (typeof user.password === 'string' && user.password.startsWith('$2')) {
         passwordMatch = await bcrypt.compare(password, user.password);
