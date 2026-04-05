@@ -269,7 +269,7 @@ exports.createStudent = async (req, res) => {
         grade_level, section, parent_first_name, parent_last_name,
         parent_email, parent_contact, student_email, password,
         profile_pic, qr_code, status, created_by, school_year_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [lrn, firstName, middleName || null, lastName, age, sex || 'N/A',
         gradeLevel, section, parentFirstName || null, parentLastName || null,
         parentEmail || null, parentContact || null, studentEmail || null, hashedPassword,
