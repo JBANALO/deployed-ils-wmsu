@@ -12,6 +12,7 @@ export default function TeacherAccounts() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState(null);
+  const [activeSchoolYearId, setActiveSchoolYearId] = useState("");
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -23,6 +24,19 @@ export default function TeacherAccounts() {
   });
 
   useEffect(() => {
+    const fetchActiveSchoolYear = async () => {
+      try {
+        const response = await api.get('/school-years/active');
+        const active = response.data?.data || response.data || null;
+        if (active?.id) {
+          setActiveSchoolYearId(String(active.id));
+        }
+      } catch (_) {
+        // non-blocking
+      }
+    };
+
+    fetchActiveSchoolYear();
     fetchTeachers();
 
     const interval = setInterval(() => {
@@ -43,11 +57,22 @@ export default function TeacherAccounts() {
   const fetchTeachers = async (silent = false) => {
     try {
       setLoading(true);
-      const response = await api.get('/teachers');
+      const params = activeSchoolYearId ? { schoolYearId: activeSchoolYearId } : undefined;
+      const response = await api.get('/teachers', { params });
       const raw = response.data?.data?.teachers || response.data?.teachers || response.data?.data || [];
-      const list = Array.isArray(raw)
+      let list = Array.isArray(raw)
         ? raw.map(normalizeTeacherRecord).filter((t) => ['teacher', 'adviser', 'subject_teacher'].includes(t.role))
         : [];
+
+      // Fallback source: some deployments expose teachers under /users only.
+      if (list.length === 0) {
+        const usersResponse = await api.get('/users', { params });
+        const usersRaw = usersResponse.data?.data?.users || usersResponse.data?.users || usersResponse.data?.data || [];
+        list = Array.isArray(usersRaw)
+          ? usersRaw.map(normalizeTeacherRecord).filter((t) => ['teacher', 'adviser', 'subject_teacher'].includes(t.role))
+          : [];
+      }
+
       setTeachers(list);
       if (!silent) {
         toast.success(`Loaded ${list.length} teachers`);
@@ -60,6 +85,12 @@ export default function TeacherAccounts() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (activeSchoolYearId) {
+      fetchTeachers(true);
+    }
+  }, [activeSchoolYearId]);
 
   const filteredTeachers = teachers.filter(teacher => {
     const matchesSearch = `${teacher.firstName} ${teacher.lastName} ${teacher.email}`.toLowerCase().includes(searchTerm.toLowerCase());

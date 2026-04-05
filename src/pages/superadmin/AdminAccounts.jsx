@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { UsersIcon, PlusIcon, PencilIcon, TrashIcon, EyeIcon, EyeSlashIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { UsersIcon, PlusIcon, PencilIcon, TrashIcon, EyeIcon, EyeSlashIcon, KeyIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { toast } from 'react-toastify';
 import api from "../../api/axiosConfig";
 
@@ -10,9 +10,12 @@ export default function AdminAccounts() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false);
+  const [credentialsLoading, setCredentialsLoading] = useState(false);
   const [showCreatePassword, setShowCreatePassword] = useState(false);
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [selectedAdmin, setSelectedAdmin] = useState(null);
+  const [credentialsData, setCredentialsData] = useState(null);
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -134,6 +137,28 @@ export default function AdminAccounts() {
     setShowEditModal(true);
   };
 
+  const openCredentialsModal = async (admin) => {
+    try {
+      setSelectedAdmin(admin);
+      setCredentialsLoading(true);
+      setCredentialsData(null);
+      setShowCredentialsModal(true);
+
+      const response = await api.get(`/users/${admin.id}/credentials`);
+      const data = response.data?.data || response.data || null;
+      setCredentialsData(data);
+      if (response.data?.message) {
+        toast.info(response.data.message);
+      }
+    } catch (error) {
+      console.error('Error fetching admin credentials:', error);
+      toast.error(error.response?.data?.message || 'Failed to load credentials');
+      setShowCredentialsModal(false);
+    } finally {
+      setCredentialsLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -234,6 +259,13 @@ export default function AdminAccounts() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => openCredentialsModal(admin)}
+                          className="text-amber-600 hover:text-amber-800"
+                          title="View credentials"
+                        >
+                          <KeyIcon className="w-5 h-5" />
+                        </button>
                         <button
                           onClick={() => openEditModal(admin)}
                           className="text-blue-600 hover:text-blue-900"
@@ -363,6 +395,51 @@ export default function AdminAccounts() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Credentials Modal */}
+      {showCredentialsModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">Admin Credentials</h2>
+
+            {credentialsLoading ? (
+              <p className="text-gray-500">Loading credentials...</p>
+            ) : (
+              <div className="space-y-3 text-sm">
+                <div>
+                  <p className="text-gray-500">Name</p>
+                  <p className="font-semibold text-gray-900">{credentialsData?.firstName} {credentialsData?.lastName}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Email</p>
+                  <p className="font-semibold text-gray-900 break-all">{credentialsData?.email || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Username</p>
+                  <p className="font-semibold text-gray-900">{credentialsData?.username || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Password</p>
+                  <p className="font-semibold text-gray-900 break-all">{credentialsData?.password || 'Not available. Set a new password in Edit Admin.'}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCredentialsModal(false);
+                  setCredentialsData(null);
+                }}
+                className="w-full bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 transition-colors"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
