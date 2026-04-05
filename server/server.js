@@ -1000,6 +1000,41 @@ app.post('/api/auth/login', async (req, res) => {
 
     }
 
+    // If this is a teacher-like account sourced from JSON, align identity to MySQL teachers row.
+    // This prevents class-assignment mismatches where subject_teachers.teacher_id stores DB teacher IDs.
+    const roleLower = String(user.role || '').toLowerCase();
+    if (roleLower === 'teacher' || roleLower === 'adviser' || roleLower === 'subject_teacher') {
+      try {
+        const loginKey = String(loginField || '').trim().toLowerCase();
+        const dbTeachers = await query(
+          `SELECT id, first_name, last_name, username, email, role, grade_level, section
+           FROM teachers
+           WHERE LOWER(email) = ? OR LOWER(username) = ?
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [loginKey, loginKey]
+        );
+
+        if (dbTeachers.length > 0) {
+          const dbTeacher = dbTeachers[0];
+          user = {
+            ...user,
+            id: dbTeacher.id,
+            firstName: user.firstName || dbTeacher.first_name || '',
+            lastName: user.lastName || dbTeacher.last_name || '',
+            username: dbTeacher.username || user.username,
+            email: dbTeacher.email || user.email,
+            role: dbTeacher.role || user.role,
+            gradeLevel: dbTeacher.grade_level || user.gradeLevel,
+            section: dbTeacher.section || user.section
+          };
+          console.log(`✅ Teacher login identity aligned to DB id: ${dbTeacher.id}`);
+        }
+      } catch (teacherAlignError) {
+        console.log('Teacher identity alignment skipped:', teacherAlignError.message);
+      }
+    }
+
     
 
     // Generate token
