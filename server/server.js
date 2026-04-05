@@ -693,6 +693,7 @@ app.post('/api/auth/login', async (req, res) => {
     const { email, username, password } = req.body;
 
     const loginField = email || username;
+    const submittedPassword = String(password || '').trim();
 
     const lookupTeacherInDb = async (loginValue) => {
       try {
@@ -735,7 +736,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     
 
-    if (!loginField || !password) {
+    if (!loginField || !submittedPassword) {
 
       return res.status(400).json({ status: 'fail', message: 'Email/username and password are required' });
 
@@ -1031,7 +1032,7 @@ app.post('/api/auth/login', async (req, res) => {
 
       const bcrypt = require('bcryptjs');
 
-      passwordMatch = await bcrypt.compare(password, user.password);
+      passwordMatch = await bcrypt.compare(submittedPassword, user.password);
 
       console.log(`🔐 Password check - Using bcrypt comparison`);
 
@@ -1039,7 +1040,7 @@ app.post('/api/auth/login', async (req, res) => {
 
       // Password is plain text
 
-      passwordMatch = user.password === password;
+      passwordMatch = user.password === submittedPassword;
 
       console.log(`🔐 Password check - Using plain text comparison`);
 
@@ -1054,9 +1055,9 @@ app.post('/api/auth/login', async (req, res) => {
       if (teacherFromDb && teacherFromDb.password) {
         if (teacherFromDb.password.startsWith('$2a$') || teacherFromDb.password.startsWith('$2b$')) {
           const bcrypt = require('bcryptjs');
-          passwordMatch = await bcrypt.compare(password, teacherFromDb.password);
+          passwordMatch = await bcrypt.compare(submittedPassword, teacherFromDb.password);
         } else {
-          passwordMatch = teacherFromDb.password === password;
+          passwordMatch = teacherFromDb.password === submittedPassword;
         }
 
         if (passwordMatch) {
