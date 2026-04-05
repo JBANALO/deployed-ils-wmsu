@@ -10,6 +10,7 @@ const { sendGradeReportEmail, sendAdviserGradeSubmissionEmail } = require('../ut
 let gradesSyEnsured = false;
 let studentSyEnsured = false;
 let notificationsEnsured = false;
+let schoolYearQuarterColumnsEnsured = false;
 
 const normalizeRole = (value = '') => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 
@@ -52,6 +53,28 @@ const ensureNotificationsTable = async () => {
     )
   `);
   notificationsEnsured = true;
+};
+
+const ensureSchoolYearQuarterColumns = async () => {
+  if (schoolYearQuarterColumnsEnsured) return;
+
+  const cols = await query('SHOW COLUMNS FROM school_years');
+  const hasQ1 = cols.some(c => c.Field === 'q1_end_date');
+  const hasQ2 = cols.some(c => c.Field === 'q2_end_date');
+  const hasQ3 = cols.some(c => c.Field === 'q3_end_date');
+  const hasQ4 = cols.some(c => c.Field === 'q4_end_date');
+
+  if (!hasQ1) await query('ALTER TABLE school_years ADD COLUMN q1_end_date DATE NULL');
+  if (!hasQ2) await query('ALTER TABLE school_years ADD COLUMN q2_end_date DATE NULL');
+  if (!hasQ3) await query('ALTER TABLE school_years ADD COLUMN q3_end_date DATE NULL');
+  if (!hasQ4) await query('ALTER TABLE school_years ADD COLUMN q4_end_date DATE NULL');
+
+  schoolYearQuarterColumnsEnsured = true;
+};
+
+const quarterLabel = (qKey = '') => {
+  const map = { q1: 'Quarter 1', q2: 'Quarter 2', q3: 'Quarter 3', q4: 'Quarter 4' };
+  return map[String(qKey || '').toLowerCase()] || String(qKey || '').toUpperCase();
 };
 
 const getActiveSchoolYear = async () => {
@@ -237,6 +260,7 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
     await ensureStudentSchoolYearColumn();
     await ensureGradesSchoolYearColumn();
     await ensureNotificationsTable();
+    await ensureSchoolYearQuarterColumns();
     const { id } = req.params;
     const { grades, average, quarter } = req.body;
     const user = req.user;
@@ -249,6 +273,54 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
     const targetSyId = student.school_year_id || (await getActiveSchoolYear())?.id;
     if (!targetSyId) {
       return res.status(400).json({ success: false, error: 'No active school year found for grading' });
+    }
+
+    // Enforce per-quarter editing deadlines for non-admin users.
+    const normalizedRoleForDeadline = normalizeRole(user?.role);
+    if (normalizedRoleForDeadline !== 'admin') {
+      const quarterKeysFromPayload = new Set();
+      for (const [, gradeValue] of Object.entries(grades || {})) {
+        if (typeof gradeValue === 'object' && gradeValue !== null) {
+          Object.entries(gradeValue).forEach(([qKey, gValue]) => {
+            if (gValue && Number(gValue) > 0) {
+              quarterKeysFromPayload.add(String(qKey || '').toLowerCase());
+            }
+          });
+        } else if (gradeValue && Number(gradeValue) > 0) {
+          quarterKeysFromPayload.add(String(quarter || 'q1').toLowerCase());
+        }
+      }
+
+      if (quarterKeysFromPayload.size > 0) {
+        const syRows = await query(
+          `SELECT q1_end_date, q2_end_date, q3_end_date, q4_end_date
+           FROM school_years
+           WHERE id = ?
+           LIMIT 1`,
+          [targetSyId]
+        );
+        const syRow = syRows?.[0] || null;
+
+        if (syRow) {
+          const now = new Date();
+          for (const qKey of quarterKeysFromPayload) {
+            if (!['q1', 'q2', 'q3', 'q4'].includes(qKey)) continue;
+            const deadlineRaw = syRow[`${qKey}_end_date`];
+            if (!deadlineRaw) continue;
+
+            const deadline = new Date(deadlineRaw);
+            deadline.setHours(23, 59, 59, 999);
+
+            if (now > deadline) {
+              return res.status(403).json({
+                success: false,
+                error: 'Quarter deadline passed',
+                message: `${quarterLabel(qKey)} is already closed for editing.`
+              });
+            }
+          }
+        }
+      }
     }
 
     // Filter out subjects that don't have any actual grades (skip 0, null, undefined)

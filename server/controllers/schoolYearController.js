@@ -8,6 +8,10 @@ async function ensureSchoolYearLeadershipColumns() {
   const columns = await query('SHOW COLUMNS FROM school_years');
   const hasPrincipal = columns.some(c => c.Field === 'principal_name');
   const hasAssistantPrincipal = columns.some(c => c.Field === 'assistant_principal_name');
+  const hasQ1End = columns.some(c => c.Field === 'q1_end_date');
+  const hasQ2End = columns.some(c => c.Field === 'q2_end_date');
+  const hasQ3End = columns.some(c => c.Field === 'q3_end_date');
+  const hasQ4End = columns.some(c => c.Field === 'q4_end_date');
 
   if (!hasPrincipal) {
     await query('ALTER TABLE school_years ADD COLUMN principal_name VARCHAR(255) NULL AFTER end_date');
@@ -17,8 +21,31 @@ async function ensureSchoolYearLeadershipColumns() {
     await query('ALTER TABLE school_years ADD COLUMN assistant_principal_name VARCHAR(255) NULL AFTER principal_name');
   }
 
+  if (!hasQ1End) {
+    await query('ALTER TABLE school_years ADD COLUMN q1_end_date DATE NULL AFTER assistant_principal_name');
+  }
+
+  if (!hasQ2End) {
+    await query('ALTER TABLE school_years ADD COLUMN q2_end_date DATE NULL AFTER q1_end_date');
+  }
+
+  if (!hasQ3End) {
+    await query('ALTER TABLE school_years ADD COLUMN q3_end_date DATE NULL AFTER q2_end_date');
+  }
+
+  if (!hasQ4End) {
+    await query('ALTER TABLE school_years ADD COLUMN q4_end_date DATE NULL AFTER q3_end_date');
+  }
+
   leadershipColumnsEnsured = true;
 }
+
+const normalizeDateValue = (value) => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  return raw;
+};
 
 // Get all school years (non-archived)
 exports.getAllSchoolYears = async (req, res) => {
@@ -134,7 +161,18 @@ exports.getArchivedSchoolYears = async (req, res) => {
 exports.createSchoolYear = async (req, res) => {
   try {
     await ensureSchoolYearLeadershipColumns();
-    const { label, start_date, end_date, is_active, principal_name, assistant_principal_name } = req.body;
+    const {
+      label,
+      start_date,
+      end_date,
+      is_active,
+      principal_name,
+      assistant_principal_name,
+      q1_end_date,
+      q2_end_date,
+      q3_end_date,
+      q4_end_date
+    } = req.body;
 
     // Validate required fields
     if (!label || !start_date || !end_date) {
@@ -151,14 +189,19 @@ exports.createSchoolYear = async (req, res) => {
 
     const result = await query(
       `INSERT INTO school_years (
-        label, start_date, end_date, principal_name, assistant_principal_name, is_active
-      ) VALUES (?, ?, ?, ?, ?, ?)`,
+        label, start_date, end_date, principal_name, assistant_principal_name,
+        q1_end_date, q2_end_date, q3_end_date, q4_end_date, is_active
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         label,
         start_date,
         end_date,
         principal_name ? String(principal_name).trim() : null,
         assistant_principal_name ? String(assistant_principal_name).trim() : null,
+        normalizeDateValue(q1_end_date),
+        normalizeDateValue(q2_end_date),
+        normalizeDateValue(q3_end_date),
+        normalizeDateValue(q4_end_date),
         is_active ? 1 : 0
       ]
     );
@@ -173,6 +216,10 @@ exports.createSchoolYear = async (req, res) => {
         end_date,
         principal_name: principal_name ? String(principal_name).trim() : null,
         assistant_principal_name: assistant_principal_name ? String(assistant_principal_name).trim() : null,
+        q1_end_date: normalizeDateValue(q1_end_date),
+        q2_end_date: normalizeDateValue(q2_end_date),
+        q3_end_date: normalizeDateValue(q3_end_date),
+        q4_end_date: normalizeDateValue(q4_end_date),
         is_active: is_active ? 1 : 0
       }
     });
@@ -190,7 +237,18 @@ exports.updateSchoolYear = async (req, res) => {
   try {
     await ensureSchoolYearLeadershipColumns();
     const { id } = req.params;
-    const { label, start_date, end_date, is_active, principal_name, assistant_principal_name } = req.body;
+    const {
+      label,
+      start_date,
+      end_date,
+      is_active,
+      principal_name,
+      assistant_principal_name,
+      q1_end_date,
+      q2_end_date,
+      q3_end_date,
+      q4_end_date
+    } = req.body;
 
     // Disallow edits on non-active school years unless the request is activating it
     const [currentActive] = await query('SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
@@ -210,6 +268,7 @@ exports.updateSchoolYear = async (req, res) => {
     const result = await query(
       `UPDATE school_years
        SET label = ?, start_date = ?, end_date = ?, principal_name = ?, assistant_principal_name = ?,
+           q1_end_date = ?, q2_end_date = ?, q3_end_date = ?, q4_end_date = ?,
            is_active = ?, updated_at = NOW()
        WHERE id = ?`,
       [
@@ -218,6 +277,10 @@ exports.updateSchoolYear = async (req, res) => {
         end_date,
         principal_name ? String(principal_name).trim() : null,
         assistant_principal_name ? String(assistant_principal_name).trim() : null,
+        normalizeDateValue(q1_end_date),
+        normalizeDateValue(q2_end_date),
+        normalizeDateValue(q3_end_date),
+        normalizeDateValue(q4_end_date),
         is_active ? 1 : 0,
         id
       ]

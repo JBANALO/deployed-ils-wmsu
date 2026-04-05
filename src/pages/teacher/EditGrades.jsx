@@ -74,6 +74,7 @@ export default function EditGrades() {
   const [initialGradeData, setInitialGradeData] = useState({});
   const [isGradeLocked, setIsGradeLocked] = useState(false);
   const [lockReason, setLockReason] = useState("");
+  const [quarterEndDates, setQuarterEndDates] = useState({ q1: null, q2: null, q3: null, q4: null });
   const [showReportCard, setShowReportCard] = useState(false);
   const [reportCardStudent, setReportCardStudent] = useState(null); // null = all students, array = selected students
   const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
@@ -143,8 +144,81 @@ export default function EditGrades() {
   }, [selectedSchoolYearId]);
 
   useEffect(() => {
+    const fetchQuarterDeadlines = async () => {
+      try {
+        const syResponse = await api.get('/school-years');
+        const schoolYears = syResponse.data?.data || [];
+        const target = schoolYears.find((item) => String(item.id) === String(selectedSchoolYearId || activeSchoolYearId));
+
+        if (!target) {
+          setQuarterEndDates({ q1: null, q2: null, q3: null, q4: null });
+          return;
+        }
+
+        setQuarterEndDates({
+          q1: target.q1_end_date || null,
+          q2: target.q2_end_date || null,
+          q3: target.q3_end_date || null,
+          q4: target.q4_end_date || null,
+        });
+      } catch (error) {
+        console.error('Failed to load quarter end dates:', error.message || error);
+        setQuarterEndDates({ q1: null, q2: null, q3: null, q4: null });
+      }
+    };
+
+    fetchQuarterDeadlines();
+  }, [selectedSchoolYearId, activeSchoolYearId]);
+
+  useEffect(() => {
     fetchProgress(selectedQuarter);
   }, [selectedQuarter, selectedSchoolYearId]);
+
+  const getQuarterDeadline = (qKey) => {
+    const raw = quarterEndDates?.[qKey] || null;
+    if (!raw) return null;
+    const d = new Date(raw);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  };
+
+  const isQuarterClosed = (qKey) => {
+    if (userRole === 'admin') return false;
+    const deadline = getQuarterDeadline(qKey);
+    if (!deadline) return false;
+    return new Date() > deadline;
+  };
+
+  const quarterLabel = (qKey) => {
+    const map = { q1: 'Quarter 1', q2: 'Quarter 2', q3: 'Quarter 3', q4: 'Quarter 4' };
+    return map[qKey] || qKey?.toUpperCase() || '';
+  };
+
+  useEffect(() => {
+    if (!showGradeModal || !selectedStudent) return;
+
+    const quarterOrder = ['q1', 'q2', 'q3', 'q4'];
+    const relevantQuarters = selectedQuarter === 'all'
+      ? quarterOrder
+      : quarterOrder.slice(0, quarterOrder.indexOf(selectedQuarter) + 1);
+    const closedQuarters = relevantQuarters.filter((q) => isQuarterClosed(q));
+
+    if (selectedQuarter === 'all') {
+      const allClosed = relevantQuarters.length > 0 && closedQuarters.length === relevantQuarters.length;
+      setIsGradeLocked(allClosed);
+      if (allClosed) {
+        setLockReason('All quarters are already closed for editing.');
+      } else if (closedQuarters.length > 0) {
+        setLockReason(`${closedQuarters.map(quarterLabel).join(', ')} are closed. You can still edit open quarters.`);
+      } else {
+        setLockReason('');
+      }
+    } else {
+      const quarterClosed = isQuarterClosed(selectedQuarter);
+      setIsGradeLocked(quarterClosed);
+      setLockReason(quarterClosed ? `${quarterLabel(selectedQuarter)} is already closed for editing.` : '');
+    }
+  }, [showGradeModal, selectedStudent, selectedQuarter, quarterEndDates, userRole]);
 
   // Update available sections when grade level changes
   useEffect(() => {
@@ -379,22 +453,27 @@ export default function EditGrades() {
   // Open grade modal for a student
   const openGradeModal = async (student) => {
     setSelectedStudent(student);
-    
-    // Check if grades are locked (1 day has passed since last save)
-    const lastEditTime = student.lastGradeEditTime ? new Date(student.lastGradeEditTime) : null;
-    const now = new Date();
-    const isLocked = lastEditTime && (now - lastEditTime) > 24 * 60 * 60 * 1000;
-    
-    if (isLocked) {
-      setIsGradeLocked(true);
-      setLockReason("Grades locked. 1 day has passed since last edit.");
-    } else if (lastEditTime) {
-      const hoursLeft = 24 - Math.floor((now - lastEditTime) / (60 * 60 * 1000));
-      setIsGradeLocked(false);
-      setLockReason(`You have ${hoursLeft} hours left to edit these grades.`);
+
+    const quarterOrder = ['q1', 'q2', 'q3', 'q4'];
+    const relevantQuarters = selectedQuarter === 'all'
+      ? quarterOrder
+      : quarterOrder.slice(0, quarterOrder.indexOf(selectedQuarter) + 1);
+    const closedQuarters = relevantQuarters.filter((q) => isQuarterClosed(q));
+
+    if (selectedQuarter === 'all') {
+      const allClosed = relevantQuarters.length > 0 && closedQuarters.length === relevantQuarters.length;
+      setIsGradeLocked(allClosed);
+      if (allClosed) {
+        setLockReason('All quarters are already closed for editing.');
+      } else if (closedQuarters.length > 0) {
+        setLockReason(`${closedQuarters.map(quarterLabel).join(', ')} are closed. You can still edit open quarters.`);
+      } else {
+        setLockReason('');
+      }
     } else {
-      setIsGradeLocked(false);
-      setLockReason("");
+      const quarterClosed = isQuarterClosed(selectedQuarter);
+      setIsGradeLocked(quarterClosed);
+      setLockReason(quarterClosed ? `${quarterLabel(selectedQuarter)} is already closed for editing.` : '');
     }
     
     // Determine student's class ID
@@ -1184,7 +1263,8 @@ export default function EditGrades() {
                                 )}
                               </td>
                               {quartersToShow.map(q => {
-                                const editable = canEdit && isEditableQ(q) && !isGradeLocked && !isViewOnlyMode;
+                                const quarterClosed = isQuarterClosed(q);
+                                const editable = canEdit && isEditableQ(q) && !isGradeLocked && !isViewOnlyMode && !quarterClosed;
                                 const val = gradeData[subject]?.[q];
                                 const hasVal = val && val !== 0 && val !== '';
                                 return (
@@ -1207,8 +1287,8 @@ export default function EditGrades() {
                                           )}
                                         </>
                                       ) : (
-                                        <span className={`text-base font-semibold ${hasVal ? 'text-gray-700' : 'text-gray-300'}`}>
-                                          {hasVal ? val : '—'}
+                                        <span className={`text-base font-semibold ${quarterClosed ? 'text-red-500' : (hasVal ? 'text-gray-700' : 'text-gray-300')}`}>
+                                          {hasVal ? val : (quarterClosed ? 'Closed' : '—')}
                                         </span>
                                       )}
                                     </div>
