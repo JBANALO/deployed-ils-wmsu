@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { 
   BellIcon, UserCircleIcon, ChevronDownIcon, 
   CheckCircleIcon, XCircleIcon, UserPlusIcon, ExclamationTriangleIcon,
-  QuestionMarkCircleIcon
+  QuestionMarkCircleIcon, ArrowLeftIcon
 } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
 import { toast } from 'react-toastify';
@@ -39,6 +39,20 @@ export default function AdminTopbar() {
   const handleTeachers = () => navigate("/admin/admin-teachers");
   const handleStudents = () => navigate("/admin/admin-students");
   const handleAdminProfile = () => navigate("/admin/admin-profile");
+  const handleBackToSuperAdmin = () => navigate('/admin/super-admin');
+
+  const normalizeRole = (value = '') => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const localUserRole = (() => {
+    try {
+      const raw = localStorage.getItem('user');
+      if (!raw) return '';
+      return JSON.parse(raw)?.role || '';
+    } catch (_) {
+      return '';
+    }
+  })();
+  const effectiveRole = normalizeRole(adminUser?.role || localUserRole);
+  const isSuperAdminView = effectiveRole === 'super_admin' || effectiveRole === 'superadmin';
 
   // Add a notification
   const addNotification = (type, title, message, data = {}) => {
@@ -193,6 +207,16 @@ export default function AdminTopbar() {
         <div className="flex items-center gap-3">
           <img src="/wmsu-logo.jpg" alt="Logo" className="w-10 h-10 rounded-full object-cover shrink-0" />
           <h1 className="text-sm font-semibold text-gray-900">WMSU ILS - Elementary (Admin)</h1>
+          {isSuperAdminView && (
+            <button
+              onClick={handleBackToSuperAdmin}
+              className="ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-red-200 text-red-700 hover:bg-red-50 transition text-xs font-semibold"
+              title="Back to Super Admin"
+            >
+              <ArrowLeftIcon className="w-4 h-4" />
+              Back to Super Admin
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-4 md:gap-6">
