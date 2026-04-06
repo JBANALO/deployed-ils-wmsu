@@ -547,6 +547,20 @@ const runAutoAbsentGeneration = async ({ schoolYearId, date, dryRun }) => {
   return summary;
 };
 
+router.get('/diag', async (req, res) => {
+  try {
+    const labelCol = await getSchoolYearLabelColumn();
+    res.json({
+      success: true,
+      routeVersion: 'attendance-routes-2026-04-06-v2',
+      schoolYearLabelColumn: labelCol || null,
+      now: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 const maybeRunAutoAbsentForToday = async ({ schoolYearId, date }) => {
   const targetDate = getDateString(date || new Date());
   const today = getDateString(new Date());
