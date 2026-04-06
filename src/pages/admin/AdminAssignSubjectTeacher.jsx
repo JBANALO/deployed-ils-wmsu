@@ -151,16 +151,22 @@ export default function AdminAssignSubjectTeacher() {
     }
   };
 
-  const handleRemoveSubjectTeacher = async (classId, teacherId, subject) => {
+  const handleRemoveSubjectTeacher = async (classId, teacherId, row) => {
     try {
-      const subjectParam = subject ? `?subject=${encodeURIComponent(subject)}` : '';
+      const params = new URLSearchParams();
+      if (row?.id !== undefined && row?.id !== null && String(row.id).trim() !== '') {
+        params.set('assignmentId', String(row.id));
+      }
+      if (row?.subject) params.set('subject', String(row.subject));
+      if (row?.day) params.set('day', String(row.day));
+      if (row?.start_time) params.set('start_time', String(row.start_time));
+      if (row?.end_time) params.set('end_time', String(row.end_time));
+      const query = params.toString() ? `?${params.toString()}` : '';
       const response = await api.put(
-        `/classes/${classId}/unassign-subject-teacher/${teacherId}${subjectParam}`
+        `/classes/${classId}/unassign-subject-teacher/${teacherId}${query}`
       );
 
-      setMessage(subject
-        ? `Removed all \"${subject}\" assignments for this teacher in this class`
-        : "Subject teacher removed successfully");
+      setMessage("Subject teacher entry removed successfully");
       setMessageType("success");
       
       // Refetch all data to update the list immediately
@@ -351,9 +357,9 @@ export default function AdminAssignSubjectTeacher() {
                                 </p>
                               </div>
                               <button
-                                onClick={() => handleRemoveSubjectTeacher(cls.id, st.teacher_id, st.subject)}
+                                onClick={() => handleRemoveSubjectTeacher(cls.id, st.teacher_id, st)}
                                 className="text-red-600 hover:text-red-800 p-1 flex-shrink-0"
-                                title="Remove all entries for this subject"
+                                title="Remove this entry"
                               >
                                 <TrashIcon className="w-5 h-5" />
                               </button>
