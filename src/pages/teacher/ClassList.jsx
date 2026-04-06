@@ -228,6 +228,17 @@ export default function ClassList() {
 
   const handleUpdateStudent = async () => {
     try {
+      const userStr = localStorage.getItem('user');
+      const actor = userStr ? JSON.parse(userStr) : null;
+      const actorRole = String(actor?.role || '').toLowerCase();
+      const previousStatus = String(selectedStudent?.status || '').trim().toLowerCase();
+      const nextStatus = String(editFormData?.status || '').trim().toLowerCase();
+
+      if (previousStatus === 'inactive' && nextStatus && nextStatus !== 'inactive') {
+        toast.error('Only admin can reactivate an inactive student account.');
+        return;
+      }
+
       const fullName = `${editFormData.firstName || ''} ${editFormData.middleName || ''} ${editFormData.lastName || ''}`.trim();
 
       const qrData = JSON.stringify({
@@ -253,7 +264,8 @@ export default function ClassList() {
         ...editFormData,
         fullName,
         qrCode: newQrCode,
-        profilePic: editFormData.profilePic  // Send updated photo
+        profilePic: editFormData.profilePic,  // Send updated photo
+        actorRole,
       };
 
       const response = await axios.put(`/students/${selectedStudent.id}`, updatedData);

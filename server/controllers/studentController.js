@@ -1112,7 +1112,7 @@ exports.updateStudent = async (req, res) => {
       lrn, firstName, middleName, lastName, age, sex,
       gradeLevel, section,
       parentFirstName, parentLastName, parentEmail, parentContact,
-      studentEmail, status
+      studentEmail, status, actorRole
     } = req.body;
 
     console.log('updateStudent called with id:', id);
@@ -1129,6 +1129,18 @@ exports.updateStudent = async (req, res) => {
     const activeSy = await getActiveSchoolYear();
     if (!activeSy || existingStudents[0].school_year_id !== activeSy.id) {
       return res.status(403).json({ status: 'fail', message: 'Editing past school years is not allowed (view only).' });
+    }
+
+    const normalizedActorRole = String(actorRole || '').trim().toLowerCase();
+    const isTeacherActor = ['teacher', 'adviser', 'subject_teacher'].includes(normalizedActorRole);
+    const currentStatus = String(existingStudents[0].status || '').trim().toLowerCase();
+    const nextStatus = String(status || '').trim().toLowerCase();
+
+    if (isTeacherActor && currentStatus === 'inactive' && nextStatus && nextStatus !== 'inactive') {
+      return res.status(403).json({
+        status: 'fail',
+        message: 'Only admin can reactivate an inactive student account.'
+      });
     }
 
     // Build update query dynamically based on provided fields

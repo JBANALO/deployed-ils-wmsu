@@ -88,6 +88,11 @@ export default function ReportsPage() {
     });
   };
 
+  const isInactiveStudent = (student) => {
+    const status = String(student?.status || '').trim().toLowerCase();
+    return status === 'inactive';
+  };
+
   const months = [
     { value: 1, label: "January" },
     { value: 2, label: "February" },
@@ -413,7 +418,9 @@ export default function ReportsPage() {
       setSelectedSubjectForRanking(prev => prev || ([...subjectSet][0] || ''));
 
       // Get top performing students — only those with avg >= 85 (honor level and above)
-      const topPerformers = studentsWithGrades
+      const rankingEligibleStudents = studentsWithGrades.filter((s) => !isInactiveStudent(s));
+
+      const topPerformers = rankingEligibleStudents
         .filter(s => s.average && s.average >= 85)
         .sort((a, b) => (b.average || 0) - (a.average || 0))
         .map((s, idx) => ({
@@ -428,7 +435,7 @@ export default function ReportsPage() {
       setTopStudents(topPerformers);
 
       // Get lowest performing students (only those with avg <= 80 — actual underperformers)
-      const lowestPerformers = studentsWithGrades
+      const lowestPerformers = rankingEligibleStudents
         .filter(s => s.average && s.average > 0 && s.average <= 80)
         .sort((a, b) => (a.average || 0) - (b.average || 0))
         .map((s, idx) => ({
@@ -448,7 +455,7 @@ export default function ReportsPage() {
       const lateToday = allAttendance.filter(r => r.date === new Date().toISOString().split('T')[0] && r.status === 'Late').length;
       
       // Class average from students who have grades
-      const studentsWithAvg = studentsWithGrades.filter(s => s.average > 0);
+      const studentsWithAvg = rankingEligibleStudents.filter(s => s.average > 0);
       const classAverage = studentsWithAvg.length > 0 
         ? Math.round(studentsWithAvg.reduce((sum, s) => sum + s.average, 0) / studentsWithAvg.length * 10) / 10
         : 0;
@@ -977,7 +984,7 @@ export default function ReportsPage() {
           {gradesSubTab === 'overall' && (
             <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
               {(() => {
-                const sortedStudents = [...students].sort((a, b) => (b.average || 0) - (a.average || 0));
+                const sortedStudents = [...students].filter((s) => !isInactiveStudent(s)).sort((a, b) => (b.average || 0) - (a.average || 0));
                 const completeStudents = sortedStudents.filter(isStudentReportCardComplete);
                 const isRankingActive = sortedStudents.length > 0 && completeStudents.length === sortedStudents.length;
                 const pendingCount = sortedStudents.length - completeStudents.length;
@@ -1101,7 +1108,7 @@ export default function ReportsPage() {
                         }
                         return g[selectedQuarterForView] || 0;
                       };
-                      const sorted = [...students].filter(s => getGrade(s) > 0).sort((a, b) => getGrade(b) - getGrade(a));
+                      const sorted = [...students].filter(s => !isInactiveStudent(s) && getGrade(s) > 0).sort((a, b) => getGrade(b) - getGrade(a));
                       if (sorted.length === 0) return <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">No grades for {selectedSubjectForRanking}</td></tr>;
                       return sorted.map((student, idx) => {
                         const g = student.grades?.[selectedSubjectForRanking] || {};

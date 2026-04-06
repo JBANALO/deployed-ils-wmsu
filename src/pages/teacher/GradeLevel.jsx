@@ -346,6 +346,17 @@ export default function GradeLevel() {
 
   const handleUpdateStudent = async () => {
     try {
+      const userStr = localStorage.getItem('user');
+      const actor = userStr ? JSON.parse(userStr) : null;
+      const actorRole = String(actor?.role || '').toLowerCase();
+      const previousStatus = String(selectedStudent?.status || '').trim().toLowerCase();
+      const nextStatus = String(editFormData?.status || '').trim().toLowerCase();
+
+      if (previousStatus === 'inactive' && nextStatus && nextStatus !== 'inactive') {
+        alert('Only admin can reactivate an inactive student account.');
+        return;
+      }
+
       const fullName = `${editFormData.firstName || ""} ${editFormData.middleName || ""} ${editFormData.lastName || ""}`.trim();
       const qrNeedsUpdate = editFormData.lrn !== selectedStudent.lrn || fullName !== selectedStudent.fullName || editFormData.gradeLevel !== selectedStudent.gradeLevel || editFormData.section !== selectedStudent.section;
 
@@ -360,7 +371,7 @@ export default function GradeLevel() {
         }), { width: 300, margin: 2 });
       }
 
-      const updatedData = { ...editFormData, fullName, qrCode: newQrCode };
+      const updatedData = { ...editFormData, fullName, qrCode: newQrCode, actorRole };
       const res = await fetch(`${API_BASE_URL}/students/${selectedStudent.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
