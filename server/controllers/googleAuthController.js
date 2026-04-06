@@ -221,6 +221,7 @@ exports.getCurrentUser = async (req, res) => {
           lastName: user.lastName || user.last_name || '',
           name: user.name || `${user.firstName || user.first_name} ${user.lastName || user.last_name}`,
           email: user.email,
+          username: user.username || '',
           phone: user.phone || '',
           profileImage: user.profile_pic || user.avatar || null,
           role: user.role,

@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { BellIcon, UserCircleIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
 import api from "../../api/axiosConfig";
+import { UserContext } from "../../context/UserContext";
 
 export default function TeacherTopbar({ sidebarOpen }) {
   const [showDropdown, setShowDropdown] = useState(false);
@@ -9,6 +10,7 @@ export default function TeacherTopbar({ sidebarOpen }) {
   const [userName, setUserName] = useState("");
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const { logout } = useContext(UserContext);
   const navigate = useNavigate();
   const dropdownRef = useRef(null);
   const notificationsRef = useRef(null);
@@ -97,9 +99,11 @@ export default function TeacherTopbar({ sidebarOpen }) {
   }, [showNotifications, showDropdown]);
 
   const handleLogout = () => {
-    // Clear all authentication data
+    // Use UserContext logout to clear user data properly
+    logout();
+    
+    // Clear authentication tokens
     localStorage.removeItem('token');
-    localStorage.removeItem('user');
     localStorage.removeItem('lastAdminEmail');
     localStorage.removeItem('lastTeacherEmail');
     localStorage.removeItem('lastStudentEmail');

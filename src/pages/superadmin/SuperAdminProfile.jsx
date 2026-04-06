@@ -12,13 +12,15 @@ export default function SuperAdminProfile() {
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(true); // Add loading state
+  
   const [formData, setFormData] = useState({
-    firstName: adminUser?.firstName || '',
-    lastName: adminUser?.lastName || '',
-    username: adminUser?.username || '',
-    email: adminUser?.email || '',
-    phone: adminUser?.phone || '',
-    profileImage: adminUser?.profileImage || ''
+    firstName: '',
+    lastName: '',
+    username: '',
+    email: '',
+    phone: '',
+    profileImage: ''
   });
   const navigate = useNavigate();
 
@@ -46,29 +48,71 @@ export default function SuperAdminProfile() {
       };
       console.log('SuperAdminProfile - setting formData to:', newFormData);
       setFormData(newFormData);
+      setLoading(false); // Set loading to false when data is loaded
+    } else {
+      // Try to get user data from localStorage if adminUser is null
+      try {
+        const storedUser = localStorage.getItem("user");
+        if (storedUser && storedUser !== 'undefined' && storedUser !== 'null') {
+          const parsedUser = JSON.parse(storedUser);
+          console.log('SuperAdminProfile - using stored user data:', parsedUser);
+          if (parsedUser && parsedUser.id) {
+            const newFormData = {
+              firstName: parsedUser.firstName || '',
+              lastName: parsedUser.lastName || '',
+              username: parsedUser.username || '',
+              email: parsedUser.email || '',
+              phone: parsedUser.phone || '',
+              profileImage: (parsedUser.profileImage && parsedUser.profileImage !== 'null' && parsedUser.profileImage !== 'undefined') ? parsedUser.profileImage : ''
+            };
+            setFormData(newFormData);
+            setLoading(false);
+          } else {
+            console.log('SuperAdminProfile - stored user data invalid, using defaults');
+            setLoading(false);
+          }
+        } else {
+          // No stored user data, set loading to false to show empty form
+          console.log('SuperAdminProfile - no valid stored user data');
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error('Error parsing stored user data:', error);
+        // Clear corrupted localStorage
+        localStorage.removeItem("user");
+        setLoading(false);
+      }
     }
   }, [adminUser]);
 
-  // Fetch complete user data on component mount if missing phone, department, or profileImage
+  // Fetch fresh user data on mount and when needed
   useEffect(() => {
-    const fetchCompleteUserData = async () => {
-      if (adminUser && (!adminUser.phone || !adminUser.profileImage)) {
-        try {
-          console.log('SuperAdminProfile - fetching complete superadmin user data...');
-          const response = await axios.get('/super-admin/me');
-          if (response.data?.data?.user) {
-            const completeUser = response.data.data.user;
-            console.log('SuperAdminProfile - fetched complete superadmin user:', completeUser);
-            updateUser(completeUser);
-          }
-        } catch (error) {
-          console.error('SuperAdminProfile - Error fetching complete superadmin user data:', error);
+    const fetchFreshUserData = async () => {
+      try {
+        console.log('SuperAdminProfile - fetching fresh user data...');
+        const response = await axios.get('/auth/me');
+        if (response.data.user) {
+          console.log('SuperAdminProfile - fresh user data:', response.data.user);
+          updateUser(response.data.user);
         }
+      } catch (error) {
+        console.error('Error fetching fresh user data on mount:', error);
+        // Set loading to false even on error to prevent infinite loading
+        setLoading(false);
       }
     };
 
-    fetchCompleteUserData();
-  }, [adminUser]);
+    // Always fetch fresh data on component mount to ensure we have latest updates
+    fetchFreshUserData();
+
+    // Add timeout to prevent infinite loading
+    const timeout = setTimeout(() => {
+      console.log('SuperAdminProfile - timeout reached, setting loading to false');
+      setLoading(false);
+    }, 5000); // 5 second timeout
+
+    return () => clearTimeout(timeout);
+  }, []); // Empty dependency array means this runs only once on mount
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -123,7 +167,45 @@ export default function SuperAdminProfile() {
       });
 
       // Update user context
-      updateUser(response.data.user);
+      if (response.data.user) {
+        console.log('SuperAdminProfile - updating with response data:', response.data.user);
+        updateUser(response.data.user);
+        
+        // Also update form data immediately to reflect changes
+        setFormData({
+          firstName: response.data.user.firstName || '',
+          lastName: response.data.user.lastName || '',
+          username: response.data.user.username || '',
+          email: response.data.user.email || '',
+          phone: response.data.user.phone || '',
+          profileImage: response.data.user.profileImage || ''
+        });
+      } else {
+        // Create updated user object from form data since API response doesn't include user
+        const updatedUser = {
+          id: adminUser?.id || 'super-admin-001',
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          username: formData.username,
+          email: formData.email,
+          phone: formData.phone,
+          profileImage: formData.profileImage,
+          role: 'super_admin'
+        };
+        
+        console.log('SuperAdminProfile - updating with form data:', updatedUser);
+        updateUser(updatedUser);
+        
+        // Update form data with the same data
+        setFormData({
+          firstName: updatedUser.firstName || '',
+          lastName: updatedUser.lastName || '',
+          username: updatedUser.username || '',
+          email: updatedUser.email || '',
+          phone: updatedUser.phone || '',
+          profileImage: updatedUser.profileImage || ''
+        });
+      }
 
       // Update profile image file in context if changed
       if (formData.profileImage && typeof formData.profileImage === 'object') {
@@ -179,7 +261,14 @@ export default function SuperAdminProfile() {
 
   return (
     <div className="max-w-4xl mx-auto p-6">
-      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+      {loading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-800"></div>
+          <span className="ml-4 text-gray-600">Loading profile...</span>
+        </div>
+      ) : (
+        <>
+          <div className="bg-white rounded-lg shadow-lg overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-red-800 to-red-900 px-8 py-6">
           <div className="flex items-center justify-between">
@@ -375,6 +464,8 @@ export default function SuperAdminProfile() {
           </form>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

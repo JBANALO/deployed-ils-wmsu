@@ -16,7 +16,7 @@ export default function SuperAdminTopbar() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const { adminUser, profileImageFile } = useContext(UserContext);
+  const { adminUser, profileImageFile, logout } = useContext(UserContext);
   const navigate = useNavigate();
 
   // Refs for click outside detection
@@ -25,9 +25,11 @@ export default function SuperAdminTopbar() {
 
   // Navigation handlers
   const handleLogout = () => {
-    // Clear all authentication data
+    // Use UserContext logout to clear user data properly
+    logout();
+    
+    // Clear authentication tokens
     localStorage.removeItem('token');
-    localStorage.removeItem('user');
     localStorage.removeItem('lastAdminEmail');
     localStorage.removeItem('lastTeacherEmail');
     localStorage.removeItem('lastStudentEmail');
