@@ -1123,6 +1123,16 @@ export default function ReportsPage() {
           {/* Per Subject Ranking */}
           {gradesSubTab === 'per-subject' && (
             <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
+              {(() => {
+                const activeStudents = students.filter((s) => !isInactiveStudent(s));
+                const completeStudents = activeStudents.filter(isStudentReportCardComplete);
+                const isRankingActive = Boolean(selectedSection)
+                  && activeStudents.length > 0
+                  && completeStudents.length === activeStudents.length;
+                const pendingCount = activeStudents.length - completeStudents.length;
+
+                return (
+                  <>
               <div className="bg-gradient-to-r from-blue-700 to-blue-800 text-white px-6 py-5 flex flex-wrap items-center gap-4">
                 <h3 className="text-xl font-bold">📚 Per Subject Ranking</h3>
                 <div className="flex items-center gap-2">
@@ -1162,6 +1172,24 @@ export default function ReportsPage() {
                   <tbody className="divide-y divide-gray-200">
                     {(() => {
                       if (!selectedSubjectForRanking) return <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">Select a subject above</td></tr>;
+                      if (!selectedSection) {
+                        return (
+                          <tr>
+                            <td colSpan={8} className="px-6 py-8 text-center text-amber-700 bg-amber-50">
+                              Select a Grade &amp; Section first to activate ranking.
+                            </td>
+                          </tr>
+                        );
+                      }
+                      if (!isRankingActive) {
+                        return (
+                          <tr>
+                            <td colSpan={8} className="px-6 py-8 text-center text-amber-700 bg-amber-50">
+                              Ranking is inactive. Please complete all report card grades (Q1-Q4 per subject) for all students first. Pending students: {pendingCount}
+                            </td>
+                          </tr>
+                        );
+                      }
                       const getGrade = (s) => {
                         const g = s.grades?.[selectedSubjectForRanking];
                         if (!g) return 0;
@@ -1192,6 +1220,9 @@ export default function ReportsPage() {
                   </tbody>
                 </table>
               </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -1200,7 +1231,7 @@ export default function ReportsPage() {
             <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
               {(() => {
                 const activeStudents = students.filter((s) => !isInactiveStudent(s));
-                const completeStudents = activeStudents.filter((s) => isStudentQuarterComplete(s, selectedQuarterForView, allSubjects));
+                const completeStudents = activeStudents.filter(isStudentReportCardComplete);
                 const isQuarterRankingActive = Boolean(selectedSection)
                   && activeStudents.length > 0
                   && completeStudents.length === activeStudents.length;
@@ -1241,7 +1272,7 @@ export default function ReportsPage() {
                     ) : !isQuarterRankingActive ? (
                       <tr>
                         <td colSpan={3 + allSubjects.length} className="px-6 py-8 text-center text-amber-700 bg-amber-50">
-                          Quarter ranking is inactive for {selectedSection}. Complete all {selectedQuarterForView.toUpperCase()} grades for all subjects and all students first. Pending students: {pendingCount}
+                          Ranking is inactive. Please complete all report card grades (Q1-Q4 per subject) for all students first. Pending students: {pendingCount}
                         </td>
                       </tr>
                     ) : [...students].sort((a, b) => (b.average || 0) - (a.average || 0)).map((student, idx) => {
