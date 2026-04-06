@@ -9,6 +9,7 @@ let studentsSyChecked = false;
 let attendanceSubjectColumnsEnsured = false;
 let attendanceStatusColumnEnsured = false;
 const autoAbsentRunMarker = new Map();
+let schoolYearLabelColumn = null;
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -94,14 +95,27 @@ const getDateString = (value) => {
   return formatDateOnly(value) || formatDateOnly(new Date());
 };
 
+const getSchoolYearLabelColumn = async () => {
+  if (schoolYearLabelColumn) return schoolYearLabelColumn;
+  const cols = await query('SHOW COLUMNS FROM school_years');
+  const hasName = cols.some(c => c.Field === 'name');
+  const hasLabel = cols.some(c => c.Field === 'label');
+  schoolYearLabelColumn = hasName ? 'name' : (hasLabel ? 'label' : null);
+  return schoolYearLabelColumn;
+};
+
 const getActiveSchoolYear = async () => {
-  const rows = await query('SELECT id, name as label FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+  const labelCol = await getSchoolYearLabelColumn();
+  const selectLabel = labelCol ? `${labelCol} as label` : "CAST(id AS CHAR) as label";
+  const rows = await query(`SELECT id, ${selectLabel} FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1`);
   return rows[0] || null;
 };
 
 const getSchoolYearById = async (id) => {
   if (!id) return null;
-  const rows = await query('SELECT id, name as label FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1', [id]);
+  const labelCol = await getSchoolYearLabelColumn();
+  const selectLabel = labelCol ? `${labelCol} as label` : "CAST(id AS CHAR) as label";
+  const rows = await query(`SELECT id, ${selectLabel} FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1`, [id]);
   return rows[0] || null;
 };
 
