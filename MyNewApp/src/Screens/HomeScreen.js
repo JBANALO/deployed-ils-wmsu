@@ -26,6 +26,12 @@ export default function HomeScreen() {
   const lastAfternoonCheck = useRef(false);
   const { attendanceLog, getTodayStats, addManualAbsence, removeAbsence, getAttendancePeriod, recordAttendance, loadAttendanceLogs } = useAttendance();
   const { user, userData, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigation.replace('Login');
+    }
+  }, [authLoading, user, navigation]);
   
   const getTeacherName = () => {
     if (!user) return 'Teacher';
@@ -458,6 +464,11 @@ export default function HomeScreen() {
     return bySection;
   };
 
+  const formatScheduleRange = (startTime, endTime) => {
+    if (!startTime || !endTime) return 'No schedule time';
+    return `${startTime} - ${endTime}`;
+  };
+
   const isSchoolDay = () => {
     const day = currentTime.getDay();
     const dateString = currentTime.toLocaleDateString('en-US');
@@ -805,7 +816,7 @@ WMSU ILS - Elementary Department`;
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#8B0000" />
         <Text style={{ marginTop: 16, color: '#666' }}>
-          {authLoading ? 'Loading...' : 'Please log in'}
+          {authLoading ? 'Loading...' : 'Redirecting to login...'}
         </Text>
       </View>
     );
@@ -884,31 +895,35 @@ WMSU ILS - Elementary Department`;
               <Text style={{ color: '#666', marginTop: 8 }}>No subject assignments matched for today's day/schedule.</Text>
             </View>
           ) : (
-            subjectSummaries.map(item => (
-              <View style={styles.periodCard} key={item.key}>
-                <View style={styles.periodHeader}>
-                  <View>
-                    <Text style={styles.periodTitle}>{item.subject}</Text>
-                    <Text style={{ color: '#666', marginTop: 2 }}>{item.classLabel} • {item.startTime}-{item.endTime}</Text>
+            <View style={styles.compactSubjectListCard}>
+              {subjectSummaries.map((item, index) => (
+                <View key={item.key}>
+                  <View style={styles.compactSubjectRow}>
+                    <View style={styles.compactSubjectLeft}>
+                      <Text style={styles.compactSubjectName} numberOfLines={1}>{item.subject}</Text>
+                      <Text style={styles.compactSubjectMeta} numberOfLines={1}>
+                        {item.classLabel} • {formatScheduleRange(item.startTime, item.endTime)}
+                      </Text>
+                    </View>
+                    <View style={styles.compactCountersWrap}>
+                      <View style={[styles.compactCounter, styles.presentCounter]}>
+                        <Text style={styles.compactCounterValue}>{item.present}</Text>
+                        <Text style={styles.compactCounterLabel}>P</Text>
+                      </View>
+                      <View style={[styles.compactCounter, styles.lateCounter]}>
+                        <Text style={styles.compactCounterValue}>{item.late}</Text>
+                        <Text style={styles.compactCounterLabel}>L</Text>
+                      </View>
+                      <View style={[styles.compactCounter, styles.absentCounter]}>
+                        <Text style={styles.compactCounterValue}>{item.absent}</Text>
+                        <Text style={styles.compactCounterLabel}>A</Text>
+                      </View>
+                    </View>
                   </View>
-                  <Icon name="book-education" size={24} color="#8B0000" />
+                  {index !== subjectSummaries.length - 1 && <View style={styles.compactDivider} />}
                 </View>
-                <View style={styles.statsRow}>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>{item.present}</Text>
-                    <Text style={styles.statLabel}>Present</Text>
-                  </View>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>{item.late}</Text>
-                    <Text style={styles.statLabel}>Late</Text>
-                  </View>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>{item.absent}</Text>
-                    <Text style={styles.statLabel}>Absent</Text>
-                  </View>
-                </View>
-              </View>
-            ))
+              ))}
+            </View>
           )}
         </View>
 
@@ -961,17 +976,23 @@ WMSU ILS - Elementary Department`;
                           <Text style={styles.periodStatLabel}>No subject schedule for this section today</Text>
                         </View>
                       ) : (
-                        (sectionSubjectOverview[sectionName] || []).map(subjectItem => (
+                        (sectionSubjectOverview[sectionName] || []).slice(0, 3).map(subjectItem => (
                           <View style={styles.periodStat} key={subjectItem.key}>
                             <Text style={styles.periodStatLabel}>{subjectItem.subject}</Text>
                             <View style={styles.periodStatRight}>
-                              <Text style={styles.periodStatValue}>
-                                P:{subjectItem.present} L:{subjectItem.late} A:{subjectItem.absent}
-                              </Text>
-                              <Icon name="book-open-page-variant" size={18} color="#8B0000" />
+                              <View style={styles.miniSectionStats}>
+                                <Text style={[styles.miniSectionStatText, { color: '#2e7d32' }]}>P {subjectItem.present}</Text>
+                                <Text style={[styles.miniSectionStatText, { color: '#e65100' }]}>L {subjectItem.late}</Text>
+                                <Text style={[styles.miniSectionStatText, { color: '#c62828' }]}>A {subjectItem.absent}</Text>
+                              </View>
                             </View>
                           </View>
                         ))
+                      )}
+                      {(sectionSubjectOverview[sectionName] || []).length > 3 && (
+                        <Text style={styles.moreSubjectsText}>
+                          +{(sectionSubjectOverview[sectionName] || []).length - 3} more subjects
+                        </Text>
                       )}
                     </View>
                   ) : (
@@ -1287,6 +1308,66 @@ const styles = StyleSheet.create({
   statItem: { alignItems: 'center', gap: 4 },
   statNumber: { fontSize: 28, fontWeight: 'bold', color: '#8B0000' },
   statLabel: { fontSize: 12, color: '#666', fontWeight: '600' },
+  compactSubjectListCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    elevation: 2,
+  },
+  compactSubjectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    gap: 10,
+  },
+  compactSubjectLeft: {
+    flex: 1,
+    marginRight: 10,
+  },
+  compactSubjectName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1f1f1f',
+  },
+  compactSubjectMeta: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#666',
+  },
+  compactCountersWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  compactCounter: {
+    minWidth: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9,
+    paddingVertical: 6,
+    paddingHorizontal: 7,
+  },
+  presentCounter: { backgroundColor: '#e8f5e9' },
+  lateCounter: { backgroundColor: '#fff3e0' },
+  absentCounter: { backgroundColor: '#ffebee' },
+  compactCounterValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#222',
+    lineHeight: 18,
+  },
+  compactCounterLabel: {
+    fontSize: 10,
+    color: '#666',
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  compactDivider: {
+    height: 1,
+    backgroundColor: '#f0f0f0',
+  },
   
   sectionContainer: { paddingHorizontal: 16, marginBottom: 16 },
   loadingContainer: { padding: 40, alignItems: 'center' },
@@ -1329,6 +1410,25 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   periodStatValue: { fontSize: 12, color: '#666' },
+  miniSectionStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fafafa',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  miniSectionStatText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  moreSubjectsText: {
+    marginTop: 4,
+    fontSize: 11,
+    color: '#8B0000',
+    fontWeight: '600',
+  },
   
   modalOverlay: {
     flex: 1,

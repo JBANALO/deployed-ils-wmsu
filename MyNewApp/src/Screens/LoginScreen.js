@@ -50,12 +50,12 @@ export default function LoginScreen({ navigation }) {
       if (result.success) {
         navigation.replace('Home');
       } else {
-        setLoading(false);
         setError(result.error || 'Login failed. Please try again.');
       }
     } catch (err) {
-      setLoading(false);
       setError('An error occurred. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
