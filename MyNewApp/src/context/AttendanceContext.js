@@ -476,7 +476,11 @@ export function AttendanceProvider({ children }) {
         console.warn('Server attendance save failed:', result.message);
         // Remove optimistic record so UI only shows DB-saved data.
         setAttendanceLog(prev => prev.filter(l => l.id !== optimisticRecord.id));
-        return { success: false, error: result.message || 'Failed to record attendance' };
+        const backendError = result.error || result.details || '';
+        const combined = backendError
+          ? `${result.message || 'Failed to record attendance'}: ${backendError}`
+          : (result.message || 'Failed to record attendance');
+        return { success: false, error: combined };
       }
     } catch (error) {
       console.error('Error adding attendance:', error);

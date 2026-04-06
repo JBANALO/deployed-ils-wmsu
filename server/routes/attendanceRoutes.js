@@ -23,6 +23,40 @@ const parseTimeToMinutes = (value) => {
   return (h * 60) + m;
 };
 
+const normalizeScheduleClock = (value, preferEnd = false) => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  let clockText = raw;
+  if (raw.includes('-')) {
+    const parts = raw.split('-').map(p => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      clockText = preferEnd ? parts[1] : parts[0];
+    }
+  }
+
+  const ampm = clockText.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+  if (ampm) {
+    let hh = Number(ampm[1]);
+    const mm = Number(ampm[2]);
+    const ap = String(ampm[3]).toUpperCase();
+    if (ap === 'PM' && hh < 12) hh += 12;
+    if (ap === 'AM' && hh === 12) hh = 0;
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  }
+
+  const hhmmss = clockText.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (hhmmss) {
+    const hh = Number(hhmmss[1]);
+    const mm = Number(hhmmss[2]);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  }
+
+  return null;
+};
+
 const doesScheduleMatchWeekday = (dayValue, weekdayName) => {
   const dayText = normalizeDayText(dayValue);
   const target = normalizeDayText(weekdayName);
@@ -396,8 +430,31 @@ router.post('/', async (req, res) => {
     const today = getDateString(date || new Date());
     const currentPeriod = period || 'morning';
     const currentSubject = subject ? String(subject).trim() : null;
-    const currentClassId = classId ? String(classId).trim() : null;
+    let currentClassId = classId ? String(classId).trim() : null;
     const currentStatus = normalizeStatus(status); // Normalize to valid ENUM value
+    const safeSubject = currentSubject ? String(currentSubject).slice(0, 150) : null;
+    const safeScheduleDay = scheduleDay ? String(scheduleDay).slice(0, 50) : null;
+    const safeScheduleStartTime = normalizeScheduleClock(scheduleStartTime, false);
+    const safeScheduleEndTime = normalizeScheduleClock(scheduleEndTime, true);
+
+    // Resolve missing classId from student's grade/section in active school year.
+    if (!currentClassId && studentGradeLevel && studentSection) {
+      try {
+        const classRows = await query(
+          `SELECT id FROM classes
+           WHERE LOWER(REPLACE(TRIM(grade), 'grade ', '')) = LOWER(REPLACE(TRIM(?), 'grade ', ''))
+             AND LOWER(TRIM(section)) = LOWER(TRIM(?))
+             AND school_year_id = ?
+           LIMIT 1`,
+          [studentGradeLevel, studentSection, targetSy.id]
+        );
+        if (classRows[0]?.id) {
+          currentClassId = String(classRows[0].id);
+        }
+      } catch (classResolveErr) {
+        console.warn('Could not resolve classId fallback:', classResolveErr.message);
+      }
+    }
     // MySQL datetime requires 'YYYY-MM-DD HH:MM:SS' — convert ISO string if needed
     const toMySQLDatetime = (isoStr) => {
       const d = new Date(isoStr || Date.now());
@@ -419,7 +476,7 @@ router.post('/', async (req, res) => {
              AND subject = ?
              AND (studentId = ? OR studentId = ?)
            LIMIT 1`,
-          [today, targetSy.id, currentClassId || null, currentSubject, lookupPrimaryStudentId, lookupSecondaryStudentId]
+            [today, targetSy.id, currentClassId || null, safeSubject, lookupPrimaryStudentId, lookupSecondaryStudentId]
         )
       : await query(
           `SELECT * FROM attendance
@@ -445,10 +502,10 @@ router.post('/', async (req, res) => {
           teacherId || null,
           teacherName || null,
           currentClassId,
-          currentSubject,
-          scheduleDay || null,
-          scheduleStartTime || null,
-          scheduleEndTime || null,
+          safeSubject,
+          safeScheduleDay,
+          safeScheduleStartTime,
+          safeScheduleEndTime,
           autoMarked ? 1 : 0,
           existingRecords[0].id
         ]
@@ -533,10 +590,10 @@ router.post('/', async (req, res) => {
         JSON.stringify(qrData || {}),
         targetSy.id,
         currentClassId,
-        currentSubject,
-        scheduleDay || null,
-        scheduleStartTime || null,
-        scheduleEndTime || null,
+        safeSubject,
+        safeScheduleDay,
+        safeScheduleStartTime,
+        safeScheduleEndTime,
         autoMarked ? 1 : 0
       ]
     );
@@ -560,9 +617,9 @@ router.post('/', async (req, res) => {
           section: studentSection,
           status: currentStatus,
           period: currentPeriod,
-          subject: currentSubject,
-          scheduleStartTime: scheduleStartTime || null,
-          scheduleEndTime: scheduleEndTime || null,
+          subject: safeSubject,
+          scheduleStartTime: safeScheduleStartTime,
+          scheduleEndTime: safeScheduleEndTime,
           time: currentTime,
           teacherName: teacherName || 'School Administration'
         });
