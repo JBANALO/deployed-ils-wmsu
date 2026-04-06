@@ -281,7 +281,7 @@ export default function ScanQRScreen() {
               studentId: student.lrn || student.studentId || student.id, // Use LRN as primary ID
               lrn: student.lrn || student.studentId,
               section: student.section || 'Unknown Section',
-              gradeLevel: student.gradeLevel || 'Unknown Grade',
+              gradeLevel: student.gradeLevel || student.grade_level || student.grade || 'Unknown Grade',
               parentEmail: student.parentEmail || '', // For auto email notification
               parentContact: student.parentContact || '',
               contactEmail: student.contactEmail || student.email || ''

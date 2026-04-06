@@ -254,6 +254,8 @@ export default function HomeScreen() {
         ...student,
         name: student.name || student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown Student',
         studentId: student.studentId || student.lrn || student.id,
+        gradeLevel: student.gradeLevel || student.grade_level || student.grade || '',
+        section: student.section || student.section_name || '',
         qrCode: student.qrCode || student.qr_code // Handle both field names
       }));
       
@@ -413,8 +415,9 @@ export default function HomeScreen() {
 
     return todaysSchedules.map(schedule => {
       const sectionStudents = students.filter(student => {
-        const gradeNorm = String(student.gradeLevel || '').trim().toLowerCase();
-        const schedGradeNorm = String(schedule.grade || '').trim().toLowerCase();
+        const normalizeGrade = (value = '') => String(value).trim().toLowerCase().replace(/^grade\s+/i, '');
+        const gradeNorm = normalizeGrade(student.gradeLevel || '');
+        const schedGradeNorm = normalizeGrade(schedule.grade || '');
         const sectionNorm = String(student.section || '').trim().toLowerCase();
         const schedSectionNorm = String(schedule.section || '').trim().toLowerCase();
         return gradeNorm === schedGradeNorm && sectionNorm === schedSectionNorm;
@@ -451,6 +454,7 @@ export default function HomeScreen() {
         key: `${schedule.classId}_${schedule.subject}_${schedule.start_time}_${schedule.end_time}`,
         subject: schedule.subject,
         classLabel: `${schedule.grade} - ${schedule.section}`,
+        sectionName: String(schedule.section || '').trim(),
         startTime: schedule.start_time,
         endTime: schedule.end_time,
         present,
@@ -465,8 +469,10 @@ export default function HomeScreen() {
     const summaries = getTodaySubjectSummaries();
     const bySection = {};
     summaries.forEach(item => {
-      if (!bySection[item.classLabel]) bySection[item.classLabel] = [];
-      bySection[item.classLabel].push(item);
+      const key = String(item.sectionName || '').trim();
+      if (!key) return;
+      if (!bySection[key]) bySection[key] = [];
+      bySection[key].push(item);
     });
     return bySection;
   };
