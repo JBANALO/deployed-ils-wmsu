@@ -179,6 +179,33 @@ export default function HomeScreen() {
     return (hh * 60) + mm;
   };
 
+  const parseScheduleWindow = (schedule = {}) => {
+    let startRaw = String(schedule.start_time || schedule.startTime || '').trim();
+    let endRaw = String(schedule.end_time || schedule.endTime || '').trim();
+
+    // Some payloads may place the full range in one field, e.g. "08:00 - 09:00".
+    if ((!endRaw || !startRaw) && startRaw.includes('-')) {
+      const parts = startRaw.split('-').map(p => p.trim());
+      if (parts.length >= 2) {
+        startRaw = parts[0];
+        endRaw = parts[1];
+      }
+    }
+
+    if ((!endRaw || !startRaw) && endRaw.includes('-')) {
+      const parts = endRaw.split('-').map(p => p.trim());
+      if (parts.length >= 2) {
+        startRaw = startRaw || parts[0];
+        endRaw = parts[1];
+      }
+    }
+
+    return {
+      startMinutes: toMinutes(startRaw),
+      endMinutes: toMinutes(endRaw),
+    };
+  };
+
   const normalizeDate = (value) => {
     let logDate = value;
     if (logDate && String(logDate).includes('/')) {
@@ -301,16 +328,17 @@ export default function HomeScreen() {
   };
 
   const getTodaySubjectSummaries = () => {
-    const today = getLocalDateString(new Date());
-    const now = new Date();
+    const now = currentTime || new Date();
+    const today = getLocalDateString(now);
     const nowMinutes = (now.getHours() * 60) + now.getMinutes();
 
     const todayLogs = attendanceLog.filter(log => normalizeDate(log.date) === today);
     const isScheduleActiveNow = (schedule) => {
-      const startMinutes = toMinutes(schedule.start_time);
-      const endMinutes = toMinutes(schedule.end_time);
+      const { startMinutes, endMinutes } = parseScheduleWindow(schedule);
       if (startMinutes === null || endMinutes === null) return false;
-      return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+
+      // Small grace window to avoid missing the class at exact transition minutes.
+      return nowMinutes >= (startMinutes - 5) && nowMinutes <= endMinutes;
     };
 
     const todaysSchedules = teacherSchedules.filter(
