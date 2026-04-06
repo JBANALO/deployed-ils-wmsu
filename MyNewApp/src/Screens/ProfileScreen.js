@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert,
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthProvider';
-import { useAttendance } from '../context/AttendanceContext';
 import { authAPI } from '../services/api';
 
 // Detect if running on web
@@ -19,10 +18,9 @@ if (!isWeb) {
 }
 
 export default function ProfileScreen({ navigation }) {
-  const { user, userData, logout, refreshUserData, updateUserInStorage, changePassword } = useAuth();
+  const { user, userData, logout, refreshUserData, updateUserInStorage } = useAuth();
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [photoModalVisible, setPhotoModalVisible] = useState(false);
-  const [changePasswordModalVisible, setChangePasswordModalVisible] = useState(false);
   const [uploading, setUploading] = useState(false);
   
   const [editForm, setEditForm] = useState({
@@ -33,12 +31,6 @@ export default function ProfileScreen({ navigation }) {
     employeeId: userData?.employeeId || '',
     phone: userData?.phone || '',
     subjects: userData?.subjects || '',
-  });
-
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: '',
   });
 
   const handleLogout = async () => {
@@ -107,38 +99,6 @@ export default function ProfileScreen({ navigation }) {
     } catch (error) {
       console.error('Error updating profile:', error);
       Alert.alert('Error', error.message || 'Failed to update profile. Please try again.');
-    }
-  };
-
-  const handleChangePassword = async () => {
-    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
-      Alert.alert('Error', 'Please fill all password fields');
-      return;
-    }
-
-    if (passwordForm.newPassword.length < 6) {
-      Alert.alert('Error', 'New password must be at least 6 characters');
-      return;
-    }
-
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      Alert.alert('Error', 'New passwords do not match');
-      return;
-    }
-
-    try {
-      const result = await changePassword(passwordForm.currentPassword, passwordForm.newPassword);
-      
-      if (result.success) {
-        Alert.alert('Success', 'Password updated successfully');
-        setChangePasswordModalVisible(false);
-        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-      } else {
-        Alert.alert('Error', result.error);
-      }
-    } catch (error) {
-      console.error('Error changing password:', error);
-      Alert.alert('Error', 'Failed to change password. Please try again.');
     }
   };
 
@@ -304,14 +264,14 @@ export default function ProfileScreen({ navigation }) {
 
           <TouchableOpacity 
             style={styles.actionButton}
-            onPress={() => setChangePasswordModalVisible(true)}
+            onPress={() => navigation.navigate('HomeTab')}
           >
             <View style={styles.actionIconContainer}>
-              <Icon name="lock-reset" size={24} color="#8B0000" />
+              <Icon name="calendar-clock" size={24} color="#8B0000" />
             </View>
             <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>Change Password</Text>
-              <Text style={styles.actionSubtitle}>Update your password</Text>
+              <Text style={styles.actionTitle}>Schedule</Text>
+              <Text style={styles.actionSubtitle}>View your subject schedule</Text>
             </View>
             <Icon name="chevron-right" size={24} color="#999" />
           </TouchableOpacity>
@@ -446,86 +406,6 @@ export default function ProfileScreen({ navigation }) {
                 onPress={handleEditProfile}
               >
                 <Text style={styles.saveButtonText}>Save Changes</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={changePasswordModalVisible}
-        onRequestClose={() => setChangePasswordModalVisible(false)}
-      >
-        <KeyboardAvoidingView 
-          behavior={isWeb ? 'height' : (Platform?.OS === 'ios' ? 'padding' : 'height')}
-          style={styles.modalOverlay}
-        >
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Change Password</Text>
-              <TouchableOpacity onPress={() => setChangePasswordModalVisible(false)}>
-                <Icon name="close" size={28} color="#333" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView 
-              style={styles.modalScroll}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Current Password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter current password"
-                  value={passwordForm.currentPassword}
-                  onChangeText={(text) => setPasswordForm({ ...passwordForm, currentPassword: text })}
-                  secureTextEntry
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>New Password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter new password (min. 6 characters)"
-                  value={passwordForm.newPassword}
-                  onChangeText={(text) => setPasswordForm({ ...passwordForm, newPassword: text })}
-                  secureTextEntry
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Confirm New Password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Confirm new password"
-                  value={passwordForm.confirmPassword}
-                  onChangeText={(text) => setPasswordForm({ ...passwordForm, confirmPassword: text })}
-                  secureTextEntry
-                />
-              </View>
-
-              <View style={{ height: 20 }} />
-            </ScrollView>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={styles.cancelButton}
-                onPress={() => {
-                  setChangePasswordModalVisible(false);
-                  setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-                }}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.saveButton}
-                onPress={handleChangePassword}
-              >
-                <Text style={styles.saveButtonText}>Update Password</Text>
               </TouchableOpacity>
             </View>
           </View>
