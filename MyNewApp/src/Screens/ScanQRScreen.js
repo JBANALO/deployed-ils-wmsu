@@ -21,6 +21,7 @@ export default function ScanQRScreen() {
   const [sendingEmail, setSendingEmail] = useState(false);
   const [teacherSchedules, setTeacherSchedules] = useState([]);
   const [activeSchedule, setActiveSchedule] = useState(null);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
 
   const { addAttendance, loadAttendanceLogs } = useAttendance();
   const { user, userData } = useAuth();
@@ -53,10 +54,24 @@ export default function ScanQRScreen() {
 
   const toMinutes = (value) => {
     const raw = String(value || '').trim();
-    if (!raw.includes(':')) return null;
-    const [h, m] = raw.split(':');
-    const hh = Number(h);
-    const mm = Number(m);
+    if (!raw) return null;
+
+    // Supports both 24-hour (14:00, 14:00:00) and 12-hour (2:00 PM) inputs.
+    const meridiemMatch = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+    if (meridiemMatch) {
+      let hh = Number(meridiemMatch[1]);
+      const mm = Number(meridiemMatch[2]);
+      const ap = String(meridiemMatch[3]).toUpperCase();
+      if (ap === 'PM' && hh < 12) hh += 12;
+      if (ap === 'AM' && hh === 12) hh = 0;
+      if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+      return (hh * 60) + mm;
+    }
+
+    const basicMatch = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!basicMatch) return null;
+    const hh = Number(basicMatch[1]);
+    const mm = Number(basicMatch[2]);
     if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
     return (hh * 60) + mm;
   };
@@ -100,9 +115,11 @@ export default function ScanQRScreen() {
     const candidates = teacherSchedules.filter(s => {
       const scheduleGradeNorm = normalizeGradeText(s.grade || '');
       const scheduleSectionNorm = String(s.section || '').trim().toLowerCase();
+      const gradeMatch = scheduleGradeNorm ? scheduleGradeNorm === gradeNorm : true;
+      const sectionMatch = scheduleSectionNorm ? scheduleSectionNorm === sectionNorm : true;
       return (
-        scheduleGradeNorm === gradeNorm &&
-        scheduleSectionNorm === sectionNorm &&
+        gradeMatch &&
+        sectionMatch &&
         doesScheduleMatchToday(s.day, nowDate)
       );
     });
@@ -118,6 +135,7 @@ export default function ScanQRScreen() {
   const loadTeacherSchedules = async () => {
     if (!user?.id) return;
     try {
+      setScheduleLoading(true);
       const classes = await authAPI.getSubjectTeacherClasses(user.id);
       const classList = Array.isArray(classes?.data)
         ? classes.data
@@ -125,35 +143,58 @@ export default function ScanQRScreen() {
         ? classes
         : [];
 
+      const allClasses = await authAPI.getAllClasses(user?.token);
+      const allClassList = Array.isArray(allClasses?.data)
+        ? allClasses.data
+        : Array.isArray(allClasses)
+        ? allClasses
+        : [];
+
       const rows = [];
       const firstName = String(userData?.firstName || user?.firstName || '').trim().toLowerCase();
       const lastName = String(userData?.lastName || user?.lastName || '').trim().toLowerCase();
-      classList.forEach(cls => {
-        const sts = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
-        sts.forEach(st => {
-          const teacherIdMatch = String(st.teacher_id || st.teacherId || '') === String(user.id);
-          const teacherNameText = String(st.teacher_name || st.teacherName || '').trim().toLowerCase();
-          const teacherNameMatch = firstName && lastName
-            ? (teacherNameText.includes(firstName) && teacherNameText.includes(lastName))
-            : false;
-          if (!teacherIdMatch && !teacherNameMatch) return;
 
-          rows.push({
-            classId: st.class_id || cls.id,
-            grade: cls.grade || st.grade || '',
-            section: cls.section || st.section || '',
-            subject: st.subject || 'Subject',
-            day: st.day || 'Monday - Friday',
-            start_time: st.start_time || st.startTime || null,
-            end_time: st.end_time || st.endTime || null,
+      const collectRows = (sourceClasses) => {
+        sourceClasses.forEach(cls => {
+          const sts = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
+          sts.forEach(st => {
+            const teacherIdMatch = String(st.teacher_id || st.teacherId || '') === String(user.id);
+            const teacherNameText = String(st.teacher_name || st.teacherName || '').trim().toLowerCase();
+            const teacherNameMatch = firstName && lastName
+              ? (teacherNameText.includes(firstName) && teacherNameText.includes(lastName))
+              : false;
+            if (!teacherIdMatch && !teacherNameMatch) return;
+
+            rows.push({
+              classId: st.class_id || cls.id,
+              grade: cls.grade || st.grade || '',
+              section: cls.section || st.section || '',
+              subject: st.subject || 'Subject',
+              day: st.day || 'Monday - Friday',
+              start_time: st.start_time || st.startTime || null,
+              end_time: st.end_time || st.endTime || null,
+            });
           });
         });
+      };
+
+      collectRows(classList);
+      collectRows(allClassList);
+
+      const seen = new Set();
+      const deduped = rows.filter(row => {
+        const key = [row.classId, row.subject, row.day, row.start_time, row.end_time].join('|').toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
       });
 
-      setTeacherSchedules(rows);
+      setTeacherSchedules(deduped);
     } catch (error) {
       console.error('Error loading teacher schedules for scanner:', error);
       setTeacherSchedules([]);
+    } finally {
+      setScheduleLoading(false);
     }
   };
 
@@ -187,6 +228,14 @@ export default function ScanQRScreen() {
   
   const handleBarCodeScanned = async ({ data }) => {
     if (hasScanned || !user) return;
+
+    if (scheduleLoading || teacherSchedules.length === 0) {
+      Alert.alert(
+        'Schedule Not Ready',
+        'Still loading your class schedules. Please wait a few seconds then scan again.'
+      );
+      return;
+    }
     
     setHasScanned(true);
     setScanning(false);
@@ -289,9 +338,20 @@ export default function ScanQRScreen() {
 
             const matchedSchedule = getActiveScheduleForStudent(formattedStudent, currentTime);
             if (!matchedSchedule) {
+              const nowMinutes = (currentTime.getHours() * 60) + currentTime.getMinutes();
+              const hasAnyTodayScheduleForClass = teacherSchedules.some(s => {
+                const gradeMatch = normalizeGradeText(s.grade || '') === normalizeGradeText(formattedStudent.gradeLevel || '');
+                const sectionMatch = String(s.section || '').trim().toLowerCase() === String(formattedStudent.section || '').trim().toLowerCase();
+                return gradeMatch && sectionMatch && doesScheduleMatchToday(s.day, currentTime);
+              });
+
+              const outsideTimeHint = hasAnyTodayScheduleForClass
+                ? 'Class schedule exists today, but current time is outside the assigned time window.'
+                : 'No class schedule found for this student section today.';
+
               Alert.alert(
                 'No Active Subject Schedule',
-                `${formattedStudent.name} has no active subject schedule right now. Attendance is now per-subject and time-based.`,
+                `${formattedStudent.name} has no active subject schedule right now. ${outsideTimeHint}`,
                 [{ text: 'OK', onPress: () => resetScanner() }]
               );
               return;
@@ -541,6 +601,13 @@ export default function ScanQRScreen() {
           <Icon name={periodMsg.icon} size={20} color="#fff" />
           <Text style={styles.warningText}>{periodMsg.text}</Text>
         </View>
+
+        {scheduleLoading && (
+          <View style={[styles.warningBanner, { backgroundColor: '#455a64', marginTop: 10 }]}>
+            <ActivityIndicator size="small" color="#fff" />
+            <Text style={styles.warningText}>Loading teacher schedules...</Text>
+          </View>
+        )}
 
         {scanning ? (
           <View style={styles.scannerCard}>
