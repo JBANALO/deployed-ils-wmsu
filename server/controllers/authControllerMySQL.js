@@ -499,37 +499,49 @@ exports.updateProfile = async (req, res) => {
         },
       });
     } else {
-      // Handle database update (original logic)
+      // Handle database update for both users and teachers tables.
       console.log('🗄️ Updating user in database...');
-      
-      // Check if username or email already exists (excluding current user)
-      const existingUsers = await query(
-        'SELECT id FROM users WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)) AND id != ?',
-        [username, email, userId]
+
+      const targetId = String(userId);
+      const usersMatch = await query('SELECT id FROM users WHERE CAST(id AS CHAR) = ? LIMIT 1', [targetId]);
+      const teachersMatch = await query('SELECT id FROM teachers WHERE CAST(id AS CHAR) = ? LIMIT 1', [targetId]);
+
+      const targetTable = usersMatch.length > 0 ? 'users' : (teachersMatch.length > 0 ? 'teachers' : null);
+      if (!targetTable) {
+        return res.status(404).json({
+          status: 'fail',
+          message: 'User not found in database',
+        });
+      }
+
+      // Enforce unique username/email across both account tables.
+      const duplicateInUsers = await query(
+        'SELECT id FROM users WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)) AND CAST(id AS CHAR) <> ? LIMIT 1',
+        [username, email, targetId]
+      );
+      const duplicateInTeachers = await query(
+        'SELECT id FROM teachers WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)) AND CAST(id AS CHAR) <> ? LIMIT 1',
+        [username, email, targetId]
       );
 
-      if (existingUsers.length > 0) {
+      if (duplicateInUsers.length > 0 || duplicateInTeachers.length > 0) {
         return res.status(400).json({
           status: 'fail',
           message: 'Username or email already exists',
         });
       }
 
-      // Update user profile - handle phone column conditionally
       let profileImageUrl = null;
       try {
         if (req.file && req.file.buffer) {
           try {
             console.log('Processing image file, size:', req.file.size);
-            
-            // Generate filename and save file to admin_profiles folder
-            const userId = req.user.id;
-            const imageFileName = `profile_${userId}_${Date.now()}.png`;
+
+            const imageFileName = `profile_${targetId}_${Date.now()}.png`;
             const adminProfilesDir = path.join(__dirname, '..', 'public', 'admin_profiles');
-            
-            // Create directory if it doesn't exist
+
             fs.mkdirSync(adminProfilesDir, { recursive: true });
-            
+
             const imagePath = path.join(adminProfilesDir, imageFileName);
             fs.writeFileSync(imagePath, req.file.buffer);
             profileImageUrl = `/admin_profiles/${imageFileName}`;
@@ -538,35 +550,35 @@ exports.updateProfile = async (req, res) => {
             console.log('Image filename being returned:', imageFileName);
           } catch (imgError) {
             console.error('Error processing image:', imgError);
-            // Continue without image if processing fails
           }
         } else {
           console.log('No image file received');
         }
-        
-        // Build update query dynamically with correct column names
-        let updateQuery = 'UPDATE users SET first_name = ?, last_name = ?, username = ?, email = ?';
-        let queryParams = [firstName, lastName, username, email];
-        
-        if (phone !== undefined) {
+
+        const phoneColumn = await query(`SHOW COLUMNS FROM ${targetTable} LIKE 'phone'`);
+        const hasPhoneColumn = phoneColumn.length > 0;
+
+        let updateQuery = `UPDATE ${targetTable} SET first_name = ?, last_name = ?, username = ?, email = ?`;
+        const queryParams = [firstName, lastName, username, email];
+
+        if (phone !== undefined && hasPhoneColumn) {
           updateQuery += ', phone = ?';
           queryParams.push(phone);
         }
-        
+
         if (profileImageUrl) {
           updateQuery += ', profile_pic = ?';
           queryParams.push(profileImageUrl);
         }
-        
-        updateQuery += ' WHERE id = ?';
-        queryParams.push(req.user.id);
-        
+
+        updateQuery += ' WHERE CAST(id AS CHAR) = ?';
+        queryParams.push(targetId);
+
         await query(updateQuery, queryParams);
         console.log('Profile update query:', updateQuery);
         console.log('Query params:', queryParams);
 
-        // Get updated user data
-        const updatedUsers = await query('SELECT * FROM users WHERE id = ?', [req.user.id]);
+        const updatedUsers = await query(`SELECT * FROM ${targetTable} WHERE CAST(id AS CHAR) = ? LIMIT 1`, [targetId]);
         const updatedUser = updatedUsers[0];
 
         res.status(200).json({
