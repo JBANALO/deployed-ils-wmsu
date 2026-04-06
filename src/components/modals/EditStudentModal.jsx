@@ -72,6 +72,42 @@ export default function EditStudentModal({ student, formData, setFormData, onSav
             <input type="text" placeholder="Contact Number" value={formData.contact || ""} onChange={e => setFormData({ ...formData, contact: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-red-500" />
             <input type="email" placeholder="WMSU Email (Cannot Edit)" value={formData.wmsuEmail || ""} disabled className="w-full bg-gray-100 text-gray-500 border border-gray-200 rounded-xl px-4 py-3 cursor-not-allowed" />
 
+            <div className="pt-2">
+              <p className="text-sm font-semibold text-gray-700 mb-3">Guardian Information</p>
+              <div className="grid grid-cols-2 gap-4">
+                <input
+                  type="text"
+                  placeholder="Guardian First Name"
+                  value={formData.parentFirstName || ""}
+                  onChange={e => setFormData({ ...formData, parentFirstName: e.target.value })}
+                  className="border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-red-500"
+                />
+                <input
+                  type="text"
+                  placeholder="Guardian Last Name"
+                  value={formData.parentLastName || ""}
+                  onChange={e => setFormData({ ...formData, parentLastName: e.target.value })}
+                  className="border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-red-500"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <input
+                  type="text"
+                  placeholder="Guardian Contact Number"
+                  value={formData.parentContact || ""}
+                  onChange={e => setFormData({ ...formData, parentContact: e.target.value })}
+                  className="border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-red-500"
+                />
+                <input
+                  type="email"
+                  placeholder="Guardian Email"
+                  value={formData.parentEmail || ""}
+                  onChange={e => setFormData({ ...formData, parentEmail: e.target.value })}
+                  className="border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-red-500"
+                />
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Account Status</label>
               <select

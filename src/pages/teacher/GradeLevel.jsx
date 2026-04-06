@@ -26,6 +26,7 @@ import {
 export default function GradeLevel() {
   const [students, setStudents] = useState([]);
   const [assignedClasses, setAssignedClasses] = useState([]);
+  const [adviserClassKeys, setAdviserClassKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -230,6 +231,7 @@ export default function GradeLevel() {
       }
       
       setAssignedClasses(uniqueClasses);
+      setAdviserClassKeys(adviserClasses.map((c) => `${normalize(c.grade)}||${normalize(c.section)}`));
       // Debug logs for troubleshooting
       console.log('--- DEBUG: Students from API ---');
       console.log(students);
@@ -244,6 +246,15 @@ export default function GradeLevel() {
   };
 
   const normalize = str => (str || '').toString().trim().toLowerCase();
+  const getClassKey = (grade, section) => `${normalize(grade)}||${normalize(section)}`;
+
+  const canEditStudentInfo = (student) => {
+    const userStr = localStorage.getItem('user');
+    const actor = userStr ? JSON.parse(userStr) : null;
+    const actorRole = String(actor?.role || '').toLowerCase();
+    if (['admin', 'super_admin'].includes(actorRole)) return true;
+    return adviserClassKeys.includes(getClassKey(student?.gradeLevel, student?.section));
+  };
 
   const getStudentsByGrade = (grade) => {
     // Filter students only from assigned classes
@@ -330,6 +341,10 @@ export default function GradeLevel() {
       alert('Past school years are view-only. Student editing is disabled.');
       return;
     }
+    if (!canEditStudentInfo(student)) {
+      alert('Only the adviser of this class (or admin) can edit student information.');
+      return;
+    }
     setSelectedStudent(student);
     setEditFormData({ ...student });
     setShowEditModal(true);
@@ -349,6 +364,11 @@ export default function GradeLevel() {
       const userStr = localStorage.getItem('user');
       const actor = userStr ? JSON.parse(userStr) : null;
       const actorRole = String(actor?.role || '').toLowerCase();
+      const actorId = actor?.id;
+      if (!canEditStudentInfo(selectedStudent)) {
+        alert('Only the adviser of this class (or admin) can edit student information.');
+        return;
+      }
       const previousStatus = String(selectedStudent?.status || '').trim().toLowerCase();
       const nextStatus = String(editFormData?.status || '').trim().toLowerCase();
 
@@ -371,7 +391,7 @@ export default function GradeLevel() {
         }), { width: 300, margin: 2 });
       }
 
-      const updatedData = { ...editFormData, fullName, qrCode: newQrCode, actorRole };
+      const updatedData = { ...editFormData, fullName, qrCode: newQrCode, actorRole, actorId };
       const res = await fetch(`${API_BASE_URL}/students/${selectedStudent.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -504,8 +524,8 @@ export default function GradeLevel() {
                             <button onClick={() => handleView(student)} className="text-blue-600 hover:text-blue-800"><EyeIcon className="w-5 h-5" /></button>
                             <button
                               onClick={() => handleEdit(student)}
-                              disabled={isViewOnlyMode}
-                              className={isViewOnlyMode ? "text-gray-300 cursor-not-allowed" : "text-green-600 hover:text-green-800"}
+                              disabled={isViewOnlyMode || !canEditStudentInfo(student)}
+                              className={(isViewOnlyMode || !canEditStudentInfo(student)) ? "text-gray-300 cursor-not-allowed" : "text-green-600 hover:text-green-800"}
                             >
                               <PencilSquareIcon className="w-5 h-5" />
                             </button>

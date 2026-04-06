@@ -1112,7 +1112,7 @@ exports.updateStudent = async (req, res) => {
       lrn, firstName, middleName, lastName, age, sex,
       gradeLevel, section,
       parentFirstName, parentLastName, parentEmail, parentContact,
-      studentEmail, status, actorRole
+      studentEmail, status, actorRole, actorId
     } = req.body;
 
     console.log('updateStudent called with id:', id);
@@ -1133,8 +1133,39 @@ exports.updateStudent = async (req, res) => {
 
     const normalizedActorRole = String(actorRole || '').trim().toLowerCase();
     const isTeacherActor = ['teacher', 'adviser', 'subject_teacher'].includes(normalizedActorRole);
+    const isAdminActor = ['admin', 'super_admin'].includes(normalizedActorRole);
+    const normalizedActorId = String(actorId || '').trim();
     const currentStatus = String(existingStudents[0].status || '').trim().toLowerCase();
     const nextStatus = String(status || '').trim().toLowerCase();
+
+    if (isTeacherActor && !isAdminActor) {
+      if (!normalizedActorId) {
+        return res.status(403).json({
+          status: 'fail',
+          message: 'Missing actor identity. Only adviser (or admin) can edit student information.'
+        });
+      }
+
+      const studentGrade = String(existingStudents[0].grade_level || '').trim();
+      const studentSection = String(existingStudents[0].section || '').trim();
+      const adviserClassRows = await query(
+        `SELECT id
+         FROM classes
+         WHERE school_year_id = ?
+           AND adviser_id = ?
+           AND LOWER(TRIM(grade)) = LOWER(TRIM(?))
+           AND LOWER(TRIM(section)) = LOWER(TRIM(?))
+         LIMIT 1`,
+        [activeSy.id, normalizedActorId, studentGrade, studentSection]
+      );
+
+      if (!Array.isArray(adviserClassRows) || adviserClassRows.length === 0) {
+        return res.status(403).json({
+          status: 'fail',
+          message: 'Only the adviser assigned to this class (or admin) can edit student information.'
+        });
+      }
+    }
 
     if (isTeacherActor && currentStatus === 'inactive' && nextStatus && nextStatus !== 'inactive') {
       return res.status(403).json({
