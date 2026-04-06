@@ -14,15 +14,80 @@ export default function SF2AttendanceForm({
   selectedMonth, 
   selectedYear,
   selectedSection,
+  selectedGradeLevel,
   schoolName = "WMSU ILS - Elementary Department"
 }) {
   const [formattedData, setFormattedData] = useState([]);
   const [showDownloadOptions, setShowDownloadOptions] = useState(false);
+  const [activeGradeLevel, setActiveGradeLevel] = useState("");
+  const [activeSection, setActiveSection] = useState("");
+
+  const normalize = (value) => String(value || "").trim().toLowerCase();
+
+  const parseGradeAndSection = (value) => {
+    const text = String(value || "").trim();
+    if (!text || normalize(text) === "all sections") {
+      return { grade: "", section: "" };
+    }
+
+    // Expected label style: "Grade 3 - A".
+    if (text.includes(" - ")) {
+      const [grade, section] = text.split(" - ");
+      return {
+        grade: String(grade || "").trim(),
+        section: String(section || "").trim(),
+      };
+    }
+
+    return { grade: "", section: text };
+  };
+
+  const allStudents = Array.isArray(students) ? students : [];
+  const availableGradeLevels = [...new Set(allStudents.map((s) => s.gradeLevel || s.grade_level).filter(Boolean))]
+    .sort((a, b) => {
+      const gradeA = parseInt(String(a).replace(/\D/g, ""), 10);
+      const gradeB = parseInt(String(b).replace(/\D/g, ""), 10);
+      return (Number.isNaN(gradeA) ? 0 : gradeA) - (Number.isNaN(gradeB) ? 0 : gradeB);
+    });
+
+  const availableSections = [...new Set(
+    allStudents
+      .filter((s) => !activeGradeLevel || normalize(s.gradeLevel || s.grade_level) === normalize(activeGradeLevel))
+      .map((s) => s.section)
+      .filter(Boolean)
+  )].sort();
 
   useEffect(() => {
-    if (attendanceData && students) {
+    if (!isOpen) return;
+
+    const parsed = parseGradeAndSection(selectedSection);
+    const initialGrade = selectedGradeLevel || parsed.grade || availableGradeLevels[0] || "";
+    setActiveGradeLevel(initialGrade);
+
+    const sectionChoices = [...new Set(
+      allStudents
+        .filter((s) => !initialGrade || normalize(s.gradeLevel || s.grade_level) === normalize(initialGrade))
+        .map((s) => s.section)
+        .filter(Boolean)
+    )];
+
+    const initialSection = parsed.section && sectionChoices.some((sec) => normalize(sec) === normalize(parsed.section))
+      ? parsed.section
+      : (sectionChoices[0] || "");
+    setActiveSection(initialSection);
+  }, [isOpen, selectedSection, selectedGradeLevel, students]);
+
+  useEffect(() => {
+    if (attendanceData && allStudents.length > 0) {
+      const filteredStudents = allStudents.filter((student) => {
+        const studentGrade = student.gradeLevel || student.grade_level || "";
+        const gradeOk = !activeGradeLevel || normalize(studentGrade) === normalize(activeGradeLevel);
+        const sectionOk = !activeSection || normalize(student.section) === normalize(activeSection);
+        return gradeOk && sectionOk;
+      });
+
       // Format data for SF2 form - group attendance by student and day
-      const formatted = students.map(student => {
+      const formatted = filteredStudents.map(student => {
         const studentAttendance = attendanceData.filter(
           a => a.studentId === student.id || a.studentId === student.lrn || a.studentLRN === student.lrn
         );
@@ -52,8 +117,10 @@ export default function SF2AttendanceForm({
         };
       });
       setFormattedData(formatted);
+    } else {
+      setFormattedData([]);
     }
-  }, [attendanceData, students]);
+  }, [attendanceData, students, activeGradeLevel, activeSection]);
 
   const handlePrint = () => {
     const printContent = document.querySelector(".sf2-form");
@@ -538,6 +605,36 @@ const downloadAsPDF = async (element, filename = "February") => {
           <div className="flex justify-between items-center p-6 border-b">
             <h2 className="text-2xl font-bold">SF2 Daily Attendance Report</h2>
             <div className="flex gap-2">
+              <select
+                value={activeGradeLevel}
+                onChange={(e) => {
+                  const nextGrade = e.target.value;
+                  setActiveGradeLevel(nextGrade);
+                  const sectionsForGrade = [...new Set(
+                    allStudents
+                      .filter((s) => !nextGrade || normalize(s.gradeLevel || s.grade_level) === normalize(nextGrade))
+                      .map((s) => s.section)
+                      .filter(Boolean)
+                  )].sort();
+                  setActiveSection(sectionsForGrade[0] || "");
+                }}
+                className="print:hidden px-3 py-2 border rounded-lg text-sm"
+              >
+                {availableGradeLevels.map((grade) => (
+                  <option key={grade} value={grade}>{grade}</option>
+                ))}
+              </select>
+
+              <select
+                value={activeSection}
+                onChange={(e) => setActiveSection(e.target.value)}
+                className="print:hidden px-3 py-2 border rounded-lg text-sm"
+              >
+                {availableSections.map((section) => (
+                  <option key={section} value={section}>{section}</option>
+                ))}
+              </select>
+
               <button
                 onClick={handlePrint}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -601,18 +698,18 @@ const downloadAsPDF = async (element, filename = "February") => {
               <div>
                 <p><span className="font-semibold">School ID:</span> ___________________</p>
                 <p><span className="font-semibold">School Name:</span> {schoolName}</p>
-                <p><span className="font-semibold">Grade Level:</span> ___________________</p>
+                <p><span className="font-semibold">Grade Level:</span> {activeGradeLevel || "___________________"}</p>
               </div>
               <div>
                 <p><span className="font-semibold">School Year:</span> {selectedYear}</p>
-                <p><span className="font-semibold">Grade Level:</span> ___________________</p>
+                <p><span className="font-semibold">Grade Level:</span> {activeGradeLevel || "___________________"}</p>
                 <p><span className="font-semibold">Month:</span> {monthName}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
               <div>
-                <p><span className="font-semibold">Section:</span> {selectedSection || "___________________"}</p>
+                <p><span className="font-semibold">Section:</span> {activeSection || "___________________"}</p>
               </div>
             </div>
 
