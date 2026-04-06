@@ -85,7 +85,40 @@ export default function TeacherProfile() {
               // based on their role (adviser OR subject teacher)
               try {
                 const visibleClassesResponse = await api.get(appendSchoolYearId(`/classes/teacher/${user.id}`, viewingSyId));
-                const visibleClasses = Array.isArray(visibleClassesResponse.data.data) ? visibleClassesResponse.data.data : [];
+                let visibleClasses = Array.isArray(visibleClassesResponse.data.data) ? visibleClassesResponse.data.data : [];
+                const normalizeId = (value) => (value === null || value === undefined ? "" : String(value).trim());
+                const isSameTeacher = (a, b) => normalizeId(a) === normalizeId(b);
+
+                // Compatibility fallback for older backend deployments that may not fully populate
+                // the unified endpoint yet.
+                if (visibleClasses.length === 0) {
+                  try {
+                    const [adviserResp, subjectTeacherResp] = await Promise.all([
+                      api.get(appendSchoolYearId(`/classes/adviser/${user.id}`, viewingSyId)),
+                      api.get(appendSchoolYearId(`/classes/subject-teacher/${user.id}`, viewingSyId)),
+                    ]);
+
+                    const adviserClasses = Array.isArray(adviserResp?.data?.data)
+                      ? adviserResp.data.data.map((c) => ({ ...c, role_in_class: 'adviser' }))
+                      : [];
+                    const subjectTeacherClasses = Array.isArray(subjectTeacherResp?.data?.data)
+                      ? subjectTeacherResp.data.data.map((c) => ({ ...c, role_in_class: 'subject_teacher' }))
+                      : [];
+
+                    // Deduplicate by class id, preferring rows with richer payload.
+                    const byId = new Map();
+                    [...adviserClasses, ...subjectTeacherClasses].forEach((cls) => {
+                      const existing = byId.get(cls.id);
+                      if (!existing || (Array.isArray(cls.subject_teachers) && cls.subject_teachers.length > 0)) {
+                        byId.set(cls.id, cls);
+                      }
+                    });
+                    visibleClasses = Array.from(byId.values());
+                    console.log(`Fallback class fetch used. Classes: ${visibleClasses.length}`);
+                  } catch (fallbackErr) {
+                    console.error('Fallback class fetch failed:', fallbackErr);
+                  }
+                }
                 
                 console.log(`✓ Fetched ${visibleClasses.length} classes for teacher ${user.id}`);
                 
@@ -102,7 +135,7 @@ export default function TeacherProfile() {
                 // Process each visible class
                 visibleClasses.forEach(cls => {
                   // If user is adviser of this class
-                  if (cls.role_in_class === 'adviser' || cls.adviser_id === user.id) {
+                  if (cls.role_in_class === 'adviser' || isSameTeacher(cls.adviser_id, user.id)) {
                     scheduleData.push({
                       id: `adviser-${cls.id}`,
                       day: "Monday - Friday",
@@ -113,9 +146,9 @@ export default function TeacherProfile() {
                   }
                   
                   // If user is subject teacher in this class
-                  if ((cls.role_in_class === 'subject_teacher' || cls.subjects_teaching) && cls.subject_teachers) {
+                  if ((cls.role_in_class === 'subject_teacher' || cls.subjects_teaching) && Array.isArray(cls.subject_teachers)) {
                     cls.subject_teachers.forEach(st => {
-                      if (st.teacher_id === user.id) {
+                      if (isSameTeacher(st.teacher_id, user.id)) {
                         scheduleData.push({
                           id: `${cls.id}-${st.subject}`,
                           day: st.day || "Monday - Friday",
@@ -124,6 +157,24 @@ export default function TeacherProfile() {
                           gradeSection: `${cls.grade || 'Grade'} - ${cls.section || 'Section'}`
                         });
                       }
+                    });
+                  }
+
+                  // Fallback: if subject row did not include details array, use summarized subjects list.
+                  if (cls.role_in_class === 'subject_teacher' && (!Array.isArray(cls.subject_teachers) || cls.subject_teachers.length === 0) && cls.subjects_teaching) {
+                    const subjects = String(cls.subjects_teaching)
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+
+                    subjects.forEach((subject, idx) => {
+                      scheduleData.push({
+                        id: `${cls.id}-fallback-${idx}-${subject}`,
+                        day: "Monday - Friday",
+                        time: "8:00 AM - 3:00 PM",
+                        subject,
+                        gradeSection: `${cls.grade || 'Grade'} - ${cls.section || 'Section'}`
+                      });
                     });
                   }
                 });
