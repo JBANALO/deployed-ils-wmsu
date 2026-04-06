@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert,
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthProvider';
-import { useAttendance } from '../context/AttendanceContext';
 import { authAPI } from '../services/api';
 
 // Detect if running on web
@@ -19,10 +18,12 @@ if (!isWeb) {
 }
 
 export default function ProfileScreen({ navigation }) {
-  const { user, userData, logout, refreshUserData, updateUserInStorage, changePassword } = useAuth();
+  const { user, userData, logout, refreshUserData, updateUserInStorage } = useAuth();
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [photoModalVisible, setPhotoModalVisible] = useState(false);
-  const [changePasswordModalVisible, setChangePasswordModalVisible] = useState(false);
+  const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
+  const [teacherSchedules, setTeacherSchedules] = useState([]);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   
   const [editForm, setEditForm] = useState({
@@ -30,15 +31,9 @@ export default function ProfileScreen({ navigation }) {
     middleName: userData?.middleName || '',
     lastName: userData?.lastName || '',
     department: userData?.department || 'Elementary Department',
-    employeeId: userData?.employeeId || '',
+    employeeId: userData?.employeeId || userData?.employee_id || '',
     phone: userData?.phone || '',
     subjects: userData?.subjects || '',
-  });
-
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: '',
   });
 
   const handleLogout = async () => {
@@ -86,6 +81,7 @@ export default function ProfileScreen({ navigation }) {
         lastName: editForm.lastName,
         username: user.username || user.email?.split('@')[0] || '',
         email: user.email,
+        employeeId: editForm.employeeId || '',
         phone: editForm.phone || '',
       };
 
@@ -97,8 +93,10 @@ export default function ProfileScreen({ navigation }) {
         await updateUserInStorage({
           firstName: updatedUserData.firstName || editForm.firstName,
           lastName: updatedUserData.lastName || editForm.lastName,
+          employeeId: updatedUserData.employeeId || updatedUserData.employee_id || editForm.employeeId,
           phone: updatedUserData.phone || editForm.phone,
         });
+        await refreshUserData();
         Alert.alert('Success', 'Profile updated successfully');
         setEditModalVisible(false);
       } else {
@@ -107,38 +105,6 @@ export default function ProfileScreen({ navigation }) {
     } catch (error) {
       console.error('Error updating profile:', error);
       Alert.alert('Error', error.message || 'Failed to update profile. Please try again.');
-    }
-  };
-
-  const handleChangePassword = async () => {
-    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
-      Alert.alert('Error', 'Please fill all password fields');
-      return;
-    }
-
-    if (passwordForm.newPassword.length < 6) {
-      Alert.alert('Error', 'New password must be at least 6 characters');
-      return;
-    }
-
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      Alert.alert('Error', 'New passwords do not match');
-      return;
-    }
-
-    try {
-      const result = await changePassword(passwordForm.currentPassword, passwordForm.newPassword);
-      
-      if (result.success) {
-        Alert.alert('Success', 'Password updated successfully');
-        setChangePasswordModalVisible(false);
-        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-      } else {
-        Alert.alert('Error', result.error);
-      }
-    } catch (error) {
-      console.error('Error changing password:', error);
-      Alert.alert('Error', 'Failed to change password. Please try again.');
     }
   };
 
@@ -201,6 +167,123 @@ export default function ProfileScreen({ navigation }) {
     Alert.alert('Info', 'Profile photo can be managed through the web dashboard.');
   };
 
+  const loadTeacherSchedules = async () => {
+    if (!user?.id) return;
+    try {
+      setScheduleLoading(true);
+      const firstName = String(userData?.firstName || user?.firstName || '').trim().toLowerCase();
+      const lastName = String(userData?.lastName || user?.lastName || '').trim().toLowerCase();
+
+      const fromSubjectTeacher = await authAPI.getSubjectTeacherClasses(user.id);
+      const subjectTeacherClasses = Array.isArray(fromSubjectTeacher?.data)
+        ? fromSubjectTeacher.data
+        : Array.isArray(fromSubjectTeacher)
+        ? fromSubjectTeacher
+        : [];
+
+      let rows = [];
+      subjectTeacherClasses.forEach(cls => {
+        const sts = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
+        sts.forEach(st => {
+          const teacherIdMatch = String(st.teacher_id || st.teacherId || '') === String(user.id);
+          const teacherNameText = String(st.teacher_name || st.teacherName || '').trim().toLowerCase();
+          const teacherNameMatch = firstName && lastName
+            ? (teacherNameText.includes(firstName) && teacherNameText.includes(lastName))
+            : false;
+          if (!teacherIdMatch && !teacherNameMatch) return;
+          rows.push({
+            classId: st.class_id || cls.id,
+            grade: cls.grade || st.grade || '',
+            section: cls.section || st.section || '',
+            subject: st.subject || 'Subject',
+            day: st.day || 'Monday - Friday',
+            start_time: st.start_time || st.startTime || null,
+            end_time: st.end_time || st.endTime || null,
+          });
+        });
+      });
+
+      // Fallback: use all classes endpoint (mirrors admin/web shape) when times are missing.
+      const needsFallback = rows.length === 0 || rows.every(r => !r.start_time && !r.end_time);
+      if (needsFallback) {
+        const allClasses = await authAPI.getAllClasses(user?.token);
+        const classList = Array.isArray(allClasses?.data)
+          ? allClasses.data
+          : Array.isArray(allClasses)
+          ? allClasses
+          : [];
+
+        const fallbackRows = [];
+        classList.forEach(cls => {
+          const sts = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
+          sts.forEach(st => {
+            const teacherIdMatch = String(st.teacher_id || st.teacherId || '') === String(user.id);
+            const teacherNameText = String(st.teacher_name || st.teacherName || '').trim().toLowerCase();
+            const teacherNameMatch = firstName && lastName
+              ? (teacherNameText.includes(firstName) && teacherNameText.includes(lastName))
+              : false;
+            if (!teacherIdMatch && !teacherNameMatch) return;
+            fallbackRows.push({
+              classId: st.class_id || cls.id,
+              grade: cls.grade || st.grade || '',
+              section: cls.section || st.section || '',
+              subject: st.subject || 'Subject',
+              day: st.day || 'Monday - Friday',
+              start_time: st.start_time || st.startTime || null,
+              end_time: st.end_time || st.endTime || null,
+            });
+          });
+        });
+
+        if (fallbackRows.length > 0) {
+          rows = fallbackRows;
+        }
+      }
+
+      const toMinutes = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw.includes(':')) return null;
+        const [h, m] = raw.split(':');
+        const hh = Number(h);
+        const mm = Number(m);
+        if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+        return (hh * 60) + mm;
+      };
+
+      const seen = new Set();
+      const deduped = rows
+        .filter(row => {
+          const key = [row.classId, row.subject, row.day, row.start_time, row.end_time].join('|').toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .sort((a, b) => {
+          const dayA = String(a.day || '').toLowerCase();
+          const dayB = String(b.day || '').toLowerCase();
+          if (dayA !== dayB) return dayA.localeCompare(dayB);
+          const aMin = toMinutes(a.start_time);
+          const bMin = toMinutes(b.start_time);
+          if (aMin === null && bMin === null) return 0;
+          if (aMin === null) return 1;
+          if (bMin === null) return -1;
+          return aMin - bMin;
+        });
+
+      setTeacherSchedules(deduped);
+    } catch (error) {
+      console.error('Error loading profile schedules:', error);
+      setTeacherSchedules([]);
+    } finally {
+      setScheduleLoading(false);
+    }
+  };
+
+  const openScheduleModal = async () => {
+    setScheduleModalVisible(true);
+    await loadTeacherSchedules();
+  };
+
   return (
     <>
       <StatusBar backgroundColor="#8B0000" barStyle="light-content" />
@@ -251,7 +334,7 @@ export default function ProfileScreen({ navigation }) {
             </View>
             <View style={styles.infoContent}>
               <Text style={styles.infoLabel}>Employee ID</Text>
-              <Text style={styles.infoValue}>{userData?.employeeId || 'Not set'}</Text>
+              <Text style={styles.infoValue}>{userData?.employeeId || userData?.employee_id || 'Not set'}</Text>
             </View>
           </View>
 
@@ -285,7 +368,7 @@ export default function ProfileScreen({ navigation }) {
                 middleName: userData?.middleName || '',
                 lastName: userData?.lastName || '',
                 department: userData?.department || 'Elementary Department',
-                employeeId: userData?.employeeId || '',
+                employeeId: userData?.employeeId || userData?.employee_id || '',
                 phone: userData?.phone || '',
                 subjects: userData?.subjects || '',
               });
@@ -304,14 +387,14 @@ export default function ProfileScreen({ navigation }) {
 
           <TouchableOpacity 
             style={styles.actionButton}
-            onPress={() => setChangePasswordModalVisible(true)}
+            onPress={openScheduleModal}
           >
             <View style={styles.actionIconContainer}>
-              <Icon name="lock-reset" size={24} color="#8B0000" />
+              <Icon name="calendar-clock" size={24} color="#8B0000" />
             </View>
             <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>Change Password</Text>
-              <Text style={styles.actionSubtitle}>Update your password</Text>
+              <Text style={styles.actionTitle}>Schedule</Text>
+              <Text style={styles.actionSubtitle}>View your subject schedule</Text>
             </View>
             <Icon name="chevron-right" size={24} color="#999" />
           </TouchableOpacity>
@@ -455,79 +538,54 @@ export default function ProfileScreen({ navigation }) {
       <Modal
         animationType="slide"
         transparent={true}
-        visible={changePasswordModalVisible}
-        onRequestClose={() => setChangePasswordModalVisible(false)}
+        visible={scheduleModalVisible}
+        onRequestClose={() => setScheduleModalVisible(false)}
       >
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
           behavior={isWeb ? 'height' : (Platform?.OS === 'ios' ? 'padding' : 'height')}
           style={styles.modalOverlay}
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Change Password</Text>
-              <TouchableOpacity onPress={() => setChangePasswordModalVisible(false)}>
+              <Text style={styles.modalTitle}>My Teaching Schedule</Text>
+              <TouchableOpacity onPress={() => setScheduleModalVisible(false)}>
                 <Icon name="close" size={28} color="#333" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView 
-              style={styles.modalScroll}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Current Password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter current password"
-                  value={passwordForm.currentPassword}
-                  onChangeText={(text) => setPasswordForm({ ...passwordForm, currentPassword: text })}
-                  secureTextEntry
-                />
+            {scheduleLoading ? (
+              <View style={{ paddingVertical: 32, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color="#8B0000" />
+                <Text style={{ marginTop: 10, color: '#666' }}>Loading schedule...</Text>
               </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>New Password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter new password (min. 6 characters)"
-                  value={passwordForm.newPassword}
-                  onChangeText={(text) => setPasswordForm({ ...passwordForm, newPassword: text })}
-                  secureTextEntry
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Confirm New Password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Confirm new password"
-                  value={passwordForm.confirmPassword}
-                  onChangeText={(text) => setPasswordForm({ ...passwordForm, confirmPassword: text })}
-                  secureTextEntry
-                />
-              </View>
-
-              <View style={{ height: 20 }} />
-            </ScrollView>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={styles.cancelButton}
-                onPress={() => {
-                  setChangePasswordModalVisible(false);
-                  setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-                }}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.saveButton}
-                onPress={handleChangePassword}
-              >
-                <Text style={styles.saveButtonText}>Update Password</Text>
-              </TouchableOpacity>
-            </View>
+            ) : (
+              <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+                {teacherSchedules.length === 0 ? (
+                  <View style={styles.emptyCard}>
+                    <Icon name="calendar-remove" size={40} color="#ccc" />
+                    <Text style={styles.emptyText}>No schedule found</Text>
+                    <Text style={styles.emptySubText}>No assigned day/time available for this account yet.</Text>
+                  </View>
+                ) : (
+                  teacherSchedules.map((row, index) => (
+                    <View key={`${row.classId}_${row.subject}_${row.day}_${row.start_time}_${row.end_time}_${index}`} style={styles.scheduleItem}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.scheduleSubjectText}>{row.subject}</Text>
+                        <Text style={styles.scheduleClassText}>{row.grade} - {row.section}</Text>
+                        <Text style={styles.scheduleDayText}>{row.day || 'Day not set'}</Text>
+                      </View>
+                      <View style={styles.scheduleChip}>
+                        <Icon name="clock-outline" size={12} color="#8B0000" />
+                        <Text style={styles.scheduleChipText}>
+                          {(row.start_time && row.end_time) ? `${row.start_time} - ${row.end_time}` : 'No schedule time'}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                )}
+                <View style={{ height: 10 }} />
+              </ScrollView>
+            )}
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -641,4 +699,29 @@ const styles = StyleSheet.create({
   photoCancelText: { fontSize: 16, color: '#8B0000', fontWeight: '600' },
   uploadingOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.95)', justifyContent: 'center', alignItems: 'center', borderTopLeftRadius: 20, borderTopRightRadius: 20 },
   uploadingText: { fontSize: 16, color: '#8B0000', fontWeight: '600', marginTop: 12 },
+  scheduleItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    gap: 10,
+  },
+  scheduleSubjectText: { fontSize: 16, fontWeight: '700', color: '#222' },
+  scheduleClassText: { fontSize: 13, color: '#666', marginTop: 2 },
+  scheduleDayText: { fontSize: 12, color: '#8B0000', marginTop: 2, fontWeight: '600' },
+  scheduleChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#fff5f5',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+  },
+  scheduleChipText: { fontSize: 11, color: '#8B0000', fontWeight: '700' },
 });

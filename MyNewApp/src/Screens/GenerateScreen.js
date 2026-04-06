@@ -404,7 +404,7 @@ export default function GenerateScreen() {
           <Text style={styles.instructionText}>1. Add students using the form above</Text>
           <Text style={styles.instructionText}>2. Tap the QR icon to generate their QR code</Text>
           <Text style={styles.instructionText}>3. Students scan their QR code during attendance</Text>
-          <Text style={styles.instructionText}>4. System automatically records morning/afternoon attendance</Text>
+          <Text style={styles.instructionText}>4. System automatically records attendance by subject schedule</Text>
         </View>
 
         <View style={{ height: 20 }} />

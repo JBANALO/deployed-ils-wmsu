@@ -101,6 +101,51 @@ export const authAPI = {
       console.error('Error fetching subject teacher classes:', error);
       throw error;
     }
+  },
+
+  // Get all classes (used as fallback to extract full schedule rows)
+  getAllClasses: async (token) => {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/classes`, {
+        headers: token
+          ? {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            }
+          : undefined,
+      });
+      const result = await response.json();
+      return result.data || result.classes || result;
+    } catch (error) {
+      console.error('Error fetching all classes:', error);
+      throw error;
+    }
+  },
+
+  // Get active school year (used in mobile header)
+  getActiveSchoolYear: async (token) => {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/school-years/active`, {
+        headers: token
+          ? {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            }
+          : {
+              'Content-Type': 'application/json',
+            },
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || `Server error: ${response.status}`);
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error fetching active school year:', error);
+      throw error;
+    }
   }
 };
 

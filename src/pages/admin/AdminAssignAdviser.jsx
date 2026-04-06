@@ -414,10 +414,20 @@ export default function AdminAssignAdviser() {
     }
   };
 
-  const handleRemoveSubjectTeacher = async (classId, teacherId) => {
+  const handleRemoveSubjectTeacher = async (classId, teacherId, row) => {
     try {
-      await api.put(`/classes/${classId}/unassign-subject-teacher/${teacherId}?schoolYearId=${encodeURIComponent(activeSchoolYearId)}`);
-      setMessage("Subject teacher removed successfully");
+      const params = new URLSearchParams();
+      params.set('schoolYearId', String(activeSchoolYearId));
+      if (row?.id !== undefined && row?.id !== null && String(row.id).trim() !== '') {
+        params.set('assignmentId', String(row.id));
+      }
+      if (row?.subject) params.set('subject', String(row.subject));
+      if (row?.day) params.set('day', String(row.day));
+      if (row?.start_time) params.set('start_time', String(row.start_time));
+      if (row?.end_time) params.set('end_time', String(row.end_time));
+
+      await api.put(`/classes/${classId}/unassign-subject-teacher/${teacherId}?${params.toString()}`);
+      setMessage("Subject teacher entry removed successfully");
       setMessageType("success");
       await fetchData();
     } catch (error) {
@@ -792,9 +802,9 @@ export default function AdminAssignAdviser() {
                             <span className="text-xs text-gray-500 ml-2">{st.day} {st.start_time}–{st.end_time}</span>
                           </span>
                           <button
-                            onClick={() => handleRemoveSubjectTeacher(classItem.id, st.teacher_id)}
+                            onClick={() => handleRemoveSubjectTeacher(classItem.id, st.teacher_id, st)}
                             className="text-red-500 hover:text-red-700 ml-3 flex-shrink-0"
-                            title="Remove"
+                            title="Remove this entry"
                           >
                             <TrashIcon className="w-4 h-4" />
                           </button>

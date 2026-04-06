@@ -446,20 +446,69 @@ exports.getSubjectTeacherClasses = async (req, res) => {
     const { userId } = req.params;
     console.log('Fetching classes for subject teacher:', userId);
 
-    const classes = await query(
-      `SELECT DISTINCT c.* FROM classes c 
-       INNER JOIN subject_teachers st ON c.id = st.class_id 
-       WHERE st.teacher_id = ? AND st.school_year_id = ? AND c.school_year_id = ?`,
-      [userId, activeSy.id, activeSy.id]
-    );
+    const teacherRows = await runFirstSuccessfulQuery([
+      {
+        sql: 'SELECT firstName AS first_name, lastName AS last_name FROM users WHERE id = ? LIMIT 1',
+        params: [userId]
+      },
+      {
+        sql: 'SELECT first_name, last_name FROM users WHERE id = ? LIMIT 1',
+        params: [userId]
+      },
+      {
+        sql: 'SELECT first_name, last_name FROM teachers WHERE id = ? LIMIT 1',
+        params: [userId]
+      }
+    ]);
+
+    const teacherFirstName = String(teacherRows[0]?.first_name || '').trim().toLowerCase();
+    const teacherLastName = String(teacherRows[0]?.last_name || '').trim().toLowerCase();
+    const hasNameFallback = Boolean(teacherFirstName && teacherLastName);
+    const firstLike = `%${teacherFirstName}%`;
+    const lastLike = `%${teacherLastName}%`;
+
+    const classes = hasNameFallback
+      ? await query(
+          `SELECT DISTINCT c.* FROM classes c
+           INNER JOIN subject_teachers st ON c.id = st.class_id
+           WHERE st.school_year_id = ?
+             AND c.school_year_id = ?
+             AND (
+               CAST(st.teacher_id AS CHAR) = ?
+               OR (LOWER(COALESCE(st.teacher_name, '')) LIKE ? AND LOWER(COALESCE(st.teacher_name, '')) LIKE ?)
+             )`,
+          [activeSy.id, activeSy.id, String(userId), firstLike, lastLike]
+        )
+      : await query(
+          `SELECT DISTINCT c.* FROM classes c
+           INNER JOIN subject_teachers st ON c.id = st.class_id
+           WHERE CAST(st.teacher_id AS CHAR) = ?
+             AND st.school_year_id = ?
+             AND c.school_year_id = ?`,
+          [String(userId), activeSy.id, activeSy.id]
+        );
 
     // Fetch subject teachers for each class
     const classesWithTeachers = await Promise.all(classes.map(async (cls) => {
       try {
-        const subjectTeachers = await query(
-          `SELECT st.* FROM subject_teachers st WHERE st.class_id = ? AND st.school_year_id = ?`,
-          [cls.id, activeSy.id]
-        );
+        const subjectTeachers = hasNameFallback
+          ? await query(
+              `SELECT st.* FROM subject_teachers st
+               WHERE st.class_id = ?
+                 AND st.school_year_id = ?
+                 AND (
+                   CAST(st.teacher_id AS CHAR) = ?
+                   OR (LOWER(COALESCE(st.teacher_name, '')) LIKE ? AND LOWER(COALESCE(st.teacher_name, '')) LIKE ?)
+                 )`,
+              [cls.id, activeSy.id, String(userId), firstLike, lastLike]
+            )
+          : await query(
+              `SELECT st.* FROM subject_teachers st
+               WHERE st.class_id = ?
+                 AND st.school_year_id = ?
+                 AND CAST(st.teacher_id AS CHAR) = ?`,
+              [cls.id, activeSy.id, String(userId)]
+            );
         return {
           ...cls,
           subject_teachers: subjectTeachers

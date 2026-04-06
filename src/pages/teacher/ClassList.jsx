@@ -34,6 +34,7 @@ export default function ClassList() {
 
   const [students, setStudents] = useState([]);
   const [assignedClasses, setAssignedClasses] = useState([]);
+  const [adviserClassKeys, setAdviserClassKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -90,6 +91,18 @@ export default function ClassList() {
       setTeacherViewingSchoolYearId(selectedSchoolYearId);
     }
   }, [selectedSchoolYearId]);
+
+  const normalizeValue = (value) => (value || '').toString().trim().toLowerCase();
+  const getClassKey = (grade, section) => `${normalizeValue(grade)}||${normalizeValue(section)}`;
+
+  const canEditStudentInfo = (student) => {
+    const userStr = localStorage.getItem('user');
+    const actor = userStr ? JSON.parse(userStr) : null;
+    const actorRole = String(actor?.role || '').toLowerCase();
+    if (['admin', 'super_admin'].includes(actorRole)) return true;
+    const key = getClassKey(student?.gradeLevel, student?.section);
+    return adviserClassKeys.includes(key);
+  };
 
   const fetchStudents = async () => {
     try {
@@ -161,6 +174,7 @@ export default function ClassList() {
       const combinedClasses = [...adviserClasses, ...subjectTeacherClasses];
       const uniqueClasses = dedupeTeacherClasses(combinedClasses);
       setAssignedClasses(uniqueClasses);
+      setAdviserClassKeys(adviserClasses.map((c) => getClassKey(c.grade, c.section)));
       
       console.log('ClassList: Assigned classes:', uniqueClasses.map(c => `${c.grade}-${c.section}`));
 
@@ -221,6 +235,10 @@ export default function ClassList() {
       toast.error('Past school years are view-only. Student editing is disabled.');
       return;
     }
+    if (!canEditStudentInfo(student)) {
+      toast.error('Only the adviser of this class (or admin) can edit student information.');
+      return;
+    }
     setSelectedStudent(student);
     setEditFormData({ ...student, profilePic: student.profilePic }); // Added profilePic
     setShowEditModal(true);
@@ -228,6 +246,22 @@ export default function ClassList() {
 
   const handleUpdateStudent = async () => {
     try {
+      const userStr = localStorage.getItem('user');
+      const actor = userStr ? JSON.parse(userStr) : null;
+      const actorRole = String(actor?.role || '').toLowerCase();
+      const actorId = actor?.id;
+      if (!canEditStudentInfo(selectedStudent)) {
+        toast.error('Only the adviser of this class (or admin) can edit student information.');
+        return;
+      }
+      const previousStatus = String(selectedStudent?.status || '').trim().toLowerCase();
+      const nextStatus = String(editFormData?.status || '').trim().toLowerCase();
+
+      if (previousStatus === 'inactive' && nextStatus && nextStatus !== 'inactive') {
+        toast.error('Only admin can reactivate an inactive student account.');
+        return;
+      }
+
       const fullName = `${editFormData.firstName || ''} ${editFormData.middleName || ''} ${editFormData.lastName || ''}`.trim();
 
       const qrData = JSON.stringify({
@@ -253,7 +287,9 @@ export default function ClassList() {
         ...editFormData,
         fullName,
         qrCode: newQrCode,
-        profilePic: editFormData.profilePic  // Send updated photo
+        profilePic: editFormData.profilePic,  // Send updated photo
+        actorRole,
+        actorId,
       };
 
       const response = await axios.put(`/students/${selectedStudent.id}`, updatedData);
@@ -542,8 +578,8 @@ export default function ClassList() {
                   </button>
                   <button
                     onClick={() => handleEdit(student)}
-                    disabled={isViewOnlyMode}
-                    className={`transition ${isViewOnlyMode ? 'text-gray-300 cursor-not-allowed' : 'text-green-600 hover:text-green-800'}`}
+                    disabled={isViewOnlyMode || !canEditStudentInfo(student)}
+                    className={`transition ${(isViewOnlyMode || !canEditStudentInfo(student)) ? 'text-gray-300 cursor-not-allowed' : 'text-green-600 hover:text-green-800'}`}
                     title="Edit"
                   >
                     <PencilSquareIcon className="w-5 h-5" />

@@ -4,7 +4,6 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useAttendance } from '../context/AttendanceContext';
 import { useAuth } from '../context/AuthProvider';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI } from '../services/api';
 
 export default function HomeScreen() {
@@ -19,13 +18,17 @@ export default function HomeScreen() {
   const [emailInput, setEmailInput] = useState('');
   const [pendingEmailData, setPendingEmailData] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [sentAbsentEmails, setSentAbsentEmails] = useState({});
   const [teacherSchedules, setTeacherSchedules] = useState([]);
+  const [activeSchoolYearLabel, setActiveSchoolYearLabel] = useState('');
   const lastDateRef = useRef(new Date().toISOString().split('T')[0]);
-  const lastMorningCheck = useRef(false);
-  const lastAfternoonCheck = useRef(false);
-  const { attendanceLog, getTodayStats, addManualAbsence, removeAbsence, getAttendancePeriod, recordAttendance, loadAttendanceLogs } = useAttendance();
+  const { attendanceLog, addManualAbsence, recordAttendance, loadAttendanceLogs } = useAttendance();
   const { user, userData, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigation.replace('Login');
+    }
+  }, [authLoading, user, navigation]);
   
   const getTeacherName = () => {
     if (!user) return 'Teacher';
@@ -71,147 +74,19 @@ export default function HomeScreen() {
         loadStudents();
         loadAttendanceLogs();
         loadTeacherSchedules();
-        loadSentAbsentEmails();
+        loadActiveSchoolYear();
         setRefreshKey(prev => prev + 1);
       }
     }, [user])
   );
 
-  // Load sent absent emails from storage to avoid duplicates
-  const loadSentAbsentEmails = async () => {
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const stored = await AsyncStorage.getItem(`sentAbsentEmails_${today}`);
-      if (stored) {
-        setSentAbsentEmails(JSON.parse(stored));
-      } else {
-        setSentAbsentEmails({});
-      }
-    } catch (error) {
-      console.error('Error loading sent emails:', error);
-    }
+  const getLocalDateString = (value = new Date()) => {
+    const d = new Date(value);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   };
-
-  // Send automatic absent notification via API
-  const sendAbsentEmailViaAPI = async (student, period) => {
-    const parentEmail = student.parentEmail || student.contactEmail;
-    if (!parentEmail) {
-      console.log('📧 No parent email for:', student.name);
-      return false;
-    }
-
-    const emailKey = `${student.studentId}_${period}`;
-    if (sentAbsentEmails[emailKey]) {
-      console.log('📧 Already sent absent email for:', student.name, period);
-      return false;
-    }
-
-    try {
-      const response = await fetch('https://deployed-ils-wmsu-production.up.railway.app/api/attendance/send-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          parentEmail: parentEmail,
-          studentName: student.name,
-          studentLRN: student.studentId || student.lrn,
-          gradeLevel: student.gradeLevel || 'N/A',
-          section: student.section || 'N/A',
-          status: 'absent',
-          period: period,
-          time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-          teacherName: user?.firstName || user?.email?.split('@')[0] || 'Teacher'
-        }),
-      });
-
-      const result = await response.json();
-      if (result.success) {
-        console.log('📧 Absent email sent to:', parentEmail);
-        // Mark as sent
-        const today = new Date().toISOString().split('T')[0];
-        const updated = { ...sentAbsentEmails, [emailKey]: true };
-        setSentAbsentEmails(updated);
-        await AsyncStorage.setItem(`sentAbsentEmails_${today}`, JSON.stringify(updated));
-        return true;
-      }
-    } catch (error) {
-      console.error('📧 Error sending absent email:', error);
-    }
-    return false;
-  };
-
-  // Check and send automatic absent notifications
-  const checkAndSendAbsentNotifications = async () => {
-    if (!isSchoolDay() || students.length === 0) return;
-
-    const now = new Date();
-    const nowHour = now.getHours();
-    const today = now.toISOString().split('T')[0];
-
-    // Filter today's attendance records
-    const todayLogs = attendanceLog.filter(log => {
-      let logDate = log.date;
-      if (logDate && logDate.includes('/')) {
-        const parts = logDate.split('/');
-        if (parts.length === 3) {
-          logDate = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
-        }
-      }
-      return logDate === today;
-    });
-
-    // Check morning absents (after 10 AM)
-    if (nowHour >= 10 && !lastMorningCheck.current) {
-      lastMorningCheck.current = true;
-      console.log('📧 Checking morning absents...');
-      
-      for (const student of students) {
-        const studentIdStr = String(student.studentId || student.lrn || student.id || '');
-        const hasMorningRecord = todayLogs.some(log => 
-          (String(log.studentId) === studentIdStr || String(log.student_id) === studentIdStr) && 
-          (log.period || '').toLowerCase() === 'morning'
-        );
-        if (!hasMorningRecord) {
-          // Persist auto-absent so web and mobile dashboards show the same numbers
-          await addManualAbsence(studentIdStr, 'morning');
-          await sendAbsentEmailViaAPI(student, 'morning');
-        }
-      }
-
-      // Refresh logs after auto-marking absences
-      await loadAttendanceLogs();
-    }
-
-    // Check afternoon absents (after 2 PM)
-    if (nowHour >= 14 && !lastAfternoonCheck.current) {
-      lastAfternoonCheck.current = true;
-      console.log('📧 Checking afternoon absents...');
-      
-      for (const student of students) {
-        const studentIdStr = String(student.studentId || student.lrn || student.id || '');
-        const hasAfternoonRecord = todayLogs.some(log => 
-          (String(log.studentId) === studentIdStr || String(log.student_id) === studentIdStr) && 
-          (log.period || '').toLowerCase() === 'afternoon'
-        );
-        if (!hasAfternoonRecord) {
-          // Persist auto-absent so web and mobile dashboards show the same numbers
-          await addManualAbsence(studentIdStr, 'afternoon');
-          await sendAbsentEmailViaAPI(student, 'afternoon');
-        }
-      }
-
-      // Refresh logs after auto-marking absences
-      await loadAttendanceLogs();
-    }
-  };
-
-  // Run absent notification check when students or attendance changes
-  useEffect(() => {
-    if (students.length > 0 && attendanceLog.length >= 0) {
-      checkAndSendAbsentNotifications();
-    }
-  }, [students, attendanceLog]);
 
   const loadStudents = async () => {
     if (!user) return;
@@ -248,6 +123,8 @@ export default function HomeScreen() {
         ...student,
         name: student.name || student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown Student',
         studentId: student.studentId || student.lrn || student.id,
+        gradeLevel: student.gradeLevel || student.grade_level || student.grade || '',
+        section: student.section || student.section_name || '',
         qrCode: student.qrCode || student.qr_code // Handle both field names
       }));
       
@@ -281,12 +158,52 @@ export default function HomeScreen() {
 
   const toMinutes = (timeText) => {
     const raw = String(timeText || '').trim();
-    if (!raw.includes(':')) return null;
-    const [h, m] = raw.split(':');
-    const hh = Number(h);
-    const mm = Number(m);
+    if (!raw) return null;
+
+    const meridiemMatch = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+    if (meridiemMatch) {
+      let hh = Number(meridiemMatch[1]);
+      const mm = Number(meridiemMatch[2]);
+      const ap = String(meridiemMatch[3]).toUpperCase();
+      if (ap === 'PM' && hh < 12) hh += 12;
+      if (ap === 'AM' && hh === 12) hh = 0;
+      if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+      return (hh * 60) + mm;
+    }
+
+    const basicMatch = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!basicMatch) return null;
+    const hh = Number(basicMatch[1]);
+    const mm = Number(basicMatch[2]);
     if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
     return (hh * 60) + mm;
+  };
+
+  const parseScheduleWindow = (schedule = {}) => {
+    let startRaw = String(schedule.start_time || schedule.startTime || '').trim();
+    let endRaw = String(schedule.end_time || schedule.endTime || '').trim();
+
+    // Some payloads may place the full range in one field, e.g. "08:00 - 09:00".
+    if ((!endRaw || !startRaw) && startRaw.includes('-')) {
+      const parts = startRaw.split('-').map(p => p.trim());
+      if (parts.length >= 2) {
+        startRaw = parts[0];
+        endRaw = parts[1];
+      }
+    }
+
+    if ((!endRaw || !startRaw) && endRaw.includes('-')) {
+      const parts = endRaw.split('-').map(p => p.trim());
+      if (parts.length >= 2) {
+        startRaw = startRaw || parts[0];
+        endRaw = parts[1];
+      }
+    }
+
+    return {
+      startMinutes: toMinutes(startRaw),
+      endMinutes: toMinutes(endRaw),
+    };
   };
 
   const normalizeDate = (value) => {
@@ -310,13 +227,28 @@ export default function HomeScreen() {
         ? classes
         : [];
 
+      const allClasses = await authAPI.getAllClasses(user?.token);
+      const allClassList = Array.isArray(allClasses?.data)
+        ? allClasses.data
+        : Array.isArray(allClasses)
+        ? allClasses
+        : [];
+
       const scheduleRows = [];
-      classList.forEach(cls => {
+      const firstName = String(userData?.firstName || user?.firstName || '').trim().toLowerCase();
+      const lastName = String(userData?.lastName || user?.lastName || '').trim().toLowerCase();
+
+      const collectRows = (sourceClasses) => {
+        sourceClasses.forEach(cls => {
         const sts = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
         if (sts.length > 0) {
           sts.forEach(st => {
             const teacherIdMatch = String(st.teacher_id || st.teacherId || '') === String(user.id);
-            if (!teacherIdMatch) return;
+            const teacherNameText = String(st.teacher_name || st.teacherName || '').trim().toLowerCase();
+            const teacherNameMatch = firstName && lastName
+              ? (teacherNameText.includes(firstName) && teacherNameText.includes(lastName))
+              : false;
+            if (!teacherIdMatch && !teacherNameMatch) return;
             scheduleRows.push({
               classId: st.class_id || cls.id,
               grade: cls.grade || st.grade || '',
@@ -349,7 +281,11 @@ export default function HomeScreen() {
             });
           });
         }
-      });
+        });
+      };
+
+      collectRows(classList);
+      collectRows(allClassList);
 
       const seen = new Set();
       const deduped = scheduleRows.filter(row => {
@@ -359,49 +295,61 @@ export default function HomeScreen() {
         return true;
       });
 
-      setTeacherSchedules(deduped);
+      // If a timed row exists for same class+subject+day, drop the no-time duplicate.
+      const hasTimedForScope = new Set(
+        deduped
+          .filter(r => r.start_time && r.end_time)
+          .map(r => [r.classId, r.subject, r.day].join('|').toLowerCase())
+      );
+
+      const cleaned = deduped.filter(r => {
+        const scopeKey = [r.classId, r.subject, r.day].join('|').toLowerCase();
+        if (r.start_time && r.end_time) return true;
+        return !hasTimedForScope.has(scopeKey);
+      });
+
+      setTeacherSchedules(cleaned);
     } catch (error) {
       console.error('Error loading teacher schedules:', error);
       setTeacherSchedules([]);
     }
   };
 
+  const loadActiveSchoolYear = async () => {
+    try {
+      const response = await authAPI.getActiveSchoolYear(user?.token);
+      const sy = response?.data || response?.schoolYear || response || null;
+      const label = sy?.label || sy?.name || '';
+      setActiveSchoolYearLabel(label);
+    } catch (error) {
+      console.error('Error loading active school year:', error);
+      setActiveSchoolYearLabel('');
+    }
+  };
+
   const getTodaySubjectSummaries = () => {
-    const today = new Date().toISOString().split('T')[0];
-    const now = new Date();
+    const now = currentTime || new Date();
+    const today = getLocalDateString(now);
     const nowMinutes = (now.getHours() * 60) + now.getMinutes();
 
     const todayLogs = attendanceLog.filter(log => normalizeDate(log.date) === today);
-    let todaysSchedules = teacherSchedules.filter(s => doesScheduleMatchToday(s.day, now));
+    const isScheduleActiveNow = (schedule) => {
+      const { startMinutes, endMinutes } = parseScheduleWindow(schedule);
+      if (startMinutes === null || endMinutes === null) return false;
 
-    // Fallback: derive schedule-like rows from today's attendance records with subject metadata.
-    if (todaysSchedules.length === 0) {
-      const fromLogs = [];
-      const seen = new Set();
-      todayLogs.forEach(log => {
-        const subjectName = String(log.subject || '').trim();
-        if (!subjectName) return;
-        const classLabel = `${log.gradeLevel || ''} - ${log.section || ''}`.trim();
-        const key = [classLabel, subjectName].join('|').toLowerCase();
-        if (seen.has(key)) return;
-        seen.add(key);
-        fromLogs.push({
-          classId: log.classId || null,
-          grade: log.gradeLevel || '',
-          section: log.section || '',
-          subject: subjectName,
-          day: 'Daily',
-          start_time: null,
-          end_time: null,
-        });
-      });
-      todaysSchedules = fromLogs;
-    }
+      // Small grace window to avoid missing the class at exact transition minutes.
+      return nowMinutes >= (startMinutes - 5) && nowMinutes <= endMinutes;
+    };
+
+    const todaysSchedules = teacherSchedules.filter(
+      s => doesScheduleMatchToday(s.day, now) && isScheduleActiveNow(s)
+    );
 
     return todaysSchedules.map(schedule => {
       const sectionStudents = students.filter(student => {
-        const gradeNorm = String(student.gradeLevel || '').trim().toLowerCase();
-        const schedGradeNorm = String(schedule.grade || '').trim().toLowerCase();
+        const normalizeGrade = (value = '') => String(value).trim().toLowerCase().replace(/^grade\s+/i, '');
+        const gradeNorm = normalizeGrade(student.gradeLevel || '');
+        const schedGradeNorm = normalizeGrade(schedule.grade || '');
         const sectionNorm = String(student.section || '').trim().toLowerCase();
         const schedSectionNorm = String(schedule.section || '').trim().toLowerCase();
         return gradeNorm === schedGradeNorm && sectionNorm === schedSectionNorm;
@@ -438,6 +386,7 @@ export default function HomeScreen() {
         key: `${schedule.classId}_${schedule.subject}_${schedule.start_time}_${schedule.end_time}`,
         subject: schedule.subject,
         classLabel: `${schedule.grade} - ${schedule.section}`,
+        sectionName: String(schedule.section || '').trim(),
         startTime: schedule.start_time,
         endTime: schedule.end_time,
         present,
@@ -452,10 +401,17 @@ export default function HomeScreen() {
     const summaries = getTodaySubjectSummaries();
     const bySection = {};
     summaries.forEach(item => {
-      if (!bySection[item.classLabel]) bySection[item.classLabel] = [];
-      bySection[item.classLabel].push(item);
+      const key = String(item.sectionName || '').trim();
+      if (!key) return;
+      if (!bySection[key]) bySection[key] = [];
+      bySection[key].push(item);
     });
     return bySection;
+  };
+
+  const formatScheduleRange = (startTime, endTime) => {
+    if (!startTime || !endTime) return 'No schedule time';
+    return `${startTime} - ${endTime}`;
   };
 
   const isSchoolDay = () => {
@@ -708,33 +664,6 @@ WMSU ILS - Elementary Department`;
     setPendingEmailData(null);
   };
 
-  // On weekends/no-school days, show zero stats
-  // Calculate real stats by aggregating all sections (includes students without records as absent)
-  const calculateRealStats = () => {
-    const sections = getStudentsBySection();
-    const aggregatedStats = {
-      morning: { present: 0, late: 0, absent: 0 },
-      afternoon: { present: 0, late: 0, absent: 0 }
-    };
-
-    Object.keys(sections).forEach(sectionName => {
-      const sectionData = getSectionAttendance(sectionName, sections[sectionName]);
-      aggregatedStats.morning.present += sectionData.stats.morning.present;
-      aggregatedStats.morning.late += sectionData.stats.morning.late;
-      aggregatedStats.morning.absent += sectionData.stats.morning.absent;
-      aggregatedStats.afternoon.present += sectionData.stats.afternoon.present;
-      aggregatedStats.afternoon.late += sectionData.stats.afternoon.late;
-      aggregatedStats.afternoon.absent += sectionData.stats.afternoon.absent;
-    });
-
-    return aggregatedStats;
-  };
-
-  const rawStats = calculateRealStats();
-  const stats = isSchoolDay() ? rawStats : {
-    morning: { present: 0, late: 0, absent: 0 },
-    afternoon: { present: 0, late: 0, absent: 0 }
-  };
   const sections = getStudentsBySection();
   const subjectSummaries = isSchoolDay() ? getTodaySubjectSummaries() : [];
   const sectionSubjectOverview = isSchoolDay() ? getSectionSubjectOverview() : {};
@@ -749,27 +678,11 @@ WMSU ILS - Elementary Department`;
       if (currentDate !== lastDateRef.current) {
         console.log('New day detected, refreshing attendance data...');
         lastDateRef.current = currentDate;
-        lastMorningCheck.current = false;
-        lastAfternoonCheck.current = false;
-        setSentAbsentEmails({});
         loadAttendanceLogs();
         loadStudents();
         loadTeacherSchedules();
-        loadSentAbsentEmails();
+        loadActiveSchoolYear();
         setRefreshKey(prev => prev + 1);
-      }
-
-      // Check for absent notifications at cutoff times
-      const nowHour = now.getHours();
-      const nowMinute = now.getMinutes();
-      
-      // Trigger morning check at 10:00 AM
-      if (nowHour === 10 && nowMinute === 0 && !lastMorningCheck.current) {
-        checkAndSendAbsentNotifications();
-      }
-      // Trigger afternoon check at 2:00 PM
-      if (nowHour === 14 && nowMinute === 0 && !lastAfternoonCheck.current) {
-        checkAndSendAbsentNotifications();
       }
     }, 60000); // Check every minute
     return () => clearInterval(timer);
@@ -779,7 +692,7 @@ WMSU ILS - Elementary Department`;
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([loadStudents(), loadAttendanceLogs(), loadTeacherSchedules()]);
+      await Promise.all([loadStudents(), loadAttendanceLogs(), loadTeacherSchedules(), loadActiveSchoolYear()]);
       setRefreshKey(prev => prev + 1);
     } catch (error) {
       console.error('Refresh error:', error);
@@ -798,14 +711,12 @@ WMSU ILS - Elementary Department`;
     navigation.navigate('Notifications');
   };
 
-  const currentPeriod = getAttendancePeriod();
-
   if (authLoading || !user) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#8B0000" />
         <Text style={{ marginTop: 16, color: '#666' }}>
-          {authLoading ? 'Loading...' : 'Please log in'}
+          {authLoading ? 'Loading...' : 'Redirecting to login...'}
         </Text>
       </View>
     );
@@ -830,6 +741,9 @@ WMSU ILS - Elementary Department`;
           <View style={{ flex: 1 }}>
             <Text style={styles.welcomeText}>Welcome, {teacher.name}!</Text>
             <Text style={styles.departmentText}>{teacher.department}</Text>
+            <Text style={styles.schoolYearText}>
+              School Year: {activeSchoolYearLabel || 'Loading...'}
+            </Text>
             <Text style={styles.dateText}>
               {currentTime.toLocaleDateString('en-US', { 
                 weekday: 'long', 
@@ -848,26 +762,13 @@ WMSU ILS - Elementary Department`;
           <View style={styles.headerRight}>
             <TouchableOpacity style={styles.notificationIcon} onPress={handleNotificationPress}>
               <Icon name="bell" size={24} color="#fff" />
-              {isSchoolDay() && ((stats.morning?.absent || 0) + (stats.afternoon?.absent || 0) + (stats.morning?.late || 0) + (stats.afternoon?.late || 0)) > 0 && (
-                <View style={styles.notificationBadge}>
-                  <Text style={styles.badgeText}>
-                    {(stats.morning?.absent || 0) + (stats.afternoon?.absent || 0) + (stats.morning?.late || 0) + (stats.afternoon?.late || 0)}
-                  </Text>
-                </View>
-              )}
             </TouchableOpacity>
             <Text style={styles.timeText}>
               {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
             </Text>
             <View style={styles.periodBadge}>
-              <Icon 
-                name={currentPeriod === 'morning' ? 'white-balance-sunny' : 'weather-sunset'} 
-                size={14} 
-                color="#fff" 
-              />
-              <Text style={styles.periodText}>
-                {currentPeriod === 'morning' ? 'Morning' : 'Afternoon'}
-              </Text>
+              <Icon name="book-education" size={14} color="#fff" />
+              <Text style={styles.periodText}>Per Subject</Text>
             </View>
           </View>
         </View>
@@ -878,37 +779,41 @@ WMSU ILS - Elementary Department`;
           {subjectSummaries.length === 0 ? (
             <View style={styles.periodCard}>
               <View style={styles.periodHeader}>
-                <Text style={styles.periodTitle}>No Subject Schedule Today</Text>
-                <Icon name="calendar-remove" size={24} color="#8B0000" />
+                <Text style={styles.periodTitle}>No Active Class Right Now</Text>
+                <Icon name="clock-outline" size={24} color="#8B0000" />
               </View>
-              <Text style={{ color: '#666', marginTop: 8 }}>No subject assignments matched for today's day/schedule.</Text>
+              <Text style={{ color: '#666', marginTop: 8 }}>This panel only shows subjects during their scheduled teaching time.</Text>
             </View>
           ) : (
-            subjectSummaries.map(item => (
-              <View style={styles.periodCard} key={item.key}>
-                <View style={styles.periodHeader}>
-                  <View>
-                    <Text style={styles.periodTitle}>{item.subject}</Text>
-                    <Text style={{ color: '#666', marginTop: 2 }}>{item.classLabel} • {item.startTime}-{item.endTime}</Text>
+            <View style={styles.compactSubjectListCard}>
+              {subjectSummaries.map((item, index) => (
+                <View key={item.key}>
+                  <View style={styles.compactSubjectRow}>
+                    <View style={styles.compactSubjectLeft}>
+                      <Text style={styles.compactSubjectName} numberOfLines={1}>{item.subject}</Text>
+                      <Text style={styles.compactSubjectMeta} numberOfLines={1}>
+                        {item.classLabel} • {formatScheduleRange(item.startTime, item.endTime)}
+                      </Text>
+                    </View>
+                    <View style={styles.compactCountersWrap}>
+                      <View style={[styles.compactCounter, styles.presentCounter]}>
+                        <Text style={styles.compactCounterValue}>{item.present}</Text>
+                        <Text style={styles.compactCounterLabel}>P</Text>
+                      </View>
+                      <View style={[styles.compactCounter, styles.lateCounter]}>
+                        <Text style={styles.compactCounterValue}>{item.late}</Text>
+                        <Text style={styles.compactCounterLabel}>L</Text>
+                      </View>
+                      <View style={[styles.compactCounter, styles.absentCounter]}>
+                        <Text style={styles.compactCounterValue}>{item.absent}</Text>
+                        <Text style={styles.compactCounterLabel}>A</Text>
+                      </View>
+                    </View>
                   </View>
-                  <Icon name="book-education" size={24} color="#8B0000" />
+                  {index !== subjectSummaries.length - 1 && <View style={styles.compactDivider} />}
                 </View>
-                <View style={styles.statsRow}>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>{item.present}</Text>
-                    <Text style={styles.statLabel}>Present</Text>
-                  </View>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>{item.late}</Text>
-                    <Text style={styles.statLabel}>Late</Text>
-                  </View>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>{item.absent}</Text>
-                    <Text style={styles.statLabel}>Absent</Text>
-                  </View>
-                </View>
-              </View>
-            ))
+              ))}
+            </View>
           )}
         </View>
 
@@ -961,17 +866,23 @@ WMSU ILS - Elementary Department`;
                           <Text style={styles.periodStatLabel}>No subject schedule for this section today</Text>
                         </View>
                       ) : (
-                        (sectionSubjectOverview[sectionName] || []).map(subjectItem => (
+                        (sectionSubjectOverview[sectionName] || []).slice(0, 3).map(subjectItem => (
                           <View style={styles.periodStat} key={subjectItem.key}>
                             <Text style={styles.periodStatLabel}>{subjectItem.subject}</Text>
                             <View style={styles.periodStatRight}>
-                              <Text style={styles.periodStatValue}>
-                                P:{subjectItem.present} L:{subjectItem.late} A:{subjectItem.absent}
-                              </Text>
-                              <Icon name="book-open-page-variant" size={18} color="#8B0000" />
+                              <View style={styles.miniSectionStats}>
+                                <Text style={[styles.miniSectionStatText, { color: '#2e7d32' }]}>P {subjectItem.present}</Text>
+                                <Text style={[styles.miniSectionStatText, { color: '#e65100' }]}>L {subjectItem.late}</Text>
+                                <Text style={[styles.miniSectionStatText, { color: '#c62828' }]}>A {subjectItem.absent}</Text>
+                              </View>
                             </View>
                           </View>
                         ))
+                      )}
+                      {(sectionSubjectOverview[sectionName] || []).length > 3 && (
+                        <Text style={styles.moreSubjectsText}>
+                          +{(sectionSubjectOverview[sectionName] || []).length - 3} more subjects
+                        </Text>
                       )}
                     </View>
                   ) : (
@@ -1225,6 +1136,7 @@ const styles = StyleSheet.create({
   },
   welcomeText: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
   departmentText: { fontSize: 14, color: '#fff', opacity: 0.9, marginTop: 4 },
+  schoolYearText: { fontSize: 12, color: '#fff', opacity: 0.85, marginTop: 4 },
   dateText: { fontSize: 12, color: '#fff', opacity: 0.8, marginTop: 8 },
   holidayBadge: {
     flexDirection: 'row',
@@ -1287,6 +1199,66 @@ const styles = StyleSheet.create({
   statItem: { alignItems: 'center', gap: 4 },
   statNumber: { fontSize: 28, fontWeight: 'bold', color: '#8B0000' },
   statLabel: { fontSize: 12, color: '#666', fontWeight: '600' },
+  compactSubjectListCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    elevation: 2,
+  },
+  compactSubjectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    gap: 10,
+  },
+  compactSubjectLeft: {
+    flex: 1,
+    marginRight: 10,
+  },
+  compactSubjectName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1f1f1f',
+  },
+  compactSubjectMeta: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#666',
+  },
+  compactCountersWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  compactCounter: {
+    minWidth: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9,
+    paddingVertical: 6,
+    paddingHorizontal: 7,
+  },
+  presentCounter: { backgroundColor: '#e8f5e9' },
+  lateCounter: { backgroundColor: '#fff3e0' },
+  absentCounter: { backgroundColor: '#ffebee' },
+  compactCounterValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#222',
+    lineHeight: 18,
+  },
+  compactCounterLabel: {
+    fontSize: 10,
+    color: '#666',
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  compactDivider: {
+    height: 1,
+    backgroundColor: '#f0f0f0',
+  },
   
   sectionContainer: { paddingHorizontal: 16, marginBottom: 16 },
   loadingContainer: { padding: 40, alignItems: 'center' },
@@ -1329,6 +1301,25 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   periodStatValue: { fontSize: 12, color: '#666' },
+  miniSectionStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fafafa',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  miniSectionStatText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  moreSubjectsText: {
+    marginTop: 4,
+    fontSize: 11,
+    color: '#8B0000',
+    fontWeight: '600',
+  },
   
   modalOverlay: {
     flex: 1,

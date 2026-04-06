@@ -7,6 +7,9 @@ const { query } = require('../config/database');
 let attendanceSyEnsured = false;
 let studentsSyChecked = false;
 let attendanceSubjectColumnsEnsured = false;
+let attendanceStatusColumnEnsured = false;
+const autoAbsentRunMarker = new Map();
+let schoolYearLabelColumn = null;
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -21,6 +24,40 @@ const parseTimeToMinutes = (value) => {
   const m = Number(parts[1]);
   if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
   return (h * 60) + m;
+};
+
+const normalizeScheduleClock = (value, preferEnd = false) => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  let clockText = raw;
+  if (raw.includes('-')) {
+    const parts = raw.split('-').map(p => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      clockText = preferEnd ? parts[1] : parts[0];
+    }
+  }
+
+  const ampm = clockText.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+  if (ampm) {
+    let hh = Number(ampm[1]);
+    const mm = Number(ampm[2]);
+    const ap = String(ampm[3]).toUpperCase();
+    if (ap === 'PM' && hh < 12) hh += 12;
+    if (ap === 'AM' && hh === 12) hh = 0;
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  }
+
+  const hhmmss = clockText.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (hhmmss) {
+    const hh = Number(hhmmss[1]);
+    const mm = Number(hhmmss[2]);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  }
+
+  return null;
 };
 
 const doesScheduleMatchWeekday = (dayValue, weekdayName) => {
@@ -40,18 +77,45 @@ const doesScheduleMatchWeekday = (dayValue, weekdayName) => {
 };
 
 const getDateString = (value) => {
-  if (!value) return new Date().toISOString().split('T')[0];
-  return String(value).split('T')[0];
+  const formatDateOnly = (input) => {
+    if (!input) return null;
+    if (input instanceof Date) {
+      const y = input.getFullYear();
+      const m = String(input.getMonth() + 1).padStart(2, '0');
+      const d = String(input.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    const raw = String(input).trim();
+    if (!raw) return null;
+    if (raw.includes('T')) return raw.split('T')[0];
+    if (raw.includes(' ')) return raw.split(' ')[0];
+    return raw;
+  };
+
+  return formatDateOnly(value) || formatDateOnly(new Date());
+};
+
+const getSchoolYearLabelColumn = async () => {
+  if (schoolYearLabelColumn) return schoolYearLabelColumn;
+  const cols = await query('SHOW COLUMNS FROM school_years');
+  const hasName = cols.some(c => c.Field === 'name');
+  const hasLabel = cols.some(c => c.Field === 'label');
+  schoolYearLabelColumn = hasName ? 'name' : (hasLabel ? 'label' : null);
+  return schoolYearLabelColumn;
 };
 
 const getActiveSchoolYear = async () => {
-  const rows = await query('SELECT id, name as label FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+  const labelCol = await getSchoolYearLabelColumn();
+  const selectLabel = labelCol ? `${labelCol} as label` : "CAST(id AS CHAR) as label";
+  const rows = await query(`SELECT id, ${selectLabel} FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1`);
   return rows[0] || null;
 };
 
 const getSchoolYearById = async (id) => {
   if (!id) return null;
-  const rows = await query('SELECT id, name as label FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1', [id]);
+  const labelCol = await getSchoolYearLabelColumn();
+  const selectLabel = labelCol ? `${labelCol} as label` : "CAST(id AS CHAR) as label";
+  const rows = await query(`SELECT id, ${selectLabel} FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1`, [id]);
   return rows[0] || null;
 };
 
@@ -122,9 +186,206 @@ const ensureAttendanceSubjectColumns = async () => {
   attendanceSubjectColumnsEnsured = true;
 };
 
+const ensureAttendanceStatusColumn = async () => {
+  if (attendanceStatusColumnEnsured) return;
+
+  const cols = await query('SHOW COLUMNS FROM attendance');
+  const statusCol = cols.find(c => c.Field === 'status');
+  if (!statusCol) {
+    attendanceStatusColumnEnsured = true;
+    return;
+  }
+
+  const statusType = String(statusCol.Type || '').toLowerCase();
+
+  // Some deployments ended up with malformed ENUM definitions (duplicate values),
+  // which causes INSERT/UPDATE to fail. Normalize to VARCHAR for stability.
+  if (statusType.startsWith('enum(')) {
+    try {
+      await query("ALTER TABLE attendance MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'Present'");
+    } catch (modifyErr) {
+      console.warn('[attendance] direct status modify failed, applying fallback migration:', modifyErr.message);
+
+      // Fallback migration path: copy values -> drop broken enum -> recreate varchar -> restore values.
+      try {
+        const hasTmp = cols.some(c => c.Field === 'status_text_tmp');
+        if (!hasTmp) {
+          await query('ALTER TABLE attendance ADD COLUMN status_text_tmp VARCHAR(20) NULL');
+        }
+
+        await query("UPDATE attendance SET status_text_tmp = CASE LOWER(CAST(status AS CHAR)) WHEN 'present' THEN 'Present' WHEN 'late' THEN 'Late' WHEN 'absent' THEN 'Absent' ELSE 'Present' END");
+        await query('ALTER TABLE attendance DROP COLUMN status');
+        await query("ALTER TABLE attendance ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'Present'");
+        await query("UPDATE attendance SET status = COALESCE(NULLIF(status_text_tmp, ''), 'Present')");
+        await query('ALTER TABLE attendance DROP COLUMN status_text_tmp');
+      } catch (fallbackErr) {
+        console.warn('[attendance] copy-based fallback failed, applying last-resort status reset:', fallbackErr.message);
+        try {
+          // Last resort: do not read broken enum values; just recreate column so writes can continue.
+          await query('ALTER TABLE attendance DROP COLUMN status');
+          await query("ALTER TABLE attendance ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'Present'");
+        } catch (resetErr) {
+          throw new Error(`Failed to normalize attendance.status column: ${resetErr.message}`);
+        }
+      }
+    }
+  }
+
+  attendanceStatusColumnEnsured = true;
+};
+
+const ensureAttendanceFallbackTable = async () => {
+  await query(`
+    CREATE TABLE IF NOT EXISTS attendance_fallback (
+      id VARCHAR(255) PRIMARY KEY,
+      studentId VARCHAR(255) NOT NULL,
+      studentName VARCHAR(255) NULL,
+      gradeLevel VARCHAR(100) NULL,
+      section VARCHAR(100) NULL,
+      date DATE NOT NULL,
+      timestamp DATETIME NULL,
+      time VARCHAR(20) NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'Present',
+      period VARCHAR(50) NULL,
+      location VARCHAR(255) NULL,
+      teacherId VARCHAR(255) NULL,
+      teacherName VARCHAR(255) NULL,
+      deviceInfo LONGTEXT NULL,
+      qrData LONGTEXT NULL,
+      school_year_id INT NULL,
+      classId VARCHAR(255) NULL,
+      subject VARCHAR(150) NULL,
+      scheduleDay VARCHAR(50) NULL,
+      scheduleStartTime VARCHAR(8) NULL,
+      scheduleEndTime VARCHAR(8) NULL,
+      autoMarked TINYINT(1) NOT NULL DEFAULT 0,
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+};
+
+const isBrokenStatusEnumError = (error) => {
+  const msg = String(error?.message || '').toLowerCase();
+  return msg.includes('duplicated value') && msg.includes('enum') && msg.includes('status');
+};
+
+const saveAttendanceToFallback = async (payload = {}) => {
+  await ensureAttendanceFallbackTable();
+
+  const studentId = String(payload.studentId || '').trim();
+  if (!studentId) throw new Error('Student ID is required');
+
+  const studentRows = await query('SELECT * FROM students WHERE (lrn = ? OR id = ?) LIMIT 1', [studentId, studentId]);
+  const student = studentRows[0] || null;
+
+  const targetSy = await resolveTargetSchoolYear(payload.schoolYearId);
+  const today = getDateString(payload.date || new Date());
+  const currentStatus = normalizeStatus(payload.status);
+  const currentPeriod = payload.period || 'subject';
+  const currentClassId = payload.classId ? String(payload.classId).trim() : null;
+  const currentSubject = payload.subject ? String(payload.subject).trim().slice(0, 150) : null;
+  const safeScheduleDay = payload.scheduleDay ? String(payload.scheduleDay).slice(0, 50) : null;
+  const safeScheduleStartTime = normalizeScheduleClock(payload.scheduleStartTime, false);
+  const safeScheduleEndTime = normalizeScheduleClock(payload.scheduleEndTime, true);
+
+  const toMySQLDatetime = (isoStr) => {
+    const d = new Date(isoStr || Date.now());
+    return d.toISOString().replace('T', ' ').substring(0, 19);
+  };
+
+  const currentTimestamp = toMySQLDatetime(payload.timestamp);
+  const currentTime = payload.time || new Date().toLocaleTimeString('en-US', { hour12: false });
+
+  const lookupPrimaryStudentId = student?.id || studentId;
+  const lookupSecondaryStudentId = student?.lrn || studentId;
+
+  const existing = currentSubject
+    ? await query(
+        `SELECT * FROM attendance_fallback
+         WHERE date = ?
+           AND school_year_id = ?
+           AND classId = ?
+           AND subject = ?
+           AND (studentId = ? OR studentId = ?)
+         LIMIT 1`,
+        [today, targetSy.id, currentClassId || null, currentSubject, lookupPrimaryStudentId, lookupSecondaryStudentId]
+      )
+    : await query(
+        `SELECT * FROM attendance_fallback
+         WHERE date = ?
+           AND period = ?
+           AND school_year_id = ?
+           AND (studentId = ? OR studentId = ?)
+         LIMIT 1`,
+        [today, currentPeriod, targetSy.id, lookupPrimaryStudentId, lookupSecondaryStudentId]
+      );
+
+  if (existing.length > 0) {
+    await query(
+      `UPDATE attendance_fallback
+       SET status = ?, time = ?, timestamp = ?, teacherId = ?, teacherName = ?,
+           classId = ?, subject = ?, scheduleDay = ?, scheduleStartTime = ?, scheduleEndTime = ?, autoMarked = ?
+       WHERE id = ?`,
+      [
+        currentStatus,
+        currentTime,
+        currentTimestamp,
+        payload.teacherId || null,
+        payload.teacherName || null,
+        currentClassId,
+        currentSubject,
+        safeScheduleDay,
+        safeScheduleStartTime,
+        safeScheduleEndTime,
+        payload.autoMarked ? 1 : 0,
+        existing[0].id
+      ]
+    );
+    const updated = await query('SELECT * FROM attendance_fallback WHERE id = ?', [existing[0].id]);
+    return updated[0];
+  }
+
+  const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await query(
+    `INSERT INTO attendance_fallback (
+      id, studentId, studentName, gradeLevel, section,
+      date, timestamp, time, status, period,
+      location, teacherId, teacherName, deviceInfo, qrData, school_year_id,
+      classId, subject, scheduleDay, scheduleStartTime, scheduleEndTime, autoMarked
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      lookupPrimaryStudentId,
+      `${student?.first_name || ''} ${student?.last_name || ''}`.trim() || payload.studentName || 'Unknown Student',
+      student?.grade_level || payload.gradeLevel || 'N/A',
+      student?.section || payload.section || 'N/A',
+      today,
+      currentTimestamp,
+      currentTime,
+      currentStatus,
+      currentPeriod,
+      payload.location || 'Mobile App (fallback)',
+      payload.teacherId || null,
+      payload.teacherName || null,
+      JSON.stringify(payload.deviceInfo || {}),
+      JSON.stringify(payload.qrData || {}),
+      targetSy.id,
+      currentClassId,
+      currentSubject,
+      safeScheduleDay,
+      safeScheduleStartTime,
+      safeScheduleEndTime,
+      payload.autoMarked ? 1 : 0
+    ]
+  );
+
+  const inserted = await query('SELECT * FROM attendance_fallback WHERE id = ?', [id]);
+  return inserted[0];
+};
+
 const findStudentsForClassSchedule = async (grade, section, schoolYearId) => {
   return query(
-    `SELECT id, lrn, first_name, last_name, full_name, grade_level, section
+    `SELECT id, lrn, first_name, last_name, grade_level, section
      FROM students
      WHERE LOWER(REPLACE(TRIM(grade_level), 'grade ', '')) = LOWER(REPLACE(TRIM(?), 'grade ', ''))
        AND LOWER(TRIM(section)) = LOWER(TRIM(?))
@@ -137,6 +398,7 @@ const runAutoAbsentGeneration = async ({ schoolYearId, date, dryRun }) => {
   await ensureAttendanceSchoolYearColumn();
   await ensureStudentsSchoolYearColumnExists();
   await ensureAttendanceSubjectColumns();
+  await ensureAttendanceStatusColumn();
 
   const targetSy = schoolYearId ? await getSchoolYearById(Number(schoolYearId)) : await getActiveSchoolYear();
   if (!targetSy) {
@@ -285,6 +547,46 @@ const runAutoAbsentGeneration = async ({ schoolYearId, date, dryRun }) => {
   return summary;
 };
 
+router.get('/diag', async (req, res) => {
+  try {
+    const labelCol = await getSchoolYearLabelColumn();
+    res.json({
+      success: true,
+      routeVersion: 'attendance-routes-2026-04-06-v2',
+      schoolYearLabelColumn: labelCol || null,
+      now: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+const maybeRunAutoAbsentForToday = async ({ schoolYearId, date }) => {
+  const targetDate = getDateString(date || new Date());
+  const today = getDateString(new Date());
+  if (targetDate !== today) return;
+
+  const sy = schoolYearId ? await getSchoolYearById(Number(schoolYearId)) : await getActiveSchoolYear();
+  if (!sy?.id) return;
+
+  // Throttle to avoid running heavy generation on every request.
+  const markerKey = `${sy.id}:${targetDate}`;
+  const nowMs = Date.now();
+  const lastMs = Number(autoAbsentRunMarker.get(markerKey) || 0);
+  if (nowMs - lastMs < 60 * 1000) return;
+
+  autoAbsentRunMarker.set(markerKey, nowMs);
+  try {
+    await runAutoAbsentGeneration({
+      schoolYearId: sy.id,
+      date: targetDate,
+      dryRun: false,
+    });
+  } catch (autoErr) {
+    console.warn('[attendance] auto-absent run skipped:', autoErr.message);
+  }
+};
+
 // Helper to normalize status values to valid ENUM values
 const normalizeStatus = (status) => {
   const normalized = String(status || 'Present').toLowerCase().trim();
@@ -300,6 +602,7 @@ router.post('/', async (req, res) => {
     await ensureAttendanceSchoolYearColumn();
     await ensureStudentsSchoolYearColumnExists();
     await ensureAttendanceSubjectColumns();
+    await ensureAttendanceStatusColumn();
     console.log('Attendance POST request body:', req.body);
     
     const { 
@@ -342,15 +645,12 @@ router.post('/', async (req, res) => {
     let parentEmail = null;
     let studentLRN = studentId;
 
-    let targetSyId = null;
-
     if (student) {
       studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim();
       studentGradeLevel = student.grade_level || 'N/A';
       studentSection = student.section || 'N/A';
       parentEmail = student.parent_email || null;
       studentLRN = student.lrn || studentId;
-      targetSyId = student.school_year_id || null;
       console.log(`Found student in students table: ${studentName}, Parent Email: ${parentEmail}`);
     } else {
       // Fallback: check users table
@@ -372,7 +672,8 @@ router.post('/', async (req, res) => {
 
     let targetSy;
     try {
-      targetSy = targetSyId ? await getSchoolYearById(targetSyId) : await resolveTargetSchoolYear(req.body.schoolYearId);
+      // Always save to active school year unless explicitly requested.
+      targetSy = await resolveTargetSchoolYear(req.body.schoolYearId);
       const activeSy = await getActiveSchoolYear();
       if (!activeSy || targetSy.id !== activeSy.id) {
         return res.status(403).json({ success: false, message: 'Attendance can only be recorded in the active school year (view-only for past years).' });
@@ -381,11 +682,34 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
     }
 
-    const today = date || new Date().toISOString().split('T')[0];
+    const today = getDateString(date || new Date());
     const currentPeriod = period || 'morning';
     const currentSubject = subject ? String(subject).trim() : null;
-    const currentClassId = classId ? String(classId).trim() : null;
+    let currentClassId = classId ? String(classId).trim() : null;
     const currentStatus = normalizeStatus(status); // Normalize to valid ENUM value
+    const safeSubject = currentSubject ? String(currentSubject).slice(0, 150) : null;
+    const safeScheduleDay = scheduleDay ? String(scheduleDay).slice(0, 50) : null;
+    const safeScheduleStartTime = normalizeScheduleClock(scheduleStartTime, false);
+    const safeScheduleEndTime = normalizeScheduleClock(scheduleEndTime, true);
+
+    // Resolve missing classId from student's grade/section in active school year.
+    if (!currentClassId && studentGradeLevel && studentSection) {
+      try {
+        const classRows = await query(
+          `SELECT id FROM classes
+           WHERE LOWER(REPLACE(TRIM(grade), 'grade ', '')) = LOWER(REPLACE(TRIM(?), 'grade ', ''))
+             AND LOWER(TRIM(section)) = LOWER(TRIM(?))
+             AND school_year_id = ?
+           LIMIT 1`,
+          [studentGradeLevel, studentSection, targetSy.id]
+        );
+        if (classRows[0]?.id) {
+          currentClassId = String(classRows[0].id);
+        }
+      } catch (classResolveErr) {
+        console.warn('Could not resolve classId fallback:', classResolveErr.message);
+      }
+    }
     // MySQL datetime requires 'YYYY-MM-DD HH:MM:SS' — convert ISO string if needed
     const toMySQLDatetime = (isoStr) => {
       const d = new Date(isoStr || Date.now());
@@ -407,7 +731,7 @@ router.post('/', async (req, res) => {
              AND subject = ?
              AND (studentId = ? OR studentId = ?)
            LIMIT 1`,
-          [today, targetSy.id, currentClassId || null, currentSubject, lookupPrimaryStudentId, lookupSecondaryStudentId]
+            [today, targetSy.id, currentClassId || null, safeSubject, lookupPrimaryStudentId, lookupSecondaryStudentId]
         )
       : await query(
           `SELECT * FROM attendance
@@ -433,10 +757,10 @@ router.post('/', async (req, res) => {
           teacherId || null,
           teacherName || null,
           currentClassId,
-          currentSubject,
-          scheduleDay || null,
-          scheduleStartTime || null,
-          scheduleEndTime || null,
+          safeSubject,
+          safeScheduleDay,
+          safeScheduleStartTime,
+          safeScheduleEndTime,
           autoMarked ? 1 : 0,
           existingRecords[0].id
         ]
@@ -476,7 +800,7 @@ router.post('/', async (req, res) => {
           studentName: rec.studentName,
           gradeLevel: rec.gradeLevel,
           section: rec.section,
-          date: rec.date instanceof Date ? rec.date.toISOString().split('T')[0] : rec.date,
+          date: getDateString(rec.date),
           timestamp: rec.timestamp,
           time: rec.time,
           status: rec.status,
@@ -521,10 +845,10 @@ router.post('/', async (req, res) => {
         JSON.stringify(qrData || {}),
         targetSy.id,
         currentClassId,
-        currentSubject,
-        scheduleDay || null,
-        scheduleStartTime || null,
-        scheduleEndTime || null,
+        safeSubject,
+        safeScheduleDay,
+        safeScheduleStartTime,
+        safeScheduleEndTime,
         autoMarked ? 1 : 0
       ]
     );
@@ -548,6 +872,9 @@ router.post('/', async (req, res) => {
           section: studentSection,
           status: currentStatus,
           period: currentPeriod,
+          subject: safeSubject,
+          scheduleStartTime: safeScheduleStartTime,
+          scheduleEndTime: safeScheduleEndTime,
           time: currentTime,
           teacherName: teacherName || 'School Administration'
         });
@@ -577,7 +904,7 @@ router.post('/', async (req, res) => {
         studentName: attendanceRecord.studentName,
         gradeLevel: attendanceRecord.gradeLevel,
         section: attendanceRecord.section,
-        date: attendanceRecord.date instanceof Date ? attendanceRecord.date.toISOString().split('T')[0] : attendanceRecord.date,
+        date: getDateString(attendanceRecord.date),
         timestamp: attendanceRecord.timestamp,
         time: attendanceRecord.time,
         status: attendanceRecord.status,
@@ -596,7 +923,47 @@ router.post('/', async (req, res) => {
 
   } catch (error) {
     console.error('Error recording attendance:', error);
-    res.status(500).json({
+
+    try {
+      const fallbackRecord = await saveAttendanceToFallback(req.body || {});
+      return res.json({
+        success: true,
+        message: 'Attendance recorded successfully (fallback storage)',
+        emailSent: false,
+        emailError: 'Primary attendance table is in recovery mode',
+        data: {
+          id: fallbackRecord.id,
+          studentId: fallbackRecord.studentId,
+          studentName: fallbackRecord.studentName,
+          gradeLevel: fallbackRecord.gradeLevel,
+          section: fallbackRecord.section,
+          date: getDateString(fallbackRecord.date),
+          timestamp: fallbackRecord.timestamp,
+          time: fallbackRecord.time,
+          status: fallbackRecord.status,
+          period: fallbackRecord.period,
+          classId: fallbackRecord.classId,
+          subject: fallbackRecord.subject,
+          scheduleDay: fallbackRecord.scheduleDay,
+          scheduleStartTime: fallbackRecord.scheduleStartTime,
+          scheduleEndTime: fallbackRecord.scheduleEndTime,
+          autoMarked: fallbackRecord.autoMarked,
+          location: fallbackRecord.location,
+          teacherId: fallbackRecord.teacherId,
+          teacherName: fallbackRecord.teacherName
+        }
+      });
+    } catch (fallbackErr) {
+      console.error('Fallback save also failed:', fallbackErr);
+      return res.status(500).json({
+        success: false,
+        message: 'Primary and fallback attendance save failed',
+        error: error.message,
+        fallbackError: fallbackErr.message
+      });
+    }
+
+    return res.status(500).json({
       success: false,
       message: 'Internal server error',
       error: error.message
@@ -611,11 +978,16 @@ router.get('/', async (req, res) => {
     try {
       await ensureAttendanceSchoolYearColumn();
       await ensureAttendanceSubjectColumns();
+      await ensureAttendanceStatusColumn();
     } catch (ensureErr) {
       canFilterBySchoolYear = false;
       console.warn('[attendance GET] school_year_id column unavailable, continuing without school-year DB filter:', ensureErr.message);
     }
     const { date, studentId, gradeLevel, section, schoolYearId } = req.query;
+
+    // Keep absent records up-to-date for today's subject schedules.
+    await maybeRunAutoAbsentForToday({ schoolYearId, date });
+
     let targetSy;
     if (schoolYearId && canFilterBySchoolYear) {
       try {
@@ -661,8 +1033,25 @@ router.get('/', async (req, res) => {
     } catch (queryError) {
       console.warn('[attendance GET] query error:', queryError.message);
 
+      try {
+        await ensureAttendanceFallbackTable();
+        const fallbackSql = sqlQuery.replace(/\battendance\b/g, 'attendance_fallback');
+        records = await query(fallbackSql, params);
+      } catch (fallbackReadErr) {
+        console.error('[attendance GET] fallback table query failed:', fallbackReadErr.message);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to fetch attendance records',
+          error: fallbackReadErr.message
+        });
+      }
+
+      if (records) {
+        // recovered from fallback table
+      }
+
       // If schoolYearId filtering was attempted and failed, retry without it
-      if (canFilterBySchoolYear && targetSy?.id && params.length > 0) {
+      else if (canFilterBySchoolYear && targetSy?.id && params.length > 0) {
         console.warn('[attendance GET] Retrying without school_year_id filter due to error');
         let fallbackQuery = 'SELECT * FROM attendance WHERE 1=1';
         const fallbackParams = [];
@@ -714,7 +1103,7 @@ router.get('/', async (req, res) => {
       studentName: record.studentName,
       gradeLevel: record.gradeLevel,
       section: record.section,
-      date: record.date instanceof Date ? record.date.toISOString().split('T')[0] : record.date,
+      date: getDateString(record.date),
       timestamp: record.timestamp,
       time: record.time,
       status: record.status,
@@ -754,6 +1143,9 @@ router.get('/today', async (req, res) => {
   try {
     await ensureAttendanceSchoolYearColumn();
     await ensureAttendanceSubjectColumns();
+    await ensureAttendanceStatusColumn();
+    await maybeRunAutoAbsentForToday({ schoolYearId: req.query.schoolYearId, date: new Date() });
+
     let targetSy;
     try {
       targetSy = await resolveTargetSchoolYear(req.query.schoolYearId);
@@ -761,7 +1153,7 @@ router.get('/today', async (req, res) => {
       return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getDateString(new Date());
     const records = await query('SELECT * FROM attendance WHERE date = ? AND school_year_id = ? ORDER BY timestamp DESC', [today, targetSy.id]);
     
     // Columns are already camelCase in the attendance table
@@ -771,7 +1163,7 @@ router.get('/today', async (req, res) => {
       studentName: record.studentName,
       gradeLevel: record.gradeLevel,
       section: record.section,
-      date: record.date instanceof Date ? record.date.toISOString().split('T')[0] : record.date,
+      date: getDateString(record.date),
       timestamp: record.timestamp,
       time: record.time,
       status: record.status,
@@ -798,6 +1190,41 @@ router.get('/today', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching today\'s attendance:', error);
+
+    try {
+      await ensureAttendanceFallbackTable();
+      const targetSy = await resolveTargetSchoolYear(req.query.schoolYearId);
+      const today = getDateString(new Date());
+      const records = await query('SELECT * FROM attendance_fallback WHERE date = ? AND school_year_id = ? ORDER BY timestamp DESC', [today, targetSy.id]);
+      const transformedRecords = records.map(record => ({
+        id: record.id,
+        studentId: record.studentId,
+        studentName: record.studentName,
+        gradeLevel: record.gradeLevel,
+        section: record.section,
+        date: getDateString(record.date),
+        timestamp: record.timestamp,
+        time: record.time,
+        status: record.status,
+        period: record.period,
+        classId: record.classId,
+        subject: record.subject,
+        scheduleDay: record.scheduleDay,
+        scheduleStartTime: record.scheduleStartTime,
+        scheduleEndTime: record.scheduleEndTime,
+        autoMarked: record.autoMarked,
+        location: record.location,
+        teacherId: record.teacherId,
+        teacherName: record.teacherName,
+        deviceInfo: record.deviceInfo,
+        qrData: record.qrData,
+        createdAt: record.createdAt
+      }));
+      return res.json({ success: true, data: transformedRecords, count: transformedRecords.length });
+    } catch (fallbackErr) {
+      console.error('Fallback today attendance read failed:', fallbackErr.message);
+    }
+
     res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -811,6 +1238,7 @@ router.get('/student/:id', async (req, res) => {
   try {
     await ensureAttendanceSchoolYearColumn();
     await ensureAttendanceSubjectColumns();
+    await ensureAttendanceStatusColumn();
     const { id } = req.params;
     let targetSy;
     try {
@@ -828,7 +1256,7 @@ router.get('/student/:id', async (req, res) => {
       studentName: record.studentName,
       gradeLevel: record.gradeLevel,
       section: record.section,
-      date: record.date instanceof Date ? record.date.toISOString().split('T')[0] : record.date,
+      date: getDateString(record.date),
       timestamp: record.timestamp,
       time: record.time,
       status: record.status,
@@ -855,6 +1283,41 @@ router.get('/student/:id', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching student attendance:', error);
+
+    try {
+      await ensureAttendanceFallbackTable();
+      const { id } = req.params;
+      const targetSy = await resolveTargetSchoolYear(req.query.schoolYearId);
+      const records = await query('SELECT * FROM attendance_fallback WHERE studentId = ? AND school_year_id = ? ORDER BY date DESC', [id, targetSy.id]);
+      const transformedRecords = records.map(record => ({
+        id: record.id,
+        studentId: record.studentId,
+        studentName: record.studentName,
+        gradeLevel: record.gradeLevel,
+        section: record.section,
+        date: getDateString(record.date),
+        timestamp: record.timestamp,
+        time: record.time,
+        status: record.status,
+        period: record.period,
+        classId: record.classId,
+        subject: record.subject,
+        scheduleDay: record.scheduleDay,
+        scheduleStartTime: record.scheduleStartTime,
+        scheduleEndTime: record.scheduleEndTime,
+        autoMarked: record.autoMarked,
+        location: record.location,
+        teacherId: record.teacherId,
+        teacherName: record.teacherName,
+        deviceInfo: record.deviceInfo,
+        qrData: record.qrData,
+        createdAt: record.createdAt
+      }));
+      return res.json({ success: true, data: transformedRecords, count: transformedRecords.length });
+    } catch (fallbackErr) {
+      console.error('Fallback student attendance read failed:', fallbackErr.message);
+    }
+
     res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -866,6 +1329,7 @@ router.get('/student/:id', async (req, res) => {
 // POST /api/attendance/auto-absent/run - Auto mark subject attendance as absent once schedule has ended
 router.post('/auto-absent/run', async (req, res) => {
   try {
+    await ensureAttendanceStatusColumn();
     const result = await runAutoAbsentGeneration({
       schoolYearId: req.body?.schoolYearId,
       date: req.body?.date,
@@ -898,6 +1362,9 @@ router.post('/send-email', async (req, res) => {
       section,
       status,
       period,
+      subject,
+      scheduleStartTime,
+      scheduleEndTime,
       time,
       teacherName
     } = req.body;
@@ -925,7 +1392,10 @@ router.post('/send-email', async (req, res) => {
       gradeLevel,
       section,
       status: status || 'present',
-      period: period || 'morning',
+      period: period || 'subject',
+      subject: subject || null,
+      scheduleStartTime: scheduleStartTime || null,
+      scheduleEndTime: scheduleEndTime || null,
       time: time || new Date().toLocaleTimeString(),
       teacherName
     });

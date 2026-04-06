@@ -20,7 +20,6 @@ export default function NotificationsScreen({ navigation }) {
   const { user } = useAuth();
   const [readNotifications, setReadNotifications] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // Reload data when screen is focused
@@ -40,36 +39,8 @@ export default function NotificationsScreen({ navigation }) {
   // Load all data
   const loadAllData = async () => {
     setLoading(true);
-    await Promise.all([loadStudents(), loadAttendanceLogs()]);
+    await Promise.all([loadAttendanceLogs()]);
     setLoading(false);
-  };
-
-  // Load students from API (only assigned to this teacher)
-  const loadStudents = async () => {
-    if (!user) return;
-    try {
-      const response = await fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/students?teacherId=${user.id}`, {
-        headers: {
-          'Authorization': `Bearer ${user.token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      const result = await response.json();
-      let rawStudents = [];
-      if (result.success || result.status === 'success') {
-        rawStudents = result.data || result.students || [];
-      } else if (Array.isArray(result)) {
-        rawStudents = result;
-      }
-      const studentsList = rawStudents.map(student => ({
-        ...student,
-        name: student.name || student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown Student',
-        studentId: student.studentId || student.lrn || student.id,
-      }));
-      setStudents(studentsList);
-    } catch (error) {
-      console.error('Error loading students:', error);
-    }
   };
 
   const loadReadNotifications = async () => {
@@ -127,21 +98,10 @@ export default function NotificationsScreen({ navigation }) {
   // Get today's date in YYYY-MM-DD format
   const getTodayDate = () => new Date().toISOString().split('T')[0];
 
-  // Get current period based on hour
-  const getCurrentPeriod = () => {
-    const now = new Date();
-    const hour = now.getHours();
-    if (hour < 12) return 'morning';
-    return 'afternoon';
-  };
-
-  // Get notifications for today (absent and late students)
+  // Get subject-based notifications for today (absent and late records)
   const getTodayNotifications = () => {
     const today = getTodayDate();
-    const notifications = [];
-    const nowHour = new Date().getHours();
-    const morningCutoffPassed = nowHour >= 10;   // 10:00 AM
-    const afternoonCutoffPassed = nowHour >= 14;  // 2:00 PM
+    const byId = new Map();
 
     // Filter today's attendance records
     const todayLogs = attendanceLog.filter(log => {
@@ -155,16 +115,22 @@ export default function NotificationsScreen({ navigation }) {
       return logDate === today;
     });
 
-    // Add late students from attendance log
+    // Show only late/absent records scoped by subject.
     todayLogs.forEach(log => {
-      if (log.status === 'late' || log.status === 'Late') {
-        const notificationId = `${log.studentId || log.student_id}_${log.period}_${today}`;
-        notifications.push({
+      const status = String(log.status || '').toLowerCase();
+      if (status === 'late' || status === 'absent') {
+        const subjectName = String(log.subject || '').trim() || 'Subject';
+        const notificationId = `${log.studentId || log.student_id}_${subjectName}_${today}_${status}`;
+        byId.set(notificationId, {
           id: notificationId,
           studentName: log.studentName || log.student_name || 'Unknown Student',
           studentLRN: log.studentLRN || log.student_lrn || log.lrn || '',
-          status: 'late',
-          period: log.period || 'N/A',
+          status,
+          subject: subjectName,
+          classLabel: `${log.gradeLevel || log.grade_level || ''} - ${log.section || ''}`.trim(),
+          schedule: (log.scheduleStartTime && log.scheduleEndTime)
+            ? `${log.scheduleStartTime} - ${log.scheduleEndTime}`
+            : '',
           time: log.time || log.timestamp || '',
           gradeLevel: log.gradeLevel || log.grade_level || '',
           section: log.section || '',
@@ -173,54 +139,7 @@ export default function NotificationsScreen({ navigation }) {
       }
     });
 
-    // Calculate absent students - students who have NO attendance record for the period
-    students.forEach(student => {
-      const studentId = student.studentId || student.lrn || student.id;
-      
-      // Check morning period
-      if (morningCutoffPassed) {
-        const hasMorningRecord = todayLogs.some(log => 
-          (log.studentId === studentId || log.student_id === studentId) && 
-          log.period === 'morning'
-        );
-        if (!hasMorningRecord) {
-          const notificationId = `${studentId}_morning_${today}_absent`;
-          notifications.push({
-            id: notificationId,
-            studentName: student.name || student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown',
-            studentLRN: student.lrn || student.studentId || '',
-            status: 'absent',
-            period: 'morning',
-            time: '',
-            gradeLevel: student.gradeLevel || student.grade_level || '',
-            section: student.section || '',
-            isRead: readNotifications.includes(notificationId)
-          });
-        }
-      }
-
-      // Check afternoon period
-      if (afternoonCutoffPassed) {
-        const hasAfternoonRecord = todayLogs.some(log => 
-          (log.studentId === studentId || log.student_id === studentId) && 
-          log.period === 'afternoon'
-        );
-        if (!hasAfternoonRecord) {
-          const notificationId = `${studentId}_afternoon_${today}_absent`;
-          notifications.push({
-            id: notificationId,
-            studentName: student.name || student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown',
-            studentLRN: student.lrn || student.studentId || '',
-            status: 'absent',
-            period: 'afternoon',
-            time: '',
-            gradeLevel: student.gradeLevel || student.grade_level || '',
-            section: student.section || '',
-            isRead: readNotifications.includes(notificationId)
-          });
-        }
-      }
-    });
+    const notifications = Array.from(byId.values());
 
     // Sort: unread first, then by status (absent before late), then by name
     return notifications.sort((a, b) => {
@@ -308,11 +227,7 @@ export default function NotificationsScreen({ navigation }) {
               <Icon name="bell-check-outline" size={64} color="#ccc" />
               <Text style={styles.emptyTitle}>No Notifications Yet</Text>
               <Text style={styles.emptySubtitle}>
-                {new Date().getHours() < 10 
-                  ? 'Absent notifications will appear after 10:00 AM (morning cutoff)'
-                  : new Date().getHours() < 14
-                    ? 'Morning attendance complete! Afternoon absents will appear after 2:00 PM'
-                    : 'All students are present! Great job!'}
+                No late/absent subject records found for today.
               </Text>
             </View>
           ) : (
@@ -386,6 +301,18 @@ export default function NotificationsScreen({ navigation }) {
                           </Text>
                         </View>
                       )}
+                      {notification.subject && (
+                        <View style={styles.detailRow}>
+                          <Icon name="book-education" size={14} color="#666" />
+                          <Text style={styles.detailText}>Subject: {notification.subject}</Text>
+                        </View>
+                      )}
+                      {notification.schedule && (
+                        <View style={styles.detailRow}>
+                          <Icon name="clock-outline" size={14} color="#666" />
+                          <Text style={styles.detailText}>Schedule: {notification.schedule}</Text>
+                        </View>
+                      )}
                     </View>
 
                     <View style={styles.notificationFooter}>
@@ -405,12 +332,12 @@ export default function NotificationsScreen({ navigation }) {
                       
                       <View style={styles.periodBadge}>
                         <Icon 
-                          name={notification.period === 'morning' ? 'white-balance-sunny' : 'weather-sunset'} 
+                          name="book-education" 
                           size={12} 
                           color="#666" 
                         />
                         <Text style={styles.periodText}>
-                          {notification.period === 'morning' ? 'Morning' : 'Afternoon'}
+                          {notification.subject || 'Subject'}
                         </Text>
                       </View>
 

@@ -56,6 +56,9 @@ const sendViaBrevo = async (to, subject, htmlContent, textContent) => {
  * @param {string} params.section - Section
  * @param {string} params.status - Attendance status (present/late/absent)
  * @param {string} params.period - Time period (morning/afternoon)
+ * @param {string} params.subject - Subject name (for per-subject attendance)
+ * @param {string} params.scheduleStartTime - Subject start time
+ * @param {string} params.scheduleEndTime - Subject end time
  * @param {string} params.time - Time recorded
  * @param {string} params.teacherName - Teacher's name
  */
@@ -68,6 +71,9 @@ const sendAttendanceEmail = async (params) => {
     section,
     status,
     period,
+    subject,
+    scheduleStartTime,
+    scheduleEndTime,
     time,
     teacherName
   } = params;
@@ -77,7 +83,15 @@ const sendAttendanceEmail = async (params) => {
     return { success: false, message: 'No parent email provided' };
   }
 
-  const periodText = period === 'morning' ? 'Morning' : 'Afternoon';
+  const periodText = period === 'morning'
+    ? 'Morning'
+    : period === 'afternoon'
+    ? 'Afternoon'
+    : 'Per Subject';
+  const subjectText = String(subject || '').trim() || 'N/A';
+  const scheduleText = (scheduleStartTime && scheduleEndTime)
+    ? `${scheduleStartTime} - ${scheduleEndTime}`
+    : 'N/A';
   const statusText = status.toUpperCase();
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -99,7 +113,7 @@ const sendAttendanceEmail = async (params) => {
     statusColor = '#FF9800';
     statusIcon = '⏰';
   } else {
-    statusMessage = `We regret to inform you that <strong>${studentName}</strong> was marked <strong style="color: #F44336;">ABSENT</strong> for today's ${periodText.toLowerCase()} session.`;
+    statusMessage = `We regret to inform you that <strong>${studentName}</strong> was marked <strong style="color: #F44336;">ABSENT</strong> for today's ${periodText.toLowerCase()} attendance.`;
     statusColor = '#F44336';
     statusIcon = '✗';
   }
@@ -157,6 +171,14 @@ const sendAttendanceEmail = async (params) => {
                     <tr>
                       <td style="color: #666666; font-size: 14px;">Date:</td>
                       <td style="color: #333333; font-size: 14px;">${today}</td>
+                    </tr>
+                    <tr>
+                      <td style="color: #666666; font-size: 14px;">Subject:</td>
+                      <td style="color: #333333; font-size: 14px;">${subjectText}</td>
+                    </tr>
+                    <tr>
+                      <td style="color: #666666; font-size: 14px;">Schedule:</td>
+                      <td style="color: #333333; font-size: 14px;">${scheduleText}</td>
                     </tr>
                     <tr>
                       <td style="color: #666666; font-size: 14px;">Session:</td>
@@ -217,7 +239,7 @@ Dear Parent/Guardian,
 
 ${status === 'present' ? `We are pleased to inform you that ${studentName} has arrived at school and was marked PRESENT.` : 
   status === 'late' ? `We would like to inform you that ${studentName} arrived late at school today and was marked LATE.` :
-  `We regret to inform you that ${studentName} was marked ABSENT for today's ${periodText.toLowerCase()} session.`}
+  `We regret to inform you that ${studentName} was marked ABSENT for today's ${periodText.toLowerCase()} attendance.`}
 
 ATTENDANCE DETAILS:
 -------------------
@@ -226,6 +248,8 @@ LRN: ${studentLRN || 'N/A'}
 Grade & Section: ${gradeLevel || 'N/A'} - ${section || 'N/A'}
 Date: ${today}
 Session: ${periodText}
+Subject: ${subjectText}
+Schedule: ${scheduleText}
 Time Recorded: ${time || 'N/A'}
 Status: ${statusText}
 -------------------
@@ -238,10 +262,10 @@ ${teacherName || 'School Administration'}
 WMSU ILS - Elementary Department
   `;
 
-  const subject = `Attendance Update: ${studentName} - ${statusText} (${periodText})`;
+  const emailTitle = `Attendance Update: ${studentName} - ${statusText}${subjectText !== 'N/A' ? ` (${subjectText})` : ` (${periodText})`}`;
 
   try {
-    const result = await sendViaBrevo(parentEmail, subject, htmlContent, textContent);
+    const result = await sendViaBrevo(parentEmail, emailTitle, htmlContent, textContent);
     return result;
   } catch (error) {
     console.error(`📧 Error sending email to ${parentEmail}:`, error.message);

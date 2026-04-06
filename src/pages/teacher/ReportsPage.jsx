@@ -72,6 +72,27 @@ export default function ReportsPage() {
   const [allSubjects, setAllSubjects] = useState([]);
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
 
+  const isPassingGradeValue = (value) => {
+    const num = parseFloat(value);
+    return !isNaN(num) && num > 0;
+  };
+
+  const isStudentReportCardComplete = (student) => {
+    const grades = student?.grades || {};
+    const subjects = Object.keys(grades);
+    if (subjects.length === 0) return false;
+
+    return subjects.every((subject) => {
+      const quarterGrades = grades[subject] || {};
+      return ['q1', 'q2', 'q3', 'q4'].every((q) => isPassingGradeValue(quarterGrades[q]));
+    });
+  };
+
+  const isInactiveStudent = (student) => {
+    const status = String(student?.status || '').trim().toLowerCase();
+    return status === 'inactive';
+  };
+
   const months = [
     { value: 1, label: "January" },
     { value: 2, label: "February" },
@@ -99,10 +120,9 @@ export default function ReportsPage() {
         if (activeSy?.id) {
           const nextActiveId = String(activeSy.id);
           setTeacherActiveSchoolYearId(nextActiveId);
-          if (!selectedSchoolYearId) {
-            setSelectedSchoolYearId(nextActiveId);
-            setTeacherViewingSchoolYearId(nextActiveId);
-          }
+          // Keep reports synced to active SY so mobile and web show the same attendance.
+          setSelectedSchoolYearId(nextActiveId);
+          setTeacherViewingSchoolYearId(nextActiveId);
         }
       } catch (error) {
         console.warn('Could not load active school year:', error.message);
@@ -322,10 +342,13 @@ export default function ReportsPage() {
       // Group by student for monthly summary
       const studentMonthlyData = {};
       studentsData.forEach(student => {
+        const candidateIds = new Set(
+          [student.id, student.lrn, student.studentId]
+            .filter(Boolean)
+            .map(v => String(v))
+        );
         const studentRecords = subjectScopedAttendance.filter(r => 
-          r.studentId === student.id || 
-          r.studentId === student.lrn ||
-          r.studentId === student.studentId
+          candidateIds.has(String(r.studentId))
         );
         
         const presentDays = studentRecords.filter(r => r.status?.toLowerCase() === 'present').length;
@@ -397,7 +420,9 @@ export default function ReportsPage() {
       setSelectedSubjectForRanking(prev => prev || ([...subjectSet][0] || ''));
 
       // Get top performing students — only those with avg >= 85 (honor level and above)
-      const topPerformers = studentsWithGrades
+      const rankingEligibleStudents = studentsWithGrades.filter((s) => !isInactiveStudent(s));
+
+      const topPerformers = rankingEligibleStudents
         .filter(s => s.average && s.average >= 85)
         .sort((a, b) => (b.average || 0) - (a.average || 0))
         .map((s, idx) => ({
@@ -412,7 +437,7 @@ export default function ReportsPage() {
       setTopStudents(topPerformers);
 
       // Get lowest performing students (only those with avg <= 80 — actual underperformers)
-      const lowestPerformers = studentsWithGrades
+      const lowestPerformers = rankingEligibleStudents
         .filter(s => s.average && s.average > 0 && s.average <= 80)
         .sort((a, b) => (a.average || 0) - (b.average || 0))
         .map((s, idx) => ({
@@ -432,7 +457,7 @@ export default function ReportsPage() {
       const lateToday = allAttendance.filter(r => r.date === new Date().toISOString().split('T')[0] && r.status === 'Late').length;
       
       // Class average from students who have grades
-      const studentsWithAvg = studentsWithGrades.filter(s => s.average > 0);
+      const studentsWithAvg = rankingEligibleStudents.filter(s => s.average > 0);
       const classAverage = studentsWithAvg.length > 0 
         ? Math.round(studentsWithAvg.reduce((sum, s) => sum + s.average, 0) / studentsWithAvg.length * 10) / 10
         : 0;
@@ -960,9 +985,20 @@ export default function ReportsPage() {
           {/* Overall Average Ranking */}
           {gradesSubTab === 'overall' && (
             <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
+              {(() => {
+                const sortedStudents = [...students].filter((s) => !isInactiveStudent(s)).sort((a, b) => (b.average || 0) - (a.average || 0));
+                const completeStudents = sortedStudents.filter(isStudentReportCardComplete);
+                const isRankingActive = sortedStudents.length > 0 && completeStudents.length === sortedStudents.length;
+                const pendingCount = sortedStudents.length - completeStudents.length;
+                const rowsToRank = isRankingActive ? sortedStudents : [];
+
+                return (
+                  <>
               <div className="bg-gradient-to-r from-red-800 to-red-900 text-white px-6 py-5">
                 <h3 className="text-xl font-bold">🏆 Overall Average Ranking</h3>
-                <p className="text-red-200 text-sm mt-1">{selectedSection || 'All Sections'} — all graded students</p>
+                <p className="text-red-200 text-sm mt-1">
+                  {selectedSection || 'All Sections'} — {isRankingActive ? 'ranking active' : 'ranking inactive'}
+                </p>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -979,7 +1015,13 @@ export default function ReportsPage() {
                   <tbody className="divide-y divide-gray-200">
                     {loading ? (
                       <tr><td colSpan={4 + allSubjects.length} className="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
-                    ) : [...students].filter(s => s.average > 0).sort((a, b) => (b.average || 0) - (a.average || 0)).map((student, idx) => (
+                    ) : !isRankingActive ? (
+                      <tr>
+                        <td colSpan={6 + allSubjects.length} className="px-6 py-8 text-center text-amber-700 bg-amber-50">
+                          Ranking is inactive. Please complete all report card grades (Q1-Q4 per subject) for all students first. Pending students: {pendingCount}
+                        </td>
+                      </tr>
+                    ) : rowsToRank.map((student, idx) => (
                       <tr key={student.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="px-4 py-3 font-bold text-gray-700">#{idx + 1}</td>
                         <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">{student.lastName}, {student.firstName}</td>
@@ -1011,6 +1053,9 @@ export default function ReportsPage() {
                   </tbody>
                 </table>
               </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -1065,7 +1110,7 @@ export default function ReportsPage() {
                         }
                         return g[selectedQuarterForView] || 0;
                       };
-                      const sorted = [...students].filter(s => getGrade(s) > 0).sort((a, b) => getGrade(b) - getGrade(a));
+                      const sorted = [...students].filter(s => !isInactiveStudent(s) && getGrade(s) > 0).sort((a, b) => getGrade(b) - getGrade(a));
                       if (sorted.length === 0) return <tr><td colSpan={8} className="px-6 py-8 text-center text-gray-500">No grades for {selectedSubjectForRanking}</td></tr>;
                       return sorted.map((student, idx) => {
                         const g = student.grades?.[selectedSubjectForRanking] || {};

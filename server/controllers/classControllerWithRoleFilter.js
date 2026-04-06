@@ -270,7 +270,7 @@ const getAllClasses = async (req, res) => {
         let classAssignmentsMap = {};
         try {
           const [stRows] = await pool.query(
-            `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time
+            `SELECT id, class_id, teacher_id, teacher_name, subject, day, start_time, end_time
              FROM subject_teachers
              WHERE school_year_id = ?`,
             [targetSy.id]
@@ -380,7 +380,7 @@ const getAllClasses = async (req, res) => {
         let subjectTeacherRows = [];
         try {
           const [st] = await pool.query(
-            `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time
+            `SELECT id, class_id, teacher_id, teacher_name, subject, day, start_time, end_time
              FROM subject_teachers
              WHERE school_year_id = ?`,
             [targetSy.id]
@@ -1113,20 +1113,67 @@ const unassignSubjectTeacher = async (req, res) => {
   try {
     await ensureClassesSchoolYearColumn();
     const { classId, teacherId } = req.params;
+    const assignmentIdFromQuery = typeof req.query?.assignmentId === 'string' ? req.query.assignmentId : '';
+    const assignmentIdFromBody = req.body?.assignmentId;
+    const assignmentId = String(assignmentIdFromQuery || assignmentIdFromBody || '').trim();
+    const subjectFromQuery = typeof req.query?.subject === 'string' ? req.query.subject : '';
+    const subjectFromBody = typeof req.body?.subject === 'string' ? req.body.subject : '';
+    const subject = (subjectFromQuery || subjectFromBody || '').trim();
+    const dayFromQuery = typeof req.query?.day === 'string' ? req.query.day : '';
+    const dayFromBody = typeof req.body?.day === 'string' ? req.body.day : '';
+    const day = (dayFromQuery || dayFromBody || '').trim();
+    const startFromQuery = typeof req.query?.start_time === 'string' ? req.query.start_time : '';
+    const startFromBody = typeof req.body?.start_time === 'string' ? req.body.start_time : '';
+    const startTime = (startFromQuery || startFromBody || '').trim();
+    const endFromQuery = typeof req.query?.end_time === 'string' ? req.query.end_time : '';
+    const endFromBody = typeof req.body?.end_time === 'string' ? req.body.end_time : '';
+    const endTime = (endFromQuery || endFromBody || '').trim();
     const targetSy = await resolveSchoolYear(req);
 
-    console.log(`unassignSubjectTeacher - classId: ${classId}, teacherId: ${teacherId}`);
+    console.log(`unassignSubjectTeacher - classId: ${classId}, teacherId: ${teacherId}, assignmentId: ${assignmentId || '(none)'}, subject: ${subject || '(none)'}, day: ${day || '(none)'}, start: ${startTime || '(none)'}, end: ${endTime || '(none)'}`);
 
-    await pool.query(
-      `DELETE FROM subject_teachers WHERE class_id = ? AND teacher_id = ? AND school_year_id = ?`,
-      [classId, teacherId, targetSy.id]
-    );
+    let result;
+    if (assignmentId) {
+      [result] = await pool.query(
+        `DELETE FROM subject_teachers
+         WHERE id = ? AND class_id = ? AND teacher_id = ? AND school_year_id = ?
+         LIMIT 1`,
+        [assignmentId, classId, teacherId, targetSy.id]
+      );
+    } else if (subject && day && startTime && endTime) {
+      [result] = await pool.query(
+        `DELETE FROM subject_teachers
+         WHERE class_id = ? AND teacher_id = ? AND subject = ? AND day = ? AND start_time = ? AND end_time = ? AND school_year_id = ?
+         LIMIT 1`,
+        [classId, teacherId, subject, day, startTime, endTime, targetSy.id]
+      );
+    } else if (subject) {
+      [result] = await pool.query(
+        `DELETE FROM subject_teachers
+         WHERE class_id = ? AND teacher_id = ? AND subject = ? AND school_year_id = ?
+         LIMIT 1`,
+        [classId, teacherId, subject, targetSy.id]
+      );
+    } else {
+      [result] = await pool.query(
+        `DELETE FROM subject_teachers WHERE class_id = ? AND teacher_id = ? AND school_year_id = ? LIMIT 1`,
+        [classId, teacherId, targetSy.id]
+      );
+    }
 
     console.log('✅ Subject teacher unassigned successfully');
     
     return res.json({
       success: true,
-      message: 'Subject teacher unassigned successfully'
+      message: 'Subject teacher assignment removed successfully',
+      deletedCount: result?.affectedRows || 0,
+      scope: assignmentId
+        ? 'assignment-id'
+        : (subject && day && startTime && endTime)
+          ? 'teacher-subject-time'
+          : subject
+            ? 'teacher-subject'
+            : 'teacher'
     });
 
   } catch (error) {

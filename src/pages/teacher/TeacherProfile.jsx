@@ -84,8 +84,87 @@ export default function TeacherProfile() {
               // Use NEW unified endpoint that returns ONLY classes visible to this teacher
               // based on their role (adviser OR subject teacher)
               try {
-                const visibleClassesResponse = await api.get(appendSchoolYearId(`/classes/teacher/${user.id}`, viewingSyId));
-                const visibleClasses = Array.isArray(visibleClassesResponse.data.data) ? visibleClassesResponse.data.data : [];
+                const normalizeId = (value) => (value === null || value === undefined ? "" : String(value).trim());
+                const isSameTeacher = (a, b) => normalizeId(a) === normalizeId(b);
+                const extractClasses = (response) => {
+                  if (Array.isArray(response?.data?.data)) return response.data.data;
+                  if (Array.isArray(response?.data)) return response.data;
+                  return [];
+                };
+                const isAdviserNameMatch = (cls) => (
+                  user.firstName &&
+                  user.lastName &&
+                  cls?.adviser_name &&
+                  cls.adviser_name.includes(user.firstName) &&
+                  cls.adviser_name.includes(user.lastName)
+                );
+                const dedupeClassesById = (classes = []) => {
+                  const map = new Map();
+                  classes.forEach((cls) => {
+                    if (!cls) return;
+                    const key = normalizeId(cls.id) || `${cls.grade || ''}::${cls.section || ''}`;
+                    const existing = map.get(key);
+                    if (!existing || (Array.isArray(cls.subject_teachers) && cls.subject_teachers.length > 0)) {
+                      map.set(key, cls);
+                    }
+                  });
+                  return Array.from(map.values());
+                };
+                const fetchByLegacyEndpoints = async (schoolYearId) => {
+                  const [adviserResp, subjectTeacherResp] = await Promise.all([
+                    api.get(appendSchoolYearId(`/classes/adviser/${user.id}`, schoolYearId)),
+                    api.get(appendSchoolYearId(`/classes/subject-teacher/${user.id}`, schoolYearId)),
+                  ]);
+
+                  const adviserClasses = extractClasses(adviserResp).map((c) => ({ ...c, role_in_class: 'adviser' }));
+                  const subjectTeacherClasses = extractClasses(subjectTeacherResp).map((c) => ({ ...c, role_in_class: 'subject_teacher' }));
+                  return dedupeClassesById([...adviserClasses, ...subjectTeacherClasses]);
+                };
+
+                let visibleClasses = [];
+
+                // 1) Preferred: unified endpoint in selected school year scope.
+                try {
+                  const visibleClassesResponse = await api.get(appendSchoolYearId(`/classes/teacher/${user.id}`, viewingSyId));
+                  visibleClasses = extractClasses(visibleClassesResponse);
+                } catch (unifiedErr) {
+                  console.error('Unified classes endpoint failed:', unifiedErr);
+                }
+
+                // Compatibility fallback for older backend deployments that may not fully populate
+                // the unified endpoint yet.
+                if (visibleClasses.length === 0) {
+                  try {
+                    visibleClasses = await fetchByLegacyEndpoints(viewingSyId);
+                    console.log(`Fallback class fetch used (scoped). Classes: ${visibleClasses.length}`);
+                  } catch (fallbackErr) {
+                    console.error('Fallback class fetch failed (scoped):', fallbackErr);
+                  }
+                }
+
+                // 3) Last fallback: no school-year filter (for stale local storage scope).
+                if (visibleClasses.length === 0) {
+                  try {
+                    visibleClasses = await fetchByLegacyEndpoints('');
+                    console.log(`Fallback class fetch used (unscoped). Classes: ${visibleClasses.length}`);
+                  } catch (fallbackErr) {
+                    console.error('Fallback class fetch failed (unscoped):', fallbackErr);
+                  }
+                }
+
+                // 4) Adviser name fallback from all classes (handles adviser_id mismatches).
+                if (visibleClasses.length === 0 && user.firstName && user.lastName) {
+                  try {
+                    const allClassesResp = await api.get(appendSchoolYearId('/classes', viewingSyId));
+                    const allClasses = extractClasses(allClassesResp);
+                    visibleClasses = allClasses
+                      .filter((cls) => isAdviserNameMatch(cls))
+                      .map((cls) => ({ ...cls, role_in_class: 'adviser' }));
+                    console.log(`Name-based adviser fallback used. Classes: ${visibleClasses.length}`);
+                  } catch (nameFallbackErr) {
+                    console.error('Name-based adviser fallback failed:', nameFallbackErr);
+                  }
+                }
                 
                 console.log(`✓ Fetched ${visibleClasses.length} classes for teacher ${user.id}`);
                 
@@ -101,8 +180,10 @@ export default function TeacherProfile() {
                 
                 // Process each visible class
                 visibleClasses.forEach(cls => {
+                  const adviserForClass = cls.role_in_class === 'adviser' || isSameTeacher(cls.adviser_id, user.id) || isAdviserNameMatch(cls);
+
                   // If user is adviser of this class
-                  if (cls.role_in_class === 'adviser' || cls.adviser_id === user.id) {
+                  if (adviserForClass) {
                     scheduleData.push({
                       id: `adviser-${cls.id}`,
                       day: "Monday - Friday",
@@ -113,9 +194,9 @@ export default function TeacherProfile() {
                   }
                   
                   // If user is subject teacher in this class
-                  if ((cls.role_in_class === 'subject_teacher' || cls.subjects_teaching) && cls.subject_teachers) {
+                  if ((cls.role_in_class === 'subject_teacher' || cls.subjects_teaching) && Array.isArray(cls.subject_teachers)) {
                     cls.subject_teachers.forEach(st => {
-                      if (st.teacher_id === user.id) {
+                      if (isSameTeacher(st.teacher_id, user.id)) {
                         scheduleData.push({
                           id: `${cls.id}-${st.subject}`,
                           day: st.day || "Monday - Friday",
@@ -124,6 +205,24 @@ export default function TeacherProfile() {
                           gradeSection: `${cls.grade || 'Grade'} - ${cls.section || 'Section'}`
                         });
                       }
+                    });
+                  }
+
+                  // Fallback: if subject row did not include details array, use summarized subjects list.
+                  if (cls.role_in_class === 'subject_teacher' && (!Array.isArray(cls.subject_teachers) || cls.subject_teachers.length === 0) && cls.subjects_teaching) {
+                    const subjects = String(cls.subjects_teaching)
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+
+                    subjects.forEach((subject, idx) => {
+                      scheduleData.push({
+                        id: `${cls.id}-fallback-${idx}-${subject}`,
+                        day: "Monday - Friday",
+                        time: "8:00 AM - 3:00 PM",
+                        subject,
+                        gradeSection: `${cls.grade || 'Grade'} - ${cls.section || 'Section'}`
+                      });
                     });
                   }
                 });
@@ -342,6 +441,16 @@ export default function TeacherProfile() {
                 </tr>
               </thead>
               <tbody>
+                {schedules.length === 0 && (
+                  <tr className="bg-white">
+                    <td
+                      className="border border-gray-300 px-4 py-6 text-center text-sm text-gray-500"
+                      colSpan={isEditing ? 5 : 4}
+                    >
+                      No schedule assigned for the current school year scope yet.
+                    </td>
+                  </tr>
+                )}
                 {schedules.map((schedule, index) => (
                   <tr key={schedule.id} className={index % 2 === 0 ? "bg-gray-50" : "bg-white"}>
                     <td className="border border-gray-300 px-4 py-3">

@@ -88,8 +88,13 @@ export default function SF2AttendanceForm({
 
       // Format data for SF2 form - group attendance by student and day
       const formatted = filteredStudents.map(student => {
+        const candidateIds = new Set(
+          [student.id, student.lrn, student.studentId]
+            .filter(Boolean)
+            .map(v => String(v))
+        );
         const studentAttendance = attendanceData.filter(
-          a => a.studentId === student.id || a.studentId === student.lrn || a.studentLRN === student.lrn
+          a => candidateIds.has(String(a.studentId)) || (student.lrn && String(a.studentLRN) === String(student.lrn))
         );
         
         // Build attendance by day object

@@ -102,6 +102,7 @@ exports.protect = async (req, res, next) => {
             gradeLevel: teachers[0].grade_level,
             section: teachers[0].section,
             subjects: teachers[0].subjects,
+            employeeId: teachers[0].employee_id || teachers[0].employeeId || '',
             bio: teachers[0].bio,
             profilePic: teachers[0].profile_pic,
             verificationStatus: teachers[0].verification_status,
@@ -370,6 +371,7 @@ exports.login = async (req, res) => {
         username: user.username || '',
         email: user.email,
         phone: user.phone || '',
+        employeeId: user.employee_id || user.employeeId || '',
         profileImage: user.profile_pic || user.profileImage || '',
         role: user.role || 'admin',
       };
@@ -398,7 +400,7 @@ exports.updateProfile = async (req, res) => {
     }
     
     // Handle both JSON and FormData
-    let firstName, lastName, username, email, phone;
+    let firstName, lastName, username, email, phone, employeeId;
     
     if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
       // FormData request
@@ -407,9 +409,11 @@ exports.updateProfile = async (req, res) => {
       username = req.body.username;
       email = req.body.email;
       phone = req.body.phone;
+      employeeId = req.body.employeeId ?? req.body.employee_id;
     } else {
       // JSON request
       ({ firstName, lastName, username, email, phone } = req.body);
+      employeeId = req.body.employeeId ?? req.body.employee_id;
     }
     
     const userId = req.user.id;
@@ -459,6 +463,7 @@ exports.updateProfile = async (req, res) => {
         username,
         email,
         phone: phone || allUsers[userIndex].phone,
+        employeeId: employeeId ?? allUsers[userIndex].employeeId,
         updatedAt: new Date().toISOString()
       };
 
@@ -557,6 +562,11 @@ exports.updateProfile = async (req, res) => {
 
         const phoneColumn = await query(`SHOW COLUMNS FROM ${targetTable} LIKE 'phone'`);
         const hasPhoneColumn = phoneColumn.length > 0;
+        const employeeIdSnakeCaseColumn = await query(`SHOW COLUMNS FROM ${targetTable} LIKE 'employee_id'`);
+        const employeeIdCamelCaseColumn = await query(`SHOW COLUMNS FROM ${targetTable} LIKE 'employeeId'`);
+        const employeeIdColumnName = employeeIdSnakeCaseColumn.length > 0
+          ? 'employee_id'
+          : (employeeIdCamelCaseColumn.length > 0 ? 'employeeId' : null);
 
         let updateQuery = `UPDATE ${targetTable} SET first_name = ?, last_name = ?, username = ?, email = ?`;
         const queryParams = [firstName, lastName, username, email];
@@ -564,6 +574,11 @@ exports.updateProfile = async (req, res) => {
         if (phone !== undefined && hasPhoneColumn) {
           updateQuery += ', phone = ?';
           queryParams.push(phone);
+        }
+
+        if (employeeId !== undefined && employeeIdColumnName) {
+          updateQuery += `, ${employeeIdColumnName} = ?`;
+          queryParams.push(employeeId);
         }
 
         if (profileImageUrl) {
@@ -592,6 +607,7 @@ exports.updateProfile = async (req, res) => {
               username: updatedUser.username,
               email: updatedUser.email,
               phone: updatedUser.phone || '',
+              employeeId: updatedUser.employee_id || updatedUser.employeeId || '',
               profileImage: profileImageUrl || updatedUser.profile_pic || '',
               role: updatedUser.role,
             },

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useAttendance } from '../context/AttendanceContext';
 import { useAuth } from '../context/AuthProvider'; 
@@ -8,12 +8,25 @@ import { useFocusEffect } from '@react-navigation/native';
 export default function LogScreen() {
   const [students, setStudents] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [selectedPeriod, setSelectedPeriod] = useState('all'); 
+  const [selectedSubject, setSelectedSubject] = useState('all'); 
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
-  const { attendanceLog, getTodayStats, loadAttendanceLogs } = useAttendance();
+  const { attendanceLog, loadAttendanceLogs } = useAttendance();
   const { user } = useAuth();
+
+  const normalizeDateString = (value) => {
+    if (!value) return '';
+    const raw = String(value);
+    if (raw.includes('/')) {
+      const parts = raw.split('/');
+      if (parts.length === 3) {
+        return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+      }
+    }
+    if (raw.includes('T')) return raw.split('T')[0];
+    return raw;
+  };
 
   // Check if selected date is a school day (not weekend)
   const isSchoolDay = (date) => {
@@ -96,22 +109,26 @@ export default function LogScreen() {
   const getFilteredLogs = () => {
     const dateString = getTodayString();
     let logs = attendanceLog.filter(log => {
-      let logDate = log.date;
-      // Normalize old M/D/YYYY format if present
-      if (logDate && logDate.includes('/')) {
-        const parts = logDate.split('/');
-        if (parts.length === 3) {
-          logDate = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
-        }
-      }
-      return logDate === dateString;
+      return normalizeDateString(log.date) === dateString;
     });
-    
-    if (selectedPeriod !== 'all') {
-      logs = logs.filter(log => log.period === selectedPeriod);
+
+    if (selectedSubject !== 'all') {
+      logs = logs.filter(log => String(log.subject || '').trim() === selectedSubject);
     }
-    
+
     return logs;
+  };
+
+  const getAvailableSubjects = () => {
+    const dateString = getTodayString();
+    const set = new Set();
+    attendanceLog.forEach(log => {
+      const logDate = normalizeDateString(log.date);
+      if (logDate !== dateString) return;
+      const subject = String(log.subject || '').trim();
+      if (subject) set.add(subject);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   };
 
   const getLogsBySection = () => {
@@ -123,47 +140,30 @@ export default function LogScreen() {
       if (!grouped[section]) {
         grouped[section] = {
           students: [],
-          morning: { present: 0, late: 0, absent: 0 },
-          afternoon: { present: 0, late: 0, absent: 0 },
+          stats: { present: 0, late: 0, absent: 0 },
         };
       }
 
-      // Normalize studentId comparison (convert to string for comparison)
-      const studentIdStr = String(student.studentId || student.lrn || student.id || '');
+      // Match by any known student identifier so records survive refreshes.
+      const candidateIds = new Set(
+        [student.studentId, student.lrn, student.id]
+          .filter(Boolean)
+          .map(v => String(v))
+      );
       
-      const morningLog = logs.find(log => 
-        String(log.studentId) === studentIdStr && (log.period || '').toLowerCase() === 'morning'
-      );
-      const afternoonLog = logs.find(log => 
-        String(log.studentId) === studentIdStr && (log.period || '').toLowerCase() === 'afternoon'
-      );
+      const studentLogs = logs
+        .filter(log => candidateIds.has(String(log.studentId)))
+        .sort((a, b) => new Date(b.timestamp || b.createdAt || 0) - new Date(a.timestamp || a.createdAt || 0));
 
-      if (selectedPeriod === 'all' || selectedPeriod === 'morning') {
-        if (morningLog) {
-          const status = (morningLog.status || '').toLowerCase();
-          if (status === 'present') grouped[section].morning.present++;
-          else if (status === 'late') grouped[section].morning.late++;
-          else grouped[section].morning.absent++;
-        } else {
-          grouped[section].morning.absent++;
-        }
-      }
-
-      if (selectedPeriod === 'all' || selectedPeriod === 'afternoon') {
-        if (afternoonLog) {
-          const status = (afternoonLog.status || '').toLowerCase();
-          if (status === 'present') grouped[section].afternoon.present++;
-          else if (status === 'late') grouped[section].afternoon.late++;
-          else grouped[section].afternoon.absent++;
-        } else {
-          grouped[section].afternoon.absent++;
-        }
-      }
+      const subjectLog = studentLogs[0] || null;
+      const status = String(subjectLog?.status || '').toLowerCase();
+      if (status === 'present') grouped[section].stats.present++;
+      else if (status === 'late') grouped[section].stats.late++;
+      else if (status === 'absent') grouped[section].stats.absent++;
 
       grouped[section].students.push({
         ...student,
-        morningLog,
-        afternoonLog,
+        subjectLog,
       });
     });
 
@@ -171,12 +171,16 @@ export default function LogScreen() {
   };
 
   const logsBySection = getLogsBySection();
-  // On weekends, show zero stats
-  const rawStats = getTodayStats();
-  const stats = isSchoolDay(selectedDate) ? rawStats : {
-    morning: { present: 0, late: 0, absent: 0 },
-    afternoon: { present: 0, late: 0, absent: 0 }
-  };
+  const allStats = Object.values(logsBySection).reduce(
+    (acc, section) => {
+      acc.present += section.stats.present;
+      acc.late += section.stats.late;
+      acc.absent += section.stats.absent;
+      return acc;
+    },
+    { present: 0, late: 0, absent: 0 }
+  );
+  const availableSubjects = getAvailableSubjects();
 
   const getStatusDisplay = (log) => {
     if (!log) return { text: 'Absent', color: '#f44336' };
@@ -223,72 +227,40 @@ export default function LogScreen() {
 
         <View style={styles.filterContainer}>
           <TouchableOpacity
-            style={[styles.filterButton, selectedPeriod === 'all' && styles.filterButtonActive]}
-            onPress={() => setSelectedPeriod('all')}
+            style={[styles.filterButton, selectedSubject === 'all' && styles.filterButtonActive]}
+            onPress={() => setSelectedSubject('all')}
           >
-            <Text style={[styles.filterText, selectedPeriod === 'all' && styles.filterTextActive]}>
-              All Day
+            <Text style={[styles.filterText, selectedSubject === 'all' && styles.filterTextActive]}>
+              All Subjects
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterButton, selectedPeriod === 'morning' && styles.filterButtonActive]}
-            onPress={() => setSelectedPeriod('morning')}
-          >
-            <Text style={[styles.filterText, selectedPeriod === 'morning' && styles.filterTextActive]}>
-              Morning
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterButton, selectedPeriod === 'afternoon' && styles.filterButtonActive]}
-            onPress={() => setSelectedPeriod('afternoon')}
-          >
-            <Text style={[styles.filterText, selectedPeriod === 'afternoon' && styles.filterTextActive]}>
-              Afternoon
-            </Text>
-          </TouchableOpacity>
+          {availableSubjects.slice(0, 2).map(subject => (
+            <TouchableOpacity
+              key={subject}
+              style={[styles.filterButton, selectedSubject === subject && styles.filterButtonActive]}
+              onPress={() => setSelectedSubject(subject)}
+            >
+              <Text style={[styles.filterText, selectedSubject === subject && styles.filterTextActive]} numberOfLines={1}>
+                {subject}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {selectedPeriod === 'all' ? (
-          <View style={styles.statsRow}>
-            <View style={styles.periodStats}>
-              <Text style={styles.periodLabel}>Morning</Text>
-              <View style={styles.miniStats}>
-                <Text style={styles.miniStatText}>P: {stats.morning.present}</Text>
-                <Text style={styles.miniStatText}>L: {stats.morning.late}</Text>
-                <Text style={styles.miniStatText}>A: {stats.morning.absent}</Text>
-              </View>
-            </View>
-            <View style={styles.periodStats}>
-              <Text style={styles.periodLabel}>Afternoon</Text>
-              <View style={styles.miniStats}>
-                <Text style={styles.miniStatText}>P: {stats.afternoon.present}</Text>
-                <Text style={styles.miniStatText}>L: {stats.afternoon.late}</Text>
-                <Text style={styles.miniStatText}>A: {stats.afternoon.absent}</Text>
-              </View>
-            </View>
+        <View style={styles.singlePeriodStats}>
+          <View style={styles.statBox}>
+            <Text style={styles.statNumber}>{allStats.present}</Text>
+            <Text style={styles.statLabel}>Present</Text>
           </View>
-        ) : (
-          <View style={styles.singlePeriodStats}>
-            <View style={styles.statBox}>
-              <Text style={styles.statNumber}>
-                {selectedPeriod === 'morning' ? stats.morning.present : stats.afternoon.present}
-              </Text>
-              <Text style={styles.statLabel}>Present</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statNumber}>
-                {selectedPeriod === 'morning' ? stats.morning.late : stats.afternoon.late}
-              </Text>
-              <Text style={styles.statLabel}>Late</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statNumber}>
-                {selectedPeriod === 'morning' ? stats.morning.absent : stats.afternoon.absent}
-              </Text>
-              <Text style={styles.statLabel}>Absent</Text>
-            </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statNumber}>{allStats.late}</Text>
+            <Text style={styles.statLabel}>Late</Text>
           </View>
-        )}
+          <View style={styles.statBox}>
+            <Text style={styles.statNumber}>{allStats.absent}</Text>
+            <Text style={styles.statLabel}>Absent</Text>
+          </View>
+        </View>
 
         <ScrollView 
           style={styles.scrollView} 
@@ -335,46 +307,14 @@ export default function LogScreen() {
                       </Text>
                     </View>
 
-                    {selectedPeriod === 'all' ? (
-                      <View style={styles.sectionStatsRow}>
-                        <View style={styles.sectionStatItem}>
-                          <Text style={styles.sectionStatLabel}>Morning:</Text>
-                          <Text style={styles.sectionStatValue}>
-                            P:{section.morning.present} L:{section.morning.late} A:{section.morning.absent}
-                          </Text>
-                        </View>
-                        <View style={styles.sectionStatItem}>
-                          <Text style={styles.sectionStatLabel}>Afternoon:</Text>
-                          <Text style={styles.sectionStatValue}>
-                            P:{section.afternoon.present} L:{section.afternoon.late} A:{section.afternoon.absent}
-                          </Text>
-                        </View>
-                      </View>
-                    ) : (
-                      <View style={styles.sectionStatsRow}>
-                        <Text style={styles.sectionStatValue}>
-                          Present: {selectedPeriod === 'morning' ? section.morning.present : section.afternoon.present} | 
-                          Late: {selectedPeriod === 'morning' ? section.morning.late : section.afternoon.late} | 
-                          Absent: {selectedPeriod === 'morning' ? section.morning.absent : section.afternoon.absent}
-                        </Text>
-                      </View>
-                    )}
+                    <View style={styles.sectionStatsRow}>
+                      <Text style={styles.sectionStatValue}>
+                        Present: {section.stats.present} | Late: {section.stats.late} | Absent: {section.stats.absent}
+                      </Text>
+                    </View>
 
-                    {/* Only show PRESENT and LATE students in the list */}
                     {section.students
-                      .filter(student => {
-                        const isPresentOrLate = (status) =>
-                          status === 'present' || status === 'Present' ||
-                          status === 'late' || status === 'Late';
-                        if (selectedPeriod === 'all') {
-                          return isPresentOrLate(student.morningLog?.status) ||
-                                 isPresentOrLate(student.afternoonLog?.status);
-                        } else if (selectedPeriod === 'morning') {
-                          return isPresentOrLate(student.morningLog?.status);
-                        } else {
-                          return isPresentOrLate(student.afternoonLog?.status);
-                        }
-                      })
+                      .filter(student => Boolean(student.subjectLog))
                       .map((student, index) => (
                       <View key={student.id} style={styles.studentRow}>
                         <View style={styles.studentInfo}>
@@ -382,76 +322,28 @@ export default function LogScreen() {
                           <Text style={styles.studentId}>{student.studentId}</Text>
                         </View>
 
-                        {selectedPeriod === 'all' ? (
-                          <View style={styles.attendanceMinimal}>
-                            <View style={styles.periodColumn}>
-                              <Text style={styles.periodColumnLabel}>AM</Text>
-                              {(() => {
-                                const status = getStatusDisplay(student.morningLog);
-                                return (
-                                  <View style={styles.statusMinimal}>
-                                    <Text style={[styles.statusText, { color: status.color }]}>
-                                      {status.text}
-                                    </Text>
-                                    {student.morningLog?.scanTime && (
-                                      <Text style={styles.timeText}>{student.morningLog.scanTime}</Text>
-                                    )}
-                                  </View>
-                                );
-                              })()}
-                            </View>
-                            <View style={styles.periodColumn}>
-                              <Text style={styles.periodColumnLabel}>PM</Text>
-                              {(() => {
-                                const status = getStatusDisplay(student.afternoonLog);
-                                return (
-                                  <View style={styles.statusMinimal}>
-                                    <Text style={[styles.statusText, { color: status.color }]}>
-                                      {status.text}
-                                    </Text>
-                                    {student.afternoonLog?.scanTime && (
-                                      <Text style={styles.timeText}>{student.afternoonLog.scanTime}</Text>
-                                    )}
-                                  </View>
-                                );
-                              })()}
-                            </View>
-                          </View>
-                        ) : (
-                          <View style={styles.singlePeriodDisplay}>
-                            {(() => {
-                              const log = selectedPeriod === 'morning' ? student.morningLog : student.afternoonLog;
-                              const status = getStatusDisplay(log);
-                              return (
-                                <View style={styles.statusMinimal}>
-                                  <Text style={[styles.statusText, { color: status.color, fontWeight: '600' }]}>
-                                    {status.text}
-                                  </Text>
-                                  {log?.scanTime && (
-                                    <Text style={styles.timeText}>{log.scanTime}</Text>
-                                  )}
-                                </View>
-                              );
-                            })()}
-                          </View>
-                        )}
+                        <View style={styles.singlePeriodDisplay}>
+                          {(() => {
+                            const log = student.subjectLog;
+                            const status = getStatusDisplay(log);
+                            return (
+                              <View style={styles.statusMinimal}>
+                                <Text style={[styles.statusText, { color: status.color, fontWeight: '600' }]}>
+                                  {status.text}
+                                </Text>
+                                <Text style={styles.timeText}>{String(log?.subject || 'Subject')}</Text>
+                                {log?.scanTime && (
+                                  <Text style={styles.timeText}>{log.scanTime}</Text>
+                                )}
+                              </View>
+                            );
+                          })()}
+                        </View>
                       </View>
                     ))}
 
-                    {section.students.filter(student => {
-                        const isPresentOrLate = (status) =>
-                          status === 'present' || status === 'Present' ||
-                          status === 'late' || status === 'Late';
-                        if (selectedPeriod === 'all') {
-                          return isPresentOrLate(student.morningLog?.status) ||
-                                 isPresentOrLate(student.afternoonLog?.status);
-                        } else if (selectedPeriod === 'morning') {
-                          return isPresentOrLate(student.morningLog?.status);
-                        } else {
-                          return isPresentOrLate(student.afternoonLog?.status);
-                        }
-                      }).length === 0 && (
-                      <Text style={{ textAlign: 'center', color: '#999', padding: 16 }}>No present or late students yet</Text>
+                    {section.students.filter(student => Boolean(student.subjectLog)).length === 0 && (
+                      <Text style={{ textAlign: 'center', color: '#999', padding: 16 }}>No attendance records yet</Text>
                     )}
                   </View>
                 );
