@@ -512,10 +512,13 @@ export default function ScanQRScreen() {
       
       setSendingEmail(false);
 
-      // Only refresh from server if the save succeeded (so we don't wipe optimistic update)
-      if (attendanceResult?.success) {
-        loadAttendanceLogs();
+      if (!attendanceResult?.success) {
+        Alert.alert('Save Failed', attendanceResult?.error || 'Attendance was not saved. Please try again.');
+        return;
       }
+
+      // Only refresh from server if the save succeeded (so we don't wipe optimistic update)
+      loadAttendanceLogs();
 
       // Show custom success modal with real icons
       setSuccessData({

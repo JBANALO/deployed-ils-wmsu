@@ -40,8 +40,22 @@ const doesScheduleMatchWeekday = (dayValue, weekdayName) => {
 };
 
 const getDateString = (value) => {
-  if (!value) return new Date().toISOString().split('T')[0];
-  return String(value).split('T')[0];
+  const formatDateOnly = (input) => {
+    if (!input) return null;
+    if (input instanceof Date) {
+      const y = input.getFullYear();
+      const m = String(input.getMonth() + 1).padStart(2, '0');
+      const d = String(input.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    const raw = String(input).trim();
+    if (!raw) return null;
+    if (raw.includes('T')) return raw.split('T')[0];
+    if (raw.includes(' ')) return raw.split(' ')[0];
+    return raw;
+  };
+
+  return formatDateOnly(value) || formatDateOnly(new Date());
 };
 
 const getActiveSchoolYear = async () => {
@@ -342,15 +356,12 @@ router.post('/', async (req, res) => {
     let parentEmail = null;
     let studentLRN = studentId;
 
-    let targetSyId = null;
-
     if (student) {
       studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim();
       studentGradeLevel = student.grade_level || 'N/A';
       studentSection = student.section || 'N/A';
       parentEmail = student.parent_email || null;
       studentLRN = student.lrn || studentId;
-      targetSyId = student.school_year_id || null;
       console.log(`Found student in students table: ${studentName}, Parent Email: ${parentEmail}`);
     } else {
       // Fallback: check users table
@@ -372,7 +383,8 @@ router.post('/', async (req, res) => {
 
     let targetSy;
     try {
-      targetSy = targetSyId ? await getSchoolYearById(targetSyId) : await resolveTargetSchoolYear(req.body.schoolYearId);
+      // Always save to active school year unless explicitly requested.
+      targetSy = await resolveTargetSchoolYear(req.body.schoolYearId);
       const activeSy = await getActiveSchoolYear();
       if (!activeSy || targetSy.id !== activeSy.id) {
         return res.status(403).json({ success: false, message: 'Attendance can only be recorded in the active school year (view-only for past years).' });
@@ -381,7 +393,7 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
     }
 
-    const today = date || new Date().toISOString().split('T')[0];
+    const today = getDateString(date || new Date());
     const currentPeriod = period || 'morning';
     const currentSubject = subject ? String(subject).trim() : null;
     const currentClassId = classId ? String(classId).trim() : null;
@@ -476,7 +488,7 @@ router.post('/', async (req, res) => {
           studentName: rec.studentName,
           gradeLevel: rec.gradeLevel,
           section: rec.section,
-          date: rec.date instanceof Date ? rec.date.toISOString().split('T')[0] : rec.date,
+          date: getDateString(rec.date),
           timestamp: rec.timestamp,
           time: rec.time,
           status: rec.status,
@@ -549,9 +561,6 @@ router.post('/', async (req, res) => {
           status: currentStatus,
           period: currentPeriod,
           subject: currentSubject,
-          scheduleStartTime: scheduleStartTime || rec.scheduleStartTime || null,
-          scheduleEndTime: scheduleEndTime || rec.scheduleEndTime || null,
-          subject: currentSubject,
           scheduleStartTime: scheduleStartTime || null,
           scheduleEndTime: scheduleEndTime || null,
           time: currentTime,
@@ -583,7 +592,7 @@ router.post('/', async (req, res) => {
         studentName: attendanceRecord.studentName,
         gradeLevel: attendanceRecord.gradeLevel,
         section: attendanceRecord.section,
-        date: attendanceRecord.date instanceof Date ? attendanceRecord.date.toISOString().split('T')[0] : attendanceRecord.date,
+        date: getDateString(attendanceRecord.date),
         timestamp: attendanceRecord.timestamp,
         time: attendanceRecord.time,
         status: attendanceRecord.status,
@@ -720,7 +729,7 @@ router.get('/', async (req, res) => {
       studentName: record.studentName,
       gradeLevel: record.gradeLevel,
       section: record.section,
-      date: record.date instanceof Date ? record.date.toISOString().split('T')[0] : record.date,
+      date: getDateString(record.date),
       timestamp: record.timestamp,
       time: record.time,
       status: record.status,
@@ -767,7 +776,7 @@ router.get('/today', async (req, res) => {
       return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getDateString(new Date());
     const records = await query('SELECT * FROM attendance WHERE date = ? AND school_year_id = ? ORDER BY timestamp DESC', [today, targetSy.id]);
     
     // Columns are already camelCase in the attendance table
@@ -777,7 +786,7 @@ router.get('/today', async (req, res) => {
       studentName: record.studentName,
       gradeLevel: record.gradeLevel,
       section: record.section,
-      date: record.date instanceof Date ? record.date.toISOString().split('T')[0] : record.date,
+      date: getDateString(record.date),
       timestamp: record.timestamp,
       time: record.time,
       status: record.status,
@@ -834,7 +843,7 @@ router.get('/student/:id', async (req, res) => {
       studentName: record.studentName,
       gradeLevel: record.gradeLevel,
       section: record.section,
-      date: record.date instanceof Date ? record.date.toISOString().split('T')[0] : record.date,
+      date: getDateString(record.date),
       timestamp: record.timestamp,
       time: record.time,
       status: record.status,
