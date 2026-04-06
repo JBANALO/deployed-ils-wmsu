@@ -88,6 +88,17 @@ export default function ReportsPage() {
     });
   };
 
+  const isStudentQuarterComplete = (student, quarter, subjectsForScope = []) => {
+    const grades = student?.grades || {};
+    const subjects = subjectsForScope.length > 0 ? subjectsForScope : Object.keys(grades);
+    if (subjects.length === 0) return false;
+
+    return subjects.every((subject) => {
+      const subjectGrades = grades[subject] || {};
+      return isPassingGradeValue(subjectGrades[quarter]);
+    });
+  };
+
   const isInactiveStudent = (student) => {
     const status = String(student?.status || '').trim().toLowerCase();
     return status === 'inactive';
@@ -731,12 +742,34 @@ export default function ReportsPage() {
 
             <div className="p-6 max-h-[400px] overflow-y-auto">
               <div className="space-y-4">
-                {loading ? (
-                  <p className="text-center text-gray-500">Loading top students...</p>
-                ) : topStudents.length === 0 ? (
-                  <p className="text-center text-gray-500">No students with grades found</p>
-                ) : (
-                  topStudents.slice(0, topLimit).map((student) => (
+                {(() => {
+                  const activeStudents = students.filter((s) => !isInactiveStudent(s));
+                  const rankingReady = Boolean(selectedSection)
+                    && activeStudents.length > 0
+                    && activeStudents.every(isStudentReportCardComplete);
+
+                  if (loading) {
+                    return <p className="text-center text-gray-500">Loading top students...</p>;
+                  }
+
+                  if (!selectedSection) {
+                    return <p className="text-center text-amber-700">Select a Grade &amp; Section first to view rankings.</p>;
+                  }
+
+                  if (!rankingReady) {
+                    const pendingCount = activeStudents.filter((s) => !isStudentReportCardComplete(s)).length;
+                    return (
+                      <p className="text-center text-amber-700">
+                        Ranking is inactive for {selectedSection}. Complete all report card grades (Q1-Q4 per subject) for all students first. Pending students: {pendingCount}
+                      </p>
+                    );
+                  }
+
+                  if (topStudents.length === 0) {
+                    return <p className="text-center text-gray-500">No students with grades found</p>;
+                  }
+
+                  return topStudents.slice(0, topLimit).map((student) => (
                     <div
                       key={student.rank}
                       className="flex items-center justify-between p-4 bg-gradient-to-r from-red-50 to-pink-50 rounded-2xl border border-red-200 hover:shadow-lg transition"
@@ -770,8 +803,8 @@ export default function ReportsPage() {
                         </p>
                       </div>
                     </div>
-                  ))
-                )}
+                  ));
+                })()}
               </div>
             </div>
           </div>
@@ -795,12 +828,34 @@ export default function ReportsPage() {
             </div>
             <div className="p-6 max-h-[400px] overflow-y-auto">
               <div className="space-y-4">
-                {loading ? (
-                  <p className="text-center text-gray-500">Loading students...</p>
-                ) : lowestStudents.length === 0 ? (
-                  <p className="text-center text-gray-500">No students with grades found</p>
-                ) : (
-                  lowestStudents.slice(0, lowestLimit).map((student) => (
+                {(() => {
+                  const activeStudents = students.filter((s) => !isInactiveStudent(s));
+                  const rankingReady = Boolean(selectedSection)
+                    && activeStudents.length > 0
+                    && activeStudents.every(isStudentReportCardComplete);
+
+                  if (loading) {
+                    return <p className="text-center text-gray-500">Loading students...</p>;
+                  }
+
+                  if (!selectedSection) {
+                    return <p className="text-center text-amber-700">Select a Grade &amp; Section first to view rankings.</p>;
+                  }
+
+                  if (!rankingReady) {
+                    const pendingCount = activeStudents.filter((s) => !isStudentReportCardComplete(s)).length;
+                    return (
+                      <p className="text-center text-amber-700">
+                        Ranking is inactive for {selectedSection}. Complete all report card grades (Q1-Q4 per subject) for all students first. Pending students: {pendingCount}
+                      </p>
+                    );
+                  }
+
+                  if (lowestStudents.length === 0) {
+                    return <p className="text-center text-gray-500">No students with grades found</p>;
+                  }
+
+                  return lowestStudents.slice(0, lowestLimit).map((student) => (
                     <div key={student.rank} className="p-4 bg-gradient-to-r from-orange-50 to-yellow-50 rounded-2xl border border-orange-200 hover:shadow-lg transition">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
@@ -840,8 +895,8 @@ export default function ReportsPage() {
                         </p>
                       )}
                     </div>
-                  ))
-                )}
+                  ));
+                })()}
               </div>
             </div>
           </div>
@@ -988,7 +1043,7 @@ export default function ReportsPage() {
               {(() => {
                 const sortedStudents = [...students].filter((s) => !isInactiveStudent(s)).sort((a, b) => (b.average || 0) - (a.average || 0));
                 const completeStudents = sortedStudents.filter(isStudentReportCardComplete);
-                const isRankingActive = sortedStudents.length > 0 && completeStudents.length === sortedStudents.length;
+                const isRankingActive = Boolean(selectedSection) && sortedStudents.length > 0 && completeStudents.length === sortedStudents.length;
                 const pendingCount = sortedStudents.length - completeStudents.length;
                 const rowsToRank = isRankingActive ? sortedStudents : [];
 
@@ -1015,6 +1070,12 @@ export default function ReportsPage() {
                   <tbody className="divide-y divide-gray-200">
                     {loading ? (
                       <tr><td colSpan={4 + allSubjects.length} className="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
+                    ) : !selectedSection ? (
+                      <tr>
+                        <td colSpan={6 + allSubjects.length} className="px-6 py-8 text-center text-amber-700 bg-amber-50">
+                          Select a Grade &amp; Section first to activate ranking.
+                        </td>
+                      </tr>
                     ) : !isRankingActive ? (
                       <tr>
                         <td colSpan={6 + allSubjects.length} className="px-6 py-8 text-center text-amber-700 bg-amber-50">
@@ -1137,6 +1198,16 @@ export default function ReportsPage() {
           {/* By Quarter — full class grade grid */}
           {gradesSubTab === 'by-quarter' && (
             <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
+              {(() => {
+                const activeStudents = students.filter((s) => !isInactiveStudent(s));
+                const completeStudents = activeStudents.filter((s) => isStudentQuarterComplete(s, selectedQuarterForView, allSubjects));
+                const isQuarterRankingActive = Boolean(selectedSection)
+                  && activeStudents.length > 0
+                  && completeStudents.length === activeStudents.length;
+                const pendingCount = activeStudents.length - completeStudents.length;
+
+                return (
+                  <>
               <div className="bg-gradient-to-r from-purple-700 to-purple-800 text-white px-6 py-5 flex items-center gap-4">
                 <h3 className="text-xl font-bold">📅 Class Grades by Quarter</h3>
                 <div className="flex items-center gap-2">
@@ -1161,7 +1232,19 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {[...students].sort((a, b) => (b.average || 0) - (a.average || 0)).map((student, idx) => {
+                    {!selectedSection ? (
+                      <tr>
+                        <td colSpan={3 + allSubjects.length} className="px-6 py-8 text-center text-amber-700 bg-amber-50">
+                          Select a Grade &amp; Section first to activate quarter ranking.
+                        </td>
+                      </tr>
+                    ) : !isQuarterRankingActive ? (
+                      <tr>
+                        <td colSpan={3 + allSubjects.length} className="px-6 py-8 text-center text-amber-700 bg-amber-50">
+                          Quarter ranking is inactive for {selectedSection}. Complete all {selectedQuarterForView.toUpperCase()} grades for all subjects and all students first. Pending students: {pendingCount}
+                        </td>
+                      </tr>
+                    ) : [...students].sort((a, b) => (b.average || 0) - (a.average || 0)).map((student, idx) => {
                       const gradeVals = allSubjects.map(s => student.grades?.[s]?.[selectedQuarterForView] || 0).filter(v => v > 0);
                       const qAvg = gradeVals.length > 0 ? (gradeVals.reduce((a, b) => a + b, 0) / gradeVals.length).toFixed(2) : '—';
                       return (
@@ -1183,6 +1266,9 @@ export default function ReportsPage() {
                   </tbody>
                 </table>
               </div>
+                  </>
+                );
+              })()}
             </div>
           )}
         </>
