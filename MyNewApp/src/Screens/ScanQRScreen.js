@@ -126,11 +126,17 @@ export default function ScanQRScreen() {
         : [];
 
       const rows = [];
+      const firstName = String(userData?.firstName || user?.firstName || '').trim().toLowerCase();
+      const lastName = String(userData?.lastName || user?.lastName || '').trim().toLowerCase();
       classList.forEach(cls => {
         const sts = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
         sts.forEach(st => {
           const teacherIdMatch = String(st.teacher_id || st.teacherId || '') === String(user.id);
-          if (!teacherIdMatch) return;
+          const teacherNameText = String(st.teacher_name || st.teacherName || '').trim().toLowerCase();
+          const teacherNameMatch = firstName && lastName
+            ? (teacherNameText.includes(firstName) && teacherNameText.includes(lastName))
+            : false;
+          if (!teacherIdMatch && !teacherNameMatch) return;
 
           rows.push({
             classId: st.class_id || cls.id,
