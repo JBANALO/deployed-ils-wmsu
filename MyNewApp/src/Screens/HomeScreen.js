@@ -19,6 +19,7 @@ export default function HomeScreen() {
   const [pendingEmailData, setPendingEmailData] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [teacherSchedules, setTeacherSchedules] = useState([]);
+  const [activeSchoolYearLabel, setActiveSchoolYearLabel] = useState('');
   const lastDateRef = useRef(new Date().toISOString().split('T')[0]);
   const { attendanceLog, addManualAbsence, recordAttendance, loadAttendanceLogs } = useAttendance();
   const { user, userData, loading: authLoading } = useAuth();
@@ -73,10 +74,19 @@ export default function HomeScreen() {
         loadStudents();
         loadAttendanceLogs();
         loadTeacherSchedules();
+        loadActiveSchoolYear();
         setRefreshKey(prev => prev + 1);
       }
     }, [user])
   );
+
+  const getLocalDateString = (value = new Date()) => {
+    const d = new Date(value);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
 
   const loadStudents = async () => {
     if (!user) return;
@@ -278,37 +288,34 @@ export default function HomeScreen() {
     }
   };
 
+  const loadActiveSchoolYear = async () => {
+    try {
+      const response = await authAPI.getActiveSchoolYear(user?.token);
+      const sy = response?.data || response?.schoolYear || response || null;
+      const label = sy?.label || sy?.name || '';
+      setActiveSchoolYearLabel(label);
+    } catch (error) {
+      console.error('Error loading active school year:', error);
+      setActiveSchoolYearLabel('');
+    }
+  };
+
   const getTodaySubjectSummaries = () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString(new Date());
     const now = new Date();
     const nowMinutes = (now.getHours() * 60) + now.getMinutes();
 
     const todayLogs = attendanceLog.filter(log => normalizeDate(log.date) === today);
-    let todaysSchedules = teacherSchedules.filter(s => doesScheduleMatchToday(s.day, now));
+    const isScheduleActiveNow = (schedule) => {
+      const startMinutes = toMinutes(schedule.start_time);
+      const endMinutes = toMinutes(schedule.end_time);
+      if (startMinutes === null || endMinutes === null) return false;
+      return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+    };
 
-    // Fallback: derive schedule-like rows from today's attendance records with subject metadata.
-    if (todaysSchedules.length === 0) {
-      const fromLogs = [];
-      const seen = new Set();
-      todayLogs.forEach(log => {
-        const subjectName = String(log.subject || '').trim();
-        if (!subjectName) return;
-        const classLabel = `${log.gradeLevel || ''} - ${log.section || ''}`.trim();
-        const key = [classLabel, subjectName].join('|').toLowerCase();
-        if (seen.has(key)) return;
-        seen.add(key);
-        fromLogs.push({
-          classId: log.classId || null,
-          grade: log.gradeLevel || '',
-          section: log.section || '',
-          subject: subjectName,
-          day: 'Daily',
-          start_time: null,
-          end_time: null,
-        });
-      });
-      todaysSchedules = fromLogs;
-    }
+    const todaysSchedules = teacherSchedules.filter(
+      s => doesScheduleMatchToday(s.day, now) && isScheduleActiveNow(s)
+    );
 
     return todaysSchedules.map(schedule => {
       const sectionStudents = students.filter(student => {
@@ -646,6 +653,7 @@ WMSU ILS - Elementary Department`;
         loadAttendanceLogs();
         loadStudents();
         loadTeacherSchedules();
+        loadActiveSchoolYear();
         setRefreshKey(prev => prev + 1);
       }
     }, 60000); // Check every minute
@@ -656,7 +664,7 @@ WMSU ILS - Elementary Department`;
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([loadStudents(), loadAttendanceLogs(), loadTeacherSchedules()]);
+      await Promise.all([loadStudents(), loadAttendanceLogs(), loadTeacherSchedules(), loadActiveSchoolYear()]);
       setRefreshKey(prev => prev + 1);
     } catch (error) {
       console.error('Refresh error:', error);
@@ -705,6 +713,9 @@ WMSU ILS - Elementary Department`;
           <View style={{ flex: 1 }}>
             <Text style={styles.welcomeText}>Welcome, {teacher.name}!</Text>
             <Text style={styles.departmentText}>{teacher.department}</Text>
+            <Text style={styles.schoolYearText}>
+              School Year: {activeSchoolYearLabel || 'Loading...'}
+            </Text>
             <Text style={styles.dateText}>
               {currentTime.toLocaleDateString('en-US', { 
                 weekday: 'long', 
@@ -740,10 +751,10 @@ WMSU ILS - Elementary Department`;
           {subjectSummaries.length === 0 ? (
             <View style={styles.periodCard}>
               <View style={styles.periodHeader}>
-                <Text style={styles.periodTitle}>No Subject Schedule Today</Text>
-                <Icon name="calendar-remove" size={24} color="#8B0000" />
+                <Text style={styles.periodTitle}>No Active Class Right Now</Text>
+                <Icon name="clock-outline" size={24} color="#8B0000" />
               </View>
-              <Text style={{ color: '#666', marginTop: 8 }}>No subject assignments matched for today's day/schedule.</Text>
+              <Text style={{ color: '#666', marginTop: 8 }}>This panel only shows subjects during their scheduled teaching time.</Text>
             </View>
           ) : (
             <View style={styles.compactSubjectListCard}>
@@ -1097,6 +1108,7 @@ const styles = StyleSheet.create({
   },
   welcomeText: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
   departmentText: { fontSize: 14, color: '#fff', opacity: 0.9, marginTop: 4 },
+  schoolYearText: { fontSize: 12, color: '#fff', opacity: 0.85, marginTop: 4 },
   dateText: { fontSize: 12, color: '#fff', opacity: 0.8, marginTop: 8 },
   holidayBadge: {
     flexDirection: 'row',
