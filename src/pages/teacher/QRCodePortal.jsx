@@ -67,10 +67,9 @@ export default function QRCodePortal() {
           const nextActiveId = String(activeSy.id);
           setActiveSchoolYearId(nextActiveId);
           setTeacherActiveSchoolYearId(nextActiveId);
-          if (!selectedSchoolYearId) {
-            setSelectedSchoolYearId(nextActiveId);
-            setTeacherViewingSchoolYearId(nextActiveId);
-          }
+          // Keep teacher web pages aligned to active SY so mobile/web attendance stay connected.
+          setSelectedSchoolYearId(nextActiveId);
+          setTeacherViewingSchoolYearId(nextActiveId);
         }
       } catch (error) {
         console.warn('Could not load active school year:', error.message);
@@ -113,11 +112,19 @@ export default function QRCodePortal() {
         : Array.isArray(attendanceResponse.data) 
         ? attendanceResponse.data 
         : [];
+
+      const normalizeDate = (value) => {
+        if (!value) return '';
+        const raw = String(value);
+        if (raw.includes('T')) return raw.split('T')[0];
+        if (raw.includes(' ')) return raw.split(' ')[0];
+        return raw;
+      };
       
       console.log('All attendance records:', allAttendance.length);
       
       // Filter by selected date
-      const dateAttendance = allAttendance.filter(record => record.date === date);
+      const dateAttendance = allAttendance.filter(record => normalizeDate(record.date) === String(date));
       console.log(`Attendance records for ${date}:`, dateAttendance.length, dateAttendance);
       setAttendanceRecords(dateAttendance);
       
@@ -142,13 +149,19 @@ export default function QRCodePortal() {
     console.log('Getting students with attendance. Students:', students.length, 'Records:', attendanceRecords.length);
     
     return students.map(student => {
+      const candidateIds = new Set(
+        [student.id, student.lrn, student.studentId]
+          .filter(Boolean)
+          .map(v => String(v))
+      );
       // Find attendance record for this student on selected date
       // Match by UUID, LRN, or studentId
       const record = attendanceRecords.find(r => {
-        const studentIdMatch = r.studentId === student.id;
-        const lrnMatch = r.studentId === student.lrn;
-        const customIdMatch = r.studentId === student.studentId;
-        const nameLrnMatch = student.lrn && r.studentId === student.lrn;
+        const recordId = String(r.studentId || '');
+        const studentIdMatch = candidateIds.has(recordId);
+        const lrnMatch = false;
+        const customIdMatch = false;
+        const nameLrnMatch = false;
         
         return studentIdMatch || lrnMatch || customIdMatch || nameLrnMatch;
       });
@@ -273,15 +286,27 @@ export default function QRCodePortal() {
         
         // Get today's date in YYYY-MM-DD format
         const today = new Date().toISOString().split('T')[0];
+        const normalizeDate = (value) => {
+          if (!value) return '';
+          const raw = String(value);
+          if (raw.includes('T')) return raw.split('T')[0];
+          if (raw.includes(' ')) return raw.split(' ')[0];
+          return raw;
+        };
         
         // Filter today's attendance records
-        const todayAttendance = allAttendance.filter(record => record.date === today);
+        const todayAttendance = allAttendance.filter(record => normalizeDate(record.date) === today);
         
         console.log('Today\'s attendance records:', todayAttendance.length);
         
         // Update student data with attendance info
         const studentsWithAttendance = studentData.map(student => {
-          const attendanceRecord = todayAttendance.find(r => r.studentId === student.id);
+          const candidateIds = new Set(
+            [student.id, student.lrn, student.studentId]
+              .filter(Boolean)
+              .map(v => String(v))
+          );
+          const attendanceRecord = todayAttendance.find(r => candidateIds.has(String(r.studentId || '')));
           return {
             ...student,
             attendance: attendanceRecord ? attendanceRecord.status : 'Not Scanned',

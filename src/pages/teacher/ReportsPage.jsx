@@ -120,10 +120,9 @@ export default function ReportsPage() {
         if (activeSy?.id) {
           const nextActiveId = String(activeSy.id);
           setTeacherActiveSchoolYearId(nextActiveId);
-          if (!selectedSchoolYearId) {
-            setSelectedSchoolYearId(nextActiveId);
-            setTeacherViewingSchoolYearId(nextActiveId);
-          }
+          // Keep reports synced to active SY so mobile and web show the same attendance.
+          setSelectedSchoolYearId(nextActiveId);
+          setTeacherViewingSchoolYearId(nextActiveId);
         }
       } catch (error) {
         console.warn('Could not load active school year:', error.message);
