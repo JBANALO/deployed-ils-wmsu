@@ -15,6 +15,19 @@ export default function LogScreen() {
   const { attendanceLog, loadAttendanceLogs } = useAttendance();
   const { user } = useAuth();
 
+  const normalizeDateString = (value) => {
+    if (!value) return '';
+    const raw = String(value);
+    if (raw.includes('/')) {
+      const parts = raw.split('/');
+      if (parts.length === 3) {
+        return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+      }
+    }
+    if (raw.includes('T')) return raw.split('T')[0];
+    return raw;
+  };
+
   // Check if selected date is a school day (not weekend)
   const isSchoolDay = (date) => {
     const day = date.getDay();
@@ -96,15 +109,7 @@ export default function LogScreen() {
   const getFilteredLogs = () => {
     const dateString = getTodayString();
     let logs = attendanceLog.filter(log => {
-      let logDate = log.date;
-      // Normalize old M/D/YYYY format if present
-      if (logDate && logDate.includes('/')) {
-        const parts = logDate.split('/');
-        if (parts.length === 3) {
-          logDate = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
-        }
-      }
-      return logDate === dateString;
+      return normalizeDateString(log.date) === dateString;
     });
 
     if (selectedSubject !== 'all') {
@@ -118,13 +123,7 @@ export default function LogScreen() {
     const dateString = getTodayString();
     const set = new Set();
     attendanceLog.forEach(log => {
-      let logDate = log.date;
-      if (logDate && String(logDate).includes('/')) {
-        const parts = String(logDate).split('/');
-        if (parts.length === 3) {
-          logDate = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
-        }
-      }
+      const logDate = normalizeDateString(log.date);
       if (logDate !== dateString) return;
       const subject = String(log.subject || '').trim();
       if (subject) set.add(subject);
@@ -145,11 +144,15 @@ export default function LogScreen() {
         };
       }
 
-      // Normalize studentId comparison (convert to string for comparison)
-      const studentIdStr = String(student.studentId || student.lrn || student.id || '');
+      // Match by any known student identifier so records survive refreshes.
+      const candidateIds = new Set(
+        [student.studentId, student.lrn, student.id]
+          .filter(Boolean)
+          .map(v => String(v))
+      );
       
       const studentLogs = logs
-        .filter(log => String(log.studentId) === studentIdStr)
+        .filter(log => candidateIds.has(String(log.studentId)))
         .sort((a, b) => new Date(b.timestamp || b.createdAt || 0) - new Date(a.timestamp || a.createdAt || 0));
 
       const subjectLog = studentLogs[0] || null;
@@ -311,12 +314,7 @@ export default function LogScreen() {
                     </View>
 
                     {section.students
-                      .filter(student => {
-                        const isPresentOrLate = (status) =>
-                          status === 'present' || status === 'Present' ||
-                          status === 'late' || status === 'Late';
-                        return isPresentOrLate(student.subjectLog?.status);
-                      })
+                      .filter(student => Boolean(student.subjectLog))
                       .map((student, index) => (
                       <View key={student.id} style={styles.studentRow}>
                         <View style={styles.studentInfo}>
@@ -344,13 +342,8 @@ export default function LogScreen() {
                       </View>
                     ))}
 
-                    {section.students.filter(student => {
-                        const isPresentOrLate = (status) =>
-                          status === 'present' || status === 'Present' ||
-                          status === 'late' || status === 'Late';
-                        return isPresentOrLate(student.subjectLog?.status);
-                      }).length === 0 && (
-                      <Text style={{ textAlign: 'center', color: '#999', padding: 16 }}>No present or late students yet</Text>
+                    {section.students.filter(student => Boolean(student.subjectLog)).length === 0 && (
+                      <Text style={{ textAlign: 'center', color: '#999', padding: 16 }}>No attendance records yet</Text>
                     )}
                   </View>
                 );

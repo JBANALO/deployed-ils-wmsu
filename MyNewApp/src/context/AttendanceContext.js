@@ -17,6 +17,27 @@ export function AttendanceProvider({ children }) {
   const [attendanceLog, setAttendanceLog] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  const getLocalDateString = (date = new Date()) => {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const normalizeDateString = (value) => {
+    if (!value) return '';
+    const raw = String(value);
+    if (raw.includes('/')) {
+      const parts = raw.split('/');
+      if (parts.length === 3) {
+        return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+      }
+    }
+    if (raw.includes('T')) return raw.split('T')[0];
+    return raw;
+  };
+
   // Load attendance logs
   useEffect(() => {
     if (user) {
@@ -54,9 +75,18 @@ export function AttendanceProvider({ children }) {
           const localOnly = prev.filter(l =>
             String(l.id).startsWith('local_') &&
             !serverRecords.some(s =>
-              s.studentId === l.studentId &&
-              s.date === l.date &&
-              s.period === l.period
+              String(s.studentId) === String(l.studentId) &&
+              normalizeDateString(s.date) === normalizeDateString(l.date) &&
+              (() => {
+                const localSubject = String(l.subject || '').trim().toLowerCase();
+                if (localSubject) {
+                  const serverSubject = String(s.subject || '').trim().toLowerCase();
+                  const localClass = String(l.classId || '').trim();
+                  const serverClass = String(s.classId || '').trim();
+                  return serverSubject === localSubject && (!localClass || serverClass === localClass);
+                }
+                return String(s.period || '').toLowerCase() === String(l.period || '').toLowerCase();
+              })()
             )
           );
           return [...serverRecords, ...localOnly];
@@ -123,8 +153,8 @@ export function AttendanceProvider({ children }) {
 
   // Get today's attendance
   const getTodayAttendance = () => {
-    const today = new Date().toISOString().split('T')[0];
-    return attendanceLog.filter(log => log.date === today);
+    const today = getLocalDateString();
+    return attendanceLog.filter(log => normalizeDateString(log.date) === today);
   };
 
   // Get attendance by date
@@ -159,19 +189,11 @@ export function AttendanceProvider({ children }) {
 
   // Get today's attendance statistics
   const getTodayStats = () => {
-    // Use ISO date format to match server response (YYYY-MM-DD)
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
 
     const todayLogs = attendanceLog.filter(log => {
       // Normalize log.date - server returns YYYY-MM-DD, local adds may use other formats
-      let logDate = log.date;
-      if (logDate && logDate.includes('/')) {
-        // Convert M/D/YYYY to YYYY-MM-DD
-        const parts = logDate.split('/');
-        if (parts.length === 3) {
-          logDate = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
-        }
-      }
+      const logDate = normalizeDateString(log.date);
       return logDate === today;
     });
 
@@ -206,7 +228,7 @@ export function AttendanceProvider({ children }) {
         teacherId: user.id,
         teacherName: user.name,
         timestamp: new Date().toISOString(),
-        date: new Date().toISOString().split('T')[0],
+        date: getLocalDateString(),
         time: new Date().toLocaleTimeString(),
         status: 'absent',
         period: period || getAttendancePeriod()
@@ -243,7 +265,7 @@ export function AttendanceProvider({ children }) {
         teacherId: user.id,
         teacherName: user.name,
         timestamp: new Date().toISOString(),
-        date: new Date().toISOString().split('T')[0],
+        date: getLocalDateString(),
         time: new Date().toLocaleTimeString(),
         status: 'present',
         period: period || getAttendancePeriod()
@@ -277,7 +299,7 @@ export function AttendanceProvider({ children }) {
     if (!user) return { success: false, error: 'User not logged in' };
 
     const now = new Date();
-    const dateStr = now.toISOString().split('T')[0];
+    const dateStr = getLocalDateString(now);
     const timeStr = now.toLocaleTimeString();
     const currentStatus = status || 'present';
     const currentPeriod = period || getAttendancePeriod();

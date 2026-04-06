@@ -343,10 +343,13 @@ export default function ReportsPage() {
       // Group by student for monthly summary
       const studentMonthlyData = {};
       studentsData.forEach(student => {
+        const candidateIds = new Set(
+          [student.id, student.lrn, student.studentId]
+            .filter(Boolean)
+            .map(v => String(v))
+        );
         const studentRecords = subjectScopedAttendance.filter(r => 
-          r.studentId === student.id || 
-          r.studentId === student.lrn ||
-          r.studentId === student.studentId
+          candidateIds.has(String(r.studentId))
         );
         
         const presentDays = studentRecords.filter(r => r.status?.toLowerCase() === 'present').length;
