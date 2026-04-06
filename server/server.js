@@ -2177,7 +2177,7 @@ app.get('/', (req, res, next) => {
 
 app.get('/api/version', (req, res) => {
 
-  res.json({ version: '3.6', server: 'server/server.js', hasGradesEndpoint: true, deployedAt: '2026-03-28T00:00:00Z' });
+  res.json({ version: '3.7-attendance-hotfix-check', server: 'server/server.js', hasGradesEndpoint: true, deployedAt: '2026-04-06T18:35:00Z' });
 
 });
 
