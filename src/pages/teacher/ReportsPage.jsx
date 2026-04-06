@@ -72,6 +72,22 @@ export default function ReportsPage() {
   const [allSubjects, setAllSubjects] = useState([]);
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
 
+  const isPassingGradeValue = (value) => {
+    const num = parseFloat(value);
+    return !isNaN(num) && num > 0;
+  };
+
+  const isStudentReportCardComplete = (student) => {
+    const grades = student?.grades || {};
+    const subjects = Object.keys(grades);
+    if (subjects.length === 0) return false;
+
+    return subjects.every((subject) => {
+      const quarterGrades = grades[subject] || {};
+      return ['q1', 'q2', 'q3', 'q4'].every((q) => isPassingGradeValue(quarterGrades[q]));
+    });
+  };
+
   const months = [
     { value: 1, label: "January" },
     { value: 2, label: "February" },
@@ -960,9 +976,20 @@ export default function ReportsPage() {
           {/* Overall Average Ranking */}
           {gradesSubTab === 'overall' && (
             <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
+              {(() => {
+                const sortedStudents = [...students].sort((a, b) => (b.average || 0) - (a.average || 0));
+                const completeStudents = sortedStudents.filter(isStudentReportCardComplete);
+                const isRankingActive = sortedStudents.length > 0 && completeStudents.length === sortedStudents.length;
+                const pendingCount = sortedStudents.length - completeStudents.length;
+                const rowsToRank = isRankingActive ? sortedStudents : [];
+
+                return (
+                  <>
               <div className="bg-gradient-to-r from-red-800 to-red-900 text-white px-6 py-5">
                 <h3 className="text-xl font-bold">🏆 Overall Average Ranking</h3>
-                <p className="text-red-200 text-sm mt-1">{selectedSection || 'All Sections'} — all graded students</p>
+                <p className="text-red-200 text-sm mt-1">
+                  {selectedSection || 'All Sections'} — {isRankingActive ? 'ranking active' : 'ranking inactive'}
+                </p>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -979,7 +1006,13 @@ export default function ReportsPage() {
                   <tbody className="divide-y divide-gray-200">
                     {loading ? (
                       <tr><td colSpan={4 + allSubjects.length} className="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
-                    ) : [...students].filter(s => s.average > 0).sort((a, b) => (b.average || 0) - (a.average || 0)).map((student, idx) => (
+                    ) : !isRankingActive ? (
+                      <tr>
+                        <td colSpan={6 + allSubjects.length} className="px-6 py-8 text-center text-amber-700 bg-amber-50">
+                          Ranking is inactive. Please complete all report card grades (Q1-Q4 per subject) for all students first. Pending students: {pendingCount}
+                        </td>
+                      </tr>
+                    ) : rowsToRank.map((student, idx) => (
                       <tr key={student.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="px-4 py-3 font-bold text-gray-700">#{idx + 1}</td>
                         <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">{student.lastName}, {student.firstName}</td>
@@ -1011,6 +1044,9 @@ export default function ReportsPage() {
                   </tbody>
                 </table>
               </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
