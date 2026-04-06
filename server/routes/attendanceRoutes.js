@@ -8,6 +8,7 @@ let attendanceSyEnsured = false;
 let studentsSyChecked = false;
 let attendanceSubjectColumnsEnsured = false;
 let attendanceStatusColumnEnsured = false;
+const autoAbsentRunMarker = new Map();
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -354,6 +355,32 @@ const runAutoAbsentGeneration = async ({ schoolYearId, date, dryRun }) => {
   }
 
   return summary;
+};
+
+const maybeRunAutoAbsentForToday = async ({ schoolYearId, date }) => {
+  const targetDate = getDateString(date || new Date());
+  const today = getDateString(new Date());
+  if (targetDate !== today) return;
+
+  const sy = schoolYearId ? await getSchoolYearById(Number(schoolYearId)) : await getActiveSchoolYear();
+  if (!sy?.id) return;
+
+  // Throttle to avoid running heavy generation on every request.
+  const markerKey = `${sy.id}:${targetDate}`;
+  const nowMs = Date.now();
+  const lastMs = Number(autoAbsentRunMarker.get(markerKey) || 0);
+  if (nowMs - lastMs < 60 * 1000) return;
+
+  autoAbsentRunMarker.set(markerKey, nowMs);
+  try {
+    await runAutoAbsentGeneration({
+      schoolYearId: sy.id,
+      date: targetDate,
+      dryRun: false,
+    });
+  } catch (autoErr) {
+    console.warn('[attendance] auto-absent run skipped:', autoErr.message);
+  }
 };
 
 // Helper to normalize status values to valid ENUM values
@@ -713,6 +740,10 @@ router.get('/', async (req, res) => {
       console.warn('[attendance GET] school_year_id column unavailable, continuing without school-year DB filter:', ensureErr.message);
     }
     const { date, studentId, gradeLevel, section, schoolYearId } = req.query;
+
+    // Keep absent records up-to-date for today's subject schedules.
+    await maybeRunAutoAbsentForToday({ schoolYearId, date });
+
     let targetSy;
     if (schoolYearId && canFilterBySchoolYear) {
       try {
@@ -852,6 +883,8 @@ router.get('/today', async (req, res) => {
     await ensureAttendanceSchoolYearColumn();
     await ensureAttendanceSubjectColumns();
     await ensureAttendanceStatusColumn();
+    await maybeRunAutoAbsentForToday({ schoolYearId: req.query.schoolYearId, date: new Date() });
+
     let targetSy;
     try {
       targetSy = await resolveTargetSchoolYear(req.query.schoolYearId);
