@@ -896,39 +896,37 @@ router.post('/', async (req, res) => {
   } catch (error) {
     console.error('Error recording attendance:', error);
 
-    if (isBrokenStatusEnumError(error)) {
-      try {
-        const fallbackRecord = await saveAttendanceToFallback(req.body || {});
-        return res.json({
-          success: true,
-          message: 'Attendance recorded successfully (fallback storage)',
-          emailSent: false,
-          emailError: 'Primary attendance table is in recovery mode',
-          data: {
-            id: fallbackRecord.id,
-            studentId: fallbackRecord.studentId,
-            studentName: fallbackRecord.studentName,
-            gradeLevel: fallbackRecord.gradeLevel,
-            section: fallbackRecord.section,
-            date: getDateString(fallbackRecord.date),
-            timestamp: fallbackRecord.timestamp,
-            time: fallbackRecord.time,
-            status: fallbackRecord.status,
-            period: fallbackRecord.period,
-            classId: fallbackRecord.classId,
-            subject: fallbackRecord.subject,
-            scheduleDay: fallbackRecord.scheduleDay,
-            scheduleStartTime: fallbackRecord.scheduleStartTime,
-            scheduleEndTime: fallbackRecord.scheduleEndTime,
-            autoMarked: fallbackRecord.autoMarked,
-            location: fallbackRecord.location,
-            teacherId: fallbackRecord.teacherId,
-            teacherName: fallbackRecord.teacherName
-          }
-        });
-      } catch (fallbackErr) {
-        console.error('Fallback save also failed:', fallbackErr);
-      }
+    try {
+      const fallbackRecord = await saveAttendanceToFallback(req.body || {});
+      return res.json({
+        success: true,
+        message: 'Attendance recorded successfully (fallback storage)',
+        emailSent: false,
+        emailError: 'Primary attendance table is in recovery mode',
+        data: {
+          id: fallbackRecord.id,
+          studentId: fallbackRecord.studentId,
+          studentName: fallbackRecord.studentName,
+          gradeLevel: fallbackRecord.gradeLevel,
+          section: fallbackRecord.section,
+          date: getDateString(fallbackRecord.date),
+          timestamp: fallbackRecord.timestamp,
+          time: fallbackRecord.time,
+          status: fallbackRecord.status,
+          period: fallbackRecord.period,
+          classId: fallbackRecord.classId,
+          subject: fallbackRecord.subject,
+          scheduleDay: fallbackRecord.scheduleDay,
+          scheduleStartTime: fallbackRecord.scheduleStartTime,
+          scheduleEndTime: fallbackRecord.scheduleEndTime,
+          autoMarked: fallbackRecord.autoMarked,
+          location: fallbackRecord.location,
+          teacherId: fallbackRecord.teacherId,
+          teacherName: fallbackRecord.teacherName
+        }
+      });
+    } catch (fallbackErr) {
+      console.error('Fallback save also failed:', fallbackErr);
     }
 
     res.status(500).json({
@@ -1001,19 +999,17 @@ router.get('/', async (req, res) => {
     } catch (queryError) {
       console.warn('[attendance GET] query error:', queryError.message);
 
-      if (isBrokenStatusEnumError(queryError)) {
-        try {
-          await ensureAttendanceFallbackTable();
-          const fallbackSql = sqlQuery.replace(/\battendance\b/g, 'attendance_fallback');
-          records = await query(fallbackSql, params);
-        } catch (fallbackReadErr) {
-          console.error('[attendance GET] fallback table query failed:', fallbackReadErr.message);
-          return res.status(500).json({
-            success: false,
-            message: 'Failed to fetch attendance records',
-            error: fallbackReadErr.message
-          });
-        }
+      try {
+        await ensureAttendanceFallbackTable();
+        const fallbackSql = sqlQuery.replace(/\battendance\b/g, 'attendance_fallback');
+        records = await query(fallbackSql, params);
+      } catch (fallbackReadErr) {
+        console.error('[attendance GET] fallback table query failed:', fallbackReadErr.message);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to fetch attendance records',
+          error: fallbackReadErr.message
+        });
       }
 
       if (records) {
@@ -1161,40 +1157,38 @@ router.get('/today', async (req, res) => {
   } catch (error) {
     console.error('Error fetching today\'s attendance:', error);
 
-    if (isBrokenStatusEnumError(error)) {
-      try {
-        await ensureAttendanceFallbackTable();
-        const targetSy = await resolveTargetSchoolYear(req.query.schoolYearId);
-        const today = getDateString(new Date());
-        const records = await query('SELECT * FROM attendance_fallback WHERE date = ? AND school_year_id = ? ORDER BY timestamp DESC', [today, targetSy.id]);
-        const transformedRecords = records.map(record => ({
-          id: record.id,
-          studentId: record.studentId,
-          studentName: record.studentName,
-          gradeLevel: record.gradeLevel,
-          section: record.section,
-          date: getDateString(record.date),
-          timestamp: record.timestamp,
-          time: record.time,
-          status: record.status,
-          period: record.period,
-          classId: record.classId,
-          subject: record.subject,
-          scheduleDay: record.scheduleDay,
-          scheduleStartTime: record.scheduleStartTime,
-          scheduleEndTime: record.scheduleEndTime,
-          autoMarked: record.autoMarked,
-          location: record.location,
-          teacherId: record.teacherId,
-          teacherName: record.teacherName,
-          deviceInfo: record.deviceInfo,
-          qrData: record.qrData,
-          createdAt: record.createdAt
-        }));
-        return res.json({ success: true, data: transformedRecords, count: transformedRecords.length });
-      } catch (fallbackErr) {
-        console.error('Fallback today attendance read failed:', fallbackErr.message);
-      }
+    try {
+      await ensureAttendanceFallbackTable();
+      const targetSy = await resolveTargetSchoolYear(req.query.schoolYearId);
+      const today = getDateString(new Date());
+      const records = await query('SELECT * FROM attendance_fallback WHERE date = ? AND school_year_id = ? ORDER BY timestamp DESC', [today, targetSy.id]);
+      const transformedRecords = records.map(record => ({
+        id: record.id,
+        studentId: record.studentId,
+        studentName: record.studentName,
+        gradeLevel: record.gradeLevel,
+        section: record.section,
+        date: getDateString(record.date),
+        timestamp: record.timestamp,
+        time: record.time,
+        status: record.status,
+        period: record.period,
+        classId: record.classId,
+        subject: record.subject,
+        scheduleDay: record.scheduleDay,
+        scheduleStartTime: record.scheduleStartTime,
+        scheduleEndTime: record.scheduleEndTime,
+        autoMarked: record.autoMarked,
+        location: record.location,
+        teacherId: record.teacherId,
+        teacherName: record.teacherName,
+        deviceInfo: record.deviceInfo,
+        qrData: record.qrData,
+        createdAt: record.createdAt
+      }));
+      return res.json({ success: true, data: transformedRecords, count: transformedRecords.length });
+    } catch (fallbackErr) {
+      console.error('Fallback today attendance read failed:', fallbackErr.message);
     }
 
     res.status(500).json({
@@ -1256,40 +1250,38 @@ router.get('/student/:id', async (req, res) => {
   } catch (error) {
     console.error('Error fetching student attendance:', error);
 
-    if (isBrokenStatusEnumError(error)) {
-      try {
-        await ensureAttendanceFallbackTable();
-        const { id } = req.params;
-        const targetSy = await resolveTargetSchoolYear(req.query.schoolYearId);
-        const records = await query('SELECT * FROM attendance_fallback WHERE studentId = ? AND school_year_id = ? ORDER BY date DESC', [id, targetSy.id]);
-        const transformedRecords = records.map(record => ({
-          id: record.id,
-          studentId: record.studentId,
-          studentName: record.studentName,
-          gradeLevel: record.gradeLevel,
-          section: record.section,
-          date: getDateString(record.date),
-          timestamp: record.timestamp,
-          time: record.time,
-          status: record.status,
-          period: record.period,
-          classId: record.classId,
-          subject: record.subject,
-          scheduleDay: record.scheduleDay,
-          scheduleStartTime: record.scheduleStartTime,
-          scheduleEndTime: record.scheduleEndTime,
-          autoMarked: record.autoMarked,
-          location: record.location,
-          teacherId: record.teacherId,
-          teacherName: record.teacherName,
-          deviceInfo: record.deviceInfo,
-          qrData: record.qrData,
-          createdAt: record.createdAt
-        }));
-        return res.json({ success: true, data: transformedRecords, count: transformedRecords.length });
-      } catch (fallbackErr) {
-        console.error('Fallback student attendance read failed:', fallbackErr.message);
-      }
+    try {
+      await ensureAttendanceFallbackTable();
+      const { id } = req.params;
+      const targetSy = await resolveTargetSchoolYear(req.query.schoolYearId);
+      const records = await query('SELECT * FROM attendance_fallback WHERE studentId = ? AND school_year_id = ? ORDER BY date DESC', [id, targetSy.id]);
+      const transformedRecords = records.map(record => ({
+        id: record.id,
+        studentId: record.studentId,
+        studentName: record.studentName,
+        gradeLevel: record.gradeLevel,
+        section: record.section,
+        date: getDateString(record.date),
+        timestamp: record.timestamp,
+        time: record.time,
+        status: record.status,
+        period: record.period,
+        classId: record.classId,
+        subject: record.subject,
+        scheduleDay: record.scheduleDay,
+        scheduleStartTime: record.scheduleStartTime,
+        scheduleEndTime: record.scheduleEndTime,
+        autoMarked: record.autoMarked,
+        location: record.location,
+        teacherId: record.teacherId,
+        teacherName: record.teacherName,
+        deviceInfo: record.deviceInfo,
+        qrData: record.qrData,
+        createdAt: record.createdAt
+      }));
+      return res.json({ success: true, data: transformedRecords, count: transformedRecords.length });
+    } catch (fallbackErr) {
+      console.error('Fallback student attendance read failed:', fallbackErr.message);
     }
 
     res.status(500).json({
