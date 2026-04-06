@@ -289,10 +289,23 @@ export default function HomeScreen() {
 
   const toMinutes = (timeText) => {
     const raw = String(timeText || '').trim();
-    if (!raw.includes(':')) return null;
-    const [h, m] = raw.split(':');
-    const hh = Number(h);
-    const mm = Number(m);
+    if (!raw) return null;
+
+    const meridiemMatch = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+    if (meridiemMatch) {
+      let hh = Number(meridiemMatch[1]);
+      const mm = Number(meridiemMatch[2]);
+      const ap = String(meridiemMatch[3]).toUpperCase();
+      if (ap === 'PM' && hh < 12) hh += 12;
+      if (ap === 'AM' && hh === 12) hh = 0;
+      if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+      return (hh * 60) + mm;
+    }
+
+    const basicMatch = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!basicMatch) return null;
+    const hh = Number(basicMatch[1]);
+    const mm = Number(basicMatch[2]);
     if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
     return (hh * 60) + mm;
   };
@@ -318,11 +331,19 @@ export default function HomeScreen() {
         ? classes
         : [];
 
+      const allClasses = await authAPI.getAllClasses(user?.token);
+      const allClassList = Array.isArray(allClasses?.data)
+        ? allClasses.data
+        : Array.isArray(allClasses)
+        ? allClasses
+        : [];
+
       const scheduleRows = [];
       const firstName = String(userData?.firstName || user?.firstName || '').trim().toLowerCase();
       const lastName = String(userData?.lastName || user?.lastName || '').trim().toLowerCase();
 
-      classList.forEach(cls => {
+      const collectRows = (sourceClasses) => {
+        sourceClasses.forEach(cls => {
         const sts = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
         if (sts.length > 0) {
           sts.forEach(st => {
@@ -364,7 +385,11 @@ export default function HomeScreen() {
             });
           });
         }
-      });
+        });
+      };
+
+      collectRows(classList);
+      collectRows(allClassList);
 
       const seen = new Set();
       const deduped = scheduleRows.filter(row => {
@@ -374,7 +399,20 @@ export default function HomeScreen() {
         return true;
       });
 
-      setTeacherSchedules(deduped);
+      // If a timed row exists for same class+subject+day, drop the no-time duplicate.
+      const hasTimedForScope = new Set(
+        deduped
+          .filter(r => r.start_time && r.end_time)
+          .map(r => [r.classId, r.subject, r.day].join('|').toLowerCase())
+      );
+
+      const cleaned = deduped.filter(r => {
+        const scopeKey = [r.classId, r.subject, r.day].join('|').toLowerCase();
+        if (r.start_time && r.end_time) return true;
+        return !hasTimedForScope.has(scopeKey);
+      });
+
+      setTeacherSchedules(cleaned);
     } catch (error) {
       console.error('Error loading teacher schedules:', error);
       setTeacherSchedules([]);
