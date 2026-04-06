@@ -447,6 +447,9 @@ export default function ScanQRScreen() {
           section: student.section || 'N/A',
           status: status,
           period: period,
+          subject: student.subject || null,
+          scheduleStartTime: student.scheduleStartTime || null,
+          scheduleEndTime: student.scheduleEndTime || null,
           time: scanTime,
           teacherName: getTeacherName()
         })

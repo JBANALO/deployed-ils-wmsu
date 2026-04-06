@@ -548,6 +548,12 @@ router.post('/', async (req, res) => {
           section: studentSection,
           status: currentStatus,
           period: currentPeriod,
+          subject: currentSubject,
+          scheduleStartTime: scheduleStartTime || rec.scheduleStartTime || null,
+          scheduleEndTime: scheduleEndTime || rec.scheduleEndTime || null,
+          subject: currentSubject,
+          scheduleStartTime: scheduleStartTime || null,
+          scheduleEndTime: scheduleEndTime || null,
           time: currentTime,
           teacherName: teacherName || 'School Administration'
         });
@@ -898,6 +904,9 @@ router.post('/send-email', async (req, res) => {
       section,
       status,
       period,
+      subject,
+      scheduleStartTime,
+      scheduleEndTime,
       time,
       teacherName
     } = req.body;
@@ -925,7 +934,10 @@ router.post('/send-email', async (req, res) => {
       gradeLevel,
       section,
       status: status || 'present',
-      period: period || 'morning',
+      period: period || 'subject',
+      subject: subject || null,
+      scheduleStartTime: scheduleStartTime || null,
+      scheduleEndTime: scheduleEndTime || null,
       time: time || new Date().toLocaleTimeString(),
       teacherName
     });
