@@ -428,12 +428,6 @@ const downloadAsPDF = async (element, filename = "February") => {
         }),
         new Paragraph({
           children: [
-            new TextRun({ text: "Grade Level: ___________________", size: 20 }),
-          ],
-          spacing: { after: 100 }
-        }),
-        new Paragraph({
-          children: [
             new TextRun({ text: `Month: ${monthName}`, size: 20 }),
           ],
           spacing: { after: 100 }
@@ -443,7 +437,7 @@ const downloadAsPDF = async (element, filename = "February") => {
             new TextRun({ text: `Section: ${selectedSection || "___________________"}`, size: 20 }),
           ],
           spacing: { after: 400 }
-        })
+        }),
       );
       
       // Table headers
@@ -702,7 +696,6 @@ const downloadAsPDF = async (element, filename = "February") => {
               </div>
               <div>
                 <p><span className="font-semibold">School Year:</span> {selectedYear}</p>
-                <p><span className="font-semibold">Grade Level:</span> {activeGradeLevel || "___________________"}</p>
                 <p><span className="font-semibold">Month:</span> {monthName}</p>
               </div>
             </div>
