@@ -8,10 +8,11 @@
 // Get IP on Windows: ipconfig (look for IPv4 Address)
 // Ensure backend is running on port 3001
 
-// Configuration can be changed here:
-const API_BASE_URL = 'https://deployed-ils-wmsu-production.up.railway.app/api'; // Railway production backend
-// For local development, uncomment and set to your machine IP:
-// const API_BASE_URL = 'http://192.168.x.x:3001/api'; // Replace with your machine IP
+// Configuration can be changed via environment variable.
+// Example local value: EXPO_PUBLIC_API_URL=http://192.168.1.169:5000/api
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL ||
+  'https://deployed-ils-wmsu-production.up.railway.app/api';
 
 const TIMEOUT = 30000; // 30 seconds timeout
 

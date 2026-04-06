@@ -49,15 +49,17 @@ export default function ScanQRScreen() {
 
   const getPeriodMessage = () => {
     const hour = currentTime.getHours();
+    const minute = currentTime.getMinutes();
+    const totalMinutes = (hour * 60) + minute;
     const period = hour < 12 ? 'morning' : 'afternoon';
     
     if (period === 'morning') {
-      if (hour < 8) return { text: '✓ Before 8:00 AM - PRESENT', color: '#4caf50', icon: 'check-circle' };
-      if (hour < 10) return { text: ' 8:00-9:59 AM - LATE', color: '#ff9800', icon: 'clock-alert' };
+      if (totalMinutes < (8 * 60 + 30)) return { text: '✓ Before 8:30 AM - PRESENT', color: '#4caf50', icon: 'check-circle' };
+      if (totalMinutes < (10 * 60)) return { text: ' 8:30-9:59 AM - LATE', color: '#ff9800', icon: 'clock-alert' };
       return { text: ' After 10:00 AM - ABSENT', color: '#f44336', icon: 'close-circle' };
     } else {
-      if (hour < 14) return { text: '✓ Before 2:00 PM - PRESENT', color: '#4caf50', icon: 'check-circle' };
-      if (hour < 15) return { text: ' 2:00-2:59 PM - LATE', color: '#ff9800', icon: 'clock-alert' };
+      if (totalMinutes < (14 * 60 + 30)) return { text: '✓ Before 2:30 PM - PRESENT', color: '#4caf50', icon: 'check-circle' };
+      if (totalMinutes < (15 * 60)) return { text: ' 2:30-2:59 PM - LATE', color: '#ff9800', icon: 'clock-alert' };
       return { text: ' After 3:00 PM - ABSENT', color: '#f44336', icon: 'close-circle' };
     }
   };
@@ -494,8 +496,8 @@ export default function ScanQRScreen() {
                 {attendanceStatus === 'absent' 
                   ? ` Auto-marked ABSENT (${scannedStudent?.period === 'morning' ? 'After 10 AM' : 'After 3 PM'})`
                   : attendanceStatus === 'late'
-                  ? ` Auto-marked LATE (${scannedStudent?.period === 'morning' ? '8-9:59 AM' : '2-2:59 PM'})`
-                  : ` Auto-marked PRESENT (${scannedStudent?.period === 'morning' ? 'Before 8 AM' : 'Before 2 PM'})`}
+                  ? ` Auto-marked LATE (${scannedStudent?.period === 'morning' ? '8:30-9:59 AM' : '2:30-2:59 PM'})`
+                  : ` Auto-marked PRESENT (${scannedStudent?.period === 'morning' ? 'Before 8:30 AM' : 'Before 2:30 PM'})`}
               </Text>
             </View>
 

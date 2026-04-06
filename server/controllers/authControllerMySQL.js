@@ -17,6 +17,32 @@ const signToken = (id) => {
   });
 };
 
+const buildLoginCandidates = (rawLogin = '') => {
+  const cleaned = String(rawLogin || '').trim();
+  const out = [];
+  const push = (value) => {
+    const v = String(value || '').trim();
+    if (!v) return;
+    if (!out.includes(v)) out.push(v);
+  };
+
+  push(cleaned);
+
+  const normalizedLower = cleaned.toLowerCase();
+  const duplicatedDomain = '@wmsu.edu.ph@wmsu.edu.ph';
+  const singleDomain = '@wmsu.edu.ph';
+
+  if (normalizedLower.endsWith(singleDomain) && !normalizedLower.endsWith(duplicatedDomain)) {
+    push(`${cleaned}${singleDomain}`);
+  }
+
+  if (normalizedLower.endsWith(duplicatedDomain)) {
+    push(cleaned.replace(/@wmsu\.edu\.ph@wmsu\.edu\.ph$/i, '@wmsu.edu.ph'));
+  }
+
+  return out;
+};
+
 // Protect middleware - verify token
 exports.protect = async (req, res, next) => {
   try {
@@ -158,45 +184,55 @@ exports.login = async (req, res) => {
     }
 
     let users = [];
+    const loginCandidates = buildLoginCandidates(loginField);
+    console.log('Login candidates:', loginCandidates);
 
-    // 1️⃣ Always try students table first (MySQL) - check by email OR LRN
+    // 1️⃣ Priority lookup: MySQL users and teachers (admin/super_admin/teacher/adviser)
     try {
-      users = await query(
-        'SELECT * FROM students WHERE LOWER(student_email) = LOWER(?) OR lrn = ?',
-        [loginField.toLowerCase(), loginField]
-      );
-      console.log('Student login check - loginField:', loginField, 'found:', users.length);
+      for (const candidate of loginCandidates) {
+        users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [candidate, candidate]);
+        if (users.length > 0) {
+          break;
+        }
+      }
+      console.log('Users login check - loginField:', loginField, 'found:', users.length);
     } catch (dbError) {
-      console.log('Student DB login check failed, will continue with fallbacks:', dbError.message);
+      console.log('Users DB login check failed:', dbError.message);
       users = [];
     }
 
-    // 2️⃣ If not a student, try MySQL `users` and `teachers` tables first
     if (users.length === 0) {
-      console.log('🔍 No student found, searching in users table for:', loginField);
       try {
-        users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [loginField, loginField]);
-        console.log('🔍 Users table check - found:', users.length, 'users');
-        if (users.length > 0) {
-          console.log('🔍 Found user in users table:', users[0].email, users[0].role, users[0].status);
+        for (const candidate of loginCandidates) {
+          users = await query('SELECT * FROM teachers WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [candidate, candidate]);
+          if (users.length > 0) {
+            break;
+          }
         }
+        console.log('Teachers login check - loginField:', loginField, 'found:', users.length);
       } catch (dbError) {
-        console.log('Users DB login check failed:', dbError.message);
+        console.log('Teachers DB login check failed:', dbError.message);
         users = [];
       }
+    }
 
-      if (users.length === 0) {
-        console.log('🔍 No user found in users table, searching teachers table...');
-        try {
-          users = await query('SELECT * FROM teachers WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [loginField, loginField]);
-          console.log('🔍 Teachers table check - found:', users.length, 'teachers');
-        } catch (dbError) {
-          console.log('Teachers DB login check failed:', dbError.message);
-          users = [];
+    // 2️⃣ If no admin/teacher match, try students table (email/LRN)
+    if (users.length === 0) {
+      try {
+        for (const candidate of loginCandidates) {
+          users = await query(
+            'SELECT * FROM students WHERE LOWER(student_email) = LOWER(?) OR lrn = ?',
+            [candidate.toLowerCase(), candidate]
+          );
+          if (users.length > 0) {
+            break;
+          }
         }
+        console.log('Student login check - loginField:', loginField, 'found:', users.length);
+      } catch (dbError) {
+        console.log('Student DB login check failed, will continue with fallbacks:', dbError.message);
+        users = [];
       }
-    } else {
-      console.log('🔍 Student found, skipping users/teachers table check');
     }
 
     // 3️⃣ Final fallback: JSON file accounts
@@ -206,10 +242,15 @@ exports.login = async (req, res) => {
         users = allUsers.filter(u => {
           const role = String(u.role || '').toLowerCase();
           const isAllowedRole = role === 'admin' || role === 'super_admin' || role === 'teacher' || role === 'adviser' || role === 'subject_teacher';
+          const userEmail = String(u.email || '').toLowerCase();
+          const userName = String(u.username || '').toLowerCase();
+          const hasCandidateMatch = loginCandidates.some(candidate => {
+            const c = String(candidate || '').toLowerCase();
+            return userEmail === c || userName === c;
+          });
           return (
             isAllowedRole &&
-            (u.email?.toLowerCase() === loginField.toLowerCase() ||
-             u.username?.toLowerCase() === loginField.toLowerCase())
+            hasCandidateMatch
           );
         });
       } catch (fileError) {
@@ -222,13 +263,14 @@ exports.login = async (req, res) => {
     }
 
     const user = users[0];
+    const userIdText = String(user?.id ?? '');
 
     // Password comparison with database priority
     let passwordMatch = false;
     let authenticatedFrom = '';
     
     // For database users, always use database password
-    if (user.source === 'database' || (user.id && !user.id.startsWith('user-'))) {
+    if (user.source === 'database' || (userIdText && !userIdText.startsWith('user-'))) {
       // Database user - use hashed password comparison
       if (typeof user.password === 'string' && user.password.startsWith('$2')) {
         passwordMatch = await bcrypt.compare(password, user.password);
@@ -237,6 +279,14 @@ exports.login = async (req, res) => {
         // Fallback for unhashed database passwords
         passwordMatch = password === user.password;
         authenticatedFrom = 'database (plain)';
+      }
+
+      // Additional fallback: use plain_password when present.
+      if (!passwordMatch && typeof user.plain_password === 'string' && user.plain_password.length > 0) {
+        passwordMatch = password === user.plain_password;
+        if (passwordMatch) {
+          authenticatedFrom = 'database (plain_password)';
+        }
       }
     } else {
       // JSON file user - use plain text comparison

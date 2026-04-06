@@ -25,6 +25,26 @@ import {
 export default function EditGrades() {
   const getStudentGradeLevel = (student) => student?.gradeLevel || student?.grade_level || "";
   const getStudentSection = (student) => student?.section || student?.Section || "";
+  const normalizeText = (value) => String(value || "").trim().toLowerCase();
+  const normalizeClassSlug = (grade, section) => `${String(grade || '').toLowerCase().replace(/\s+/g, '-')}-${String(section || '').toLowerCase().replace(/\s+/g, '-')}`;
+  const parseSubjectList = (rawValue) => {
+    if (Array.isArray(rawValue)) return rawValue.map((item) => String(item || '').trim()).filter(Boolean);
+    if (typeof rawValue === 'string') {
+      return rawValue.split(',').map((item) => item.trim()).filter(Boolean);
+    }
+    return [];
+  };
+  const dedupeSubjects = (values = []) => {
+    const seen = new Set();
+    const result = [];
+    values.forEach((item) => {
+      const key = normalizeText(item);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      result.push(item);
+    });
+    return result;
+  };
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedSubject, setSelectedSubject] = useState("Mathematics");
@@ -51,8 +71,10 @@ export default function EditGrades() {
   const [showGradeModal, setShowGradeModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [gradeData, setGradeData] = useState({});
+  const [initialGradeData, setInitialGradeData] = useState({});
   const [isGradeLocked, setIsGradeLocked] = useState(false);
   const [lockReason, setLockReason] = useState("");
+  const [quarterEndDates, setQuarterEndDates] = useState({ q1: null, q2: null, q3: null, q4: null });
   const [showReportCard, setShowReportCard] = useState(false);
   const [reportCardStudent, setReportCardStudent] = useState(null); // null = all students, array = selected students
   const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
@@ -97,7 +119,8 @@ export default function EditGrades() {
           const nextActiveId = String(activeSy.id);
           setActiveSchoolYearId(nextActiveId);
           setTeacherActiveSchoolYearId(nextActiveId);
-          if (!selectedSchoolYearId) {
+          // Keep edit flow pinned to active school year to avoid stale localStorage scope.
+          if (String(selectedSchoolYearId || '') !== nextActiveId) {
             setSelectedSchoolYearId(nextActiveId);
             setTeacherViewingSchoolYearId(nextActiveId);
           }
@@ -121,8 +144,81 @@ export default function EditGrades() {
   }, [selectedSchoolYearId]);
 
   useEffect(() => {
+    const fetchQuarterDeadlines = async () => {
+      try {
+        const syResponse = await api.get('/school-years');
+        const schoolYears = syResponse.data?.data || [];
+        const target = schoolYears.find((item) => String(item.id) === String(selectedSchoolYearId || activeSchoolYearId));
+
+        if (!target) {
+          setQuarterEndDates({ q1: null, q2: null, q3: null, q4: null });
+          return;
+        }
+
+        setQuarterEndDates({
+          q1: target.q1_end_date || null,
+          q2: target.q2_end_date || null,
+          q3: target.q3_end_date || null,
+          q4: target.q4_end_date || null,
+        });
+      } catch (error) {
+        console.error('Failed to load quarter end dates:', error.message || error);
+        setQuarterEndDates({ q1: null, q2: null, q3: null, q4: null });
+      }
+    };
+
+    fetchQuarterDeadlines();
+  }, [selectedSchoolYearId, activeSchoolYearId]);
+
+  useEffect(() => {
     fetchProgress(selectedQuarter);
   }, [selectedQuarter, selectedSchoolYearId]);
+
+  const getQuarterDeadline = (qKey) => {
+    const raw = quarterEndDates?.[qKey] || null;
+    if (!raw) return null;
+    const d = new Date(raw);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  };
+
+  const isQuarterClosed = (qKey) => {
+    if (userRole === 'admin') return false;
+    const deadline = getQuarterDeadline(qKey);
+    if (!deadline) return false;
+    return new Date() > deadline;
+  };
+
+  const quarterLabel = (qKey) => {
+    const map = { q1: 'Quarter 1', q2: 'Quarter 2', q3: 'Quarter 3', q4: 'Quarter 4' };
+    return map[qKey] || qKey?.toUpperCase() || '';
+  };
+
+  useEffect(() => {
+    if (!showGradeModal || !selectedStudent) return;
+
+    const quarterOrder = ['q1', 'q2', 'q3', 'q4'];
+    const relevantQuarters = selectedQuarter === 'all'
+      ? quarterOrder
+      : quarterOrder.slice(0, quarterOrder.indexOf(selectedQuarter) + 1);
+    const closedQuarters = relevantQuarters.filter((q) => isQuarterClosed(q));
+
+    if (selectedQuarter === 'all') {
+      const allClosed = relevantQuarters.length > 0 && closedQuarters.length === relevantQuarters.length;
+      setIsGradeLocked(allClosed);
+      if (allClosed) {
+        setLockReason('All quarters are already closed for editing.');
+      } else if (closedQuarters.length > 0) {
+        setLockReason(`${closedQuarters.map(quarterLabel).join(', ')} are closed. You can still edit open quarters.`);
+      } else {
+        setLockReason('');
+      }
+    } else {
+      const quarterClosed = isQuarterClosed(selectedQuarter);
+      setIsGradeLocked(quarterClosed);
+      setLockReason(quarterClosed ? `${quarterLabel(selectedQuarter)} is already closed for editing.` : '');
+    }
+  }, [showGradeModal, selectedStudent, selectedQuarter, quarterEndDates, userRole]);
 
   // Update available sections when grade level changes
   useEffect(() => {
@@ -194,10 +290,12 @@ export default function EditGrades() {
         return;
       }
 
+      const schoolYearForRequests = selectedSchoolYearId || activeSchoolYearId;
+
       // Fetch adviser classes
       let adviserClasses = [];
       try {
-        const adviserResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/adviser/${userId}`, selectedSchoolYearId));
+        const adviserResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/adviser/${userId}`, schoolYearForRequests));
         if (adviserResponse.ok) {
           const data = await adviserResponse.json();
           adviserClasses = Array.isArray(data.data) ? data.data : [];
@@ -211,7 +309,7 @@ export default function EditGrades() {
         try {
           const user = JSON.parse(userStr);
           if (user.firstName && user.lastName) {
-            const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, selectedSchoolYearId));
+            const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, schoolYearForRequests));
             if (allClassesResp.ok) {
               const allClassesData = await allClassesResp.json();
               const allClasses = Array.isArray(allClassesData)
@@ -232,7 +330,7 @@ export default function EditGrades() {
       // Fetch subject teacher classes
       let subjectTeacherClasses = [];
       try {
-        const stResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${userId}`, selectedSchoolYearId));
+        const stResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${userId}`, schoolYearForRequests));
         if (stResponse.ok) {
           const data = await stResponse.json();
           subjectTeacherClasses = Array.isArray(data.data) ? data.data : [];
@@ -250,9 +348,7 @@ export default function EditGrades() {
 
       // Track adviser class IDs as slugs matching studentClassId format in openGradeModal
       const adviserIds = adviserClasses.map(c => {
-        const grade = (c.grade || c.grade_level || '').toLowerCase().replace(/\s+/g, '-');
-        const section = (c.section || '').toLowerCase().replace(/\s+/g, '-');
-        return `${grade}-${section}`;
+        return normalizeClassSlug(c.grade || c.grade_level, c.section);
       });
       setAdviserClassIds(adviserIds);
       console.log('EditGrades - Adviser class slugs:', adviserIds);
@@ -262,13 +358,10 @@ export default function EditGrades() {
       const classSubjectMap = {};
       subjectTeacherClasses.forEach(cls => {
         const raw = cls.subjects_teaching || cls.subjects || '';
-        const clsSubjects = Array.isArray(raw) ? raw : (raw ? raw.split(',') : []);
+        const clsSubjects = parseSubjectList(raw);
         if (clsSubjects.length > 0) {
-          // Key by slug: matches studentClassId computed in openGradeModal
-          const grade = (cls.grade || cls.grade_level || '').toLowerCase().replace(/\s+/g, '-');
-          const section = (cls.section || '').toLowerCase().replace(/\s+/g, '-');
-          const slug = `${grade}-${section}`;
-          classSubjectMap[slug] = clsSubjects.map(s => s.trim()).filter(s => s);
+          const slug = normalizeClassSlug(cls.grade || cls.grade_level, cls.section);
+          classSubjectMap[slug] = dedupeSubjects(clsSubjects);
         }
       });
       setSubjectsByClass(classSubjectMap);
@@ -277,10 +370,10 @@ export default function EditGrades() {
       // Extract all subjects the teacher can edit (global list, for backward compatibility)
       const subjects = [];
       subjectTeacherClasses.forEach(cls => {
-        const clsSubjects = Array.isArray(cls.subjects) ? cls.subjects : (cls.subjects ? cls.subjects.split(',') : []);
+        const clsSubjects = parseSubjectList(cls.subjects_teaching || cls.subjects || '');
         clsSubjects.forEach(s => {
           const trimmed = s.trim();
-          if (trimmed && !subjects.includes(trimmed)) {
+          if (trimmed && !subjects.some((item) => normalizeText(item) === normalizeText(trimmed))) {
             subjects.push(trimmed);
           }
         });
@@ -296,7 +389,7 @@ export default function EditGrades() {
       fetchProgress(selectedQuarter);
 
       // Fetch all students
-      const response = await api.get('/students', { params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {} });
+      const response = await api.get('/students', { params: schoolYearForRequests ? { schoolYearId: schoolYearForRequests } : {} });
       const allStudents = response.data.data || response.data;
       
       // Filter students to only show those in assigned classes
@@ -360,26 +453,31 @@ export default function EditGrades() {
   // Open grade modal for a student
   const openGradeModal = async (student) => {
     setSelectedStudent(student);
-    
-    // Check if grades are locked (1 day has passed since last save)
-    const lastEditTime = student.lastGradeEditTime ? new Date(student.lastGradeEditTime) : null;
-    const now = new Date();
-    const isLocked = lastEditTime && (now - lastEditTime) > 24 * 60 * 60 * 1000;
-    
-    if (isLocked) {
-      setIsGradeLocked(true);
-      setLockReason("Grades locked. 1 day has passed since last edit.");
-    } else if (lastEditTime) {
-      const hoursLeft = 24 - Math.floor((now - lastEditTime) / (60 * 60 * 1000));
-      setIsGradeLocked(false);
-      setLockReason(`You have ${hoursLeft} hours left to edit these grades.`);
+
+    const quarterOrder = ['q1', 'q2', 'q3', 'q4'];
+    const relevantQuarters = selectedQuarter === 'all'
+      ? quarterOrder
+      : quarterOrder.slice(0, quarterOrder.indexOf(selectedQuarter) + 1);
+    const closedQuarters = relevantQuarters.filter((q) => isQuarterClosed(q));
+
+    if (selectedQuarter === 'all') {
+      const allClosed = relevantQuarters.length > 0 && closedQuarters.length === relevantQuarters.length;
+      setIsGradeLocked(allClosed);
+      if (allClosed) {
+        setLockReason('All quarters are already closed for editing.');
+      } else if (closedQuarters.length > 0) {
+        setLockReason(`${closedQuarters.map(quarterLabel).join(', ')} are closed. You can still edit open quarters.`);
+      } else {
+        setLockReason('');
+      }
     } else {
-      setIsGradeLocked(false);
-      setLockReason("");
+      const quarterClosed = isQuarterClosed(selectedQuarter);
+      setIsGradeLocked(quarterClosed);
+      setLockReason(quarterClosed ? `${quarterLabel(selectedQuarter)} is already closed for editing.` : '');
     }
     
     // Determine student's class ID
-    const studentClassId = `${(getStudentGradeLevel(student) || '').toLowerCase().replace(/\s+/g, '-')}-${(getStudentSection(student) || '').toLowerCase().replace(/\s+/g, '-')}`;
+    const studentClassId = normalizeClassSlug(getStudentGradeLevel(student), getStudentSection(student));
     console.log('Opening grades for student class:', studentClassId, 'Adviser classes:', adviserClassIds);
     
     // Check if user is adviser for this class
@@ -406,19 +504,17 @@ export default function EditGrades() {
     try {
       const userStr = localStorage.getItem('user');
       const freshUserId = userStr ? (JSON.parse(userStr).id) : null;
+      const schoolYearForRequests = selectedSchoolYearId || activeSchoolYearId;
       if (freshUserId) {
-        const stResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${freshUserId}`, selectedSchoolYearId));
+        const stResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${freshUserId}`, schoolYearForRequests));
         if (stResp.ok) {
           const stData = await stResp.json();
           const stClasses = Array.isArray(stData.data) ? stData.data : [];
           const matchingClass = stClasses.find(cls => {
-            const g = (cls.grade || cls.grade_level || '').toLowerCase().replace(/\s+/g, '-');
-            const s2 = (cls.section || '').toLowerCase().replace(/\s+/g, '-');
-            return `${g}-${s2}` === studentClassId;
+            return normalizeClassSlug(cls.grade || cls.grade_level, cls.section) === studentClassId;
           });
           if (matchingClass) {
-            const raw = matchingClass.subjects_teaching || matchingClass.subjects || '';
-            const freshList = Array.isArray(raw) ? raw : (raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : []);
+            const freshList = dedupeSubjects(parseSubjectList(matchingClass.subjects_teaching || matchingClass.subjects || ''));
             if (freshList.length > 0) {
               freshSubjectsForClass = freshList;
               setSubjectsByClass(prev => ({ ...prev, [studentClassId]: freshList }));
@@ -428,6 +524,41 @@ export default function EditGrades() {
       }
     } catch (e) {
       console.warn('Could not refresh subject assignments:', e.message);
+    }
+
+    // Fallback: if endpoint did not return assignments, derive from active-year class payload.
+    if (freshSubjectsForClass.length === 0) {
+      try {
+        const userStr = localStorage.getItem('user');
+        const activeUser = userStr ? JSON.parse(userStr) : null;
+        const fullName = `${activeUser?.firstName || ''} ${activeUser?.lastName || ''}`.trim().toLowerCase();
+        const schoolYearForRequests = selectedSchoolYearId || activeSchoolYearId;
+        const classesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, schoolYearForRequests));
+        if (classesResp.ok) {
+          const classesPayload = await classesResp.json();
+          const allClasses = Array.isArray(classesPayload)
+            ? classesPayload
+            : (Array.isArray(classesPayload?.data) ? classesPayload.data : []);
+          const match = allClasses.find((cls) => normalizeClassSlug(cls.grade || cls.grade_level, cls.section) === studentClassId);
+          const stRows = Array.isArray(match?.subject_teachers) ? match.subject_teachers : [];
+          const derived = dedupeSubjects(
+            stRows
+              .filter((row) => {
+                const byId = String(row.teacher_id || '').trim() === String(activeUser?.id || '').trim();
+                const byName = fullName && String(row.teacher_name || '').trim().toLowerCase() === fullName;
+                return byId || byName;
+              })
+              .map((row) => row.subject)
+              .filter(Boolean)
+          );
+          if (derived.length > 0) {
+            freshSubjectsForClass = derived;
+            setSubjectsByClass(prev => ({ ...prev, [studentClassId]: derived }));
+          }
+        }
+      } catch (fallbackError) {
+        console.warn('Could not derive assignments from classes fallback:', fallbackError.message);
+      }
     }
     // Subjects this teacher can EDIT — only their specifically assigned subjects, regardless of adviser status
     const editableSubjectsForClass = freshSubjectsForClass;
@@ -476,6 +607,7 @@ export default function EditGrades() {
     });
     
     setGradeData(initialGrades);
+    setInitialGradeData(JSON.parse(JSON.stringify(initialGrades)));
     console.log('Grade modal opened - showing subjects:', subjectsToShow, 'grades:', initialGrades);
     setShowGradeModal(true);
   };
@@ -595,19 +727,29 @@ export default function EditGrades() {
       return;
     }
 
+    const hasChangedQuarterValue = (subject, quarterKey) => {
+      const currentVal = Number(gradeData?.[subject]?.[quarterKey] || 0);
+      const initialVal = Number(initialGradeData?.[subject]?.[quarterKey] || 0);
+      return currentVal !== initialVal;
+    };
+
+    const changedSubjects = Object.keys(gradeData || {}).filter((subject) => {
+      if (selectedQuarter === 'all') {
+        return ['q1', 'q2', 'q3', 'q4'].some((q) => hasChangedQuarterValue(subject, q));
+      }
+      return hasChangedQuarterValue(subject, selectedQuarter);
+    });
+
+    if (changedSubjects.length === 0) {
+      setSuccessMessage('ℹ️ No grade changes to save.');
+      setShowSuccessModal(true);
+      return;
+    }
+
     // Check for unauthorized subject edits (for subject teachers including teacher role with assigned subjects)
     const isSubjectTeacherMode = (userRole === 'subject_teacher' || userRole === 'teacher') && availableSubjects.length > 0;
     if (isSubjectTeacherMode) {
-      const editedSubjects = Object.keys(gradeData).filter(subject => {
-        const quarterData = gradeData[subject];
-        if (selectedQuarter === "all") {
-          return quarterData.q1 || quarterData.q2 || quarterData.q3 || quarterData.q4;
-        } else {
-          return quarterData[selectedQuarter];
-        }
-      });
-      
-      const unauthorizedSubjects = editedSubjects.filter(s => !availableSubjects.includes(s));
+      const unauthorizedSubjects = changedSubjects.filter(s => !availableSubjects.includes(s));
       if (unauthorizedSubjects.length > 0) {
         alert(`❌ You don't have permission to edit: ${unauthorizedSubjects.join(', ')}`);
         return;
@@ -626,7 +768,7 @@ export default function EditGrades() {
     
     // Extract grades for the selected quarter(s)
     const quarterGrades = {};
-    Object.keys(gradeData).forEach(subject => {
+    changedSubjects.forEach(subject => {
       // For subject teachers (including teacher role with assigned subjects), only include authorized subjects
       const isSubjectTeacherMode = (userRole === 'subject_teacher' || userRole === 'teacher') && availableSubjects.length > 0;
       if (isSubjectTeacherMode && !availableSubjects.includes(subject)) {
@@ -634,17 +776,27 @@ export default function EditGrades() {
       }
       
       if (selectedQuarter === "all") {
+        const payload = {};
+        ['q1', 'q2', 'q3', 'q4'].forEach((q) => {
+          if (hasChangedQuarterValue(subject, q)) {
+            payload[q] = gradeData[subject][q] || 0;
+          }
+        });
+        if (Object.keys(payload).length === 0) return;
         quarterGrades[subject] = {
-          q1: gradeData[subject].q1 || 0,
-          q2: gradeData[subject].q2 || 0,
-          q3: gradeData[subject].q3 || 0,
-          q4: gradeData[subject].q4 || 0,
+          ...payload,
         };
       } else {
         // Send a plain number so the backend can store it directly in the quarter column
         quarterGrades[subject] = gradeData[subject][selectedQuarter] || 0;
       }
     });
+
+    if (Object.keys(quarterGrades).length === 0) {
+      setSuccessMessage('ℹ️ No grade changes to save.');
+      setShowSuccessModal(true);
+      return;
+    }
 
     try {
       const response = await api.put(`/students/${selectedStudent.id}/grades`, {
@@ -1111,7 +1263,8 @@ export default function EditGrades() {
                                 )}
                               </td>
                               {quartersToShow.map(q => {
-                                const editable = canEdit && isEditableQ(q) && !isGradeLocked && !isViewOnlyMode;
+                                const quarterClosed = isQuarterClosed(q);
+                                const editable = canEdit && isEditableQ(q) && !isGradeLocked && !isViewOnlyMode && !quarterClosed;
                                 const val = gradeData[subject]?.[q];
                                 const hasVal = val && val !== 0 && val !== '';
                                 return (
@@ -1134,8 +1287,8 @@ export default function EditGrades() {
                                           )}
                                         </>
                                       ) : (
-                                        <span className={`text-base font-semibold ${hasVal ? 'text-gray-700' : 'text-gray-300'}`}>
-                                          {hasVal ? val : '—'}
+                                        <span className={`text-base font-semibold ${quarterClosed ? 'text-red-500' : (hasVal ? 'text-gray-700' : 'text-gray-300')}`}>
+                                          {hasVal ? val : (quarterClosed ? 'Closed' : '—')}
                                         </span>
                                       )}
                                     </div>
@@ -1232,6 +1385,7 @@ export default function EditGrades() {
                   ? `${selectedGradeLevel.toLowerCase().replace(/\s+/g, '-')}-${selectedSection.toLowerCase().replace(/\s+/g, '-')}`
                   : null))
           }
+          schoolYearId={selectedSchoolYearId || activeSchoolYearId || undefined}
           onClose={() => { setShowReportCard(false); setReportCardStudent(null); }}
         />
       )}

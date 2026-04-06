@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { BellIcon, UserCircleIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
+import api from "../../api/axiosConfig";
 
 export default function TeacherTopbar({ sidebarOpen }) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [userName, setUserName] = useState("");
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const navigate = useNavigate();
   const dropdownRef = useRef(null);
   const notificationsRef = useRef(null);
@@ -22,6 +25,48 @@ export default function TeacherTopbar({ sidebarOpen }) {
       console.error("Failed to read user from localStorage:", error);
     }
   }, []);
+
+  useEffect(() => {
+    let timer = null;
+
+    const fetchNotifications = async () => {
+      try {
+        const response = await api.get('/notifications');
+        const items = response.data?.data?.items || [];
+        const unread = Number(response.data?.data?.unreadCount || 0);
+        setNotifications(items);
+        setUnreadCount(unread);
+      } catch (error) {
+        console.error('Failed to load notifications:', error);
+      }
+    };
+
+    fetchNotifications();
+    timer = setInterval(fetchNotifications, 15000);
+
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, []);
+
+  const handleOpenNotifications = async () => {
+    setShowNotifications(!showNotifications);
+    setShowDropdown(false);
+
+    // Mark unread as read when opening dropdown.
+    if (!showNotifications) {
+      const unreadItems = notifications.filter((item) => !item.is_read);
+      if (unreadItems.length > 0) {
+        try {
+          await Promise.all(unreadItems.map((item) => api.put(`/notifications/${item.id}/read`)));
+          setNotifications((prev) => prev.map((item) => ({ ...item, is_read: true })));
+          setUnreadCount(0);
+        } catch (error) {
+          console.error('Failed to mark notifications as read:', error);
+        }
+      }
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -89,13 +134,15 @@ export default function TeacherTopbar({ sidebarOpen }) {
         <div className="relative">
           <button
             className="relative p-1 hover:bg-gray-100 rounded-lg transition-colors"
-            onClick={() => { 
-              setShowNotifications(!showNotifications); 
-              setShowDropdown(false); 
-            }}
+            onClick={handleOpenNotifications}
             aria-label="Notifications"
           >
             <BellIcon className="w-5 h-5 md:w-6 md:h-6 text-red-800 cursor-pointer hover:scale-110 transition-all shrink-0" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-600 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
           </button>
 
           {/* Notifications Dropdown */}
@@ -106,9 +153,19 @@ export default function TeacherTopbar({ sidebarOpen }) {
               </div>
               
               <div className="max-h-64 overflow-y-auto">
-                <div className="px-4 py-8 text-center">
-                  <p className="text-gray-500 text-sm">No notifications</p>
-                </div>
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-8 text-center">
+                    <p className="text-gray-500 text-sm">No notifications</p>
+                  </div>
+                ) : (
+                  notifications.map((item) => (
+                    <div key={item.id} className="px-4 py-3 border-b border-gray-100 hover:bg-gray-50">
+                      <p className="text-sm font-semibold text-gray-800">{item.title}</p>
+                      <p className="text-xs text-gray-600 mt-1">{item.message}</p>
+                      <p className="text-[11px] text-gray-400 mt-2">{new Date(item.created_at).toLocaleString()}</p>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}

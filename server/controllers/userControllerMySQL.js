@@ -3,9 +3,22 @@ const { pool, query } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
+async function ensurePlainPasswordColumn() {
+  try {
+    const columns = await query('SHOW COLUMNS FROM users');
+    const hasPlainPassword = columns.some(col => col.Field === 'plain_password');
+    if (!hasPlainPassword) {
+      await query('ALTER TABLE users ADD COLUMN plain_password VARCHAR(255) NULL AFTER password');
+    }
+  } catch (error) {
+    console.warn('[users] plain_password column check/creation skipped:', error.message);
+  }
+}
+
 // Signup new user (Admin, Student, Teacher, or Adviser)
 exports.signup = async (req, res) => {
   try {
+    await ensurePlainPasswordColumn();
     const { firstName, lastName, username, email, password, role = 'admin' } = req.body;
 
     // Validate input
@@ -39,6 +52,7 @@ exports.signup = async (req, res) => {
     const hasFirstName = columns.some(col => col.Field === 'firstName');
     const hasFirstNameUnderscore = columns.some(col => col.Field === 'first_name');
     const hasStatus = columns.some(col => col.Field === 'status');
+    const hasPlainPassword = columns.some(col => col.Field === 'plain_password');
     
     console.log('🔍 Database columns - firstName:', hasFirstName, 'first_name:', hasFirstNameUnderscore, 'status:', hasStatus);
     
@@ -48,9 +62,15 @@ exports.signup = async (req, res) => {
     
     // Build query with status column if it exists
     let insertQuery, insertParams;
-    if (hasStatus) {
+    if (hasStatus && hasPlainPassword) {
+      insertQuery = `INSERT INTO users (id, ${firstNameCol}, ${lastNameCol}, username, email, password, plain_password, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
+      insertParams = [userId, firstName || '', lastName || '', username || '', email || '', hashedPassword, password || '', role || 'admin', 'approved'];
+    } else if (hasStatus) {
       insertQuery = `INSERT INTO users (id, ${firstNameCol}, ${lastNameCol}, username, email, password, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
       insertParams = [userId, firstName || '', lastName || '', username || '', email || '', hashedPassword, role || 'admin', 'approved'];
+    } else if (hasPlainPassword) {
+      insertQuery = `INSERT INTO users (id, ${firstNameCol}, ${lastNameCol}, username, email, password, plain_password, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
+      insertParams = [userId, firstName || '', lastName || '', username || '', email || '', hashedPassword, password || '', role || 'admin'];
     } else {
       insertQuery = `INSERT INTO users (id, ${firstNameCol}, ${lastNameCol}, username, email, password, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
       insertParams = [userId, firstName || '', lastName || '', username || '', email || '', hashedPassword, role || 'admin'];
@@ -378,8 +398,9 @@ exports.deleteUser = async (req, res) => {
 // Update user by ID
 exports.updateUser = async (req, res) => {
   try {
+    await ensurePlainPasswordColumn();
     const { id } = req.params;
-    const { firstName, lastName, username, email, phone, profile_pic } = req.body;
+    const { firstName, lastName, username, email, phone, profile_pic, password } = req.body;
 
     // Check what columns exist in database
     const columns = await query('SHOW COLUMNS FROM users');
@@ -387,6 +408,7 @@ exports.updateUser = async (req, res) => {
     const hasFirstNameUnderscore = columns.some(col => col.Field === 'first_name');
     const hasUpdatedAt = columns.some(col => col.Field === 'updatedAt');
     const hasUpdatedAtUnderscore = columns.some(col => col.Field === 'updated_at');
+    const hasPlainPassword = columns.some(col => col.Field === 'plain_password');
 
     // Use appropriate column names based on database schema
     const firstNameCol = hasFirstName ? 'firstName' : 'first_name';
@@ -420,6 +442,15 @@ exports.updateUser = async (req, res) => {
     if (profile_pic !== undefined) {
       updates.push('profile_pic = ?');
       values.push(profile_pic);
+    }
+    if (password !== undefined && String(password).trim() !== '') {
+      const hashedPassword = await bcrypt.hash(String(password), 12);
+      updates.push('password = ?');
+      values.push(hashedPassword);
+      if (hasPlainPassword) {
+        updates.push('plain_password = ?');
+        values.push(String(password));
+      }
     }
 
     if (updates.length === 0) {
@@ -475,6 +506,58 @@ exports.updateUser = async (req, res) => {
       message: 'Error updating user', 
       error: error.message 
     });
+  }
+};
+
+// Get user credentials (admin/super_admin accounts)
+exports.getUserCredentials = async (req, res) => {
+  try {
+    await ensurePlainPasswordColumn();
+    const { id } = req.params;
+
+    const columns = await query('SHOW COLUMNS FROM users');
+    const hasFirstName = columns.some(col => col.Field === 'firstName');
+    const hasPlainPassword = columns.some(col => col.Field === 'plain_password');
+
+    const firstNameCol = hasFirstName ? 'firstName' : 'first_name';
+    const lastNameCol = hasFirstName ? 'lastName' : 'last_name';
+
+    const selectCols = hasPlainPassword
+      ? `id, ${firstNameCol} as firstName, ${lastNameCol} as lastName, username, email, role, plain_password as plainPassword`
+      : `id, ${firstNameCol} as firstName, ${lastNameCol} as lastName, username, email, role`;
+
+    const rows = await query(
+      `SELECT ${selectCols}
+       FROM users
+       WHERE id = ? AND role IN ('admin', 'super_admin')
+       LIMIT 1`,
+      [id]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Admin account not found' });
+    }
+
+    const user = rows[0];
+
+    return res.json({
+      success: true,
+      data: {
+        id: user.id,
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        username: user.username || '',
+        email: user.email || '',
+        role: user.role || 'admin',
+        password: hasPlainPassword ? (user.plainPassword || '') : ''
+      },
+      message: hasPlainPassword
+        ? undefined
+        : 'Password reveal is unavailable in this database schema. Set a new password to view it.'
+    });
+  } catch (error) {
+    console.error('Error fetching user credentials:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch credentials', error: error.message });
   }
 };
 

@@ -66,6 +66,22 @@ export default function AdminAssignAdviser() {
   }, [activeSchoolYearId]);
 
   const normalizeId = (value) => String(value ?? "");
+  const dedupeSubjectTeachers = (rows = []) => {
+    const seen = new Set();
+    return rows.filter((row) => {
+      const key = [
+        String(row?.teacher_id || '').trim().toLowerCase(),
+        String(row?.teacher_name || '').trim().toLowerCase(),
+        String(row?.subject || '').trim().toLowerCase(),
+        String(row?.day || '').trim().toLowerCase(),
+        String(row?.start_time || '').trim().toLowerCase(),
+        String(row?.end_time || '').trim().toLowerCase()
+      ].join('|');
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
   const findTeacherById = (teacherId) => teachers.find((teacher) => normalizeId(teacher.id) === normalizeId(teacherId));
 
   // Fetch subjects when class is selected in Assign Adviser tab
@@ -212,35 +228,9 @@ export default function AdminAssignAdviser() {
 
       const classesWithTeacherFallback = classesWithFallbackAdviser.map((cls) => {
         const existingSubjectTeachers = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
-        if (existingSubjectTeachers.length > 0) return cls;
-
-        const classGrade = normalizeGrade(cls.grade || '');
-        const classSection = normalizeSection(cls.section || '');
-
-        const matchedTeachers = allTeachers.filter((teacher) => {
-          const teacherGrade = normalizeGrade(teacher.gradeLevel || teacher.grade_level || '');
-          const teacherSection = normalizeSection(teacher.section || '');
-          if (!teacherGrade || !teacherSection) return false;
-          return teacherGrade === classGrade && teacherSection === classSection;
-        });
-
-        const fallbackSubjectTeachers = matchedTeachers.flatMap((teacher) => {
-          const teacherName = `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim();
-          return parseTeacherSubjects(teacher).map((subject, index) => ({
-            id: `fallback-${cls.id}-${teacher.id}-${index}`,
-            teacher_id: teacher.id,
-            teacher_name: teacherName || 'Unknown',
-            subject,
-            day: 'Monday - Friday',
-            start_time: '08:00',
-            end_time: '09:00'
-          }));
-        });
-
-        if (fallbackSubjectTeachers.length === 0) return cls;
         return {
           ...cls,
-          subject_teachers: fallbackSubjectTeachers
+          subject_teachers: dedupeSubjectTeachers(existingSubjectTeachers)
         };
       });
 
@@ -538,7 +528,7 @@ export default function AdminAssignAdviser() {
                   }
                 }
                 // Against existing subject_teachers for this class
-                const existingSTs = selectedClass ? (classes.find(c => c.id === selectedClass.id)?.subject_teachers || []) : [];
+                const existingSTs = selectedClass ? dedupeSubjectTeachers(classes.find(c => c.id === selectedClass.id)?.subject_teachers || []) : [];
                 const existingConflicts = new Set();
                 for (const entry of selectedAdviserSubjects) {
                   for (const st of existingSTs) {
@@ -795,8 +785,8 @@ export default function AdminAssignAdviser() {
                   {classItem.subject_teachers && classItem.subject_teachers.length > 0 ? (
                     <div className="mt-2 space-y-1">
                       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Subject Teachers:</p>
-                      {classItem.subject_teachers.map((st, idx) => (
-                        <div key={idx} className="flex items-center justify-between bg-blue-50 rounded px-3 py-2">
+                      {dedupeSubjectTeachers(classItem.subject_teachers).map((st) => (
+                        <div key={`${normalizeId(st.teacher_id)}-${st.subject}-${st.day}-${st.start_time}-${st.end_time}`} className="flex items-center justify-between bg-blue-50 rounded px-3 py-2">
                           <span className="text-sm text-gray-800">
                             <strong>{st.teacher_name}</strong> — <span className="text-blue-700">{st.subject}</span>
                             <span className="text-xs text-gray-500 ml-2">{st.day} {st.start_time}–{st.end_time}</span>

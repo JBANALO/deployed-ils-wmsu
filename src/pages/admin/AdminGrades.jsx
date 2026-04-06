@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { ClipboardDocumentIcon, PencilSquareIcon, MagnifyingGlassIcon, EyeIcon, XMarkIcon } from "@heroicons/react/24/solid";
+import { ClipboardDocumentIcon, PencilSquareIcon, MagnifyingGlassIcon, EyeIcon, XMarkIcon, PrinterIcon } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
 import { toast } from 'react-toastify';
 import { useSchoolYear } from "../../context/SchoolYearContext";
+import AdminForm137Print from "../../components/admin/AdminForm137Print";
 
 // DepEd K-12 Subjects
 const DEPED_SUBJECTS = {
@@ -20,6 +21,8 @@ const normalizeSubjectName = (value) => String(value || '')
   .replace(/\s*\(Kindergarten\)\s*$/i, '')
   .trim()
   .toLowerCase();
+
+const getStudentGradeLevel = (student) => student?.gradeLevel || student?.grade_level || '';
 
 export default function AdminGrades() {
   const { viewingSchoolYear, activeSchoolYear, isViewingLocked } = useSchoolYear();
@@ -39,6 +42,10 @@ export default function AdminGrades() {
   const [selectedQuarter, setSelectedQuarter] = useState('q1');
   const [saving, setSaving] = useState(false);
   const [subjectsByGrade, setSubjectsByGrade] = useState({});
+  const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
+  const [showForm137Modal, setShowForm137Modal] = useState(false);
+  const [form137Records, setForm137Records] = useState([]);
+  const [preparingPrint, setPreparingPrint] = useState(false);
   const targetSchoolYearId = viewingSchoolYear?.id || activeSchoolYear?.id || '';
 
 
@@ -139,8 +146,41 @@ export default function AdminGrades() {
   };
 
   const getSubjectsForStudent = (student) => {
-    const grade = student?.gradeLevel;
+    const grade = getStudentGradeLevel(student);
     return subjectsByGrade[grade] || DEPED_SUBJECTS[grade] || DEPED_SUBJECTS['Grade 1'];
+  };
+
+  const fetchSubjectsForStudent = async (student, grades = {}) => {
+    const grade = getStudentGradeLevel(student);
+    let gradeSubjects = [];
+
+    try {
+      // Keep same subject source logic as teacher grade flow.
+      const gradeKey = String(grade).replace(/^Grade\s+/i, '').trim();
+      if (gradeKey) {
+        const params = targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {};
+        const res = await axios.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`, { params });
+        gradeSubjects = (res.data?.data || []).map((s) => s.name).filter(Boolean);
+      }
+    } catch (error) {
+      console.warn('Could not fetch fresh subjects for print:', grade, error?.message || error);
+    }
+
+    const fallbackSubjects = gradeSubjects.length > 0
+      ? gradeSubjects
+      : getSubjectsForStudent(student);
+
+    const merged = [...fallbackSubjects];
+    const existingNormalized = new Set(merged.map(normalizeSubjectName));
+    Object.keys(grades || {}).forEach((subjectKey) => {
+      const norm = normalizeSubjectName(subjectKey);
+      if (!existingNormalized.has(norm)) {
+        merged.push(subjectKey);
+        existingNormalized.add(norm);
+      }
+    });
+
+    return merged;
   };
 
   const getMatchedGrade = (gradesObj, subjectName) => {
@@ -233,6 +273,62 @@ export default function AdminGrades() {
     return matchesSearch && matchesGradeLevel;
   });
 
+  const schoolYearLabel = viewingSchoolYear?.label || activeSchoolYear?.label || '';
+
+  const toggleStudentSelection = (studentId) => {
+    setSelectedStudentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllFiltered = () => {
+    const ids = filteredStudents.map((s) => s.id).filter(Boolean);
+    const allSelected = ids.length > 0 && ids.every((id) => selectedStudentIds.has(id));
+    if (allSelected) {
+      setSelectedStudentIds(new Set());
+      return;
+    }
+    setSelectedStudentIds(new Set(ids));
+  };
+
+  const prepareForm137Print = async (studentsToPrint) => {
+    if (!Array.isArray(studentsToPrint) || studentsToPrint.length === 0) {
+      toast.info('No students selected to print.');
+      return;
+    }
+
+    setPreparingPrint(true);
+    try {
+      const records = await Promise.all(studentsToPrint.map(async (student) => {
+        const grades = await fetchStudentGrades(student);
+        const subjects = await fetchSubjectsForStudent(student, grades);
+        return {
+          student,
+          grades,
+          subjects,
+        };
+      }));
+
+      setForm137Records(records);
+      setShowForm137Modal(true);
+    } catch (error) {
+      console.error('Error preparing Form 137 print:', error);
+      toast.error('Failed to prepare Form 137 print data');
+    } finally {
+      setPreparingPrint(false);
+    }
+  };
+
+  const handlePrintAll = () => prepareForm137Print(filteredStudents);
+
+  const handlePrintSelected = () => {
+    const chosen = filteredStudents.filter((student) => selectedStudentIds.has(student.id));
+    prepareForm137Print(chosen);
+  };
+
   return (
 
     <div className="space-y-8">
@@ -303,6 +399,28 @@ export default function AdminGrades() {
 
           <div className="flex items-center gap-4">
 
+            <button
+              type="button"
+              onClick={handlePrintSelected}
+              disabled={selectedStudentIds.size === 0 || preparingPrint}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Print Form 137 for selected students"
+            >
+              <PrinterIcon className="w-5 h-5" />
+              Print Selected ({selectedStudentIds.size})
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrintAll}
+              disabled={filteredStudents.length === 0 || preparingPrint}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Print Form 137 for all filtered students"
+            >
+              <PrinterIcon className="w-5 h-5" />
+              Print All ({filteredStudents.length})
+            </button>
+
             <select
 
               value={selectedGradeLevel}
@@ -357,6 +475,15 @@ export default function AdminGrades() {
 
               <tr>
 
+                <th className="p-4 w-12 text-center">
+                  <input
+                    type="checkbox"
+                    checked={filteredStudents.length > 0 && filteredStudents.every((s) => selectedStudentIds.has(s.id))}
+                    onChange={toggleSelectAllFiltered}
+                    aria-label="Select all students"
+                  />
+                </th>
+
                 <th className="p-4">LRN</th>
 
                 <th className="p-4">Student Name</th>
@@ -381,7 +508,7 @@ export default function AdminGrades() {
 
                 <tr>
 
-                  <td colSpan="6" className="p-4 text-center text-gray-500">Loading grades data...</td>
+                  <td colSpan="7" className="p-4 text-center text-gray-500">Loading grades data...</td>
 
                 </tr>
 
@@ -389,7 +516,7 @@ export default function AdminGrades() {
 
                 <tr>
 
-                  <td colSpan="6" className="p-4 text-center text-gray-500">No students found</td>
+                  <td colSpan="7" className="p-4 text-center text-gray-500">No students found</td>
 
                 </tr>
 
@@ -398,6 +525,15 @@ export default function AdminGrades() {
                 filteredStudents.map((student, index) => (
 
                   <tr key={student.id || index} className="border-b hover:bg-gray-50">
+
+                    <td className="p-4 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedStudentIds.has(student.id)}
+                        onChange={() => toggleStudentSelection(student.id)}
+                        aria-label={`Select ${student.fullName || `${student.firstName || ''} ${student.lastName || ''}`}`}
+                      />
+                    </td>
 
                     <td className="p-4">{student.lrn || 'N/A'}</td>
 
@@ -458,9 +594,17 @@ export default function AdminGrades() {
 
         {/* Summary */}
         <div className="p-4 border-t bg-gray-50 text-gray-600 text-sm">
-          Showing {filteredStudents.length} of {students.length} students
+          Showing {filteredStudents.length} of {students.length} students • Selected: {selectedStudentIds.size}
         </div>
       </div>
+
+      {showForm137Modal && (
+        <AdminForm137Print
+          records={form137Records}
+          schoolYearLabel={schoolYearLabel}
+          onClose={() => setShowForm137Modal(false)}
+        />
+      )}
 
       {/* View Grades Modal */}
       {showViewModal && selectedStudent && (

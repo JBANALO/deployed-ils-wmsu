@@ -164,14 +164,16 @@ export function AttendanceProvider({ children }) {
   const checkAttendanceStatus = () => {
     const now = new Date();
     const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const totalMinutes = (hours * 60) + minutes;
     
     // Morning session (Before 12 PM)
     if (hours < 12) {
-      if (hours < 8) {
-        // Before 8 AM - Present
+      if (totalMinutes < (8 * 60 + 30)) {
+        // Before 8:30 AM - Present
         return { status: 'present', period: 'morning' };
-      } else if (hours < 10) {
-        // 8 AM - 9:59 AM - Late
+      } else if (totalMinutes < (10 * 60)) {
+        // 8:30 AM - 9:59 AM - Late
         return { status: 'late', period: 'morning' };
       } else {
         // After 10 AM - Absent
@@ -180,11 +182,11 @@ export function AttendanceProvider({ children }) {
     } 
     // Afternoon session (After 12 PM)
     else {
-      if (hours < 14) {
-        // Before 2 PM - Present
+      if (totalMinutes < (14 * 60 + 30)) {
+        // Before 2:30 PM - Present
         return { status: 'present', period: 'afternoon' };
-      } else if (hours < 15) {
-        // 2 PM - 2:59 PM - Late
+      } else if (totalMinutes < (15 * 60)) {
+        // 2:30 PM - 2:59 PM - Late
         return { status: 'late', period: 'afternoon' };
       } else {
         // After 3 PM - Absent

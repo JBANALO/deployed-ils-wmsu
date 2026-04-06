@@ -18,6 +18,9 @@ router.use(authController.protect);
 // Get current user (must come before /:id)
 router.get('/me', userController.getMe);
 
+// Get admin credentials (must come before /:id)
+router.get('/:id/credentials', userController.getUserCredentials);
+
 // Get user by ID (public for profile viewing)
 router.get('/:id', userController.getUserById);
 

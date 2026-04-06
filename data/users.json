@@ -2186,17 +2186,6 @@
     "createdAt": "2025-12-30T04:32:36.929Z"
   },
   {
-    "id": "f9c729b2-5637-4388-a811-630cd74ff2f7",
-    "firstName": "heidi lynn",
-    "lastName": "rubia",
-    "username": "heidilynn",
-    "role": "student",
-    "email": "eh202202743@wmsu.edu.ph",
-    "password": "$2a$12$ZRQ9Jn3q9y6S6WCW6Hh19uM/4plLE/aTCLsRQyrL7qZB3JR0N4.Z.",
-    "status": "approved",
-    "createdAt": "2026-01-06T18:52:06.431Z"
-  },
-  {
     "id": "ff3e8a38-7cba-4372-ba48-bfc530544150",
     "firstName": "Heidi Lynn",
     "lastName": "Rubia",
@@ -2228,24 +2217,6 @@
     "archived": false,
     "archivedAt": null,
     "restoredAt": "2026-03-02T11:43:26.596Z"
-  },
-  {
-    "id": "f9aa512c-88ab-4cd5-92e7-12121a5e41cb",
-    "firstName": "Ashley",
-    "lastName": "Villanueva",
-    "email": "hz202300368@wmsu.edu.ph",
-    "username": "ashley",
-    "password": "$2a$12$bH4QIzaQUAc2mhgL2Gluhue7Q2plfhUCyx28CXRTF29BnGbfBKb3e",
-    "role": "adviser",
-    "gradeLevel": "Grade 6",
-    "section": "Honesty",
-    "subjects": "[\"GMRC\",\"English\",\"ArPan\",\"Mathematics\",\"Filipino\",\"EPP\",\"Science\",\"MAPEH\"]",
-    "bio": "",
-    "status": "approved",
-    "archived": false,
-    "createdAt": "2026-03-04T17:14:19.785Z",
-    "middleName": "",
-    "updatedAt": "2026-03-29T13:16:11.539Z"
   },
   {
     "id": "61ce7439-82f3-4e86-9e6b-7b08cc9b634a",

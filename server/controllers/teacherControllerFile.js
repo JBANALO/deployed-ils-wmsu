@@ -121,6 +121,7 @@ const getAllTeachers = async (req, res) => {
       let classAssignments = [];
       let classesWithAdvisers = [];
       let subjectTeachers = [];
+      let classesForYear = [];
 
       try {
         classAssignments = await query(
@@ -142,6 +143,17 @@ const getAllTeachers = async (req, res) => {
         );
       } catch (error) {
         classesWithAdvisers = [];
+      }
+
+      try {
+        classesForYear = await query(
+          `SELECT id, grade, section
+           FROM classes
+           WHERE school_year_id = ?`,
+          [targetSy.id]
+        );
+      } catch (error) {
+        classesForYear = [];
       }
 
       // Legacy global fallback is only allowed when no explicit school year scope is requested.
@@ -169,6 +181,21 @@ const getAllTeachers = async (req, res) => {
         subjectTeachers = [];
       }
 
+      const normalizeClassId = (value = '') => String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
+      const slugForClass = (grade = '', section = '') => `${String(grade || '').trim().toLowerCase().replace(/\s+/g, '-')}-${String(section || '').trim().toLowerCase().replace(/\s+/g, '-')}`;
+      const classByIdOrSlug = new Map();
+
+      classesForYear.forEach((item) => {
+        const info = {
+          grade: item.grade || '',
+          section: item.section || ''
+        };
+        classByIdOrSlug.set(normalizeClassId(item.id), info);
+        classByIdOrSlug.set(normalizeClassId(slugForClass(item.grade, item.section)), info);
+      });
+
+      const resolveClassInfo = (classId) => classByIdOrSlug.get(normalizeClassId(classId)) || null;
+
       const dbFormatted = dbTeachers
         .filter((teacher) => belongsToSchoolYear(teacher, targetSy))
         .map((teacher) => {
@@ -187,14 +214,24 @@ const getAllTeachers = async (req, res) => {
           String(item.teacher_id) === String(teacher.id) || normalizeName(item.teacher_name) === normalizedFullName
         );
 
+        const subjectClassInfos = subjectMatches
+          .map((item) => resolveClassInfo(item.class_id))
+          .filter(Boolean);
+
+        const derivedClassSections = [...new Set(
+          subjectClassInfos
+            .map((item) => `${item.grade} - ${item.section}`.trim())
+            .filter((label) => label && label !== '-')
+        )];
+
         const derivedRole = adviserMatch || assignmentMatch
           ? 'adviser'
           : subjectMatches.length > 0
             ? 'subject_teacher'
             : (teacher.role || 'teacher');
 
-        const derivedGradeLevel = adviserMatch?.grade || assignmentMatch?.grade_level || teacher.grade_level || '';
-        const derivedSection = adviserMatch?.section || assignmentMatch?.section || teacher.section || '';
+        const derivedGradeLevel = adviserMatch?.grade || assignmentMatch?.grade_level || teacher.grade_level || subjectClassInfos[0]?.grade || '';
+        const derivedSection = adviserMatch?.section || assignmentMatch?.section || teacher.section || subjectClassInfos[0]?.section || '';
         const derivedSubjects = subjectMatches.length > 0
           ? [...new Set(subjectMatches.map((item) => item.subject).filter(Boolean))]
           : parseSubjects(teacher.subjects);
@@ -213,6 +250,7 @@ const getAllTeachers = async (req, res) => {
           position: teacher.role,
           subjectsHandled: derivedSubjects,
           subjects: derivedSubjects,
+          classSections: derivedClassSections,
           bio: teacher.bio || '',
           profilePic: teacher.profile_pic || '',
           status: teacher.verification_status || 'approved',
@@ -227,7 +265,7 @@ const getAllTeachers = async (req, res) => {
       );
 
       const supplementalByKey = new Map();
-      const upsertSupplemental = ({ id, name, role, gradeLevel = '', section = '', subject = '' }) => {
+      const upsertSupplemental = ({ id, name, role, gradeLevel = '', section = '', subject = '', classSectionLabel = '' }) => {
         const trimmedName = String(name || '').trim();
         if (!trimmedName) return;
         const key = String(id || '').trim() || normalizeName(trimmedName);
@@ -251,6 +289,7 @@ const getAllTeachers = async (req, res) => {
             position: role || 'teacher',
             subjectsHandled: [],
             subjects: [],
+            classSections: [],
             bio: '',
             profilePic: '',
             status: 'approved',
@@ -264,6 +303,9 @@ const getAllTeachers = async (req, res) => {
           existing.subjects.push(subject);
           existing.subjectsHandled = existing.subjects;
           if (existing.role !== 'adviser') existing.role = 'subject_teacher';
+        }
+        if (classSectionLabel && !existing.classSections.includes(classSectionLabel)) {
+          existing.classSections.push(classSectionLabel);
         }
         if (!existing.gradeLevel && gradeLevel) existing.gradeLevel = gradeLevel;
         if (!existing.section && section) existing.section = section;
@@ -290,11 +332,16 @@ const getAllTeachers = async (req, res) => {
       });
 
       subjectTeachers.forEach((item) => {
+        const classInfo = resolveClassInfo(item.class_id);
+        const classSectionLabel = classInfo ? `${classInfo.grade} - ${classInfo.section}` : '';
         upsertSupplemental({
           id: item.teacher_id,
           name: item.teacher_name,
           role: 'subject_teacher',
-          subject: item.subject
+          subject: item.subject,
+          gradeLevel: classInfo?.grade || '',
+          section: classInfo?.section || '',
+          classSectionLabel
         });
       });
 
@@ -343,8 +390,40 @@ const getAllTeachers = async (req, res) => {
       [...mergedTeachers, ...fileTeachers].forEach((teacher) => {
         const key = makeIdentityKey(teacher);
         if (!mergedByIdentity.has(key)) {
-          mergedByIdentity.set(key, teacher);
+          mergedByIdentity.set(key, {
+            ...teacher,
+            subjects: Array.isArray(teacher.subjects) ? teacher.subjects : parseSubjects(teacher.subjects),
+            subjectsHandled: Array.isArray(teacher.subjectsHandled) ? teacher.subjectsHandled : parseSubjects(teacher.subjectsHandled),
+            classSections: Array.isArray(teacher.classSections) ? teacher.classSections : []
+          });
+          return;
         }
+
+        const existing = mergedByIdentity.get(key);
+        const incomingSubjects = Array.isArray(teacher.subjects) ? teacher.subjects : parseSubjects(teacher.subjects);
+        const incomingHandled = Array.isArray(teacher.subjectsHandled) ? teacher.subjectsHandled : parseSubjects(teacher.subjectsHandled);
+        const incomingClassSections = Array.isArray(teacher.classSections) ? teacher.classSections : [];
+
+        existing.subjects = [...new Set([...(existing.subjects || []), ...incomingSubjects, ...incomingHandled].filter(Boolean))];
+        existing.subjectsHandled = existing.subjects;
+        existing.classSections = [...new Set([...(existing.classSections || []), ...incomingClassSections].filter(Boolean))];
+
+        if ((!existing.gradeLevel || !existing.section) && teacher.gradeLevel && teacher.section) {
+          existing.gradeLevel = existing.gradeLevel || teacher.gradeLevel;
+          existing.section = existing.section || teacher.section;
+        }
+
+        const roleRank = { adviser: 3, subject_teacher: 2, teacher: 1 };
+        const existingRank = roleRank[existing.role] || 0;
+        const incomingRank = roleRank[teacher.role] || 0;
+        if (incomingRank > existingRank) {
+          existing.role = teacher.role;
+        }
+
+        if (!existing.firstName && teacher.firstName) existing.firstName = teacher.firstName;
+        if (!existing.lastName && teacher.lastName) existing.lastName = teacher.lastName;
+        if (!existing.username && teacher.username) existing.username = teacher.username;
+        if (!existing.email && teacher.email) existing.email = teacher.email;
       });
 
       const unifiedTeachers = Array.from(mergedByIdentity.values());
@@ -953,38 +1032,151 @@ const createTeacher = async (req, res) => {
 };
 
 // Update a teacher
-const updateTeacher = (req, res) => {
+const updateTeacher = async (req, res) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    const updateData = { ...req.body };
+
+    // Normalize and validate institutional email domain.
+    if (updateData.email !== undefined) {
+      const normalizedEmail = String(updateData.email || '')
+        .trim()
+        .toLowerCase()
+        .replace(/@wmsu\.edu\.com$/i, '@wmsu.edu.ph');
+
+      if (!normalizedEmail || !/^[^\s@]+@wmsu\.edu\.ph$/i.test(normalizedEmail)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email must use the @wmsu.edu.ph domain'
+        });
+      }
+
+      updateData.email = normalizedEmail;
+    }
+
+    let dbUpdatedTeacher = null;
+
+    // Prefer DB update first because most teacher rows shown in admin come from DB.
+    try {
+      const teacherRows = await query(
+        `SELECT id, first_name, middle_name, last_name, username, email, role,
+                grade_level, section, subjects, bio, verification_status
+         FROM teachers
+         WHERE id = ?
+         LIMIT 1`,
+        [id]
+      );
+
+      if (teacherRows.length > 0) {
+        const current = teacherRows[0];
+
+        if (updateData.email) {
+          const duplicateEmailRows = await query(
+            'SELECT id FROM teachers WHERE email = ? AND id <> ? LIMIT 1',
+            [updateData.email, id]
+          );
+          if (duplicateEmailRows.length > 0) {
+            return res.status(400).json({
+              success: false,
+              message: 'Email already exists'
+            });
+          }
+        }
+
+        const firstName = updateData.firstName ?? updateData.first_name ?? current.first_name ?? '';
+        const middleName = updateData.middleName ?? updateData.middle_name ?? current.middle_name ?? '';
+        const lastName = updateData.lastName ?? updateData.last_name ?? current.last_name ?? '';
+        const username = updateData.username ?? current.username ?? '';
+        const email = updateData.email ?? current.email ?? '';
+        const role = updateData.role ?? current.role ?? 'teacher';
+        const gradeLevel = updateData.gradeLevel ?? updateData.grade_level ?? current.grade_level ?? '';
+        const section = updateData.section ?? current.section ?? '';
+        const subjects = updateData.subjects ?? current.subjects ?? '[]';
+        const bio = updateData.bio ?? current.bio ?? '';
+        const status = updateData.status ?? updateData.verification_status ?? current.verification_status ?? 'approved';
+
+        await query(
+          `UPDATE teachers
+           SET first_name = ?,
+               middle_name = ?,
+               last_name = ?,
+               username = ?,
+               email = ?,
+               role = ?,
+               grade_level = ?,
+               section = ?,
+               subjects = ?,
+               bio = ?,
+               verification_status = ?,
+               updated_at = NOW()
+           WHERE id = ?`,
+          [
+            firstName,
+            middleName,
+            lastName,
+            username,
+            email,
+            role,
+            gradeLevel,
+            section,
+            typeof subjects === 'string' ? subjects : JSON.stringify(subjects || []),
+            bio,
+            status,
+            id
+          ]
+        );
+
+        dbUpdatedTeacher = {
+          id: current.id,
+          firstName,
+          middleName,
+          lastName,
+          username,
+          email,
+          role,
+          gradeLevel,
+          section,
+          subjects: parseSubjects(subjects),
+          bio,
+          status
+        };
+      }
+    } catch (dbError) {
+      console.log('DB update skipped/fallback to file storage:', dbError.message);
+    }
     
     const users = readUsers();
-    
-    const teacherIndex = users.findIndex(u => u.id === id);
-    
-    if (teacherIndex === -1) {
+
+    const teacherIndex = users.findIndex(u => String(u.id) === String(id));
+
+    if (teacherIndex === -1 && !dbUpdatedTeacher) {
       return res.status(404).json({
         success: false,
         message: 'Teacher not found'
       });
     }
-    
-    // Update teacher data
-    users[teacherIndex] = {
-      ...users[teacherIndex],
-      ...updateData,
-      updatedAt: new Date().toISOString()
-    };
-    
-    const success = writeUsers(users);
-    
-    if (success) {
+
+    let fileUpdatedTeacher = null;
+    let fileSaved = true;
+
+    if (teacherIndex !== -1) {
+      const merged = {
+        ...users[teacherIndex],
+        ...updateData,
+        updatedAt: new Date().toISOString()
+      };
+      users[teacherIndex] = merged;
+      fileUpdatedTeacher = merged;
+      fileSaved = writeUsers(users);
+    }
+
+    if (dbUpdatedTeacher || fileSaved) {
       console.log(`Teacher ${id} updated successfully`);
       res.json({
         success: true,
         message: 'Teacher updated successfully',
         data: {
-          teacher: users[teacherIndex]
+          teacher: dbUpdatedTeacher || fileUpdatedTeacher
         }
       });
     } else {

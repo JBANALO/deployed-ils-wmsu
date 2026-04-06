@@ -338,7 +338,7 @@ exports.getStudents = async (req, res) => {
           [teacherId, targetSy.id]
         );
         classesRows.forEach(row => {
-          assignedClasses.push({ gradeLevel: row.grade, section: row.section });
+          assignedClasses.push({ gradeLevel: row.grade, section: row.section, isAdviser: true });
         });
         if (classesRows.length > 0) {
           console.log(`[getStudents] Found ${classesRows.length} classes as adviser for teacher ${teacherId}`);
@@ -357,7 +357,7 @@ exports.getStudents = async (req, res) => {
           // Avoid duplicates
           const exists = assignedClasses.some(c => c.gradeLevel === row.grade_level && c.section === row.section);
           if (!exists) {
-            assignedClasses.push({ gradeLevel: row.grade_level, section: row.section });
+            assignedClasses.push({ gradeLevel: row.grade_level, section: row.section, isAdviser: true });
           }
         });
         if (classAssignments.length > 0) {
@@ -376,7 +376,7 @@ exports.getStudents = async (req, res) => {
         subjectTeacherRows.forEach(row => {
           const exists = assignedClasses.some(c => c.gradeLevel === row.grade && c.section === row.section);
           if (!exists) {
-            assignedClasses.push({ gradeLevel: row.grade, section: row.section });
+            assignedClasses.push({ gradeLevel: row.grade, section: row.section, isAdviser: false });
           }
         });
         if (subjectTeacherRows.length > 0) {
@@ -394,7 +394,7 @@ exports.getStudents = async (req, res) => {
             [teacherId, targetSy.id]
           );
           if (teacherRows.length > 0) {
-            assignedClasses.push({ gradeLevel: teacherRows[0].grade_level, section: teacherRows[0].section });
+            assignedClasses.push({ gradeLevel: teacherRows[0].grade_level, section: teacherRows[0].section, isAdviser: false });
             console.log(`[getStudents] Found teachers table for teacher ${teacherId}: ${teacherRows[0].grade_level} - ${teacherRows[0].section}`);
           }
         } catch (teacherErr) {
@@ -407,19 +407,102 @@ exports.getStudents = async (req, res) => {
         // Build query for multiple classes
         const conditions = assignedClasses.map(() => '(grade_level = ? AND section = ?)').join(' OR ');
         const params = assignedClasses.flatMap(c => [c.gradeLevel, c.section]);
-        
+
         const filteredStudents = await query(
-          `SELECT s.*,
-            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.grade > 0 AND g.school_year_id = ?) AS live_average,
-            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q1' AND g.grade > 0 AND g.school_year_id = ?) AS q1_avg,
-            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q2' AND g.grade > 0 AND g.school_year_id = ?) AS q2_avg,
-            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q3' AND g.grade > 0 AND g.school_year_id = ?) AS q3_avg,
-            (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q4' AND g.grade > 0 AND g.school_year_id = ?) AS q4_avg
-           FROM students s WHERE (${conditions}) AND s.school_year_id = ? ORDER BY s.grade_level, s.section, s.last_name ASC`,
-          [targetSy.id, targetSy.id, targetSy.id, targetSy.id, targetSy.id, ...params, targetSy.id]
+          `SELECT s.*
+           FROM students s
+           WHERE (${conditions}) AND s.school_year_id = ?
+           ORDER BY s.grade_level, s.section, s.last_name ASC`,
+          [...params, targetSy.id]
         );
-        console.log(`[getStudents] Returning ${filteredStudents.length} students from ${assignedClasses.length} assigned class(es)`);
-        return res.status(200).json({ status: 'success', data: filteredStudents.map(formatStudent) });
+
+        const adviserClassKeys = new Set(
+          assignedClasses
+            .filter((item) => item.isAdviser)
+            .map((item) => `${String(item.gradeLevel || '').trim().toLowerCase()}||${String(item.section || '').trim().toLowerCase()}`)
+        );
+
+        const normalizeSubject = (value = '') => String(value || '').trim().toLowerCase();
+        const classSubjectMap = {};
+
+        try {
+          const subjectRows = await query(
+            `SELECT st.subject, c.grade, c.section
+             FROM subject_teachers st
+             JOIN classes c ON st.class_id = c.id
+             WHERE st.teacher_id = ? AND st.school_year_id = ? AND c.school_year_id = ?`,
+            [teacherId, targetSy.id, targetSy.id]
+          );
+
+          subjectRows.forEach((row) => {
+            const key = `${String(row.grade || '').trim().toLowerCase()}||${String(row.section || '').trim().toLowerCase()}`;
+            if (!classSubjectMap[key]) classSubjectMap[key] = new Set();
+            const normalized = normalizeSubject(row.subject);
+            if (normalized) classSubjectMap[key].add(normalized);
+          });
+        } catch (subjectErr) {
+          console.log('[getStudents] subject map build failed:', subjectErr.message);
+        }
+
+        const studentIds = filteredStudents.map((item) => item.id).filter(Boolean);
+        let gradeRows = [];
+        if (studentIds.length > 0) {
+          const placeholders = studentIds.map(() => '?').join(',');
+          gradeRows = await query(
+            `SELECT student_id, subject, quarter, grade
+             FROM grades
+             WHERE school_year_id = ? AND student_id IN (${placeholders}) AND grade > 0`,
+            [targetSy.id, ...studentIds]
+          );
+        }
+
+        const gradesByStudent = {};
+        gradeRows.forEach((row) => {
+          const studentKey = String(row.student_id);
+          if (!gradesByStudent[studentKey]) gradesByStudent[studentKey] = [];
+          gradesByStudent[studentKey].push(row);
+        });
+
+        const withScopedAverages = filteredStudents.map((student) => {
+          const classKey = `${String(student.grade_level || '').trim().toLowerCase()}||${String(student.section || '').trim().toLowerCase()}`;
+          const isAdviserForClass = adviserClassKeys.has(classKey);
+          const allowedSubjects = classSubjectMap[classKey];
+          const rows = (gradesByStudent[String(student.id)] || []).filter((row) => {
+            if (isAdviserForClass) return true;
+            if (!allowedSubjects || allowedSubjects.size === 0) return false;
+            return allowedSubjects.has(normalizeSubject(row.subject));
+          });
+
+          const averageForQuarter = (quarter) => {
+            const values = rows
+              .filter((row) => String(row.quarter || '').toUpperCase() === quarter)
+              .map((row) => Number(row.grade) || 0)
+              .filter((value) => value > 0);
+            if (values.length === 0) return null;
+            return Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2));
+          };
+
+          const allValues = rows
+            .map((row) => Number(row.grade) || 0)
+            .filter((value) => value > 0);
+
+          const liveAverage = allValues.length > 0
+            ? Number((allValues.reduce((sum, value) => sum + value, 0) / allValues.length).toFixed(2))
+            : null;
+
+          return {
+            ...student,
+            live_average: liveAverage,
+            q1_avg: averageForQuarter('Q1'),
+            q2_avg: averageForQuarter('Q2'),
+            q3_avg: averageForQuarter('Q3'),
+            q4_avg: averageForQuarter('Q4'),
+            average: liveAverage
+          };
+        });
+
+        console.log(`[getStudents] Returning ${withScopedAverages.length} students from ${assignedClasses.length} assigned class(es)`);
+        return res.status(200).json({ status: 'success', data: withScopedAverages.map(formatStudent) });
       }
 
       // 6. If teacher has no assigned class, return empty array
@@ -492,6 +575,14 @@ exports.getStudent = async (req, res) => {
       .toLowerCase();
 
     const toGradeKey = (gradeLabel = '') => String(gradeLabel).replace(/^Grade\s+/i, '').trim();
+    const gradeRank = (gradeLabel = '') => {
+      const normalized = String(gradeLabel || '').trim().toLowerCase();
+      if (!normalized) return -1;
+      if (normalized === 'kindergarten' || normalized === 'kinder') return 0;
+      const match = normalized.match(/grade\s*(\d+)/i);
+      if (match) return Number(match[1]);
+      return -1;
+    };
 
     // ======== FETCH GRADES ========
     const gradesRaw = await query(
@@ -565,6 +656,23 @@ exports.getStudent = async (req, res) => {
         q4: matched.q4 ?? null
       };
     });
+
+    // Ensure newly encoded subjects are visible immediately even if not yet in admin subject configuration.
+    Object.values(currentGradesByNormalized).forEach((gradeRow) => {
+      if (!gradeRow?.subject) return;
+      const alreadyIncluded = Object.keys(currentGradesMap).some(
+        (subjectName) => normalizeSubjectName(subjectName) === normalizeSubjectName(gradeRow.subject)
+      );
+      if (alreadyIncluded) return;
+
+      currentGradesMap[gradeRow.subject] = {
+        subject: gradeRow.subject,
+        q1: gradeRow.q1 ?? null,
+        q2: gradeRow.q2 ?? null,
+        q3: gradeRow.q3 ?? null,
+        q4: gradeRow.q4 ?? null
+      };
+    });
     
     // Calculate averages and remarks
     const grades = Object.values(currentGradesMap).map(g => {
@@ -588,8 +696,18 @@ exports.getStudent = async (req, res) => {
         [studentId]
       );
 
+      const currentRank = gradeRank(student.grade_level);
+      const validHistoryRows = historyRows.filter((row) => {
+        const fromRank = gradeRank(row.from_grade);
+        const toRank = gradeRank(row.to_grade);
+        if (fromRank < 0 || toRank < 0 || currentRank < 0) return false;
+        if (fromRank >= toRank) return false;
+        if (toRank > currentRank) return false;
+        return true;
+      });
+
       const previousGrades = [...new Set(
-        historyRows
+        validHistoryRows
           .map(h => h.from_grade)
           .filter(g => g && g !== student.grade_level)
       )];
@@ -603,7 +721,7 @@ exports.getStudent = async (req, res) => {
         const prevSubjects = prevSubjectsRows.map(r => r.name).filter(Boolean);
 
         // Use grades recorded up to the promotion date for this previous grade snapshot
-        const promoCutoff = historyRows.find(h => h.from_grade === prevGrade)?.created_at || null;
+        const promoCutoff = validHistoryRows.find(h => h.from_grade === prevGrade)?.created_at || null;
         const gradesBeforePromotion = promoCutoff
           ? gradesRaw.filter(g => g.created_at && new Date(g.created_at) <= new Date(promoCutoff))
           : gradesRaw;
@@ -629,8 +747,8 @@ exports.getStudent = async (req, res) => {
         if (prevGrades.length > 0) {
           gradeHistory.push({
             gradeLevel: prevGrade,
-            section: historyRows.find(h => h.from_grade === prevGrade)?.from_section || null,
-            promotedAt: historyRows.find(h => h.from_grade === prevGrade)?.created_at || null,
+            section: validHistoryRows.find(h => h.from_grade === prevGrade)?.from_section || null,
+            promotedAt: validHistoryRows.find(h => h.from_grade === prevGrade)?.created_at || null,
             grades: prevGrades
           });
         }

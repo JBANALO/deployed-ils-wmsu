@@ -90,7 +90,12 @@ export default function AdminTeachers() {
     lastName: teacher.lastName || teacher.last_name || '',
     email: teacher.email || '',
     role: normalizeTeacherRole(teacher.role || teacher.position || teacher.role_in_class),
-    status: normalizeTeacherStatus(teacher)
+    status: normalizeTeacherStatus(teacher),
+    classSections: Array.isArray(teacher.classSections)
+      ? teacher.classSections
+      : Array.isArray(teacher.class_sections)
+        ? teacher.class_sections
+        : []
   });
 
   const fetchSchoolYears = async () => {
@@ -142,6 +147,16 @@ export default function AdminTeachers() {
     if (selectedSchoolYearId) {
       fetchTeachers();
     }
+  }, [selectedSchoolYearId]);
+
+  useEffect(() => {
+    if (!selectedSchoolYearId) return;
+
+    const interval = setInterval(() => {
+      fetchTeachers(true);
+    }, 15000);
+
+    return () => clearInterval(interval);
   }, [selectedSchoolYearId]);
 
   // Helper function to fix mixed up grade level and section data
@@ -459,10 +474,12 @@ export default function AdminTeachers() {
         return allTeachers;
       });
       
-      if (allTeachers.length === 0) {
-        toast.warning('No teachers found in the system');
-      } else {
-        toast.success(`Loaded ${allTeachers.length} teachers`);
+      if (!isRefresh) {
+        if (allTeachers.length === 0) {
+          toast.warning('No teachers found in the system');
+        } else {
+          toast.success(`Loaded ${allTeachers.length} teachers`);
+        }
       }
     } catch (error) {
       console.error('Error in fetchTeachers:', error);
@@ -943,6 +960,16 @@ export default function AdminTeachers() {
     }
     try {
       console.log('Saving teacher with data:', editFormData);
+
+      const normalizedEmail = String(editFormData.email || '')
+        .trim()
+        .toLowerCase()
+        .replace(/@wmsu\.edu\.com$/i, '@wmsu.edu.ph');
+
+      if (!/^[^\s@]+@wmsu\.edu\.ph$/i.test(normalizedEmail)) {
+        toast.error('Email must use @wmsu.edu.ph');
+        return;
+      }
       
       // Prepare the data for API call - handle kindergarten subjects properly
       let updateData;
@@ -954,7 +981,7 @@ export default function AdminTeachers() {
           middleName: String(editFormData.middleName || ''),
           lastName: String(editFormData.lastName || ''),
           username: String(selectedTeacher.username || ''),
-          email: String(editFormData.email || ''),
+          email: normalizedEmail,
           role: String(editFormData.role || ''),
           gradeLevel: String(editFormData.gradeLevel || ''),
           section: String(editFormData.section || ''),
@@ -968,7 +995,7 @@ export default function AdminTeachers() {
           middleName: String(editFormData.middleName || ''),
           lastName: String(editFormData.lastName || ''),
           username: String(selectedTeacher.username || ''),
-          email: String(editFormData.email || ''),
+          email: normalizedEmail,
           role: String(editFormData.role || ''),
           gradeLevel: String(editFormData.gradeLevel || ''),
           section: String(editFormData.section || ''),
@@ -1249,6 +1276,9 @@ export default function AdminTeachers() {
                         </td>
                         <td className="p-3 border text-sm">
                           {(() => {
+                            if (Array.isArray(teacher.classSections) && teacher.classSections.length > 0) {
+                              return teacher.classSections.join(', ');
+                            }
                             const fixed = fixGradeAndSection(teacher);
                             return fixed.actualGradeLevel && fixed.actualSection 
                               ? `${fixed.actualGradeLevel} - ${fixed.actualSection}`
@@ -1258,6 +1288,14 @@ export default function AdminTeachers() {
                         <td className="p-3 border text-sm max-w-xs break-words">
                           {(() => {
                             try {
+                              const directSubjects = Array.isArray(teacher.subjectsHandled)
+                                ? teacher.subjectsHandled
+                                : Array.isArray(teacher.subjects)
+                                  ? teacher.subjects
+                                  : [];
+                              if (directSubjects.length > 0) {
+                                return [...new Set(directSubjects.filter(Boolean))].join(', ');
+                              }
                               const fixed = fixGradeAndSection(teacher);
                               if (fixed.actualSubjects && fixed.actualSubjects.length > 0) {
                                 return fixed.actualSubjects.join(', ');

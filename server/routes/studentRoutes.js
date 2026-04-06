@@ -4,11 +4,15 @@ const studentController = require('../controllers/studentController');
 const { query } = require('../config/database');
 const jwt = require('jsonwebtoken');
 const { readUsers } = require('../utils/fileStorage');
-const { sendGradeReportEmail } = require('../utils/emailService');
+const { sendGradeReportEmail, sendAdviserGradeSubmissionEmail } = require('../utils/emailService');
 
 // Ensure grades and students are school-year scoped
 let gradesSyEnsured = false;
 let studentSyEnsured = false;
+let notificationsEnsured = false;
+let schoolYearQuarterColumnsEnsured = false;
+
+const normalizeRole = (value = '') => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 
 const ensureGradesSchoolYearColumn = async () => {
   if (gradesSyEnsured) return;
@@ -31,6 +35,55 @@ const ensureStudentSchoolYearColumn = async () => {
   }
   studentSyEnsured = true;
 };
+
+const ensureNotificationsTable = async () => {
+  if (notificationsEnsured) return;
+  await query(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id VARCHAR(100) NOT NULL,
+      type VARCHAR(50) NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      message TEXT NOT NULL,
+      meta_json JSON NULL,
+      is_read TINYINT(1) DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_notifications_user_created (user_id, created_at),
+      INDEX idx_notifications_user_unread (user_id, is_read)
+    )
+  `);
+  notificationsEnsured = true;
+};
+
+const ensureSchoolYearQuarterColumns = async () => {
+  if (schoolYearQuarterColumnsEnsured) return;
+
+  const cols = await query('SHOW COLUMNS FROM school_years');
+  const hasQ1 = cols.some(c => c.Field === 'q1_end_date');
+  const hasQ2 = cols.some(c => c.Field === 'q2_end_date');
+  const hasQ3 = cols.some(c => c.Field === 'q3_end_date');
+  const hasQ4 = cols.some(c => c.Field === 'q4_end_date');
+
+  if (!hasQ1) await query('ALTER TABLE school_years ADD COLUMN q1_end_date DATE NULL');
+  if (!hasQ2) await query('ALTER TABLE school_years ADD COLUMN q2_end_date DATE NULL');
+  if (!hasQ3) await query('ALTER TABLE school_years ADD COLUMN q3_end_date DATE NULL');
+  if (!hasQ4) await query('ALTER TABLE school_years ADD COLUMN q4_end_date DATE NULL');
+
+  schoolYearQuarterColumnsEnsured = true;
+};
+
+const quarterLabel = (qKey = '') => {
+  const map = { q1: 'Quarter 1', q2: 'Quarter 2', q3: 'Quarter 3', q4: 'Quarter 4' };
+  return map[String(qKey || '').toLowerCase()] || String(qKey || '').toUpperCase();
+};
+
+const sanitizeEmail = (value = '') => {
+  const email = String(value || '').trim();
+  if (!email) return '';
+  return email.replace(/@wmsu\.edu\.ph@wmsu\.edu\.ph$/i, '@wmsu.edu.ph');
+};
+
+const isValidEmail = (value = '') => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 
 const getActiveSchoolYear = async () => {
   const rows = await query('SELECT id, label FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
@@ -93,14 +146,17 @@ const verifyUserForGrades = async (req, res, next) => {
 // Check if teacher can enter grades
 const canEnterGrade = async (user, student, subject, schoolYearId) => {
   console.log('canEnterGrade check:', { userId: user?.id, userRole: user?.role, subject });
+  const normalizedRole = normalizeRole(user?.role);
   
   if (!user || !user.role) return false;
-  if (user.role === 'admin') return true;
+  if (normalizedRole === 'admin') return true;
   
   // Allow adviser, teacher, or subject_teacher roles
-  if (user.role === 'teacher' || user.role === 'adviser' || user.role === 'subject_teacher') {
+  if (normalizedRole === 'teacher' || normalizedRole === 'adviser' || normalizedRole === 'subject_teacher') {
     const studentGrade = student.grade_level || student.gradeLevel;
     const studentSection = student.section;
+    const normalizeClassId = (value = '') => String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
+    const normalizeSubject = (value = '') => String(value || '').trim().toLowerCase();
     
     // Check if user is adviser for this class (classes table uses 'grade' not 'grade_level')
     const adviserClasses = await query(
@@ -109,22 +165,96 @@ const canEnterGrade = async (user, student, subject, schoolYearId) => {
     );
     console.log('Adviser check:', { userId: user.id, studentGrade, studentSection, found: adviserClasses?.length });
     if (adviserClasses && adviserClasses.length > 0) return true;
+
+    // Fallback: adviser assignment may still use older account ID; try adviser_name match.
+    if (!adviserClasses || adviserClasses.length === 0) {
+      try {
+        const nameRows = await query(
+          `SELECT first_name, last_name, firstName, lastName
+           FROM users
+           WHERE id = ?
+           LIMIT 1`,
+          [user.id]
+        );
+        const nameRow = nameRows?.[0];
+        const first = String(nameRow?.first_name || nameRow?.firstName || '').trim();
+        const last = String(nameRow?.last_name || nameRow?.lastName || '').trim();
+        if (first && last) {
+          const adviserByName = await query(
+            `SELECT id
+             FROM classes
+             WHERE grade = ? AND section = ? AND school_year_id = ?
+               AND adviser_name LIKE ? AND adviser_name LIKE ?
+             LIMIT 1`,
+            [studentGrade, studentSection, schoolYearId, `%${first}%`, `%${last}%`]
+          );
+          if (adviserByName?.length > 0) {
+            return true;
+          }
+        }
+      } catch (nameFallbackError) {
+        console.log('Adviser name fallback skipped:', nameFallbackError.message);
+      }
+    }
     
-    // Check if user is subject teacher for this class and subject
-    const classId = `${studentGrade.toLowerCase().replace(/\s+/g, '-')}-${studentSection.toLowerCase()}`;
-    console.log('Subject teacher check - classId:', classId, 'subject:', subject);
-    
-    const subjectTeacherRecords = await query(
-      'SELECT * FROM subject_teachers WHERE teacher_id = ? AND class_id = ? AND school_year_id = ?',
-      [user.id, classId, schoolYearId]
+    // Check if user is subject teacher for this class and subject.
+    // class_id may be stored as DB class.id OR as grade-section slug.
+    const classSlug = `${String(studentGrade || '').toLowerCase().replace(/\s+/g, '-')}-${String(studentSection || '').toLowerCase().replace(/\s+/g, '-')}`;
+    const classRows = await query(
+      'SELECT id FROM classes WHERE grade = ? AND section = ? AND school_year_id = ?',
+      [studentGrade, studentSection, schoolYearId]
     );
+    const classIdentifiers = [normalizeClassId(classSlug), ...classRows.map((row) => normalizeClassId(row.id))]
+      .filter(Boolean);
+    const classPlaceholders = classIdentifiers.map(() => '?').join(', ');
+
+    let teacherName = '';
+    try {
+      const userRows = await query(
+        `SELECT firstName, lastName, first_name, last_name
+         FROM users
+         WHERE id = ?
+         LIMIT 1`,
+        [user.id]
+      );
+      if (userRows?.length) {
+        const row = userRows[0];
+        teacherName = `${row.firstName || row.first_name || ''} ${row.lastName || row.last_name || ''}`.trim();
+      }
+      if (!teacherName) {
+        const teacherRows = await query(
+          'SELECT first_name, last_name FROM teachers WHERE id = ? LIMIT 1',
+          [user.id]
+        );
+        if (teacherRows?.length) {
+          teacherName = `${teacherRows[0].first_name || ''} ${teacherRows[0].last_name || ''}`.trim();
+        }
+      }
+    } catch (nameLookupError) {
+      console.log('Subject teacher name lookup skipped:', nameLookupError.message);
+    }
+
+    console.log('Subject teacher check - class identifiers:', classIdentifiers, 'subject:', subject, 'teacherName:', teacherName);
+
+    const subjectTeacherRecords = classIdentifiers.length > 0
+      ? await query(
+          `SELECT subject
+           FROM subject_teachers
+           WHERE LOWER(REPLACE(TRIM(class_id), ' ', '-')) IN (${classPlaceholders})
+             AND school_year_id = ?
+             AND (
+               LOWER(TRIM(CAST(teacher_id AS CHAR))) = LOWER(TRIM(?))
+               OR (? <> '' AND LOWER(TRIM(teacher_name)) = LOWER(TRIM(?)))
+             )`,
+          [...classIdentifiers, schoolYearId, String(user.id), teacherName, teacherName]
+        )
+      : [];
     console.log('Subject teacher records:', subjectTeacherRecords);
     
     if (subjectTeacherRecords && subjectTeacherRecords.length > 0) {
       for (const record of subjectTeacherRecords) {
-        // Each record has a single subject in 'subject' column (not 'subjects')
         console.log('Comparing:', record.subject, 'vs', subject);
-        if (record.subject === subject) return true;
+        if (normalizeSubject(record.subject) === normalizeSubject(subject)) return true;
       }
     }
   }
@@ -137,6 +267,8 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
   try {
     await ensureStudentSchoolYearColumn();
     await ensureGradesSchoolYearColumn();
+    await ensureNotificationsTable();
+    await ensureSchoolYearQuarterColumns();
     const { id } = req.params;
     const { grades, average, quarter } = req.body;
     const user = req.user;
@@ -149,6 +281,54 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
     const targetSyId = student.school_year_id || (await getActiveSchoolYear())?.id;
     if (!targetSyId) {
       return res.status(400).json({ success: false, error: 'No active school year found for grading' });
+    }
+
+    // Enforce per-quarter editing deadlines for non-admin users.
+    const normalizedRoleForDeadline = normalizeRole(user?.role);
+    if (normalizedRoleForDeadline !== 'admin') {
+      const quarterKeysFromPayload = new Set();
+      for (const [, gradeValue] of Object.entries(grades || {})) {
+        if (typeof gradeValue === 'object' && gradeValue !== null) {
+          Object.entries(gradeValue).forEach(([qKey, gValue]) => {
+            if (gValue && Number(gValue) > 0) {
+              quarterKeysFromPayload.add(String(qKey || '').toLowerCase());
+            }
+          });
+        } else if (gradeValue && Number(gradeValue) > 0) {
+          quarterKeysFromPayload.add(String(quarter || 'q1').toLowerCase());
+        }
+      }
+
+      if (quarterKeysFromPayload.size > 0) {
+        const syRows = await query(
+          `SELECT q1_end_date, q2_end_date, q3_end_date, q4_end_date
+           FROM school_years
+           WHERE id = ?
+           LIMIT 1`,
+          [targetSyId]
+        );
+        const syRow = syRows?.[0] || null;
+
+        if (syRow) {
+          const now = new Date();
+          for (const qKey of quarterKeysFromPayload) {
+            if (!['q1', 'q2', 'q3', 'q4'].includes(qKey)) continue;
+            const deadlineRaw = syRow[`${qKey}_end_date`];
+            if (!deadlineRaw) continue;
+
+            const deadline = new Date(deadlineRaw);
+            deadline.setHours(23, 59, 59, 999);
+
+            if (now > deadline) {
+              return res.status(403).json({
+                success: false,
+                error: 'Quarter deadline passed',
+                message: `${quarterLabel(qKey)} is already closed for editing.`
+              });
+            }
+          }
+        }
+      }
     }
 
     // Filter out subjects that don't have any actual grades (skip 0, null, undefined)
@@ -232,6 +412,240 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
 
     await query('UPDATE students SET average = ? WHERE id = ?', [average || 0, id]);
 
+    // Notify class adviser when a subject teacher/teacher submits grades for their assigned subjects.
+    const normalizedRole = normalizeRole(user?.role);
+    const canTriggerAdviserNotification = ['teacher', 'subject_teacher', 'adviser'].includes(normalizedRole);
+    if (canTriggerAdviserNotification && subjectsWithGrades.length > 0) {
+      try {
+        const studentGradeValue = student.grade_level || student.gradeLevel;
+        const classRows = await query(
+          `SELECT id, adviser_id, adviser_name
+           FROM classes
+           WHERE section = ?
+             AND school_year_id = ?
+             AND (
+               LOWER(TRIM(grade)) = LOWER(TRIM(?))
+               OR LOWER(REPLACE(TRIM(grade), 'Grade ', '')) = LOWER(REPLACE(TRIM(?), 'Grade ', ''))
+             )
+           LIMIT 1`,
+          [student.section, targetSyId, studentGradeValue, studentGradeValue]
+        );
+        const classRow = classRows?.[0];
+        let classIdentifier = classRow?.id || null;
+        let adviserDisplayName = classRow?.adviser_name || '';
+        let adviserTargetId = classRow?.adviser_id ? String(classRow.adviser_id).trim() : '';
+
+        // Fallback: class assignments table may hold adviser mapping when classes row is missing adviser_id.
+        if (!adviserTargetId) {
+          try {
+            const assignmentRows = await query(
+              `SELECT id, adviser_id, adviser_name
+               FROM class_assignments
+               WHERE section = ?
+                 AND (school_year_id = ? OR school_year_id IS NULL)
+                 AND (
+                   LOWER(TRIM(grade_level)) = LOWER(TRIM(?))
+                   OR LOWER(REPLACE(TRIM(grade_level), 'Grade ', '')) = LOWER(REPLACE(TRIM(?), 'Grade ', ''))
+                 )
+               LIMIT 1`,
+              [student.section, targetSyId, studentGradeValue, studentGradeValue]
+            );
+
+            const assignment = assignmentRows?.[0];
+            if (assignment?.adviser_id) {
+              adviserTargetId = String(assignment.adviser_id).trim();
+              adviserDisplayName = adviserDisplayName || assignment.adviser_name || '';
+              classIdentifier = classIdentifier || assignment.id || null;
+            }
+          } catch (assignmentFallbackError) {
+            console.error('Class assignment fallback warning:', assignmentFallbackError.message);
+          }
+        }
+
+        if (!adviserTargetId && classRow?.adviser_name) {
+          const adviserName = String(classRow.adviser_name || '').trim();
+          const nameParts = adviserName.split(/\s+/).filter(Boolean);
+          const firstName = nameParts[0] || '';
+          const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+
+          if (firstName || lastName) {
+            const adviserUsers = await query(
+              `SELECT id
+               FROM users
+               WHERE role IN ('adviser', 'teacher', 'subject_teacher')
+                 AND (
+                   (? <> '' AND LOWER(TRIM(first_name)) = LOWER(TRIM(?)) AND LOWER(TRIM(last_name)) = LOWER(TRIM(?)))
+                   OR (? <> '' AND LOWER(TRIM(CONCAT(first_name, ' ', last_name))) = LOWER(TRIM(?)))
+                 )
+               LIMIT 1`,
+              [firstName, firstName, lastName, adviserName, adviserName]
+            );
+
+            if (adviserUsers?.length > 0) {
+              adviserTargetId = String(adviserUsers[0].id || '').trim();
+            } else {
+              const adviserTeachers = await query(
+                `SELECT id
+                 FROM teachers
+                 WHERE (
+                   (? <> '' AND LOWER(TRIM(first_name)) = LOWER(TRIM(?)) AND LOWER(TRIM(last_name)) = LOWER(TRIM(?)))
+                   OR (? <> '' AND LOWER(TRIM(CONCAT(first_name, ' ', last_name))) = LOWER(TRIM(?)))
+                 )
+                 LIMIT 1`,
+                [firstName, firstName, lastName, adviserName, adviserName]
+              );
+              if (adviserTeachers?.length > 0) {
+                adviserTargetId = String(adviserTeachers[0].id || '').trim();
+              }
+            }
+          }
+        }
+
+        if (adviserTargetId && adviserTargetId !== String(user.id)) {
+          let submitterName = '';
+          try {
+            const userRows = await query(
+              `SELECT first_name, last_name, firstName, lastName
+               FROM users
+               WHERE id = ?
+               LIMIT 1`,
+              [user.id]
+            );
+            if (userRows?.length > 0) {
+              const row = userRows[0];
+              submitterName = `${row.first_name || row.firstName || ''} ${row.last_name || row.lastName || ''}`.trim();
+            }
+          } catch (_) {}
+
+          const studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim() || `Student ${id}`;
+          const subjectLabel = subjectsWithGrades.join(', ');
+          const title = 'Subject grades submitted';
+          const message = `${submitterName || 'Subject teacher'} submitted grades for ${studentName} in ${subjectLabel}.`;
+
+          await query(
+            `INSERT INTO notifications (user_id, type, title, message, meta_json, is_read)
+             VALUES (?, 'grade_submission', ?, ?, ?, 0)`,
+            [
+              adviserTargetId,
+              title,
+              message,
+              JSON.stringify({
+                student_id: String(id),
+                student_name: studentName,
+                class_id: classIdentifier,
+                class_grade: student.grade_level || student.gradeLevel,
+                class_section: student.section,
+                subjects: subjectsWithGrades,
+                school_year_id: targetSyId,
+                submitted_by: String(user.id),
+                submitted_by_name: submitterName || null,
+                quarter: quarter || null
+              })
+            ]
+          );
+
+          try {
+            const adviserId = adviserTargetId;
+            const schoolYearRows = await query(
+              'SELECT label FROM school_years WHERE id = ? LIMIT 1',
+              [targetSyId]
+            );
+            const schoolYearLabel = schoolYearRows?.[0]?.label || null;
+
+            let adviserInfo = null;
+            const adviserUsers = await query(
+              `SELECT email, first_name, last_name, firstName, lastName
+               FROM users
+               WHERE id = ?
+               LIMIT 1`,
+              [adviserId]
+            );
+
+            if (adviserUsers?.length > 0) {
+              const row = adviserUsers[0];
+              adviserInfo = {
+                email: sanitizeEmail(row.email || ''),
+                name: `${row.first_name || row.firstName || ''} ${row.last_name || row.lastName || ''}`.trim()
+              };
+            }
+
+            if (!adviserInfo?.email) {
+              const adviserTeachers = await query(
+                `SELECT email, first_name, last_name
+                 FROM teachers
+                 WHERE id = ?
+                 LIMIT 1`,
+                [adviserId]
+              );
+              if (adviserTeachers?.length > 0) {
+                adviserInfo = {
+                  email: sanitizeEmail(adviserTeachers[0].email || ''),
+                  name: `${adviserTeachers[0].first_name || ''} ${adviserTeachers[0].last_name || ''}`.trim()
+                };
+              }
+            }
+
+            if ((!adviserInfo?.email || !isValidEmail(adviserInfo.email)) && adviserDisplayName) {
+              try {
+                const nameParts = String(adviserDisplayName).trim().split(/\s+/).filter(Boolean);
+                const firstName = nameParts[0] || '';
+                const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+
+                let byNameRows = [];
+                if (firstName || lastName) {
+                  byNameRows = await query(
+                    `SELECT email, first_name, last_name
+                     FROM teachers
+                     WHERE (
+                       (? <> '' AND LOWER(TRIM(first_name)) = LOWER(TRIM(?)) AND LOWER(TRIM(last_name)) = LOWER(TRIM(?)))
+                       OR (? <> '' AND LOWER(TRIM(CONCAT(first_name, ' ', last_name))) = LOWER(TRIM(?)))
+                     )
+                     LIMIT 1`,
+                    [firstName, firstName, lastName, adviserDisplayName, adviserDisplayName]
+                  );
+                }
+
+                if (byNameRows?.length > 0) {
+                  const row = byNameRows[0];
+                  const candidateEmail = sanitizeEmail(row.email || '');
+                  if (isValidEmail(candidateEmail)) {
+                    adviserInfo = {
+                      email: candidateEmail,
+                      name: `${row.first_name || ''} ${row.last_name || ''}`.trim() || adviserDisplayName
+                    };
+                  }
+                }
+              } catch (nameEmailFallbackError) {
+                console.error('Adviser email name fallback warning:', nameEmailFallbackError.message);
+              }
+            }
+
+            if (adviserInfo?.email && isValidEmail(adviserInfo.email)) {
+              const sendResult = await sendAdviserGradeSubmissionEmail({
+                adviserEmail: adviserInfo.email,
+                adviserName: adviserInfo.name || adviserDisplayName || 'Class Adviser',
+                submitterName: submitterName || 'Subject teacher',
+                studentName,
+                gradeLevel: student.grade_level || student.gradeLevel,
+                section: student.section,
+                subjects: subjectsWithGrades,
+                quarter: quarter || null,
+                schoolYearLabel
+              });
+
+              if (!sendResult?.success) {
+                console.error('Adviser grade submission email warning:', sendResult?.error || 'Unknown email error');
+              }
+            }
+          } catch (emailError) {
+            console.error('Adviser grade submission email warning:', emailError.message);
+          }
+        }
+      } catch (notificationError) {
+        console.error('Grade notification warning:', notificationError.message);
+      }
+    }
+
     res.json({ success: true, message: `${quarter || 'Q1'} grades updated`, average });
   } catch (err) {
     console.error('Error saving grades:', err);
@@ -246,9 +660,25 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
     await ensureGradesSchoolYearColumn();
     const { id } = req.params;
     const { schoolYearId } = req.query;
-    const [studentRow] = await query('SELECT school_year_id FROM students WHERE id = ?', [id]);
+    const [studentRow] = await query('SELECT id, school_year_id, grade_level, section FROM students WHERE id = ?', [id]);
     const targetSyId = schoolYearId || studentRow?.school_year_id || (await getActiveSchoolYear())?.id;
-    const grades = await query('SELECT * FROM grades WHERE student_id = ? AND (school_year_id = ? OR school_year_id IS NULL)', [id, targetSyId]);
+    const allGrades = await query('SELECT * FROM grades WHERE student_id = ? AND (school_year_id = ? OR school_year_id IS NULL)', [id, targetSyId]);
+
+    const user = req.user || {};
+    const normalizedRole = normalizeRole(user.role || '');
+    let grades = allGrades;
+
+    if ((normalizedRole === 'teacher' || normalizedRole === 'subject_teacher') && studentRow) {
+      const uniqueSubjects = [...new Set(allGrades.map((g) => g.subject).filter(Boolean))];
+      const allowed = new Set();
+
+      for (const subjectName of uniqueSubjects) {
+        const canView = await canEnterGrade(user, studentRow, subjectName, targetSyId);
+        if (canView) allowed.add(String(subjectName));
+      }
+
+      grades = allGrades.filter((g) => allowed.has(String(g.subject)));
+    }
 
     // grades table: each row is one subject + quarter combo
     // Need to restructure: { "Filipino": { q1: 90, q2: 85, ... }, "English": { q1: 88, ... } }

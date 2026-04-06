@@ -503,6 +503,7 @@ const gradeRoutes = require('./routes/grades');
 const teacherRoutes = require('./routes/teacherRoutes');
 
 const schoolYearRoutes = require('./routes/schoolYearRoutes');
+const notificationsRoutes = require('./routes/notifications');
 
 const subjectRoutes = require('./routes/subjectRoutes');
 
@@ -693,10 +694,50 @@ app.post('/api/auth/login', async (req, res) => {
     const { email, username, password } = req.body;
 
     const loginField = email || username;
+    const submittedPassword = String(password || '').trim();
+
+    const lookupTeacherInDb = async (loginValue) => {
+      try {
+        const rows = await query(
+          `SELECT id,
+                  first_name AS firstName,
+                  last_name AS lastName,
+                  username,
+                  email,
+                  password,
+                  role,
+                  grade_level AS gradeLevel,
+                  section
+           FROM teachers
+           WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [loginValue, loginValue]
+        );
+
+        if (!rows || rows.length === 0) return null;
+
+        const teacher = rows[0];
+        return {
+          id: teacher.id,
+          firstName: teacher.firstName || '',
+          lastName: teacher.lastName || '',
+          email: teacher.email || '',
+          username: teacher.username || '',
+          role: teacher.role || 'teacher',
+          gradeLevel: teacher.gradeLevel || '',
+          section: teacher.section || '',
+          password: teacher.password || ''
+        };
+      } catch (lookupErr) {
+        console.log('Teacher DB lookup failed:', lookupErr.message);
+        return null;
+      }
+    };
 
     
 
-    if (!loginField || !password) {
+    if (!loginField || !submittedPassword) {
 
       return res.status(400).json({ status: 'fail', message: 'Email/username and password are required' });
 
@@ -946,6 +987,22 @@ app.post('/api/auth/login', async (req, res) => {
 
     if (!user) {
 
+      // If not found in JSON/students, check MySQL teachers table directly.
+      const teacherFromDb = await lookupTeacherInDb(loginField);
+      if (teacherFromDb) {
+        user = teacherFromDb;
+        console.log('✅ Found teacher in MySQL teachers table:', {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          role: user.role
+        });
+      }
+
+    }
+
+    if (!user) {
+
       console.log('User not found:', loginField);
 
       return res.status(401).json({ status: 'fail', message: 'Incorrect email or password' });
@@ -976,7 +1033,7 @@ app.post('/api/auth/login', async (req, res) => {
 
       const bcrypt = require('bcryptjs');
 
-      passwordMatch = await bcrypt.compare(password, user.password);
+      passwordMatch = await bcrypt.compare(submittedPassword, user.password);
 
       console.log(`🔐 Password check - Using bcrypt comparison`);
 
@@ -984,7 +1041,7 @@ app.post('/api/auth/login', async (req, res) => {
 
       // Password is plain text
 
-      passwordMatch = user.password === password;
+      passwordMatch = user.password === submittedPassword;
 
       console.log(`🔐 Password check - Using plain text comparison`);
 
@@ -994,10 +1051,81 @@ app.post('/api/auth/login', async (req, res) => {
 
     if (!passwordMatch) {
 
+      // Fallback: teacher credentials may be newer in MySQL than users.json.
+      const teacherFromDb = await lookupTeacherInDb(loginField);
+      if (teacherFromDb && teacherFromDb.password) {
+        if (teacherFromDb.password.startsWith('$2a$') || teacherFromDb.password.startsWith('$2b$')) {
+          const bcrypt = require('bcryptjs');
+          passwordMatch = await bcrypt.compare(submittedPassword, teacherFromDb.password);
+        } else {
+          passwordMatch = teacherFromDb.password === submittedPassword;
+        }
+
+        if (passwordMatch) {
+          user = teacherFromDb;
+          console.log('✅ Password matched via teacher DB fallback');
+        }
+      }
+
+    }
+
+    if (!passwordMatch) {
+
       console.log('Password mismatch for user:', loginField);
 
       return res.status(401).json({ status: 'fail', message: 'Incorrect email or password' });
 
+    }
+
+    // If this is a teacher-like account sourced from JSON, align identity to MySQL teachers row.
+    // This prevents class-assignment mismatches where subject_teachers.teacher_id stores DB teacher IDs.
+    const roleLower = String(user.role || '').toLowerCase();
+    if (roleLower === 'teacher' || roleLower === 'adviser' || roleLower === 'subject_teacher') {
+      try {
+        const loginKey = String(loginField || '').trim().toLowerCase();
+        const dbTeachers = await query(
+          `SELECT id, first_name, last_name, username, email, role, grade_level, section
+           FROM teachers
+           WHERE LOWER(email) = ? OR LOWER(username) = ?
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [loginKey, loginKey]
+        );
+
+        let matchedTeachers = dbTeachers;
+
+        if ((!matchedTeachers || matchedTeachers.length === 0) && user.firstName && user.lastName) {
+          const firstNameKey = String(user.firstName || '').trim().toLowerCase();
+          const lastNameKey = String(user.lastName || '').trim().toLowerCase();
+
+          matchedTeachers = await query(
+            `SELECT id, first_name, last_name, username, email, role, grade_level, section
+             FROM teachers
+             WHERE LOWER(TRIM(first_name)) = ? AND LOWER(TRIM(last_name)) = ?
+             ORDER BY updated_at DESC
+             LIMIT 1`,
+            [firstNameKey, lastNameKey]
+          );
+        }
+
+        if (matchedTeachers.length > 0) {
+          const dbTeacher = matchedTeachers[0];
+          user = {
+            ...user,
+            id: dbTeacher.id,
+            firstName: user.firstName || dbTeacher.first_name || '',
+            lastName: user.lastName || dbTeacher.last_name || '',
+            username: dbTeacher.username || user.username,
+            email: dbTeacher.email || user.email,
+            role: dbTeacher.role || user.role,
+            gradeLevel: dbTeacher.grade_level || user.gradeLevel,
+            section: dbTeacher.section || user.section
+          };
+          console.log(`✅ Teacher login identity aligned to DB id: ${dbTeacher.id}`);
+        }
+      } catch (teacherAlignError) {
+        console.log('Teacher identity alignment skipped:', teacherAlignError.message);
+      }
     }
 
     
@@ -2016,6 +2144,8 @@ app.use('/api/teachers', teacherRoutes);
 app.use('/api/users', userRoutes);
 
 app.use('/api/school-years', schoolYearRoutes);
+
+app.use('/api/notifications', notificationsRoutes);
 
 app.use('/api/subjects', subjectRoutes);
 

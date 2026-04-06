@@ -1,13 +1,14 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../api/axiosConfig';
 
-export default function GradesReportCard({ students, quarter, gradeLevel, section, classId, onClose }) {
+export default function GradesReportCard({ students, quarter, gradeLevel, section, classId, schoolYearId, onClose }) {
   const [classSubjects, setClassSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [studentsWithGrades, setStudentsWithGrades] = useState([]);
   const [gradeSubjectsMap, setGradeSubjectsMap] = useState({});
   const [classAdviserMap, setClassAdviserMap] = useState({});
   const [activeSchoolYearMeta, setActiveSchoolYearMeta] = useState(null);
+  const [subjectTeacherSubjectsByClass, setSubjectTeacherSubjectsByClass] = useState({});
 
   const quarterLabels = {
     q1: 'FIRST QUARTER',
@@ -18,6 +19,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
 
   const toGradeKey = (value) => String(value || '').replace(/^Grade\s+/i, '').trim();
   const toClassKey = (grade, sec) => `${String(grade || '').toLowerCase().replace(/\s+/g, '-')}-${String(sec || '').toLowerCase().replace(/\s+/g, '-')}`;
+  const schoolYearParams = schoolYearId ? { schoolYearId } : {};
   const normalizeSubjectName = (value) => String(value || '').replace(/\s*\(Grade\s+\d+\)\s*$/i, '').replace(/\s*\(Kindergarten\)\s*$/i, '').trim().toLowerCase();
   const uniqueSubjects = (list) => {
     const seen = new Set();
@@ -42,6 +44,50 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
       return '';
     }
   })();
+  const currentUser = (() => {
+    try {
+      const raw = localStorage.getItem('user');
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      return null;
+    }
+  })();
+  const currentUserId = String(currentUser?.id || '').trim();
+  const normalizeRole = (value) => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const currentUserRole = normalizeRole(currentUser?.role);
+
+  useEffect(() => {
+    const fetchSubjectTeacherSubjects = async () => {
+      if (!currentUser?.id) {
+        setSubjectTeacherSubjectsByClass({});
+        return;
+      }
+
+      if (!(currentUserRole === 'teacher' || currentUserRole === 'subject_teacher')) {
+        setSubjectTeacherSubjectsByClass({});
+        return;
+      }
+
+      try {
+        const response = await api.get(`/classes/subject-teacher/${currentUser.id}`, { params: schoolYearParams });
+        const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+        const map = {};
+        rows.forEach((cls) => {
+          const key = toClassKey(cls.grade || cls.grade_level, cls.section);
+          const rawSubjects = Array.isArray(cls.subjects)
+            ? cls.subjects
+            : String(cls.subjects_teaching || cls.subjects || '').split(',');
+          map[key] = uniqueSubjects(rawSubjects.map((item) => String(item || '').trim()).filter(Boolean));
+        });
+        setSubjectTeacherSubjectsByClass(map);
+      } catch (error) {
+        console.error('Error fetching subject teacher assignments for report card:', error);
+        setSubjectTeacherSubjectsByClass({});
+      }
+    };
+
+    fetchSubjectTeacherSubjects();
+  }, [currentUser?.id, currentUserRole, schoolYearId]);
 
   // Fetch grades for all students when component mounts
   useEffect(() => {
@@ -51,7 +97,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
         const updatedStudents = await Promise.all(
           students.map(async (student) => {
             try {
-              const gradesResponse = await api.get(`/students/${student.id}/grades`);
+              const gradesResponse = await api.get(`/students/${student.id}/grades`, { params: schoolYearParams });
               // Normalize keys: strip " (Grade X)" suffix so "Math (Grade 3)" → "Math"
               const raw = gradesResponse.data || {};
               const normalized = {};
@@ -79,7 +125,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
     if (students && students.length > 0) {
       fetchGradesForStudents();
     }
-  }, [students]);
+  }, [students, schoolYearId]);
 
   // Fetch class subjects when component mounts
   useEffect(() => {
@@ -89,7 +135,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
         if (gradeLevel && gradeLevel !== 'All Grades') {
           // grade_levels in DB stores just the number (e.g. '3' not 'Grade 3')
           const gradeKey = (gradeLevel || '').replace(/^Grade\s+/i, '').trim();
-          const resp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`);
+          const resp = await api.get(`/subjects/grade/${encodeURIComponent(gradeKey)}`, { params: schoolYearParams });
           const names = uniqueSubjects((resp.data?.data || []).map(s => s.name).filter(Boolean));
 
           if (names.length > 0) {
@@ -100,7 +146,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
 
         if (classId) {
           // Fallback: fetch subjects assigned to this specific class
-          const response = await api.get(`/classes/${classId}/subjects`);
+          const response = await api.get(`/classes/${classId}/subjects`, { params: schoolYearParams });
           const classSpecificSubjects = response.data.subjects || [];
           if (classSpecificSubjects.length > 0) {
             setClassSubjects(classSpecificSubjects);
@@ -121,7 +167,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
     };
 
     fetchClassSubjects();
-  }, [classId, gradeLevel]);
+  }, [classId, gradeLevel, schoolYearId]);
 
   // Fetch subjects per actual student grade and class adviser names
   useEffect(() => {
@@ -132,7 +178,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
 
         await Promise.all(normalizedGradeKeys.map(async (g) => {
           try {
-            const resp = await api.get(`/subjects/grade/${encodeURIComponent(g)}`);
+            const resp = await api.get(`/subjects/grade/${encodeURIComponent(g)}`, { params: schoolYearParams });
             const names = (resp.data?.data || []).map(item => item.name).filter(Boolean);
             gradeMap[g] = names;
           } catch (_) {
@@ -142,13 +188,16 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
 
         setGradeSubjectsMap(gradeMap);
 
-        const classesResp = await api.get('/classes');
+        const classesResp = await api.get('/classes', { params: schoolYearParams });
         const classes = Array.isArray(classesResp.data)
           ? classesResp.data
           : (Array.isArray(classesResp.data?.data) ? classesResp.data.data : []);
         const adviserMap = {};
         classes.forEach((cls) => {
-          adviserMap[toClassKey(cls.grade, cls.section)] = cls.adviser_name || '';
+          adviserMap[toClassKey(cls.grade, cls.section)] = {
+            adviser_name: cls.adviser_name || '',
+            adviser_id: cls.adviser_id ? String(cls.adviser_id) : ''
+          };
         });
         setClassAdviserMap(adviserMap);
       } catch (error) {
@@ -159,7 +208,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
     if (students && students.length > 0) {
       fetchMetadata();
     }
-  }, [students, gradeLevel]);
+  }, [students, gradeLevel, schoolYearId]);
 
   const subjects = classSubjects;
   const today = new Date().toLocaleDateString();
@@ -168,17 +217,29 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
   const reportCardAssistantPrincipalName = activeSchoolYearMeta?.assistant_principal_name || '________________';
 
   useEffect(() => {
-    const fetchActiveSchoolYearMeta = async () => {
+    const fetchSchoolYearMeta = async () => {
       try {
-        const response = await api.get('/school-years/active');
-        setActiveSchoolYearMeta(response.data?.data || null);
+        if (schoolYearId) {
+          const response = await api.get('/school-years');
+          const list = response.data?.data || response.data || [];
+          const selected = Array.isArray(list)
+            ? list.find((item) => String(item.id) === String(schoolYearId))
+            : null;
+          if (selected) {
+            setActiveSchoolYearMeta(selected);
+            return;
+          }
+        }
+
+        const activeResponse = await api.get('/school-years/active');
+        setActiveSchoolYearMeta(activeResponse.data?.data || null);
       } catch (error) {
         console.error('Error fetching active school year metadata:', error);
       }
     };
 
-    fetchActiveSchoolYearMeta();
-  }, []);
+    fetchSchoolYearMeta();
+  }, [schoolYearId]);
 
   const handlePrint = () => {
     window.print();
@@ -191,9 +252,9 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto" id="report-card-modal">
         {/* Header with buttons */}
-        <div className="sticky top-0 bg-gray-50 border-b p-4 flex justify-between items-center">
+        <div className="sticky top-0 bg-gray-50 border-b p-4 flex justify-between items-center print:hidden">
           <h2 className="text-xl font-bold">
             {students.length === 1
               ? `Report Card — ${students[0].fullName || students[0].firstName}`
@@ -225,18 +286,38 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
             const studentGradeLevel = studentGrade(student);
             const studentGradeKey = toGradeKey(studentGradeLevel);
             const studentClassKey = toClassKey(studentGradeLevel, studentSection(student));
-            const classAdviserName = classAdviserMap[studentClassKey] || student.adviser_name || currentUserName || '_______________';
+            const adviserInfo = classAdviserMap[studentClassKey] || {};
+            const classAdviserName = adviserInfo.adviser_name || student.adviser_name || '_______________';
+            const classAdviserId = String(adviserInfo.adviser_id || student.adviser_id || '').trim();
+            const isCurrentUserClassAdviser = Boolean(
+              (currentUserId && classAdviserId && currentUserId === classAdviserId) ||
+              (classAdviserName && currentUserName && normalizeSubjectName(classAdviserName) === normalizeSubjectName(currentUserName))
+            );
             // Prefer subjects that actually have grade data; fall back to class/grade subject list
             const gradeKeys = Object.keys(gradeObj).filter(k => {
               const g = gradeObj[k];
               return g && (g.q1 || g.q2 || g.q3 || g.q4);
             });
             const gradeConfiguredSubjects = uniqueSubjects(gradeSubjectsMap[studentGradeKey] || []);
-            // Report card rows must follow admin grade subjects only.
-            // If none are configured, fall back to whatever grades exist so report card is not empty.
-            const studentSubjects = gradeConfiguredSubjects.length > 0
-              ? gradeConfiguredSubjects
-              : uniqueSubjects(gradeKeys);
+            const subjectTeacherAssigned = uniqueSubjects(subjectTeacherSubjectsByClass[studentClassKey] || []);
+
+            // Subject-teacher view: only show assigned subjects (and existing graded entries for those subjects).
+            // Adviser/admin/student view: show full grade subjects + graded entries.
+            const isPrivilegedFullView = ['admin', 'adviser', 'student'].includes(currentUserRole);
+            const isSubjectTeacherRestrictedView =
+              (currentUserRole === 'teacher' || currentUserRole === 'subject_teacher') && !isPrivilegedFullView && !isCurrentUserClassAdviser;
+
+            const studentSubjects = isSubjectTeacherRestrictedView
+              ? uniqueSubjects([
+                  ...subjectTeacherAssigned,
+                  ...gradeKeys.filter((key) =>
+                    subjectTeacherAssigned.some((item) => normalizeSubjectName(item) === normalizeSubjectName(key))
+                  )
+                ])
+              : uniqueSubjects([
+                  ...gradeConfiguredSubjects,
+                  ...gradeKeys
+                ]);
             // Helper: find grade data for a subject name (handles minor name differences)
             const findGrade = (subjectName) => {
               if (gradeObj[subjectName]) return gradeObj[subjectName];
@@ -394,6 +475,41 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
       {/* Print styles */}
       <style>{`
         @media print {
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
+            width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+
+          body * {
+            visibility: hidden !important;
+          }
+
+          #report-card,
+          #report-card * {
+            visibility: visible !important;
+          }
+
+          #report-card {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
+          }
+
+          #report-card-modal {
+            max-height: none !important;
+            overflow: visible !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+          }
+
           body {
             margin: 0;
             padding: 0;

@@ -382,18 +382,20 @@ export default function QRCodePortal() {
       let status = 'Absent';
       const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
       
-      // Morning session (Before 8:00 AM = Present, 8:00-9:59 AM = Late, After 10:00 AM = Absent)
-      if (hour < 8) {
+      const totalMinutes = (hour * 60) + minute;
+
+      // Morning session (Before 8:30 AM = Present, 8:30-9:59 AM = Late, After 10:00 AM = Absent)
+      if (totalMinutes < (8 * 60 + 30)) {
         status = 'Present';
-      } else if (hour < 10) {
+      } else if (totalMinutes < (10 * 60)) {
         status = 'Late';
-      } else if (hour < 12) {
+      } else if (totalMinutes < (12 * 60)) {
         status = 'Absent';
       }
-      // Afternoon session (Before 2:00 PM = Present, 2:00-2:59 PM = Late, After 3:00 PM = Absent)
-      else if (hour < 14) {
+      // Afternoon session (Before 2:30 PM = Present, 2:30-2:59 PM = Late, After 3:00 PM = Absent)
+      else if (totalMinutes < (14 * 60 + 30)) {
         status = 'Present';
-      } else if (hour < 15) {
+      } else if (totalMinutes < (15 * 60)) {
         status = 'Late';
       } else {
         status = 'Absent';

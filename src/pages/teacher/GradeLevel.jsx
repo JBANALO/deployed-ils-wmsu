@@ -60,7 +60,8 @@ export default function GradeLevel() {
           const nextActiveId = String(activeSy.id);
           setActiveSchoolYearId(nextActiveId);
           setTeacherActiveSchoolYearId(nextActiveId);
-          if (!selectedSchoolYearId) {
+          // Always align GradeLevel view to active school year to prevent stale localStorage scope.
+          if (String(selectedSchoolYearId || '') !== nextActiveId) {
             setSelectedSchoolYearId(nextActiveId);
             setTeacherViewingSchoolYearId(nextActiveId);
           }
@@ -102,10 +103,12 @@ export default function GradeLevel() {
         return;
       }
 
+      const schoolYearForRequests = selectedSchoolYearId || activeSchoolYearId;
+
       // Fetch students (optional, do not block class display if fails)
       try {
         console.log('🔄 Fetching students from API...');
-        const response = await fetch(appendSchoolYearId(`${API_BASE_URL}/students`, selectedSchoolYearId));
+        const response = await fetch(appendSchoolYearId(`${API_BASE_URL}/students`, schoolYearForRequests));
         console.log('📡 Students API response status:', response.status);
         if (response.ok) {
           const result = await response.json();
@@ -123,7 +126,7 @@ export default function GradeLevel() {
 
       // Fetch classes assigned to this adviser
       console.log(`Fetching adviser classes for user: ${user.id}`);
-      const classesResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/adviser/${user.id}`, selectedSchoolYearId));
+      const classesResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/adviser/${user.id}`, schoolYearForRequests));
       let adviserClasses = [];
       if (classesResponse.ok) {
         const classesData = await classesResponse.json();
@@ -142,7 +145,7 @@ export default function GradeLevel() {
       if (adviserClasses.length === 0 && user.firstName && user.lastName) {
         try {
           console.log('⚠️ No adviser classes by ID — trying name fallback...');
-          const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, selectedSchoolYearId));
+          const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, schoolYearForRequests));
           if (allClassesResp.ok) {
             const allClassesData = await allClassesResp.json();
             const allClasses = Array.isArray(allClassesData) ? allClassesData : (Array.isArray(allClassesData.data) ? allClassesData.data : []);
@@ -160,7 +163,7 @@ export default function GradeLevel() {
 
       // Fetch classes assigned to this subject teacher
       console.log(`Fetching subject teacher classes for user: ${user.id}`);
-      const subjectTeacherResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${user.id}`, selectedSchoolYearId));
+      const subjectTeacherResponse = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes/subject-teacher/${user.id}`, schoolYearForRequests));
       let subjectTeacherClasses = [];
       if (subjectTeacherResponse.ok) {
         const stData = await subjectTeacherResponse.json();
@@ -171,6 +174,43 @@ export default function GradeLevel() {
         try {
           console.error('  Response:', await subjectTeacherResponse.text());
         } catch (e) {}
+      }
+
+      // Fallback: some legacy deployments return empty for /classes/subject-teacher/:id
+      // even when /classes already includes matching subject_teachers.
+      if (subjectTeacherClasses.length === 0) {
+        try {
+          const allClassesResp = await fetch(appendSchoolYearId(`${API_BASE_URL}/classes`, schoolYearForRequests));
+          if (allClassesResp.ok) {
+            const allClassesData = await allClassesResp.json();
+            const allClasses = Array.isArray(allClassesData)
+              ? allClassesData
+              : (Array.isArray(allClassesData.data) ? allClassesData.data : []);
+
+            const normalize = (value = '') => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+            const userIdKey = String(user.id || '').trim();
+            const userFullName = normalize(`${user.firstName || ''} ${user.lastName || ''}`);
+
+            const derived = allClasses
+              .filter((cls) => {
+                const stList = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
+                return stList.some((st) => {
+                  const teacherIdMatch = String(st.teacher_id || '').trim() === userIdKey;
+                  const teacherNameMatch = userFullName && normalize(st.teacher_name || '') === userFullName;
+                  return teacherIdMatch || teacherNameMatch;
+                });
+              })
+              .map((cls) => ({
+                ...cls,
+                role_in_class: 'subject_teacher'
+              }));
+
+            subjectTeacherClasses = derived;
+            console.log(`✓ Subject teacher classes via /classes fallback: ${subjectTeacherClasses.length}`, subjectTeacherClasses);
+          }
+        } catch (fallbackErr) {
+          console.warn('Subject teacher /classes fallback failed:', fallbackErr);
+        }
       }
 
       // Combine both adviser and subject teacher classes (remove duplicates)
