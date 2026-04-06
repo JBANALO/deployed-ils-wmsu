@@ -1,5 +1,6 @@
 // context/AttendanceContext.js
 import React, { createContext, useState, useContext, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthProvider';
 
 const AttendanceContext = createContext();
@@ -16,6 +17,28 @@ export function AttendanceProvider({ children }) {
   const { user } = useAuth();
   const [attendanceLog, setAttendanceLog] = useState([]);
   const [loading, setLoading] = useState(false);
+  const isWeb = typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+
+  const storageManager = {
+    getItem: async (key) => {
+      if (isWeb) return localStorage.getItem(key) || null;
+      return AsyncStorage.getItem(key);
+    },
+    setItem: async (key, value) => {
+      if (isWeb) {
+        localStorage.setItem(key, value);
+        return;
+      }
+      return AsyncStorage.setItem(key, value);
+    },
+    removeItem: async (key) => {
+      if (isWeb) {
+        localStorage.removeItem(key);
+        return;
+      }
+      return AsyncStorage.removeItem(key);
+    }
+  };
 
   const getLocalDateString = (date = new Date()) => {
     const d = new Date(date);
@@ -38,6 +61,61 @@ export function AttendanceProvider({ children }) {
     return raw;
   };
 
+  const getCacheKey = () => `attendance_daily_cache_${String(user?.id || 'guest')}`;
+
+  const recordKey = (record = {}) => {
+    const id = String(record.id || '').trim();
+    if (id) return `id:${id}`;
+    const sid = String(record.studentId || '').trim();
+    const date = normalizeDateString(record.date || '');
+    const cls = String(record.classId || '').trim().toLowerCase();
+    const subject = String(record.subject || '').trim().toLowerCase();
+    const period = String(record.period || '').trim().toLowerCase();
+    return `alt:${sid}|${date}|${cls}|${subject}|${period}`;
+  };
+
+  const dedupeRecords = (records = []) => {
+    const map = new Map();
+    records.forEach((rec) => {
+      const key = recordKey(rec);
+      if (!key) return;
+      map.set(key, rec);
+    });
+    return Array.from(map.values());
+  };
+
+  const readDailyCache = async () => {
+    if (!user) return [];
+    try {
+      const raw = await storageManager.getItem(getCacheKey());
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      const today = getLocalDateString();
+      if (parsed?.date !== today) {
+        await storageManager.removeItem(getCacheKey());
+        return [];
+      }
+      return Array.isArray(parsed.records) ? parsed.records : [];
+    } catch (error) {
+      console.error('Failed to read attendance cache:', error);
+      return [];
+    }
+  };
+
+  const writeDailyCache = async (records = []) => {
+    if (!user) return;
+    try {
+      const today = getLocalDateString();
+      const todaysRecords = records.filter(r => normalizeDateString(r.date) === today);
+      await storageManager.setItem(
+        getCacheKey(),
+        JSON.stringify({ date: today, records: dedupeRecords(todaysRecords) })
+      );
+    } catch (error) {
+      console.error('Failed to write attendance cache:', error);
+    }
+  };
+
   // Load attendance logs
   useEffect(() => {
     if (user) {
@@ -45,12 +123,21 @@ export function AttendanceProvider({ children }) {
     }
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    writeDailyCache(attendanceLog);
+  }, [attendanceLog, user]);
+
   // Load attendance logs from backend API
   const loadAttendanceLogs = async () => {
     if (!user) return;
 
     try {
       setLoading(true);
+      const cachedRecords = await readDailyCache();
+      if (cachedRecords.length > 0) {
+        setAttendanceLog(prev => dedupeRecords([...prev, ...cachedRecords]));
+      }
       
       // Create timeout promise (5 second timeout)
       const timeoutPromise = new Promise((_, reject) =>
@@ -89,7 +176,7 @@ export function AttendanceProvider({ children }) {
               })()
             )
           );
-          return [...serverRecords, ...localOnly];
+          return dedupeRecords([...serverRecords, ...localOnly, ...cachedRecords]);
         });
       } else {
         console.log('Attendance response not successful — keeping local records');
@@ -159,7 +246,8 @@ export function AttendanceProvider({ children }) {
 
   // Get attendance by date
   const getAttendanceByDate = (date) => {
-    return attendanceLog.filter(log => log.date === date);
+    const targetDate = normalizeDateString(date);
+    return attendanceLog.filter(log => normalizeDateString(log.date) === targetDate);
   };
 
   // Get attendance statistics
