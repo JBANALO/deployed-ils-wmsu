@@ -4,7 +4,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useAttendance } from '../context/AttendanceContext';
 import { useAuth } from '../context/AuthProvider';
-import { attendanceAPI } from '../services/api';
+import { authAPI } from '../services/api';
 
 const API_BASE_URL = 'https://deployed-ils-wmsu-production.up.railway.app/api';
 
@@ -14,13 +14,15 @@ export default function ScanQRScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [hasScanned, setHasScanned] = useState(false);
   const [attendanceStatus, setAttendanceStatus] = useState('present');
-  const [attendancePeriod, setAttendancePeriod] = useState('morning');
+  const [attendancePeriod, setAttendancePeriod] = useState('subject');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [successModalVisible, setSuccessModalVisible] = useState(false);
   const [successData, setSuccessData] = useState(null);
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [teacherSchedules, setTeacherSchedules] = useState([]);
+  const [activeSchedule, setActiveSchedule] = useState(null);
 
-  const { addAttendance, checkAttendanceStatus, loadAttendanceLogs } = useAttendance();
+  const { addAttendance, loadAttendanceLogs } = useAttendance();
   const { user, userData } = useAuth();
 
   // Get teacher name
@@ -46,22 +48,132 @@ export default function ScanQRScreen() {
     }
   }, []);
 
+  const normalizeDayText = (value = '') => String(value).trim().toLowerCase();
+  const normalizeGradeText = (value = '') => String(value).toLowerCase().replace('grade ', '').trim();
+
+  const toMinutes = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw.includes(':')) return null;
+    const [h, m] = raw.split(':');
+    const hh = Number(h);
+    const mm = Number(m);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+    return (hh * 60) + mm;
+  };
+
+  const doesScheduleMatchToday = (dayValue, nowDate) => {
+    const dayText = normalizeDayText(dayValue);
+    const todayName = nowDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+    const todayShort = todayName.slice(0, 3);
+
+    if (!dayText) return false;
+    if (dayText.includes('monday - friday') || dayText.includes('mon-fri') || dayText.includes('weekdays')) {
+      const day = nowDate.getDay();
+      return day >= 1 && day <= 5;
+    }
+    if (dayText.includes('daily') || dayText.includes('everyday') || dayText.includes('every day')) {
+      return true;
+    }
+    return dayText.includes(todayName) || dayText.includes(todayShort);
+  };
+
+  const getSubjectScheduleStatus = (schedule, nowDate) => {
+    const nowMinutes = (nowDate.getHours() * 60) + nowDate.getMinutes();
+    const startMinutes = toMinutes(schedule.start_time);
+    const endMinutes = toMinutes(schedule.end_time);
+
+    if (startMinutes === null || endMinutes === null) {
+      return { status: 'present', period: 'subject' };
+    }
+
+    const lateThreshold = startMinutes + 30;
+    if (nowMinutes <= lateThreshold) return { status: 'present', period: 'subject' };
+    if (nowMinutes <= endMinutes) return { status: 'late', period: 'subject' };
+    return { status: 'absent', period: 'subject' };
+  };
+
+  const getActiveScheduleForStudent = (student, nowDate = new Date()) => {
+    const nowMinutes = (nowDate.getHours() * 60) + nowDate.getMinutes();
+    const gradeNorm = normalizeGradeText(student.gradeLevel || '');
+    const sectionNorm = String(student.section || '').trim().toLowerCase();
+
+    const candidates = teacherSchedules.filter(s => {
+      const scheduleGradeNorm = normalizeGradeText(s.grade || '');
+      const scheduleSectionNorm = String(s.section || '').trim().toLowerCase();
+      return (
+        scheduleGradeNorm === gradeNorm &&
+        scheduleSectionNorm === sectionNorm &&
+        doesScheduleMatchToday(s.day, nowDate)
+      );
+    });
+
+    return candidates.find(s => {
+      const start = toMinutes(s.start_time);
+      const end = toMinutes(s.end_time);
+      if (start === null || end === null) return false;
+      return nowMinutes >= start && nowMinutes <= end;
+    }) || null;
+  };
+
+  const loadTeacherSchedules = async () => {
+    if (!user?.id) return;
+    try {
+      const classes = await authAPI.getSubjectTeacherClasses(user.id);
+      const classList = Array.isArray(classes?.data)
+        ? classes.data
+        : Array.isArray(classes)
+        ? classes
+        : [];
+
+      const rows = [];
+      classList.forEach(cls => {
+        const sts = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
+        sts.forEach(st => {
+          const teacherIdMatch = String(st.teacher_id || st.teacherId || '') === String(user.id);
+          if (!teacherIdMatch) return;
+
+          rows.push({
+            classId: st.class_id || cls.id,
+            grade: cls.grade || st.grade || '',
+            section: cls.section || st.section || '',
+            subject: st.subject || 'Subject',
+            day: st.day || 'Monday - Friday',
+            start_time: st.start_time || st.startTime || null,
+            end_time: st.end_time || st.endTime || null,
+          });
+        });
+      });
+
+      setTeacherSchedules(rows);
+    } catch (error) {
+      console.error('Error loading teacher schedules for scanner:', error);
+      setTeacherSchedules([]);
+    }
+  };
+
+  useEffect(() => {
+    loadTeacherSchedules();
+  }, [user?.id]);
+
 
   const getPeriodMessage = () => {
-    const hour = currentTime.getHours();
-    const minute = currentTime.getMinutes();
-    const totalMinutes = (hour * 60) + minute;
-    const period = hour < 12 ? 'morning' : 'afternoon';
-    
-    if (period === 'morning') {
-      if (totalMinutes < (8 * 60 + 30)) return { text: '✓ Before 8:30 AM - PRESENT', color: '#4caf50', icon: 'check-circle' };
-      if (totalMinutes < (10 * 60)) return { text: ' 8:30-9:59 AM - LATE', color: '#ff9800', icon: 'clock-alert' };
-      return { text: ' After 10:00 AM - ABSENT', color: '#f44336', icon: 'close-circle' };
-    } else {
-      if (totalMinutes < (14 * 60 + 30)) return { text: '✓ Before 2:30 PM - PRESENT', color: '#4caf50', icon: 'check-circle' };
-      if (totalMinutes < (15 * 60)) return { text: ' 2:30-2:59 PM - LATE', color: '#ff9800', icon: 'clock-alert' };
-      return { text: ' After 3:00 PM - ABSENT', color: '#f44336', icon: 'close-circle' };
+    if (!scannedStudent || !activeSchedule) {
+      return {
+        text: 'Per-subject mode: scan QR to match the active class schedule',
+        color: '#1976d2',
+        icon: 'information'
+      };
     }
+
+    const start = activeSchedule.start_time || '--:--';
+    const end = activeSchedule.end_time || '--:--';
+    if (attendanceStatus === 'late') {
+      return { text: `${activeSchedule.subject} ${start}-${end} • LATE`, color: '#ff9800', icon: 'clock-alert' };
+    }
+    if (attendanceStatus === 'absent') {
+      return { text: `${activeSchedule.subject} ${start}-${end} • ABSENT`, color: '#f44336', icon: 'close-circle' };
+    }
+    return { text: `${activeSchedule.subject} ${start}-${end} • PRESENT`, color: '#4caf50', icon: 'check-circle' };
   };
 
   const periodMsg = getPeriodMessage();
@@ -155,11 +267,9 @@ export default function ScanQRScreen() {
               return;
             }
             
-            // For now, allow all registered students (can add teacher filtering later)
             console.log('Found student:', student);
-            
-            // Set the scanned student data with proper formatting (include parent email for auto-notification)
-            setScannedStudent({
+
+            const formattedStudent = {
               ...qrData,
               name: student.name || student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim(),
               studentId: student.lrn || student.studentId || student.id, // Use LRN as primary ID
@@ -169,6 +279,38 @@ export default function ScanQRScreen() {
               parentEmail: student.parentEmail || '', // For auto email notification
               parentContact: student.parentContact || '',
               contactEmail: student.contactEmail || student.email || ''
+            };
+
+            const matchedSchedule = getActiveScheduleForStudent(formattedStudent, currentTime);
+            if (!matchedSchedule) {
+              Alert.alert(
+                'No Active Subject Schedule',
+                `${formattedStudent.name} has no active subject schedule right now. Attendance is now per-subject and time-based.`,
+                [{ text: 'OK', onPress: () => resetScanner() }]
+              );
+              return;
+            }
+
+            const { status, period } = getSubjectScheduleStatus(matchedSchedule, currentTime);
+            setActiveSchedule(matchedSchedule);
+            setAttendanceStatus(status);
+            setAttendancePeriod(period);
+
+            setScannedStudent({
+              ...formattedStudent,
+              status,
+              period,
+              classId: matchedSchedule.classId,
+              subject: matchedSchedule.subject,
+              scheduleDay: matchedSchedule.day,
+              scheduleStartTime: matchedSchedule.start_time,
+              scheduleEndTime: matchedSchedule.end_time,
+              scanTime: currentTime.toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+              })
             });
           } else {
             Alert.alert(
@@ -177,25 +319,6 @@ export default function ScanQRScreen() {
               [{ text: 'OK', onPress: () => resetScanner() }]
             );
             return;
-          }
-
-          // Also record to backend database
-          try {
-            console.log('📱 Recording attendance to backend for student:', studentIdFromQR);
-            const backendResult = await attendanceAPI.recordAttendance(
-              studentIdFromQR, 
-              data, 
-              'Mobile QR Scanner'
-            );
-            
-            if (backendResult.success) {
-              console.log('✅ Backend attendance recorded:', backendResult.data.studentName);
-            } else {
-              console.log('⚠️ Backend recording failed:', backendResult.message);
-            }
-          } catch (backendError) {
-            console.log('⚠️ Backend connection failed:', backendError.message);
-            // Don't block the flow if backend fails
           }
 
         } catch (error) {
@@ -211,25 +334,6 @@ export default function ScanQRScreen() {
         return;
       }
 
-      const { status, period } = checkAttendanceStatus();
-      setAttendanceStatus(status);
-      setAttendancePeriod(period);
-
-      // Update with scan time and status (preserve parentEmail from earlier setScannedStudent)
-      setScannedStudent(prev => ({
-        ...prev,
-        name: prev?.name || qrData.name || 'Unknown Student',
-        studentId: prev?.studentId || studentIdFromQR || 'N/A',
-        section: prev?.section || qrData.section || 'N/A',
-        status: status,
-        period: period,
-        scanTime: currentTime.toLocaleTimeString('en-US', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true
-        })
-      }));
     } catch (e) {
       console.error('📱 QR Scan - Unexpected error:', e);
       Alert.alert(
@@ -314,14 +418,28 @@ export default function ScanQRScreen() {
      
       const attendanceResult = await addAttendance(
         scannedStudent.studentId,
-        attendancePeriod,
-        attendanceStatus
+        'subject',
+        attendanceStatus,
+        {
+          studentName: scannedStudent.name,
+          gradeLevel: scannedStudent.gradeLevel,
+          section: scannedStudent.section,
+          subject: scannedStudent.subject,
+          classId: scannedStudent.classId,
+          scheduleDay: scannedStudent.scheduleDay,
+          scheduleStartTime: scannedStudent.scheduleStartTime,
+          scheduleEndTime: scannedStudent.scheduleEndTime,
+          autoMarked: false
+        }
       );
       
-      const periodText = attendancePeriod === 'morning' ? 'Morning' : 'Afternoon';
+      const periodText = scannedStudent.subject || 'Subject';
+      const periodForEmail = scannedStudent.subject
+        ? `${scannedStudent.subject} (${scannedStudent.scheduleStartTime || '--:--'}-${scannedStudent.scheduleEndTime || '--:--'})`
+        : 'Subject Schedule';
       
       // Auto-send email to parent (server-side - truly automatic)
-      const emailResult = await sendAutoEmailToParent(scannedStudent, attendanceStatus, attendancePeriod, scannedStudent.scanTime);
+      const emailResult = await sendAutoEmailToParent(scannedStudent, attendanceStatus, periodForEmail, scannedStudent.scanTime);
       
       setSendingEmail(false);
 
@@ -360,6 +478,8 @@ export default function ScanQRScreen() {
     setScanning(true);
     setHasScanned(false);
     setAttendanceStatus('present');
+    setAttendancePeriod('subject');
+    setActiveSchedule(null);
   };
 
   if (!permission) {
@@ -392,7 +512,7 @@ export default function ScanQRScreen() {
           <View>
             <Text style={styles.headerTitle}>Scan QR Code</Text>
             <Text style={styles.headerSubtitle}>
-              {currentTime.getHours() < 12 ? 'Morning' : 'Afternoon'} Session
+              Per-Subject Attendance
             </Text>
           </View>
           <View style={styles.timeContainer}>
@@ -437,7 +557,7 @@ export default function ScanQRScreen() {
                 Position QR code within the frame
               </Text>
               <Text style={[styles.instructionText, styles.boldText]}>
-                {currentTime.getHours() < 12 ? 'Morning' : 'Afternoon'} attendance will be recorded automatically
+                Attendance is matched to the active subject schedule only
               </Text>
             </View>
           </View>
@@ -471,12 +591,15 @@ export default function ScanQRScreen() {
                     </View>
                     <View style={styles.periodBadge}>
                       <Text style={styles.periodText}>
-                        {scannedStudent?.period === 'morning' ? ' MORNING' : ' AFTERNOON'}
+                        {` ${scannedStudent?.subject || 'SUBJECT'}`}
                       </Text>
                     </View>
                   </View>
                   <Text style={styles.studentId}>{scannedStudent?.studentId}</Text>
                   <Text style={styles.studentSection}>Section: {scannedStudent?.section}</Text>
+                  <Text style={styles.studentSection}>
+                    Schedule: {scannedStudent?.scheduleStartTime || '--:--'} - {scannedStudent?.scheduleEndTime || '--:--'}
+                  </Text>
                 </View>
               </View>
               <View style={styles.timeInfo}>
@@ -494,10 +617,10 @@ export default function ScanQRScreen() {
             ]}>
               <Text style={styles.autoStatusText}>
                 {attendanceStatus === 'absent' 
-                  ? ` Auto-marked ABSENT (${scannedStudent?.period === 'morning' ? 'After 10 AM' : 'After 3 PM'})`
+                  ? ` Auto-marked ABSENT (After ${scannedStudent?.scheduleEndTime || '--:--'})`
                   : attendanceStatus === 'late'
-                  ? ` Auto-marked LATE (${scannedStudent?.period === 'morning' ? '8:30-9:59 AM' : '2:30-2:59 PM'})`
-                  : ` Auto-marked PRESENT (${scannedStudent?.period === 'morning' ? 'Before 8:30 AM' : 'Before 2:30 PM'})`}
+                  ? ` Auto-marked LATE (30+ mins from ${scannedStudent?.scheduleStartTime || '--:--'})`
+                  : ` Auto-marked PRESENT (Within first 30 mins from ${scannedStudent?.scheduleStartTime || '--:--'})`}
               </Text>
             </View>
 

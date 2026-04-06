@@ -311,7 +311,7 @@ export function AttendanceProvider({ children }) {
   };
 
   // Add attendance record (alias for recordAttendance for compatibility)
-  const addAttendance = async (studentId, period, status) => {
+  const addAttendance = async (studentId, period, status, metadata = {}) => {
     if (!user) return { success: false, error: 'User not logged in' };
 
     const now = new Date();
@@ -319,21 +319,48 @@ export function AttendanceProvider({ children }) {
     const timeStr = now.toLocaleTimeString();
     const currentStatus = status || 'present';
     const currentPeriod = period || getAttendancePeriod();
+    const subjectValue = metadata.subject ? String(metadata.subject).trim() : null;
+    const classIdValue = metadata.classId ? String(metadata.classId).trim() : null;
 
     // Optimistic update: add to local state immediately so UI shows right away
     const optimisticRecord = {
       id: 'local_' + Date.now(),
       studentId,
+      studentName: metadata.studentName || '',
+      gradeLevel: metadata.gradeLevel || '',
+      section: metadata.section || '',
       date: dateStr,
       time: timeStr,
       status: currentStatus,
       period: currentPeriod,
+      classId: classIdValue,
+      subject: subjectValue,
+      scheduleDay: metadata.scheduleDay || null,
+      scheduleStartTime: metadata.scheduleStartTime || null,
+      scheduleEndTime: metadata.scheduleEndTime || null,
+      autoMarked: metadata.autoMarked ? 1 : 0,
       teacherId: user.id,
       teacherName: user.name,
     };
     setAttendanceLog(prev => {
-      // Remove any existing record for same student+date+period before adding
-      const filtered = prev.filter(l => !(l.studentId === studentId && l.date === dateStr && l.period === currentPeriod));
+      // Remove any existing record for same student+date+scope before adding.
+      const filtered = prev.filter(l => {
+        const sameStudent = String(l.studentId) === String(studentId);
+        const sameDate = String(l.date) === dateStr;
+        if (!sameStudent || !sameDate) return true;
+
+        const existingSubject = String(l.subject || '').trim().toLowerCase();
+        const incomingSubject = String(subjectValue || '').trim().toLowerCase();
+        const existingClassId = String(l.classId || '').trim();
+
+        if (incomingSubject) {
+          const sameSubject = existingSubject === incomingSubject;
+          const sameClass = classIdValue ? existingClassId === classIdValue : true;
+          return !(sameSubject && sameClass);
+        }
+
+        return String(l.period || '').toLowerCase() !== String(currentPeriod || '').toLowerCase();
+      });
       return [optimisticRecord, ...filtered];
     });
 
@@ -346,7 +373,13 @@ export function AttendanceProvider({ children }) {
         date: dateStr,
         time: timeStr,
         status: currentStatus,
-        period: currentPeriod
+        period: currentPeriod,
+        classId: classIdValue,
+        subject: subjectValue,
+        scheduleDay: metadata.scheduleDay || null,
+        scheduleStartTime: metadata.scheduleStartTime || null,
+        scheduleEndTime: metadata.scheduleEndTime || null,
+        autoMarked: metadata.autoMarked ? 1 : 0
       };
 
       const response = await fetch('https://deployed-ils-wmsu-production.up.railway.app/api/attendance', {
