@@ -31,7 +31,7 @@ export default function ProfileScreen({ navigation }) {
     middleName: userData?.middleName || '',
     lastName: userData?.lastName || '',
     department: userData?.department || 'Elementary Department',
-    employeeId: userData?.employeeId || '',
+    employeeId: userData?.employeeId || userData?.employee_id || '',
     phone: userData?.phone || '',
     subjects: userData?.subjects || '',
   });
@@ -81,6 +81,7 @@ export default function ProfileScreen({ navigation }) {
         lastName: editForm.lastName,
         username: user.username || user.email?.split('@')[0] || '',
         email: user.email,
+        employeeId: editForm.employeeId || '',
         phone: editForm.phone || '',
       };
 
@@ -92,8 +93,10 @@ export default function ProfileScreen({ navigation }) {
         await updateUserInStorage({
           firstName: updatedUserData.firstName || editForm.firstName,
           lastName: updatedUserData.lastName || editForm.lastName,
+          employeeId: updatedUserData.employeeId || updatedUserData.employee_id || editForm.employeeId,
           phone: updatedUserData.phone || editForm.phone,
         });
+        await refreshUserData();
         Alert.alert('Success', 'Profile updated successfully');
         setEditModalVisible(false);
       } else {
@@ -331,7 +334,7 @@ export default function ProfileScreen({ navigation }) {
             </View>
             <View style={styles.infoContent}>
               <Text style={styles.infoLabel}>Employee ID</Text>
-              <Text style={styles.infoValue}>{userData?.employeeId || 'Not set'}</Text>
+              <Text style={styles.infoValue}>{userData?.employeeId || userData?.employee_id || 'Not set'}</Text>
             </View>
           </View>
 
@@ -365,7 +368,7 @@ export default function ProfileScreen({ navigation }) {
                 middleName: userData?.middleName || '',
                 lastName: userData?.lastName || '',
                 department: userData?.department || 'Elementary Department',
-                employeeId: userData?.employeeId || '',
+                employeeId: userData?.employeeId || userData?.employee_id || '',
                 phone: userData?.phone || '',
                 subjects: userData?.subjects || '',
               });
