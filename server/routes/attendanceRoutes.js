@@ -385,7 +385,7 @@ const saveAttendanceToFallback = async (payload = {}) => {
 
 const findStudentsForClassSchedule = async (grade, section, schoolYearId) => {
   return query(
-    `SELECT id, lrn, first_name, last_name, full_name, grade_level, section
+    `SELECT id, lrn, first_name, last_name, grade_level, section
      FROM students
      WHERE LOWER(REPLACE(TRIM(grade_level), 'grade ', '')) = LOWER(REPLACE(TRIM(?), 'grade ', ''))
        AND LOWER(TRIM(section)) = LOWER(TRIM(?))
