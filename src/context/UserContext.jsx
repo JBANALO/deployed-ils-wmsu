@@ -63,9 +63,14 @@ export const UserProvider = ({ children }) => {
           console.log('UserContext - refreshing user data on focus:', parsedUser);
           
           // Only update if current user is null or has different email
-          // This prevents overriding fresh data with stale localStorage data
-          if (!adminUser || adminUser.email !== parsedUser.email) {
+          // OR if the stored user has a different profileImage (allow profile image updates)
+          if (!adminUser || 
+              adminUser.email !== parsedUser.email || 
+              adminUser.profileImage !== parsedUser.profileImage) {
+            console.log('UserContext - updating user from focus (email or profileImage changed)');
             setAdminUser(parsedUser);
+          } else {
+            console.log('UserContext - skipping update (same email and profileImage)');
           }
         } catch (error) {
           console.error('UserContext - Error parsing user on focus:', error);

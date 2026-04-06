@@ -404,6 +404,8 @@ export default function SuperAdminDashboard() {
                       <tr>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email/Username</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -412,7 +414,7 @@ export default function SuperAdminDashboard() {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {loading ? (
                         <tr>
-                          <td colSpan="5" className="px-4 py-8 text-center">
+                          <td colSpan="7" className="px-4 py-8 text-center">
                             <div className="text-gray-500">Loading accounts...</div>
                           </td>
                         </tr>
@@ -442,6 +444,16 @@ export default function SuperAdminDashboard() {
                             <td className="px-4 py-4">
                               <div className="text-sm text-gray-900">{account.email}</div>
                               <div className="text-sm text-gray-500">@{account.username}</div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="text-sm text-gray-900">
+                                {account.department || 'Not specified'}
+                              </div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="text-sm text-gray-900">
+                                {account.contactNumber || account.phone || 'Not specified'}
+                              </div>
                             </td>
                             <td className="px-4 py-4">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleColor(account.type)}`}>
@@ -482,7 +494,7 @@ export default function SuperAdminDashboard() {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan="5" className="px-4 py-8 text-center">
+                          <td colSpan="7" className="px-4 py-8 text-center">
                             <div className="text-gray-500">No accounts found</div>
                           </td>
                         </tr>

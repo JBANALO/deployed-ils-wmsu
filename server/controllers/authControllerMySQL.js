@@ -173,21 +173,30 @@ exports.login = async (req, res) => {
 
     // 2️⃣ If not a student, try MySQL `users` and `teachers` tables first
     if (users.length === 0) {
+      console.log('🔍 No student found, searching in users table for:', loginField);
       try {
         users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [loginField, loginField]);
+        console.log('🔍 Users table check - found:', users.length, 'users');
+        if (users.length > 0) {
+          console.log('🔍 Found user in users table:', users[0].email, users[0].role, users[0].status);
+        }
       } catch (dbError) {
         console.log('Users DB login check failed:', dbError.message);
         users = [];
       }
 
       if (users.length === 0) {
+        console.log('🔍 No user found in users table, searching teachers table...');
         try {
           users = await query('SELECT * FROM teachers WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [loginField, loginField]);
+          console.log('🔍 Teachers table check - found:', users.length, 'teachers');
         } catch (dbError) {
           console.log('Teachers DB login check failed:', dbError.message);
           users = [];
         }
       }
+    } else {
+      console.log('🔍 Student found, skipping users/teachers table check');
     }
 
     // 3️⃣ Final fallback: JSON file accounts
