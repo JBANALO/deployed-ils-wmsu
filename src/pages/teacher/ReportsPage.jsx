@@ -37,6 +37,8 @@ export default function ReportsPage() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1); // 1-12
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [activeTab, setActiveTab] = useState("overview"); // overview, monthly
+  const [selectedAttendanceSubject, setSelectedAttendanceSubject] = useState("");
+  const [monthlySubjects, setMonthlySubjects] = useState([]);
   const [attendanceData, setAttendanceData] = useState([]);
   const [monthlyAttendance, setMonthlyAttendance] = useState([]);
   const [rawMonthAttendance, setRawMonthAttendance] = useState([]); // Raw attendance records for SF2
@@ -87,7 +89,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     loadReportsData();
-  }, [selectedSection, selectedMonth, selectedYear, selectedSchoolYearId]);
+  }, [selectedSection, selectedMonth, selectedYear, selectedSchoolYearId, selectedAttendanceSubject]);
 
   useEffect(() => {
     const fetchActiveSchoolYear = async () => {
@@ -296,13 +298,31 @@ export default function ReportsPage() {
         );
       }
 
+      const subjectOptions = [...new Set(
+        filteredMonthAttendance
+          .map(r => String(r.subject || '').trim())
+          .filter(Boolean)
+      )].sort();
+      setMonthlySubjects(subjectOptions);
+      if (selectedAttendanceSubject && !subjectOptions.includes(selectedAttendanceSubject)) {
+        setSelectedAttendanceSubject("");
+      }
+
+      let subjectScopedAttendance = filteredMonthAttendance;
+      if (selectedAttendanceSubject) {
+        const selectedSubjNorm = selectedAttendanceSubject.trim().toLowerCase();
+        subjectScopedAttendance = filteredMonthAttendance.filter(r =>
+          String(r.subject || '').trim().toLowerCase() === selectedSubjNorm
+        );
+      }
+
       // Store raw attendance data for SF2 form
-      setRawMonthAttendance(filteredMonthAttendance);
+      setRawMonthAttendance(subjectScopedAttendance);
 
       // Group by student for monthly summary
       const studentMonthlyData = {};
       studentsData.forEach(student => {
-        const studentRecords = filteredMonthAttendance.filter(r => 
+        const studentRecords = subjectScopedAttendance.filter(r => 
           r.studentId === student.id || 
           r.studentId === student.lrn ||
           r.studentId === student.studentId
@@ -331,10 +351,10 @@ export default function ReportsPage() {
       setMonthlyAttendance(Object.values(studentMonthlyData));
 
       // Calculate monthly stats
-      const totalPresent = filteredMonthAttendance.filter(r => r.status?.toLowerCase() === 'present').length;
-      const totalAbsent = filteredMonthAttendance.filter(r => r.status?.toLowerCase() === 'absent').length;
-      const totalLate = filteredMonthAttendance.filter(r => r.status?.toLowerCase() === 'late').length;
-      const uniqueDays = [...new Set(filteredMonthAttendance.map(r => r.date))].length;
+      const totalPresent = subjectScopedAttendance.filter(r => r.status?.toLowerCase() === 'present').length;
+      const totalAbsent = subjectScopedAttendance.filter(r => r.status?.toLowerCase() === 'absent').length;
+      const totalLate = subjectScopedAttendance.filter(r => r.status?.toLowerCase() === 'late').length;
+      const uniqueDays = [...new Set(subjectScopedAttendance.map(r => r.date))].length;
 
       setMonthlyStats({
         totalPresent,
@@ -578,6 +598,17 @@ export default function ReportsPage() {
                   <DocumentArrowDownIcon className="w-5 h-5" />
                   SF2 Form
                 </button>
+                <select
+                  value={selectedAttendanceSubject}
+                  onChange={(e) => setSelectedAttendanceSubject(e.target.value)}
+                  className="px-4 py-3 pr-10 bg-purple-50 border-2 border-purple-300 rounded-xl font-bold text-purple-800 text-base focus:outline-none focus:ring-3 focus:ring-purple-100 appearance-none cursor-pointer"
+                >
+                  <option value="">All Subjects</option>
+                  {monthlySubjects.map((subjectName) => (
+                    <option key={subjectName} value={subjectName}>{subjectName}</option>
+                  ))}
+                </select>
+
                 <button
                   onClick={exportToCSV}
                   className="px-4 py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition flex items-center gap-2"
@@ -827,6 +858,7 @@ export default function ReportsPage() {
                 Monthly Attendance Summary - {months.find(m => m.value === selectedMonth)?.label} {selectedYear}
               </h3>
               {selectedSection && <p className="text-red-200 mt-1">Section: {selectedSection}</p>}
+              {selectedAttendanceSubject && <p className="text-red-200 mt-1">Subject: {selectedAttendanceSubject}</p>}
             </div>
 
             <div className="overflow-x-auto">

@@ -68,10 +68,13 @@ export default function AuthProvider({ children }) {
       const result = await authAPI.login(emailOrUsername, password);
       console.log('Login response:', JSON.stringify(result));
 
-      if (result.status === 'success' && result.data && result.data.user) {
+      const normalizedUser = result?.data?.user || result?.user || null;
+      const normalizedToken = result?.token || result?.data?.token || null;
+
+      if (result.status === 'success' && normalizedUser) {
         const userData = {
-          ...result.data.user,
-          token: result.token
+          ...normalizedUser,
+          token: normalizedToken
         };
         await storageManager.setItem('user', JSON.stringify(userData));
         setUser(userData);

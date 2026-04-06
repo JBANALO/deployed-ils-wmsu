@@ -17,6 +17,32 @@ const signToken = (id) => {
   });
 };
 
+const buildLoginCandidates = (rawLogin = '') => {
+  const cleaned = String(rawLogin || '').trim();
+  const out = [];
+  const push = (value) => {
+    const v = String(value || '').trim();
+    if (!v) return;
+    if (!out.includes(v)) out.push(v);
+  };
+
+  push(cleaned);
+
+  const normalizedLower = cleaned.toLowerCase();
+  const duplicatedDomain = '@wmsu.edu.ph@wmsu.edu.ph';
+  const singleDomain = '@wmsu.edu.ph';
+
+  if (normalizedLower.endsWith(singleDomain) && !normalizedLower.endsWith(duplicatedDomain)) {
+    push(`${cleaned}${singleDomain}`);
+  }
+
+  if (normalizedLower.endsWith(duplicatedDomain)) {
+    push(cleaned.replace(/@wmsu\.edu\.ph@wmsu\.edu\.ph$/i, '@wmsu.edu.ph'));
+  }
+
+  return out;
+};
+
 // Protect middleware - verify token
 exports.protect = async (req, res, next) => {
   try {
@@ -158,10 +184,17 @@ exports.login = async (req, res) => {
     }
 
     let users = [];
+    const loginCandidates = buildLoginCandidates(loginField);
+    console.log('Login candidates:', loginCandidates);
 
     // 1️⃣ Priority lookup: MySQL users and teachers (admin/super_admin/teacher/adviser)
     try {
-      users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [loginField, loginField]);
+      for (const candidate of loginCandidates) {
+        users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [candidate, candidate]);
+        if (users.length > 0) {
+          break;
+        }
+      }
       console.log('Users login check - loginField:', loginField, 'found:', users.length);
     } catch (dbError) {
       console.log('Users DB login check failed:', dbError.message);
@@ -170,7 +203,12 @@ exports.login = async (req, res) => {
 
     if (users.length === 0) {
       try {
-        users = await query('SELECT * FROM teachers WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [loginField, loginField]);
+        for (const candidate of loginCandidates) {
+          users = await query('SELECT * FROM teachers WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [candidate, candidate]);
+          if (users.length > 0) {
+            break;
+          }
+        }
         console.log('Teachers login check - loginField:', loginField, 'found:', users.length);
       } catch (dbError) {
         console.log('Teachers DB login check failed:', dbError.message);
@@ -181,10 +219,15 @@ exports.login = async (req, res) => {
     // 2️⃣ If no admin/teacher match, try students table (email/LRN)
     if (users.length === 0) {
       try {
-        users = await query(
-          'SELECT * FROM students WHERE LOWER(student_email) = LOWER(?) OR lrn = ?',
-          [loginField.toLowerCase(), loginField]
-        );
+        for (const candidate of loginCandidates) {
+          users = await query(
+            'SELECT * FROM students WHERE LOWER(student_email) = LOWER(?) OR lrn = ?',
+            [candidate.toLowerCase(), candidate]
+          );
+          if (users.length > 0) {
+            break;
+          }
+        }
         console.log('Student login check - loginField:', loginField, 'found:', users.length);
       } catch (dbError) {
         console.log('Student DB login check failed, will continue with fallbacks:', dbError.message);
@@ -199,10 +242,15 @@ exports.login = async (req, res) => {
         users = allUsers.filter(u => {
           const role = String(u.role || '').toLowerCase();
           const isAllowedRole = role === 'admin' || role === 'super_admin' || role === 'teacher' || role === 'adviser' || role === 'subject_teacher';
+          const userEmail = String(u.email || '').toLowerCase();
+          const userName = String(u.username || '').toLowerCase();
+          const hasCandidateMatch = loginCandidates.some(candidate => {
+            const c = String(candidate || '').toLowerCase();
+            return userEmail === c || userName === c;
+          });
           return (
             isAllowedRole &&
-            (u.email?.toLowerCase() === loginField.toLowerCase() ||
-             u.username?.toLowerCase() === loginField.toLowerCase())
+            hasCandidateMatch
           );
         });
       } catch (fileError) {
