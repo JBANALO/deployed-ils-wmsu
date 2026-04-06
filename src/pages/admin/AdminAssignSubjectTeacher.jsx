@@ -151,13 +151,16 @@ export default function AdminAssignSubjectTeacher() {
     }
   };
 
-  const handleRemoveSubjectTeacher = async (classId, teacherId) => {
+  const handleRemoveSubjectTeacher = async (classId, teacherId, subject) => {
     try {
+      const subjectParam = subject ? `?subject=${encodeURIComponent(subject)}` : '';
       const response = await api.put(
-        `/classes/${classId}/unassign-subject-teacher/${teacherId}`
+        `/classes/${classId}/unassign-subject-teacher/${teacherId}${subjectParam}`
       );
 
-      setMessage("Subject teacher removed successfully");
+      setMessage(subject
+        ? `Removed all \"${subject}\" assignments for this teacher in this class`
+        : "Subject teacher removed successfully");
       setMessageType("success");
       
       // Refetch all data to update the list immediately
@@ -348,9 +351,9 @@ export default function AdminAssignSubjectTeacher() {
                                 </p>
                               </div>
                               <button
-                                onClick={() => handleRemoveSubjectTeacher(cls.id, st.teacher_id)}
+                                onClick={() => handleRemoveSubjectTeacher(cls.id, st.teacher_id, st.subject)}
                                 className="text-red-600 hover:text-red-800 p-1 flex-shrink-0"
-                                title="Remove subject teacher"
+                                title="Remove all entries for this subject"
                               >
                                 <TrashIcon className="w-5 h-5" />
                               </button>

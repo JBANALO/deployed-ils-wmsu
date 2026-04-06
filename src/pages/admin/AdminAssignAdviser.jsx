@@ -414,10 +414,13 @@ export default function AdminAssignAdviser() {
     }
   };
 
-  const handleRemoveSubjectTeacher = async (classId, teacherId) => {
+  const handleRemoveSubjectTeacher = async (classId, teacherId, subject) => {
     try {
-      await api.put(`/classes/${classId}/unassign-subject-teacher/${teacherId}?schoolYearId=${encodeURIComponent(activeSchoolYearId)}`);
-      setMessage("Subject teacher removed successfully");
+      const subjectParam = subject ? `&subject=${encodeURIComponent(subject)}` : '';
+      await api.put(`/classes/${classId}/unassign-subject-teacher/${teacherId}?schoolYearId=${encodeURIComponent(activeSchoolYearId)}${subjectParam}`);
+      setMessage(subject
+        ? `Removed all \"${subject}\" assignments for this teacher in this class`
+        : "Subject teacher removed successfully");
       setMessageType("success");
       await fetchData();
     } catch (error) {
@@ -792,9 +795,9 @@ export default function AdminAssignAdviser() {
                             <span className="text-xs text-gray-500 ml-2">{st.day} {st.start_time}–{st.end_time}</span>
                           </span>
                           <button
-                            onClick={() => handleRemoveSubjectTeacher(classItem.id, st.teacher_id)}
+                            onClick={() => handleRemoveSubjectTeacher(classItem.id, st.teacher_id, st.subject)}
                             className="text-red-500 hover:text-red-700 ml-3 flex-shrink-0"
-                            title="Remove"
+                            title="Remove all entries for this subject"
                           >
                             <TrashIcon className="w-4 h-4" />
                           </button>

@@ -1113,20 +1113,36 @@ const unassignSubjectTeacher = async (req, res) => {
   try {
     await ensureClassesSchoolYearColumn();
     const { classId, teacherId } = req.params;
+    const subjectFromQuery = typeof req.query?.subject === 'string' ? req.query.subject : '';
+    const subjectFromBody = typeof req.body?.subject === 'string' ? req.body.subject : '';
+    const subject = (subjectFromQuery || subjectFromBody || '').trim();
     const targetSy = await resolveSchoolYear(req);
 
-    console.log(`unassignSubjectTeacher - classId: ${classId}, teacherId: ${teacherId}`);
+    console.log(`unassignSubjectTeacher - classId: ${classId}, teacherId: ${teacherId}, subject: ${subject || '(all subjects)'}`);
 
-    await pool.query(
-      `DELETE FROM subject_teachers WHERE class_id = ? AND teacher_id = ? AND school_year_id = ?`,
-      [classId, teacherId, targetSy.id]
-    );
+    let result;
+    if (subject) {
+      [result] = await pool.query(
+        `DELETE FROM subject_teachers
+         WHERE class_id = ? AND teacher_id = ? AND subject = ? AND school_year_id = ?`,
+        [classId, teacherId, subject, targetSy.id]
+      );
+    } else {
+      [result] = await pool.query(
+        `DELETE FROM subject_teachers WHERE class_id = ? AND teacher_id = ? AND school_year_id = ?`,
+        [classId, teacherId, targetSy.id]
+      );
+    }
 
     console.log('✅ Subject teacher unassigned successfully');
     
     return res.json({
       success: true,
-      message: 'Subject teacher unassigned successfully'
+      message: subject
+        ? `Removed all \"${subject}\" assignments for this teacher in the class`
+        : 'Subject teacher unassigned successfully',
+      deletedCount: result?.affectedRows || 0,
+      scope: subject ? 'teacher-subject' : 'teacher'
     });
 
   } catch (error) {
