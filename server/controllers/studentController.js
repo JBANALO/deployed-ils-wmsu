@@ -8,6 +8,7 @@ const bcrypt = require('bcryptjs');
 // Ensure school year isolation for students/grades
 let studentSyEnsured = false;
 let gradesSyEnsured = false;
+let studentBirthDateEnsured = false;
 
 async function getActiveSchoolYear() {
   const rows = await query('SELECT id, label FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
@@ -77,6 +78,16 @@ async function ensureGradesSchoolYearColumn() {
   gradesSyEnsured = true;
 }
 
+async function ensureStudentBirthDateColumn() {
+  if (studentBirthDateEnsured) return;
+  const cols = await query('SHOW COLUMNS FROM students');
+  const hasBirthDate = cols.some(c => c.Field === 'birth_date');
+  if (!hasBirthDate) {
+    await query('ALTER TABLE students ADD COLUMN birth_date DATE NULL');
+  }
+  studentBirthDateEnsured = true;
+}
+
 // -----------------------------
 // HELPER: Format student object
 // -----------------------------
@@ -101,6 +112,7 @@ function formatStudent(s) {
     lastName: s.last_name,
     fullName: `${s.first_name} ${s.middle_name || ''} ${s.last_name}`.trim(),
     age: s.age,
+    birthDate: s.birth_date,
     sex: s.sex,
     gradeLevel: s.grade_level,
     section: s.section,
@@ -1110,7 +1122,7 @@ exports.updateStudent = async (req, res) => {
     const { id } = req.params;
     const {
       lrn, firstName, middleName, lastName, age, sex,
-      gradeLevel, section,
+      gradeLevel, section, birthDate,
       parentFirstName, parentLastName, parentEmail, parentContact,
       studentEmail, status, actorRole, actorId
     } = req.body;
@@ -1119,6 +1131,7 @@ exports.updateStudent = async (req, res) => {
     console.log('Update data:', req.body);
 
     await ensureStudentSchoolYearColumn();
+    await ensureStudentBirthDateColumn();
 
     // Check if student exists
     const existingStudents = await query('SELECT * FROM students WHERE id = ?', [id]);
@@ -1183,6 +1196,7 @@ exports.updateStudent = async (req, res) => {
     if (middleName !== undefined) { updates.push('middle_name = ?'); params.push(middleName); }
     if (lastName !== undefined) { updates.push('last_name = ?'); params.push(lastName); }
     if (age !== undefined) { updates.push('age = ?'); params.push(age); }
+    if (birthDate !== undefined) { updates.push('birth_date = ?'); params.push(birthDate || null); }
     if (sex !== undefined) { updates.push('sex = ?'); params.push(sex); }
     if (gradeLevel !== undefined) { updates.push('grade_level = ?'); params.push(gradeLevel); }
     if (section !== undefined) { updates.push('section = ?'); params.push(section); }

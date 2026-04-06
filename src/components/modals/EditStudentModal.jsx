@@ -64,6 +64,13 @@ export default function EditStudentModal({ student, formData, setFormData, onSav
               </select>
             </div>
 
+            <input
+              type="date"
+              value={formData.birthDate ? String(formData.birthDate).slice(0, 10) : ""}
+              onChange={e => setFormData({ ...formData, birthDate: e.target.value })}
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-red-500"
+            />
+
             <div className="grid grid-cols-2 gap-4">
               <input type="text" placeholder="Grade Level" value={formData.gradeLevel || ""} onChange={e => setFormData({ ...formData, gradeLevel: e.target.value })} className="border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-red-500" />
               <input type="text" placeholder="Section" value={formData.section || ""} onChange={e => setFormData({ ...formData, section: e.target.value })} className="border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-red-500" />
@@ -72,8 +79,8 @@ export default function EditStudentModal({ student, formData, setFormData, onSav
             <input type="text" placeholder="Contact Number" value={formData.contact || ""} onChange={e => setFormData({ ...formData, contact: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-red-500" />
             <input type="email" placeholder="WMSU Email (Cannot Edit)" value={formData.wmsuEmail || ""} disabled className="w-full bg-gray-100 text-gray-500 border border-gray-200 rounded-xl px-4 py-3 cursor-not-allowed" />
 
-            <div className="pt-2">
-              <p className="text-sm font-semibold text-gray-700 mb-3">Guardian Information</p>
+            <div className="pt-2 border-t border-gray-200">
+              <p className="text-sm font-semibold text-gray-700 mb-3 mt-3">Parent/Guardian Information</p>
               <div className="grid grid-cols-2 gap-4">
                 <input
                   type="text"
