@@ -21,6 +21,9 @@ export default function ProfileScreen({ navigation }) {
   const { user, userData, logout, refreshUserData, updateUserInStorage } = useAuth();
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [photoModalVisible, setPhotoModalVisible] = useState(false);
+  const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
+  const [teacherSchedules, setTeacherSchedules] = useState([]);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   
   const [editForm, setEditForm] = useState({
@@ -161,6 +164,123 @@ export default function ProfileScreen({ navigation }) {
     Alert.alert('Info', 'Profile photo can be managed through the web dashboard.');
   };
 
+  const loadTeacherSchedules = async () => {
+    if (!user?.id) return;
+    try {
+      setScheduleLoading(true);
+      const firstName = String(userData?.firstName || user?.firstName || '').trim().toLowerCase();
+      const lastName = String(userData?.lastName || user?.lastName || '').trim().toLowerCase();
+
+      const fromSubjectTeacher = await authAPI.getSubjectTeacherClasses(user.id);
+      const subjectTeacherClasses = Array.isArray(fromSubjectTeacher?.data)
+        ? fromSubjectTeacher.data
+        : Array.isArray(fromSubjectTeacher)
+        ? fromSubjectTeacher
+        : [];
+
+      let rows = [];
+      subjectTeacherClasses.forEach(cls => {
+        const sts = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
+        sts.forEach(st => {
+          const teacherIdMatch = String(st.teacher_id || st.teacherId || '') === String(user.id);
+          const teacherNameText = String(st.teacher_name || st.teacherName || '').trim().toLowerCase();
+          const teacherNameMatch = firstName && lastName
+            ? (teacherNameText.includes(firstName) && teacherNameText.includes(lastName))
+            : false;
+          if (!teacherIdMatch && !teacherNameMatch) return;
+          rows.push({
+            classId: st.class_id || cls.id,
+            grade: cls.grade || st.grade || '',
+            section: cls.section || st.section || '',
+            subject: st.subject || 'Subject',
+            day: st.day || 'Monday - Friday',
+            start_time: st.start_time || st.startTime || null,
+            end_time: st.end_time || st.endTime || null,
+          });
+        });
+      });
+
+      // Fallback: use all classes endpoint (mirrors admin/web shape) when times are missing.
+      const needsFallback = rows.length === 0 || rows.every(r => !r.start_time && !r.end_time);
+      if (needsFallback) {
+        const allClasses = await authAPI.getAllClasses(user?.token);
+        const classList = Array.isArray(allClasses?.data)
+          ? allClasses.data
+          : Array.isArray(allClasses)
+          ? allClasses
+          : [];
+
+        const fallbackRows = [];
+        classList.forEach(cls => {
+          const sts = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
+          sts.forEach(st => {
+            const teacherIdMatch = String(st.teacher_id || st.teacherId || '') === String(user.id);
+            const teacherNameText = String(st.teacher_name || st.teacherName || '').trim().toLowerCase();
+            const teacherNameMatch = firstName && lastName
+              ? (teacherNameText.includes(firstName) && teacherNameText.includes(lastName))
+              : false;
+            if (!teacherIdMatch && !teacherNameMatch) return;
+            fallbackRows.push({
+              classId: st.class_id || cls.id,
+              grade: cls.grade || st.grade || '',
+              section: cls.section || st.section || '',
+              subject: st.subject || 'Subject',
+              day: st.day || 'Monday - Friday',
+              start_time: st.start_time || st.startTime || null,
+              end_time: st.end_time || st.endTime || null,
+            });
+          });
+        });
+
+        if (fallbackRows.length > 0) {
+          rows = fallbackRows;
+        }
+      }
+
+      const toMinutes = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw.includes(':')) return null;
+        const [h, m] = raw.split(':');
+        const hh = Number(h);
+        const mm = Number(m);
+        if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+        return (hh * 60) + mm;
+      };
+
+      const seen = new Set();
+      const deduped = rows
+        .filter(row => {
+          const key = [row.classId, row.subject, row.day, row.start_time, row.end_time].join('|').toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .sort((a, b) => {
+          const dayA = String(a.day || '').toLowerCase();
+          const dayB = String(b.day || '').toLowerCase();
+          if (dayA !== dayB) return dayA.localeCompare(dayB);
+          const aMin = toMinutes(a.start_time);
+          const bMin = toMinutes(b.start_time);
+          if (aMin === null && bMin === null) return 0;
+          if (aMin === null) return 1;
+          if (bMin === null) return -1;
+          return aMin - bMin;
+        });
+
+      setTeacherSchedules(deduped);
+    } catch (error) {
+      console.error('Error loading profile schedules:', error);
+      setTeacherSchedules([]);
+    } finally {
+      setScheduleLoading(false);
+    }
+  };
+
+  const openScheduleModal = async () => {
+    setScheduleModalVisible(true);
+    await loadTeacherSchedules();
+  };
+
   return (
     <>
       <StatusBar backgroundColor="#8B0000" barStyle="light-content" />
@@ -264,7 +384,7 @@ export default function ProfileScreen({ navigation }) {
 
           <TouchableOpacity 
             style={styles.actionButton}
-            onPress={() => navigation.navigate('HomeTab')}
+            onPress={openScheduleModal}
           >
             <View style={styles.actionIconContainer}>
               <Icon name="calendar-clock" size={24} color="#8B0000" />
@@ -413,6 +533,61 @@ export default function ProfileScreen({ navigation }) {
       </Modal>
 
       <Modal
+        animationType="slide"
+        transparent={true}
+        visible={scheduleModalVisible}
+        onRequestClose={() => setScheduleModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={isWeb ? 'height' : (Platform?.OS === 'ios' ? 'padding' : 'height')}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>My Teaching Schedule</Text>
+              <TouchableOpacity onPress={() => setScheduleModalVisible(false)}>
+                <Icon name="close" size={28} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            {scheduleLoading ? (
+              <View style={{ paddingVertical: 32, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color="#8B0000" />
+                <Text style={{ marginTop: 10, color: '#666' }}>Loading schedule...</Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+                {teacherSchedules.length === 0 ? (
+                  <View style={styles.emptyCard}>
+                    <Icon name="calendar-remove" size={40} color="#ccc" />
+                    <Text style={styles.emptyText}>No schedule found</Text>
+                    <Text style={styles.emptySubText}>No assigned day/time available for this account yet.</Text>
+                  </View>
+                ) : (
+                  teacherSchedules.map((row, index) => (
+                    <View key={`${row.classId}_${row.subject}_${row.day}_${row.start_time}_${row.end_time}_${index}`} style={styles.scheduleItem}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.scheduleSubjectText}>{row.subject}</Text>
+                        <Text style={styles.scheduleClassText}>{row.grade} - {row.section}</Text>
+                        <Text style={styles.scheduleDayText}>{row.day || 'Day not set'}</Text>
+                      </View>
+                      <View style={styles.scheduleChip}>
+                        <Icon name="clock-outline" size={12} color="#8B0000" />
+                        <Text style={styles.scheduleChipText}>
+                          {(row.start_time && row.end_time) ? `${row.start_time} - ${row.end_time}` : 'No schedule time'}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                )}
+                <View style={{ height: 10 }} />
+              </ScrollView>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
         animationType="fade"
         transparent={true}
         visible={photoModalVisible}
@@ -521,4 +696,29 @@ const styles = StyleSheet.create({
   photoCancelText: { fontSize: 16, color: '#8B0000', fontWeight: '600' },
   uploadingOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.95)', justifyContent: 'center', alignItems: 'center', borderTopLeftRadius: 20, borderTopRightRadius: 20 },
   uploadingText: { fontSize: 16, color: '#8B0000', fontWeight: '600', marginTop: 12 },
+  scheduleItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    gap: 10,
+  },
+  scheduleSubjectText: { fontSize: 16, fontWeight: '700', color: '#222' },
+  scheduleClassText: { fontSize: 13, color: '#666', marginTop: 2 },
+  scheduleDayText: { fontSize: 12, color: '#8B0000', marginTop: 2, fontWeight: '600' },
+  scheduleChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#fff5f5',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+  },
+  scheduleChipText: { fontSize: 11, color: '#8B0000', fontWeight: '700' },
 });

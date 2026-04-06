@@ -482,28 +482,6 @@ export default function HomeScreen() {
     return `${startTime} - ${endTime}`;
   };
 
-  const getTodayTeachingSchedule = () => {
-    const now = new Date();
-    const rows = teacherSchedules
-      .filter(s => doesScheduleMatchToday(s.day, now))
-      .sort((a, b) => {
-        const aMin = toMinutes(a.start_time);
-        const bMin = toMinutes(b.start_time);
-        if (aMin === null && bMin === null) return 0;
-        if (aMin === null) return 1;
-        if (bMin === null) return -1;
-        return aMin - bMin;
-      });
-
-    const seen = new Set();
-    return rows.filter(row => {
-      const key = [row.classId, row.subject, row.day, row.start_time, row.end_time].join('|').toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  };
-
   const isSchoolDay = () => {
     const day = currentTime.getDay();
     const dateString = currentTime.toLocaleDateString('en-US');
@@ -784,7 +762,6 @@ WMSU ILS - Elementary Department`;
   const sections = getStudentsBySection();
   const subjectSummaries = isSchoolDay() ? getTodaySubjectSummaries() : [];
   const sectionSubjectOverview = isSchoolDay() ? getSectionSubjectOverview() : {};
-  const todayTeachingSchedule = isSchoolDay() ? getTodayTeachingSchedule() : [];
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -920,39 +897,7 @@ WMSU ILS - Elementary Department`;
         </View>
 
         <View style={styles.statsSection}>
-          <Text style={styles.sectionTitle}>Today's Teaching Schedule</Text>
-
-          {todayTeachingSchedule.length === 0 ? (
-            <View style={styles.periodCard}>
-              <View style={styles.periodHeader}>
-                <Text style={styles.periodTitle}>No Schedule Found Today</Text>
-                <Icon name="calendar-remove" size={24} color="#8B0000" />
-              </View>
-              <Text style={{ color: '#666', marginTop: 8 }}>
-                No assigned teaching time and section found for today.
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.compactSubjectListCard}>
-              {todayTeachingSchedule.map((row, index) => (
-                <View key={`${row.classId}_${row.subject}_${row.start_time}_${row.end_time}_${index}`}>
-                  <View style={styles.scheduleRow}>
-                    <View style={styles.scheduleLeft}>
-                      <Text style={styles.scheduleSubject} numberOfLines={1}>{row.subject}</Text>
-                      <Text style={styles.scheduleClass} numberOfLines={1}>{row.grade} - {row.section}</Text>
-                    </View>
-                    <View style={styles.scheduleTimePill}>
-                      <Icon name="clock-outline" size={12} color="#8B0000" />
-                      <Text style={styles.scheduleTime}>{formatScheduleRange(row.start_time, row.end_time)}</Text>
-                    </View>
-                  </View>
-                  {index !== todayTeachingSchedule.length - 1 && <View style={styles.compactDivider} />}
-                </View>
-              ))}
-            </View>
-          )}
-
-          <Text style={[styles.sectionTitle, { marginTop: 14 }]}>Today's Subject Attendance</Text>
+          <Text style={styles.sectionTitle}>Today's Subject Attendance</Text>
 
           {subjectSummaries.length === 0 ? (
             <View style={styles.periodCard}>
@@ -1435,41 +1380,6 @@ const styles = StyleSheet.create({
   compactDivider: {
     height: 1,
     backgroundColor: '#f0f0f0',
-  },
-  scheduleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 11,
-    gap: 10,
-  },
-  scheduleLeft: {
-    flex: 1,
-    marginRight: 8,
-  },
-  scheduleSubject: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#222',
-  },
-  scheduleClass: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
-  },
-  scheduleTimePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#fff5f5',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 999,
-  },
-  scheduleTime: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#8B0000',
   },
   
   sectionContainer: { paddingHorizontal: 16, marginBottom: 16 },

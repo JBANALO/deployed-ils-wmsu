@@ -101,6 +101,25 @@ export const authAPI = {
       console.error('Error fetching subject teacher classes:', error);
       throw error;
     }
+  },
+
+  // Get all classes (used as fallback to extract full schedule rows)
+  getAllClasses: async (token) => {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/classes`, {
+        headers: token
+          ? {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            }
+          : undefined,
+      });
+      const result = await response.json();
+      return result.data || result.classes || result;
+    } catch (error) {
+      console.error('Error fetching all classes:', error);
+      throw error;
+    }
   }
 };
 
