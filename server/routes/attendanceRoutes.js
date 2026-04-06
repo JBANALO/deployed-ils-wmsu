@@ -927,9 +927,15 @@ router.post('/', async (req, res) => {
       });
     } catch (fallbackErr) {
       console.error('Fallback save also failed:', fallbackErr);
+      return res.status(500).json({
+        success: false,
+        message: 'Primary and fallback attendance save failed',
+        error: error.message,
+        fallbackError: fallbackErr.message
+      });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Internal server error',
       error: error.message
