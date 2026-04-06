@@ -205,7 +205,14 @@ const ensureAttendanceStatusColumn = async () => {
         await query("UPDATE attendance SET status = COALESCE(NULLIF(status_text_tmp, ''), 'Present')");
         await query('ALTER TABLE attendance DROP COLUMN status_text_tmp');
       } catch (fallbackErr) {
-        throw new Error(`Failed to normalize attendance.status column: ${fallbackErr.message}`);
+        console.warn('[attendance] copy-based fallback failed, applying last-resort status reset:', fallbackErr.message);
+        try {
+          // Last resort: do not read broken enum values; just recreate column so writes can continue.
+          await query('ALTER TABLE attendance DROP COLUMN status');
+          await query("ALTER TABLE attendance ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'Present'");
+        } catch (resetErr) {
+          throw new Error(`Failed to normalize attendance.status column: ${resetErr.message}`);
+        }
       }
     }
   }
