@@ -187,7 +187,27 @@ const ensureAttendanceStatusColumn = async () => {
   // Some deployments ended up with malformed ENUM definitions (duplicate values),
   // which causes INSERT/UPDATE to fail. Normalize to VARCHAR for stability.
   if (statusType.startsWith('enum(')) {
-    await query("ALTER TABLE attendance MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'Present'");
+    try {
+      await query("ALTER TABLE attendance MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'Present'");
+    } catch (modifyErr) {
+      console.warn('[attendance] direct status modify failed, applying fallback migration:', modifyErr.message);
+
+      // Fallback migration path: copy values -> drop broken enum -> recreate varchar -> restore values.
+      try {
+        const hasTmp = cols.some(c => c.Field === 'status_text_tmp');
+        if (!hasTmp) {
+          await query('ALTER TABLE attendance ADD COLUMN status_text_tmp VARCHAR(20) NULL');
+        }
+
+        await query("UPDATE attendance SET status_text_tmp = CASE LOWER(CAST(status AS CHAR)) WHEN 'present' THEN 'Present' WHEN 'late' THEN 'Late' WHEN 'absent' THEN 'Absent' ELSE 'Present' END");
+        await query('ALTER TABLE attendance DROP COLUMN status');
+        await query("ALTER TABLE attendance ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'Present'");
+        await query("UPDATE attendance SET status = COALESCE(NULLIF(status_text_tmp, ''), 'Present')");
+        await query('ALTER TABLE attendance DROP COLUMN status_text_tmp');
+      } catch (fallbackErr) {
+        throw new Error(`Failed to normalize attendance.status column: ${fallbackErr.message}`);
+      }
+    }
   }
 
   attendanceStatusColumnEnsured = true;
