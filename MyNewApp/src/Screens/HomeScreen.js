@@ -4,7 +4,6 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useAttendance } from '../context/AttendanceContext';
 import { useAuth } from '../context/AuthProvider';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI } from '../services/api';
 
 export default function HomeScreen() {
@@ -19,12 +18,9 @@ export default function HomeScreen() {
   const [emailInput, setEmailInput] = useState('');
   const [pendingEmailData, setPendingEmailData] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [sentAbsentEmails, setSentAbsentEmails] = useState({});
   const [teacherSchedules, setTeacherSchedules] = useState([]);
   const lastDateRef = useRef(new Date().toISOString().split('T')[0]);
-  const lastMorningCheck = useRef(false);
-  const lastAfternoonCheck = useRef(false);
-  const { attendanceLog, getTodayStats, addManualAbsence, removeAbsence, getAttendancePeriod, recordAttendance, loadAttendanceLogs } = useAttendance();
+  const { attendanceLog, addManualAbsence, recordAttendance, loadAttendanceLogs } = useAttendance();
   const { user, userData, loading: authLoading } = useAuth();
 
   useEffect(() => {
@@ -77,147 +73,10 @@ export default function HomeScreen() {
         loadStudents();
         loadAttendanceLogs();
         loadTeacherSchedules();
-        loadSentAbsentEmails();
         setRefreshKey(prev => prev + 1);
       }
     }, [user])
   );
-
-  // Load sent absent emails from storage to avoid duplicates
-  const loadSentAbsentEmails = async () => {
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const stored = await AsyncStorage.getItem(`sentAbsentEmails_${today}`);
-      if (stored) {
-        setSentAbsentEmails(JSON.parse(stored));
-      } else {
-        setSentAbsentEmails({});
-      }
-    } catch (error) {
-      console.error('Error loading sent emails:', error);
-    }
-  };
-
-  // Send automatic absent notification via API
-  const sendAbsentEmailViaAPI = async (student, period) => {
-    const parentEmail = student.parentEmail || student.contactEmail;
-    if (!parentEmail) {
-      console.log('📧 No parent email for:', student.name);
-      return false;
-    }
-
-    const emailKey = `${student.studentId}_${period}`;
-    if (sentAbsentEmails[emailKey]) {
-      console.log('📧 Already sent absent email for:', student.name, period);
-      return false;
-    }
-
-    try {
-      const response = await fetch('https://deployed-ils-wmsu-production.up.railway.app/api/attendance/send-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          parentEmail: parentEmail,
-          studentName: student.name,
-          studentLRN: student.studentId || student.lrn,
-          gradeLevel: student.gradeLevel || 'N/A',
-          section: student.section || 'N/A',
-          status: 'absent',
-          period: period,
-          time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-          teacherName: user?.firstName || user?.email?.split('@')[0] || 'Teacher'
-        }),
-      });
-
-      const result = await response.json();
-      if (result.success) {
-        console.log('📧 Absent email sent to:', parentEmail);
-        // Mark as sent
-        const today = new Date().toISOString().split('T')[0];
-        const updated = { ...sentAbsentEmails, [emailKey]: true };
-        setSentAbsentEmails(updated);
-        await AsyncStorage.setItem(`sentAbsentEmails_${today}`, JSON.stringify(updated));
-        return true;
-      }
-    } catch (error) {
-      console.error('📧 Error sending absent email:', error);
-    }
-    return false;
-  };
-
-  // Check and send automatic absent notifications
-  const checkAndSendAbsentNotifications = async () => {
-    if (!isSchoolDay() || students.length === 0) return;
-
-    const now = new Date();
-    const nowHour = now.getHours();
-    const today = now.toISOString().split('T')[0];
-
-    // Filter today's attendance records
-    const todayLogs = attendanceLog.filter(log => {
-      let logDate = log.date;
-      if (logDate && logDate.includes('/')) {
-        const parts = logDate.split('/');
-        if (parts.length === 3) {
-          logDate = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
-        }
-      }
-      return logDate === today;
-    });
-
-    // Check morning absents (after 10 AM)
-    if (nowHour >= 10 && !lastMorningCheck.current) {
-      lastMorningCheck.current = true;
-      console.log('📧 Checking morning absents...');
-      
-      for (const student of students) {
-        const studentIdStr = String(student.studentId || student.lrn || student.id || '');
-        const hasMorningRecord = todayLogs.some(log => 
-          (String(log.studentId) === studentIdStr || String(log.student_id) === studentIdStr) && 
-          (log.period || '').toLowerCase() === 'morning'
-        );
-        if (!hasMorningRecord) {
-          // Persist auto-absent so web and mobile dashboards show the same numbers
-          await addManualAbsence(studentIdStr, 'morning');
-          await sendAbsentEmailViaAPI(student, 'morning');
-        }
-      }
-
-      // Refresh logs after auto-marking absences
-      await loadAttendanceLogs();
-    }
-
-    // Check afternoon absents (after 2 PM)
-    if (nowHour >= 14 && !lastAfternoonCheck.current) {
-      lastAfternoonCheck.current = true;
-      console.log('📧 Checking afternoon absents...');
-      
-      for (const student of students) {
-        const studentIdStr = String(student.studentId || student.lrn || student.id || '');
-        const hasAfternoonRecord = todayLogs.some(log => 
-          (String(log.studentId) === studentIdStr || String(log.student_id) === studentIdStr) && 
-          (log.period || '').toLowerCase() === 'afternoon'
-        );
-        if (!hasAfternoonRecord) {
-          // Persist auto-absent so web and mobile dashboards show the same numbers
-          await addManualAbsence(studentIdStr, 'afternoon');
-          await sendAbsentEmailViaAPI(student, 'afternoon');
-        }
-      }
-
-      // Refresh logs after auto-marking absences
-      await loadAttendanceLogs();
-    }
-  };
-
-  // Run absent notification check when students or attendance changes
-  useEffect(() => {
-    if (students.length > 0 && attendanceLog.length >= 0) {
-      checkAndSendAbsentNotifications();
-    }
-  }, [students, attendanceLog]);
 
   const loadStudents = async () => {
     if (!user) return;
@@ -770,33 +629,6 @@ WMSU ILS - Elementary Department`;
     setPendingEmailData(null);
   };
 
-  // On weekends/no-school days, show zero stats
-  // Calculate real stats by aggregating all sections (includes students without records as absent)
-  const calculateRealStats = () => {
-    const sections = getStudentsBySection();
-    const aggregatedStats = {
-      morning: { present: 0, late: 0, absent: 0 },
-      afternoon: { present: 0, late: 0, absent: 0 }
-    };
-
-    Object.keys(sections).forEach(sectionName => {
-      const sectionData = getSectionAttendance(sectionName, sections[sectionName]);
-      aggregatedStats.morning.present += sectionData.stats.morning.present;
-      aggregatedStats.morning.late += sectionData.stats.morning.late;
-      aggregatedStats.morning.absent += sectionData.stats.morning.absent;
-      aggregatedStats.afternoon.present += sectionData.stats.afternoon.present;
-      aggregatedStats.afternoon.late += sectionData.stats.afternoon.late;
-      aggregatedStats.afternoon.absent += sectionData.stats.afternoon.absent;
-    });
-
-    return aggregatedStats;
-  };
-
-  const rawStats = calculateRealStats();
-  const stats = isSchoolDay() ? rawStats : {
-    morning: { present: 0, late: 0, absent: 0 },
-    afternoon: { present: 0, late: 0, absent: 0 }
-  };
   const sections = getStudentsBySection();
   const subjectSummaries = isSchoolDay() ? getTodaySubjectSummaries() : [];
   const sectionSubjectOverview = isSchoolDay() ? getSectionSubjectOverview() : {};
@@ -811,27 +643,10 @@ WMSU ILS - Elementary Department`;
       if (currentDate !== lastDateRef.current) {
         console.log('New day detected, refreshing attendance data...');
         lastDateRef.current = currentDate;
-        lastMorningCheck.current = false;
-        lastAfternoonCheck.current = false;
-        setSentAbsentEmails({});
         loadAttendanceLogs();
         loadStudents();
         loadTeacherSchedules();
-        loadSentAbsentEmails();
         setRefreshKey(prev => prev + 1);
-      }
-
-      // Check for absent notifications at cutoff times
-      const nowHour = now.getHours();
-      const nowMinute = now.getMinutes();
-      
-      // Trigger morning check at 10:00 AM
-      if (nowHour === 10 && nowMinute === 0 && !lastMorningCheck.current) {
-        checkAndSendAbsentNotifications();
-      }
-      // Trigger afternoon check at 2:00 PM
-      if (nowHour === 14 && nowMinute === 0 && !lastAfternoonCheck.current) {
-        checkAndSendAbsentNotifications();
       }
     }, 60000); // Check every minute
     return () => clearInterval(timer);
@@ -859,8 +674,6 @@ WMSU ILS - Elementary Department`;
   const handleNotificationPress = () => {
     navigation.navigate('Notifications');
   };
-
-  const currentPeriod = getAttendancePeriod();
 
   if (authLoading || !user) {
     return (
@@ -910,26 +723,13 @@ WMSU ILS - Elementary Department`;
           <View style={styles.headerRight}>
             <TouchableOpacity style={styles.notificationIcon} onPress={handleNotificationPress}>
               <Icon name="bell" size={24} color="#fff" />
-              {isSchoolDay() && ((stats.morning?.absent || 0) + (stats.afternoon?.absent || 0) + (stats.morning?.late || 0) + (stats.afternoon?.late || 0)) > 0 && (
-                <View style={styles.notificationBadge}>
-                  <Text style={styles.badgeText}>
-                    {(stats.morning?.absent || 0) + (stats.afternoon?.absent || 0) + (stats.morning?.late || 0) + (stats.afternoon?.late || 0)}
-                  </Text>
-                </View>
-              )}
             </TouchableOpacity>
             <Text style={styles.timeText}>
               {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
             </Text>
             <View style={styles.periodBadge}>
-              <Icon 
-                name={currentPeriod === 'morning' ? 'white-balance-sunny' : 'weather-sunset'} 
-                size={14} 
-                color="#fff" 
-              />
-              <Text style={styles.periodText}>
-                {currentPeriod === 'morning' ? 'Morning' : 'Afternoon'}
-              </Text>
+              <Icon name="book-education" size={14} color="#fff" />
+              <Text style={styles.periodText}>Per Subject</Text>
             </View>
           </View>
         </View>

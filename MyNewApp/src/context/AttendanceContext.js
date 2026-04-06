@@ -148,51 +148,13 @@ export function AttendanceProvider({ children }) {
 
   // Get current attendance period (morning or afternoon)
   const getAttendancePeriod = () => {
-    const now = new Date();
-    const hours = now.getHours();
-    
-    // Morning: 6:00 AM - 12:00 PM
-    // Afternoon: 12:00 PM - 6:00 PM
-    if (hours >= 6 && hours < 12) {
-      return 'morning';
-    } else {
-      return 'afternoon';
-    }
+    return 'subject';
   };
 
   // Check attendance status based on current time
   const checkAttendanceStatus = () => {
-    const now = new Date();
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
-    const totalMinutes = (hours * 60) + minutes;
-    
-    // Morning session (Before 12 PM)
-    if (hours < 12) {
-      if (totalMinutes < (8 * 60 + 30)) {
-        // Before 8:30 AM - Present
-        return { status: 'present', period: 'morning' };
-      } else if (totalMinutes < (10 * 60)) {
-        // 8:30 AM - 9:59 AM - Late
-        return { status: 'late', period: 'morning' };
-      } else {
-        // After 10 AM - Absent
-        return { status: 'absent', period: 'morning' };
-      }
-    } 
-    // Afternoon session (After 12 PM)
-    else {
-      if (totalMinutes < (14 * 60 + 30)) {
-        // Before 2:30 PM - Present
-        return { status: 'present', period: 'afternoon' };
-      } else if (totalMinutes < (15 * 60)) {
-        // 2:30 PM - 2:59 PM - Late
-        return { status: 'late', period: 'afternoon' };
-      } else {
-        // After 3 PM - Absent
-        return { status: 'absent', period: 'afternoon' };
-      }
-    }
+    // Status is now determined by subject schedule windows in Scan/Home screens.
+    return { status: 'present', period: 'subject' };
   };
 
   // Get today's attendance statistics
