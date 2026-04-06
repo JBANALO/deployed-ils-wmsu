@@ -7,6 +7,7 @@ const { query } = require('../config/database');
 let attendanceSyEnsured = false;
 let studentsSyChecked = false;
 let attendanceSubjectColumnsEnsured = false;
+let attendanceStatusColumnEnsured = false;
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -170,6 +171,27 @@ const ensureAttendanceSubjectColumns = async () => {
   attendanceSubjectColumnsEnsured = true;
 };
 
+const ensureAttendanceStatusColumn = async () => {
+  if (attendanceStatusColumnEnsured) return;
+
+  const cols = await query('SHOW COLUMNS FROM attendance');
+  const statusCol = cols.find(c => c.Field === 'status');
+  if (!statusCol) {
+    attendanceStatusColumnEnsured = true;
+    return;
+  }
+
+  const statusType = String(statusCol.Type || '').toLowerCase();
+
+  // Some deployments ended up with malformed ENUM definitions (duplicate values),
+  // which causes INSERT/UPDATE to fail. Normalize to VARCHAR for stability.
+  if (statusType.startsWith('enum(')) {
+    await query("ALTER TABLE attendance MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'Present'");
+  }
+
+  attendanceStatusColumnEnsured = true;
+};
+
 const findStudentsForClassSchedule = async (grade, section, schoolYearId) => {
   return query(
     `SELECT id, lrn, first_name, last_name, full_name, grade_level, section
@@ -185,6 +207,7 @@ const runAutoAbsentGeneration = async ({ schoolYearId, date, dryRun }) => {
   await ensureAttendanceSchoolYearColumn();
   await ensureStudentsSchoolYearColumnExists();
   await ensureAttendanceSubjectColumns();
+  await ensureAttendanceStatusColumn();
 
   const targetSy = schoolYearId ? await getSchoolYearById(Number(schoolYearId)) : await getActiveSchoolYear();
   if (!targetSy) {
@@ -348,6 +371,7 @@ router.post('/', async (req, res) => {
     await ensureAttendanceSchoolYearColumn();
     await ensureStudentsSchoolYearColumnExists();
     await ensureAttendanceSubjectColumns();
+    await ensureAttendanceStatusColumn();
     console.log('Attendance POST request body:', req.body);
     
     const { 
@@ -683,6 +707,7 @@ router.get('/', async (req, res) => {
     try {
       await ensureAttendanceSchoolYearColumn();
       await ensureAttendanceSubjectColumns();
+      await ensureAttendanceStatusColumn();
     } catch (ensureErr) {
       canFilterBySchoolYear = false;
       console.warn('[attendance GET] school_year_id column unavailable, continuing without school-year DB filter:', ensureErr.message);
@@ -826,6 +851,7 @@ router.get('/today', async (req, res) => {
   try {
     await ensureAttendanceSchoolYearColumn();
     await ensureAttendanceSubjectColumns();
+    await ensureAttendanceStatusColumn();
     let targetSy;
     try {
       targetSy = await resolveTargetSchoolYear(req.query.schoolYearId);
@@ -883,6 +909,7 @@ router.get('/student/:id', async (req, res) => {
   try {
     await ensureAttendanceSchoolYearColumn();
     await ensureAttendanceSubjectColumns();
+    await ensureAttendanceStatusColumn();
     const { id } = req.params;
     let targetSy;
     try {
@@ -938,6 +965,7 @@ router.get('/student/:id', async (req, res) => {
 // POST /api/attendance/auto-absent/run - Auto mark subject attendance as absent once schedule has ended
 router.post('/auto-absent/run', async (req, res) => {
   try {
+    await ensureAttendanceStatusColumn();
     const result = await runAutoAbsentGeneration({
       schoolYearId: req.body?.schoolYearId,
       date: req.body?.date,
