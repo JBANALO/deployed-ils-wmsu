@@ -1014,6 +1014,24 @@ export default function AdminTeachers() {
       // Refresh the teachers list to show updated data
       await fetchTeachers();
       
+      // Dispatch custom event to notify other pages of teacher role change
+      window.dispatchEvent(new CustomEvent('teacherUpdated', {
+        detail: {
+          teacherId: selectedTeacher.id,
+          oldRole: selectedTeacher.role,
+          newRole: editFormData.role,
+          teacherData: {
+            id: selectedTeacher.id,
+            firstName: editFormData.firstName,
+            lastName: editFormData.lastName,
+            email: editFormData.email,
+            role: editFormData.role,
+            gradeLevel: editFormData.gradeLevel,
+            section: editFormData.section
+          }
+        }
+      }));
+      
       // Close the modal
       setShowEditModal(false);
       

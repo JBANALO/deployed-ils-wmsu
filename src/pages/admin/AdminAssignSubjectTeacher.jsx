@@ -41,6 +41,19 @@ export default function AdminAssignSubjectTeacher() {
     fetchData();
   }, []);
 
+  // Listen for teacher updates from AdminTeachers
+  useEffect(() => {
+    const handleTeacherUpdate = () => {
+      console.log('Teacher update detected, refreshing data...');
+      fetchData();
+    };
+
+    window.addEventListener('teacherUpdated', handleTeacherUpdate);
+    return () => {
+      window.removeEventListener('teacherUpdated', handleTeacherUpdate);
+    };
+  }, []);
+
   const fetchData = async () => {
     try {
       // Fetch all classes with adviser info

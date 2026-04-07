@@ -65,6 +65,19 @@ export default function AdminAssignAdviser() {
     fetchData(activeSchoolYearId);
   }, [activeSchoolYearId]);
 
+  // Listen for teacher updates from AdminTeachers
+  useEffect(() => {
+    const handleTeacherUpdate = () => {
+      console.log('Teacher update detected, refreshing data...');
+      fetchData(activeSchoolYearId);
+    };
+
+    window.addEventListener('teacherUpdated', handleTeacherUpdate);
+    return () => {
+      window.removeEventListener('teacherUpdated', handleTeacherUpdate);
+    };
+  }, [activeSchoolYearId]);
+
   const normalizeId = (value) => String(value ?? "");
   const dedupeSubjectTeachers = (rows = []) => {
     const seen = new Set();
