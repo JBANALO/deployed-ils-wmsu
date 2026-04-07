@@ -11,9 +11,17 @@ const ensureTeacherSchoolYearColumn = async () => {
   try {
     const cols = await query('SHOW COLUMNS FROM teachers');
     const hasSy = cols.some((c) => c.Field === 'school_year_id');
+    const hasSex = cols.some((c) => c.Field === 'sex');
+    const hasContactNumber = cols.some((c) => c.Field === 'contact_number');
     if (!hasSy) {
       await query('ALTER TABLE teachers ADD COLUMN school_year_id INT NULL');
       await query('CREATE INDEX idx_teachers_school_year ON teachers (school_year_id)');
+    }
+    if (!hasSex) {
+      await query('ALTER TABLE teachers ADD COLUMN sex VARCHAR(20) NULL');
+    }
+    if (!hasContactNumber) {
+      await query('ALTER TABLE teachers ADD COLUMN contact_number VARCHAR(50) NULL');
     }
     teacherSyEnsured = true;
   } catch (err) {
@@ -112,7 +120,8 @@ const getAllTeachers = async (req, res) => {
 
       const dbTeachers = await query(
         `SELECT id, first_name, middle_name, last_name, username, email, role,
-                grade_level, section, subjects, bio, profile_pic, verification_status,
+          grade_level, section, subjects, bio, profile_pic, verification_status,
+          sex, contact_number,
                 school_year_id, created_at
          FROM teachers
          ORDER BY first_name, last_name`
@@ -253,6 +262,8 @@ const getAllTeachers = async (req, res) => {
           classSections: derivedClassSections,
           bio: teacher.bio || '',
           profilePic: teacher.profile_pic || '',
+          sex: teacher.sex || '',
+          contactNumber: teacher.contact_number || '',
           status: teacher.verification_status || 'approved',
           createdAt: teacher.created_at,
           school_year_id: teacher.school_year_id || null
@@ -292,6 +303,8 @@ const getAllTeachers = async (req, res) => {
             classSections: [],
             bio: '',
             profilePic: '',
+            sex: '',
+            contactNumber: '',
             status: 'approved',
             createdAt: null
           });
@@ -373,6 +386,8 @@ const getAllTeachers = async (req, res) => {
           subjects: u.subjects || [],
           bio: u.bio || '',
           profilePic: u.profilePic || u.profile_pic || '',
+          sex: u.sex || '',
+          contactNumber: u.contactNumber || u.contact_number || '',
           status: u.status || 'approved',
           createdAt: u.createdAt || u.created_at || null,
           school_year_id: u.school_year_id || null
@@ -424,6 +439,8 @@ const getAllTeachers = async (req, res) => {
         if (!existing.lastName && teacher.lastName) existing.lastName = teacher.lastName;
         if (!existing.username && teacher.username) existing.username = teacher.username;
         if (!existing.email && teacher.email) existing.email = teacher.email;
+        if (!existing.sex && teacher.sex) existing.sex = teacher.sex;
+        if (!existing.contactNumber && teacher.contactNumber) existing.contactNumber = teacher.contactNumber;
       });
 
       const unifiedTeachers = Array.from(mergedByIdentity.values());
@@ -469,6 +486,8 @@ const getAllTeachers = async (req, res) => {
         subjectsHandled: u.subjectsHandled || u.subjects,
         subjects: u.subjects || [],
         bio: u.bio || '',
+        sex: u.sex || '',
+        contactNumber: u.contactNumber || u.contact_number || '',
         status: u.status,
           createdAt: u.createdAt,
           school_year_id: u.school_year_id || null
@@ -791,7 +810,7 @@ const getPreviousYearTeachers = async (req, res) => {
 
     const teachers = await query(
       `SELECT id, first_name, middle_name, last_name, username, email, role,
-              grade_level, section, subjects, bio, profile_pic, verification_status, created_at
+              grade_level, section, subjects, bio, profile_pic, verification_status, sex, contact_number, created_at
        FROM teachers
        WHERE school_year_id = ?
        ORDER BY first_name, last_name`,
@@ -861,8 +880,9 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
       await query(
         `INSERT INTO teachers (first_name, middle_name, last_name, username, email, password, role,
                                grade_level, section, subjects, bio, profile_pic, verification_status,
+                               sex, contact_number,
                                school_year_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
         [
           t.first_name,
           t.middle_name,
@@ -877,6 +897,8 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
           t.bio,
           t.profile_pic,
           t.verification_status || 'approved',
+          t.sex || null,
+          t.contact_number || null,
           targetSy.id
         ]
       );
@@ -910,7 +932,9 @@ const createTeacher = async (req, res) => {
       gradeLevel,
       section,
       subjects,
-      bio
+      bio,
+      sex,
+      contactNumber
     } = req.body;
     
     const activeSchoolYear = await getActiveSchoolYear();
@@ -950,6 +974,8 @@ const createTeacher = async (req, res) => {
       section,
       subjects: subjects || [],
       bio: bio || '',
+      sex: sex || '',
+      contactNumber: contactNumber || '',
       status: 'approved',
       archived: false,
       createdAt: new Date().toISOString(),
@@ -964,8 +990,9 @@ const createTeacher = async (req, res) => {
         `INSERT INTO teachers (
            first_name, middle_name, last_name, username, email, password, role,
            grade_level, section, subjects, bio, profile_pic, verification_status,
+           sex, contact_number,
            school_year_id, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
         [
           firstName,
           middleName || '',
@@ -980,6 +1007,8 @@ const createTeacher = async (req, res) => {
           bio || '',
           '',
           'approved',
+          sex || null,
+          contactNumber || null,
           activeSchoolYear.id
         ]
       );
@@ -1010,6 +1039,8 @@ const createTeacher = async (req, res) => {
             section: newTeacher.section,
             subjects: newTeacher.subjects,
             bio: newTeacher.bio,
+            sex: newTeacher.sex,
+            contactNumber: newTeacher.contactNumber,
             status: newTeacher.status
           }
         }
@@ -1060,7 +1091,7 @@ const updateTeacher = async (req, res) => {
     try {
       const teacherRows = await query(
         `SELECT id, first_name, middle_name, last_name, username, email, role,
-                grade_level, section, subjects, bio, verification_status
+          grade_level, section, subjects, bio, verification_status, sex, contact_number
          FROM teachers
          WHERE id = ?
          LIMIT 1`,
@@ -1093,6 +1124,8 @@ const updateTeacher = async (req, res) => {
         const section = updateData.section ?? current.section ?? '';
         const subjects = updateData.subjects ?? current.subjects ?? '[]';
         const bio = updateData.bio ?? current.bio ?? '';
+        const sex = updateData.sex ?? current.sex ?? '';
+        const contactNumber = updateData.contactNumber ?? updateData.contact_number ?? current.contact_number ?? '';
         const status = updateData.status ?? updateData.verification_status ?? current.verification_status ?? 'approved';
 
         await query(
@@ -1107,6 +1140,8 @@ const updateTeacher = async (req, res) => {
                section = ?,
                subjects = ?,
                bio = ?,
+                 sex = ?,
+                 contact_number = ?,
                verification_status = ?,
                updated_at = NOW()
            WHERE id = ?`,
@@ -1121,6 +1156,8 @@ const updateTeacher = async (req, res) => {
             section,
             typeof subjects === 'string' ? subjects : JSON.stringify(subjects || []),
             bio,
+            sex,
+            contactNumber,
             status,
             id
           ]
@@ -1138,6 +1175,8 @@ const updateTeacher = async (req, res) => {
           section,
           subjects: parseSubjects(subjects),
           bio,
+          sex,
+          contactNumber,
           status
         };
       }

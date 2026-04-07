@@ -89,6 +89,8 @@ export default function AdminTeachers() {
     firstName: teacher.firstName || teacher.first_name || '',
     lastName: teacher.lastName || teacher.last_name || '',
     email: teacher.email || '',
+    sex: teacher.sex || '',
+    contactNumber: teacher.contactNumber || teacher.contact_number || '',
     role: normalizeTeacherRole(teacher.role || teacher.position || teacher.role_in_class),
     status: normalizeTeacherStatus(teacher),
     classSections: Array.isArray(teacher.classSections)
@@ -943,6 +945,8 @@ export default function AdminTeachers() {
       middleName: teacher.middleName || teacher.middle_name || '',
       lastName: teacher.lastName || teacher.last_name,
       email: teacher.email,
+      sex: teacher.sex || '',
+      contactNumber: teacher.contactNumber || teacher.contact_number || '',
       role: teacher.role || 'adviser',
       subjects: subjectsArray,
       kindergartenSubjects: teacher.kindergartenSubjects || '',
@@ -982,6 +986,8 @@ export default function AdminTeachers() {
           lastName: String(editFormData.lastName || ''),
           username: String(selectedTeacher.username || ''),
           email: normalizedEmail,
+          sex: String(editFormData.sex || ''),
+          contactNumber: String(editFormData.contactNumber || ''),
           role: String(editFormData.role || ''),
           gradeLevel: String(editFormData.gradeLevel || ''),
           section: String(editFormData.section || ''),
@@ -996,6 +1002,8 @@ export default function AdminTeachers() {
           lastName: String(editFormData.lastName || ''),
           username: String(selectedTeacher.username || ''),
           email: normalizedEmail,
+          sex: String(editFormData.sex || ''),
+          contactNumber: String(editFormData.contactNumber || ''),
           role: String(editFormData.role || ''),
           gradeLevel: String(editFormData.gradeLevel || ''),
           section: String(editFormData.section || ''),
@@ -1777,6 +1785,18 @@ export default function AdminTeachers() {
                   <p className="text-sm text-gray-600">Email</p>
                   <p className="font-semibold">{selectedTeacher.email}</p>
                 </div>
+
+                {/* Contact Number */}
+                <div>
+                  <p className="text-sm text-gray-600">Contact Number</p>
+                  <p className="font-semibold">{selectedTeacher.contactNumber || selectedTeacher.contact_number || '-'}</p>
+                </div>
+
+                {/* Sex */}
+                <div>
+                  <p className="text-sm text-gray-600">Sex</p>
+                  <p className="font-semibold">{selectedTeacher.sex || '-'}</p>
+                </div>
                 
                 {/* Class/Section Assigned */}
                 <div>
@@ -1880,6 +1900,28 @@ export default function AdminTeachers() {
                   onChange={(e) => setEditFormData({...editFormData, email: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
+                <input
+                  type="text"
+                  value={editFormData.contactNumber || ''}
+                  onChange={(e) => setEditFormData({...editFormData, contactNumber: e.target.value})}
+                  placeholder="e.g. 09123456789"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Sex</label>
+                <select
+                  value={editFormData.sex || ''}
+                  onChange={(e) => setEditFormData({...editFormData, sex: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
+                >
+                  <option value="">Select Sex</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>

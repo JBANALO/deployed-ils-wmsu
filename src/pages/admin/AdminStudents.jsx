@@ -10,6 +10,7 @@ import {
   QrCodeIcon, 
   EyeIcon,
   ArrowUpTrayIcon,
+  ArrowPathIcon,
   KeyIcon
 } from "@heroicons/react/24/solid";
 import BulkImportModal from "../../components/modals/BulkImportModal";
@@ -76,6 +77,12 @@ export default function AdminStudents() {
   const [selectAll, setSelectAll] = useState(false);
   const [selectAllK3, setSelectAllK3] = useState(false);
   const [selectAllG4to6, setSelectAllG4to6] = useState(false);
+  const [fetchPrevLoading, setFetchPrevLoading] = useState(false);
+  const [showFetchPrevModal, setShowFetchPrevModal] = useState(false);
+  const [prevCandidatesLoading, setPrevCandidatesLoading] = useState(false);
+  const [prevCandidates, setPrevCandidates] = useState([]);
+  const [selectedPrevIds, setSelectedPrevIds] = useState(new Set());
+  const [prevMeta, setPrevMeta] = useState(null);
 
   const isViewOnly = isViewingLocked;
   const targetSchoolYearId = viewingSchoolYear?.id || activeSchoolYear?.id || '';
@@ -132,6 +139,102 @@ export default function AdminStudents() {
         setStudents([]);
       }
       setLoading(false);
+    }
+  };
+
+  const loadPrevPromotionCandidates = async () => {
+    if (!targetSchoolYearId) {
+      toast.error('No target school year selected.');
+      return;
+    }
+
+    try {
+      setPrevCandidatesLoading(true);
+      const response = await fetch(
+        `${API_BASE_URL}/students/previous-year-promotion-candidates?schoolYearId=${encodeURIComponent(String(targetSchoolYearId))}`
+      );
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Failed to load previous year students');
+      }
+
+      const list = Array.isArray(payload?.data) ? payload.data : [];
+      setPrevCandidates(list);
+      setPrevMeta(payload?.meta || null);
+      setSelectedPrevIds(new Set());
+      setShowFetchPrevModal(true);
+    } catch (error) {
+      toast.error(error.message || 'Failed to load previous year students');
+    } finally {
+      setPrevCandidatesLoading(false);
+    }
+  };
+
+  const togglePrevSelection = (studentId) => {
+    setSelectedPrevIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllPrev = () => {
+    const selectableIds = prevCandidates
+      .filter((student) => !student.alreadyFetched)
+      .map((student) => student.id);
+
+    const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedPrevIds.has(id));
+    setSelectedPrevIds(allSelected ? new Set() : new Set(selectableIds));
+  };
+
+  const handleFetchFromPreviousYear = async () => {
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to fetch students.');
+      return;
+    }
+
+    if (!targetSchoolYearId) {
+      toast.error('No target school year selected.');
+      return;
+    }
+
+    const ids = Array.from(selectedPrevIds);
+    if (ids.length === 0) {
+      toast.error('Select at least one student to fetch.');
+      return;
+    }
+
+    try {
+      setFetchPrevLoading(true);
+      const response = await fetch(
+        `${API_BASE_URL}/students/fetch-from-previous?schoolYearId=${encodeURIComponent(String(targetSchoolYearId))}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids })
+        }
+      );
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Failed to fetch students from previous year');
+      }
+
+      const inserted = Number(payload?.data?.inserted || 0);
+      const skipped = Number(payload?.data?.skipped || 0);
+      const promoted = Number(payload?.data?.promotedInserted || 0);
+      const retained = Number(payload?.data?.retainedInserted || 0);
+
+      toast.success(`Fetch complete: ${inserted} added (${promoted} promoted, ${retained} retained), ${skipped} skipped.`);
+      setShowFetchPrevModal(false);
+      setSelectedPrevIds(new Set());
+      await fetchStudents();
+    } catch (error) {
+      toast.error(error.message || 'Failed to fetch students from previous year');
+    } finally {
+      setFetchPrevLoading(false);
     }
   };
 
@@ -627,6 +730,14 @@ export default function AdminStudents() {
 
       <div className="flex justify-end gap-3 mt-6">
         <button
+          onClick={loadPrevPromotionCandidates}
+          disabled={isViewOnly || prevCandidatesLoading}
+          className={`px-5 py-2 rounded-lg transition flex items-center gap-2 ${isViewOnly || prevCandidatesLoading ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+        >
+          <ArrowPathIcon className={`w-5 h-5 ${prevCandidatesLoading ? 'animate-spin' : ''}`} />
+          {prevCandidatesLoading ? 'Loading...' : 'Fetch from Prev Year'}
+        </button>
+        <button
           onClick={() => setShowBulkImportModal(true)}
           disabled={isViewOnly}
           className={`px-5 py-2 rounded-lg transition flex items-center gap-2 ${isViewOnly ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
@@ -987,6 +1098,111 @@ export default function AdminStudents() {
           </div>
         </div>
       </div>
+
+      {/* Fetch From Previous Year Modal */}
+      {showFetchPrevModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[85vh] overflow-hidden">
+            <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Fetch Promoted/Retained Students</h3>
+                <p className="text-sm text-gray-600">
+                  Source: {prevMeta?.sourceSchoolYearLabel || 'Previous School Year'}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowFetchPrevModal(false)}
+                className="p-2 rounded-md text-gray-500 hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto max-h-[58vh]">
+              {prevCandidatesLoading ? (
+                <div className="py-10 text-center text-gray-500">Loading candidates...</div>
+              ) : prevCandidates.length === 0 ? (
+                <div className="py-10 text-center text-gray-500">No promoted/retained students found from previous school year.</div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      {selectedPrevIds.size} selected / {prevCandidates.filter((student) => !student.alreadyFetched).length} available
+                    </div>
+                    <button
+                      onClick={toggleSelectAllPrev}
+                      className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                      Select All Available
+                    </button>
+                  </div>
+
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-gray-50 text-gray-700">
+                        <tr>
+                          <th className="p-3 border text-center w-16">Pick</th>
+                          <th className="p-3 border">LRN</th>
+                          <th className="p-3 border">Name</th>
+                          <th className="p-3 border">Movement</th>
+                          <th className="p-3 border">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {prevCandidates.map((student) => (
+                          <tr key={student.id} className="hover:bg-gray-50">
+                            <td className="p-3 border text-center">
+                              <input
+                                type="checkbox"
+                                disabled={student.alreadyFetched}
+                                checked={selectedPrevIds.has(student.id)}
+                                onChange={() => togglePrevSelection(student.id)}
+                                className="w-4 h-4"
+                              />
+                            </td>
+                            <td className="p-3 border">{student.lrn}</td>
+                            <td className="p-3 border font-medium">{student.fullName}</td>
+                            <td className="p-3 border">
+                              {student.fromGrade} {student.fromSection ? `- ${student.fromSection}` : ''} {' -> '}
+                              {student.toGrade} {student.toSection ? `- ${student.toSection}` : ''}
+                            </td>
+                            <td className="p-3 border">
+                              {student.alreadyFetched ? (
+                                <span className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-200 text-gray-700">Already Fetched</span>
+                              ) : (
+                                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${student.status === 'promoted' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                  {student.status}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-5 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setShowFetchPrevModal(false)}
+                className="px-4 py-2 rounded-lg bg-gray-500 text-white hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFetchFromPreviousYear}
+                disabled={fetchPrevLoading || selectedPrevIds.size === 0}
+                className={`px-4 py-2 rounded-lg text-white ${fetchPrevLoading || selectedPrevIds.size === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+              >
+                {fetchPrevLoading ? 'Fetching...' : `Fetch Selected (${selectedPrevIds.size})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
                 
       {/* QR CODE MODAL */}
       {showQRModal && selectedStudent && (
