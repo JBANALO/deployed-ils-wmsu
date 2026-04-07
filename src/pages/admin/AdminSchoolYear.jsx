@@ -615,6 +615,19 @@ export default function AdminSchoolYear() {
                           <ArchiveBoxIcon className="w-5 h-5" />
                         </button>
                       )}
+                      {!sy.is_active && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(sy.id);
+                          }}
+                          className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition"
+                          title="Delete permanently"
+                        >
+                          <TrashIcon className="w-5 h-5" />
+                        </button>
+                      )}
                     </div>
                   </button>
                 );
