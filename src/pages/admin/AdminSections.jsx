@@ -94,6 +94,14 @@ export default function AdminSections() {
       setShowAddModal(false);
       setFormData({ name: '', description: '', gradeLevel: '' });
       loadData();
+      
+      // Dispatch custom event to notify AdminCreateK6 to refresh sections
+      window.dispatchEvent(new CustomEvent('sectionAdded', {
+        detail: {
+          gradeLevel: formData.gradeLevel,
+          sectionName: formData.name
+        }
+      }));
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to create section');
     } finally {
