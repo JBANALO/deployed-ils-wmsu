@@ -950,7 +950,8 @@ const createTeacher = async (req, res) => {
       section,
       subjects: subjects || [],
       bio: bio || '',
-      status: 'approved',
+      status: req.body.status || 'pending_verification', // Allow frontend to set status
+      emailVerified: req.body.emailVerified || false, // Add email verification flag
       archived: false,
       createdAt: new Date().toISOString(),
       school_year_id: activeSchoolYear.id

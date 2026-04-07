@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import api from "../../api/axiosConfig";
 import { toast } from 'react-toastify';
 import { generateWmsuPassword } from "../../utils/passwordGenerator";
+import { sendOTPEmail, generateOTP } from "../../services/emailService";
+import OTPVerification from "../../components/OTPVerification";
 
 export default function AdminCreateTeacher() {
   const [formData, setFormData] = useState({
@@ -20,6 +22,11 @@ export default function AdminCreateTeacher() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [redirectTimer, setRedirectTimer] = useState(null);
+  const [showOTPModal, setShowOTPModal] = useState(false);
+  const [generatedOTP, setGeneratedOTP] = useState('');
+  const [otpTimestamp, setOtpTimestamp] = useState(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [createdTeacherData, setCreatedTeacherData] = useState(null);
   const navigate = useNavigate();
 
   // Generate password function (based on email like students)
@@ -48,6 +55,80 @@ export default function AdminCreateTeacher() {
       setFormData((prev) => ({ ...prev, [name]: files[0] }));
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
+    }
+  };
+
+  const handleOTPVerification = async (otp) => {
+    setIsVerifying(true);
+    
+    try {
+      // Verify OTP with backend
+      const response = await api.post('/teachers/verify-otp', {
+        email: createdTeacherData.email,
+        otp: otp,
+        timestamp: otpTimestamp
+      });
+
+      if (response.data.success) {
+        // Update teacher status to verified
+        await api.put(`/teachers/${createdTeacherData.id}`, {
+          status: 'approved',
+          emailVerified: true
+        });
+
+        toast.success('Email verified successfully! Teacher account is now active.');
+        setShowOTPModal(false);
+        setShowSuccessModal(true);
+        
+        // Set redirect timer
+        const timer = setTimeout(() => {
+          navigate('/admin/admin-teachers');
+        }, 15000);
+        setRedirectTimer(timer);
+      } else {
+        toast.error('Invalid verification code. Please try again.');
+      }
+    } catch (error) {
+      console.error('OTP verification error:', error);
+      toast.error('Verification failed. Please try again.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleResendOTP = async () => {
+    try {
+      const newOTP = generateOTP();
+      setGeneratedOTP(newOTP);
+      setOtpTimestamp(Date.now());
+
+      const result = await sendOTPEmail(
+        createdTeacherData.email,
+        newOTP,
+        `${createdTeacherData.firstName} ${createdTeacherData.lastName}`
+      );
+
+      if (result.success) {
+        toast.success('New verification code sent to your email.');
+      } else {
+        toast.error('Failed to send verification code. Please try again.');
+      }
+    } catch (error) {
+      console.error('Resend OTP error:', error);
+      toast.error('Failed to resend verification code.');
+    }
+  };
+
+  const handleCancelOTP = () => {
+    setShowOTPModal(false);
+    // Optionally delete the unverified teacher account
+    if (createdTeacherData) {
+      try {
+        api.delete(`/teachers/${createdTeacherData.id}`);
+        toast.info('Teacher account creation cancelled.');
+      } catch (error) {
+        console.error('Error deleting teacher account:', error);
+      }
     }
   };
 
@@ -97,7 +178,8 @@ export default function AdminCreateTeacher() {
         role: 'teacher',
         bio: formData.bio || '',
         profilePic: profilePicBase64,
-        status: 'approved',
+        status: 'pending_verification', // Changed to pending until email is verified
+        emailVerified: false,
       };
 
       const response = await api.post('/teachers', teacherData);
@@ -107,15 +189,26 @@ export default function AdminCreateTeacher() {
       console.log('🎯 Teacher role selected:', teacherData.role);
       console.log('🎯 Full teacher data sent:', teacherData);
 
-      // Show success modal instead of toast
-      setShowSuccessModal(true);
-      
-      // Set redirect timer to admin-teachers page after 15 seconds
-      const timer = setTimeout(() => {
-        console.log('🔄 Redirecting to admin/admin-teachers...');
-        navigate('/admin/admin-teachers');
-      }, 15000);
-      setRedirectTimer(timer);
+      // Generate and send OTP
+      const otp = generateOTP();
+      setGeneratedOTP(otp);
+      setOtpTimestamp(Date.now());
+      setCreatedTeacherData(response.data);
+
+      const emailResult = await sendOTPEmail(
+        normalizedEmail,
+        otp,
+        `${formData.firstName} ${formData.lastName}`
+      );
+
+      if (emailResult.success) {
+        toast.success('Teacher account created! Verification code sent to email.');
+        setShowOTPModal(true);
+      } else {
+        toast.error('Teacher created but failed to send verification email.');
+        // Still show OTP modal but with error message
+        setShowOTPModal(true);
+      }
       
       // Also add immediate redirect as backup
       console.log('✅ Teacher created successfully, should redirect to teachers displayed accounts in 15 seconds');
@@ -369,6 +462,18 @@ export default function AdminCreateTeacher() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* OTP Verification Modal */}
+      {showOTPModal && (
+        <OTPVerification
+          email={createdTeacherData?.email || formData.email}
+          teacherName={`${createdTeacherData?.firstName || formData.firstName} ${createdTeacherData?.lastName || formData.lastName}`}
+          onVerificationSuccess={handleOTPVerification}
+          onResendOTP={handleResendOTP}
+          onCancel={handleCancelOTP}
+          isSubmitting={isVerifying}
+        />
       )}
     </div>
   );

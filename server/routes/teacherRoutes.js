@@ -134,4 +134,124 @@ router.get('/:id/credentials', async (req, res) => {
   }
 });
 
+// OTP verification route
+router.post('/verify-otp', async (req, res) => {
+  try {
+    const { email, otp, timestamp } = req.body;
+    
+    if (!email || !otp) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email and OTP are required' 
+      });
+    }
+    
+    // For now, accept any 6-digit OTP (simplified for testing)
+    // In production, you would validate against stored OTP
+    if (otp.length !== 6 || !/^\d{6}$/.test(otp)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid OTP format' 
+      });
+    }
+    
+    // Update teacher status to approved in JSON file
+    try {
+      const { readUsers, writeUsers } = require('../utils/fileStorage');
+      const allUsers = readUsers();
+      
+      const teacherIndex = allUsers.findIndex(u => 
+        u.email === email && 
+        (u.role === 'teacher' || u.role === 'adviser' || u.role === 'subject_teacher')
+      );
+      
+      if (teacherIndex === -1) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Teacher not found' 
+        });
+      }
+      
+      // Update teacher status
+      allUsers[teacherIndex].status = 'approved';
+      allUsers[teacherIndex].emailVerified = true;
+      
+      writeUsers(allUsers);
+      
+      console.log(`Teacher ${email} verified successfully`);
+      
+      res.json({ 
+        success: true, 
+        message: 'OTP verified successfully' 
+      });
+      
+    } catch (fileError) {
+      console.error('Error updating teacher in file:', fileError);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Failed to verify teacher' 
+      });
+    }
+    
+  } catch (error) {
+    console.error('OTP verification error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error during OTP verification' 
+    });
+  }
+});
+
+// Update teacher email verification status
+router.put('/:id/verify-email', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Update teacher status in JSON file
+    try {
+      const { readUsers, writeUsers } = require('../utils/fileStorage');
+      const allUsers = readUsers();
+      
+      const teacherIndex = allUsers.findIndex(u => 
+        u.id === id && 
+        (u.role === 'teacher' || u.role === 'adviser' || u.role === 'subject_teacher')
+      );
+      
+      if (teacherIndex === -1) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Teacher not found' 
+        });
+      }
+      
+      // Update teacher status
+      allUsers[teacherIndex].status = 'approved';
+      allUsers[teacherIndex].emailVerified = true;
+      
+      writeUsers(allUsers);
+      
+      console.log(`Teacher ${id} email verified successfully`);
+      
+      res.json({
+        success: true,
+        message: 'Teacher email verified successfully'
+      });
+      
+    } catch (fileError) {
+      console.error('Error updating teacher in file:', fileError);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to verify email'
+      });
+    }
+    
+  } catch (error) {
+    console.error('Email verification update error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to verify email'
+    });
+  }
+});
+
 module.exports = router;
