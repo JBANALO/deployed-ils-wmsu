@@ -330,16 +330,20 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
         }
       }
 
-      // New school year should start fresh: clear active-year grades for students moved/fetched to active SY.
-      if (movedStudentIds.length > 0) {
-        const placeholders = movedStudentIds.map(() => '?').join(',');
-        await connection.query(
-          `DELETE FROM grades
-           WHERE school_year_id = ?
-             AND student_id IN (${placeholders})`,
-          [active.id, ...movedStudentIds]
-        );
-      }
+      // New school year should start fresh: clear active-year grades for all matching LRNs
+      // found in the selected source school year, even if some students were skipped as duplicates.
+      await connection.query(
+        `DELETE g
+         FROM grades g
+         INNER JOIN students active_students
+           ON active_students.id = g.student_id
+          AND active_students.school_year_id = ?
+         INNER JOIN students source_students
+           ON source_students.lrn = active_students.lrn
+          AND source_students.school_year_id = ?
+         WHERE g.school_year_id = ?`,
+        [active.id, source.id, active.id]
+      );
 
       copied.students = movedStudents;
     } catch (stepErr) {
