@@ -283,29 +283,55 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
       'classes'
     );
 
-    await runStep(
-      'students',
-      `UPDATE students s
-       LEFT JOIN students d
-         ON d.id <> s.id
-        AND d.school_year_id = ?
-        AND d.lrn = s.lrn
-       SET s.school_year_id = ?, s.updated_at = NOW()
-       WHERE (
-            s.school_year_id = ?
-            OR (
-              s.school_year_id IS NULL
-              AND ? IS NOT NULL
-              AND ? IS NOT NULL
-              AND DATE(COALESCE(s.created_at, NOW())) BETWEEN ? AND ?
-            )
-       )
-         AND s.lrn IS NOT NULL
-         AND s.lrn <> ''
-         AND d.id IS NULL`,
-      [active.id, active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate],
-      'students'
-    );
+    try {
+      const [sourceStudents] = await connection.query(
+        `SELECT s.id, s.lrn
+         FROM students s
+         WHERE (
+              s.school_year_id = ?
+              OR (
+                s.school_year_id IS NULL
+                AND ? IS NOT NULL
+                AND ? IS NOT NULL
+                AND DATE(COALESCE(s.created_at, NOW())) BETWEEN ? AND ?
+              )
+         )
+           AND s.lrn IS NOT NULL
+           AND s.lrn <> ''
+         ORDER BY s.created_at ASC, s.id ASC`,
+        [source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate]
+      );
+
+      let movedStudents = 0;
+      for (const s of sourceStudents || []) {
+        const [dupRows] = await connection.query(
+          `SELECT id
+           FROM students
+           WHERE id <> ?
+             AND school_year_id = ?
+             AND lrn = ?
+           LIMIT 1`,
+          [s.id, active.id, s.lrn]
+        );
+
+        if (dupRows.length > 0) {
+          continue;
+        }
+
+        const [moveResult] = await connection.query(
+          'UPDATE students SET school_year_id = ?, updated_at = NOW() WHERE id = ?',
+          [active.id, s.id]
+        );
+
+        if (Number(moveResult?.affectedRows || 0) > 0) {
+          movedStudents += 1;
+        }
+      }
+
+      copied.students = movedStudents;
+    } catch (stepErr) {
+      warnings.push(`students: ${stepErr.message}`);
+    }
 
     await runStep(
       'grades',
