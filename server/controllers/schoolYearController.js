@@ -285,18 +285,12 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
 
     await runStep(
       'students',
-      `INSERT INTO students (
-         lrn, first_name, middle_name, last_name, age, sex,
-         grade_level, section, parent_first_name, parent_last_name,
-         parent_email, parent_contact, student_email, password,
-         profile_pic, qr_code, status, created_by, school_year_id, created_at, updated_at
-       )
-       SELECT
-         s.lrn, s.first_name, s.middle_name, s.last_name, s.age, s.sex,
-         s.grade_level, s.section, s.parent_first_name, s.parent_last_name,
-         s.parent_email, s.parent_contact, s.student_email, s.password,
-         s.profile_pic, s.qr_code, IFNULL(s.status, 'Active'), IFNULL(s.created_by, 'system-copy'), ?, NOW(), NOW()
-       FROM students s
+      `UPDATE students s
+       LEFT JOIN students d
+         ON d.id <> s.id
+        AND d.school_year_id = ?
+        AND d.lrn = s.lrn
+       SET s.school_year_id = ?, s.updated_at = NOW()
        WHERE (
             s.school_year_id = ?
             OR (
@@ -308,13 +302,8 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
        )
          AND s.lrn IS NOT NULL
          AND s.lrn <> ''
-         AND NOT EXISTS (
-           SELECT 1
-           FROM students d
-           WHERE d.school_year_id = ?
-             AND d.lrn = s.lrn
-         )`,
-      [active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate, active.id],
+         AND d.id IS NULL`,
+      [active.id, active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate],
       'students'
     );
 
@@ -325,15 +314,6 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
        FROM grades g
        INNER JOIN students os
          ON os.id = g.student_id
-        AND (
-             os.school_year_id = ?
-             OR (
-               os.school_year_id IS NULL
-               AND ? IS NOT NULL
-               AND ? IS NOT NULL
-               AND DATE(COALESCE(os.created_at, NOW())) BETWEEN ? AND ?
-             )
-        )
        INNER JOIN students ns
          ON ns.lrn = os.lrn
         AND ns.school_year_id = ?
@@ -356,11 +336,6 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
          )`,
       [
         active.id,
-        source.id,
-        sourceStartDate,
-        sourceEndDate,
-        sourceStartDate,
-        sourceEndDate,
         active.id,
         source.id,
         sourceStartDate,
