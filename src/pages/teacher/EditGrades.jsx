@@ -1292,9 +1292,8 @@ export default function EditGrades() {
               <div className="overflow-x-auto scrollbar-hide">
                 {(() => {
                   const quarterOrder = ['q1', 'q2', 'q3', 'q4'];
-                  // Always render all quarters in the modal and lock non-selected quarters
-                  // when a specific quarter is chosen.
-                  const quartersToShow = quarterOrder;
+                  // Render only the chosen quarter. Show all columns only in All Quarters mode.
+                  const quartersToShow = selectedQuarter === 'all' ? quarterOrder : [selectedQuarter];
                   const isEditableQ = (q) => selectedQuarter === 'all' || q === selectedQuarter;
                   const getQLabel = (q) => q.toUpperCase();
                   const subjects = Object.keys(gradeData).filter(s => s !== 'Total Q1');
