@@ -240,6 +240,13 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
       // username/email are globally unique in many deployments.
       const [teacherMoveResult] = await connection.query(
         `UPDATE teachers t
+         LEFT JOIN teachers x
+           ON x.id <> t.id
+          AND x.school_year_id = ?
+          AND (
+            (t.email IS NOT NULL AND x.email = t.email)
+            OR (t.username IS NOT NULL AND x.username = t.username)
+          )
          SET t.school_year_id = ?, t.updated_at = NOW()
          WHERE (
                t.school_year_id = ?
@@ -250,17 +257,8 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
                  AND DATE(COALESCE(t.created_at, NOW())) BETWEEN ? AND ?
                )
          )
-           AND NOT EXISTS (
-             SELECT 1
-             FROM teachers x
-             WHERE x.id <> t.id
-               AND x.school_year_id = ?
-               AND (
-                 (t.email IS NOT NULL AND x.email = t.email)
-                 OR (t.username IS NOT NULL AND x.username = t.username)
-               )
-           )`,
-        [active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate, active.id]
+           AND x.id IS NULL`,
+        [active.id, active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate]
       );
 
       copied.teachers = Number(teacherMoveResult?.affectedRows || 0);
