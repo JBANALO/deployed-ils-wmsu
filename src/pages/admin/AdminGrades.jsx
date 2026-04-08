@@ -32,6 +32,7 @@ export default function AdminGrades() {
   const [selectedGradeLevel, setSelectedGradeLevel] = useState('All');
   const [gradeLevels, setGradeLevels] = useState([]);
   const [recentUpdates, setRecentUpdates] = useState([]);
+  const [rankingBasis, setRankingBasis] = useState('final');
   
   // Modal states
   const [showViewModal, setShowViewModal] = useState(false);
@@ -47,12 +48,19 @@ export default function AdminGrades() {
   const [form137Records, setForm137Records] = useState([]);
   const [preparingPrint, setPreparingPrint] = useState(false);
   const targetSchoolYearId = viewingSchoolYear?.id || activeSchoolYear?.id || '';
+  const rankingLabelMap = {
+    final: 'Final Average',
+    q1: 'Q1 Average',
+    q2: 'Q2 Average',
+    q3: 'Q3 Average',
+    q4: 'Q4 Average'
+  };
 
 
 
   useEffect(() => {
     loadGradesData();
-  }, [targetSchoolYearId]);
+  }, [targetSchoolYearId, rankingBasis]);
 
   const loadGradesData = async () => {
     try {
@@ -65,18 +73,39 @@ export default function AdminGrades() {
       const studentsData = Array.isArray(studentsRes.data.data) ? studentsRes.data.data : 
                            Array.isArray(studentsRes.data) ? studentsRes.data : [];
 
-      // Sort by average (highest first) and calculate rank - with grades first
-      const sortedStudents = studentsData
-        .filter(s => s.average && s.average > 0)
-        .sort((a, b) => (b.average || 0) - (a.average || 0))
+      const getRankingValue = (student) => {
+        switch (rankingBasis) {
+          case 'q1':
+            return Number(student?.q1_avg || 0);
+          case 'q2':
+            return Number(student?.q2_avg || 0);
+          case 'q3':
+            return Number(student?.q3_avg || 0);
+          case 'q4':
+            return Number(student?.q4_avg || 0);
+          case 'final':
+          default:
+            return Number(student?.average || student?.live_average || 0);
+        }
+      };
+
+      const studentsWithRankingValue = studentsData.map((student) => ({
+        ...student,
+        rankingValue: getRankingValue(student)
+      }));
+
+      // Rank by selected basis (Final/Q1/Q2/Q3/Q4). Students without grades in selected basis stay unranked.
+      const sortedStudents = studentsWithRankingValue
+        .filter(s => s.rankingValue > 0)
+        .sort((a, b) => (b.rankingValue || 0) - (a.rankingValue || 0))
         .map((student, index) => ({
           ...student,
           rank: index + 1
         }));
 
-      // Include students without grades at the end (ALL of them)
-      const studentsWithoutGrades = studentsData
-        .filter(s => !s.average || s.average === 0)
+      // Include students without grades for the selected ranking basis at the end
+      const studentsWithoutGrades = studentsWithRankingValue
+        .filter(s => !(s.rankingValue > 0))
         .map(student => ({ ...student, rank: '-' }));
 
       // Combine: students with grades first, then students without
@@ -111,8 +140,8 @@ export default function AdminGrades() {
       // Generate recent updates from students with grades
       const updates = sortedStudents.slice(0, 5).map(s => ({
         name: s.fullName || `${s.firstName} ${s.lastName}`,
-        subject: 'General Average',
-        grade: s.average
+        subject: rankingLabelMap[rankingBasis] || 'Final Average',
+        grade: s.rankingValue
       }));
       setRecentUpdates(updates);
 
@@ -423,6 +452,24 @@ export default function AdminGrades() {
 
             <select
 
+              value={rankingBasis}
+
+              onChange={(e) => setRankingBasis(e.target.value)}
+
+              className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-red-800"
+
+            >
+
+              <option value="final">Rank: Final Average</option>
+              <option value="q1">Rank: Q1 Average</option>
+              <option value="q2">Rank: Q2 Average</option>
+              <option value="q3">Rank: Q3 Average</option>
+              <option value="q4">Rank: Q4 Average</option>
+
+            </select>
+
+            <select
+
               value={selectedGradeLevel}
 
               onChange={(e) => setSelectedGradeLevel(e.target.value)}
@@ -492,7 +539,7 @@ export default function AdminGrades() {
 
                 <th className="p-4">Final Average</th>
 
-                <th className="p-4">Rank</th>
+                <th className="p-4">Rank ({rankingLabelMap[rankingBasis] || 'Final Average'})</th>
 
                 <th className="p-4 text-center">Actions</th>
 
