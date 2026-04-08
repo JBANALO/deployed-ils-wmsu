@@ -60,6 +60,7 @@ export default function AdminSchoolYear() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showPromoteModal, setShowPromoteModal] = useState(false);
+  const [showCopyConfirmModal, setShowCopyConfirmModal] = useState(false);
   const [showArchivedList, setShowArchivedList] = useState(false);
   const [leadershipFetching, setLeadershipFetching] = useState(false);
   const [copyingAllData, setCopyingAllData] = useState(false);
@@ -424,6 +425,56 @@ export default function AdminSchoolYear() {
     setShowArchiveModal(true);
   };
 
+  const handleCopyAllData = async () => {
+    if (!activeSchoolYear || !viewingSchoolYear) {
+      toast.error('Active and viewing school years are required.');
+      return;
+    }
+
+    if (Number(activeSchoolYear.id) === Number(viewingSchoolYear.id)) {
+      toast.info('Select a different school year to copy from.');
+      return;
+    }
+
+    setCopyingAllData(true);
+    try {
+      const res = await axios.post('/school-years/copy-all-from-school-year', {
+        sourceSchoolYearId: viewingSchoolYear.id
+      });
+
+      const copied = res?.data?.data?.copied || {};
+      const warnings = Array.isArray(res?.data?.data?.warnings) ? res.data.data.warnings : [];
+      const totalCopied =
+        (copied.subjects || 0) +
+        (copied.sections || 0) +
+        (copied.teachers || 0) +
+        (copied.classes || 0) +
+        (copied.students || 0) +
+        (copied.grades || 0);
+
+      toast.success(
+        `Copied from ${viewingSchoolYear.label}: ` +
+        `${copied.subjects || 0} subjects, ${copied.sections || 0} sections, ` +
+        `${copied.teachers || 0} teachers, ${copied.classes || 0} classes, ` +
+        `${copied.students || 0} students, ${copied.grades || 0} grades.`
+      );
+
+      if (totalCopied === 0) {
+        toast.info('No matching rows found for the selected school year filter.');
+      }
+
+      if (warnings.length > 0) {
+        toast.warn(`Copy warnings: ${warnings[0]}`);
+      }
+
+      await loadData();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Failed to copy school year data');
+    } finally {
+      setCopyingAllData(false);
+    }
+  };
+
   // Format chart data
   const chartData = studentsByGrade.map(item => ({
     name: item.grade,
@@ -523,49 +574,7 @@ export default function AdminSchoolYear() {
                 toast.info('Select a different school year to copy from.');
                 return;
               }
-
-              const confirmed = window.confirm(
-                `Copy all core data from ${viewingSchoolYear.label} to active ${activeSchoolYear.label}?`
-              );
-              if (!confirmed) return;
-
-              setCopyingAllData(true);
-              try {
-                const res = await axios.post('/school-years/copy-all-from-school-year', {
-                  sourceSchoolYearId: viewingSchoolYear.id
-                });
-
-                const copied = res?.data?.data?.copied || {};
-                const warnings = Array.isArray(res?.data?.data?.warnings) ? res.data.data.warnings : [];
-                const totalCopied =
-                  (copied.subjects || 0) +
-                  (copied.sections || 0) +
-                  (copied.teachers || 0) +
-                  (copied.classes || 0) +
-                  (copied.students || 0) +
-                  (copied.grades || 0);
-
-                toast.success(
-                  `Copied from ${viewingSchoolYear.label}: ` +
-                  `${copied.subjects || 0} subjects, ${copied.sections || 0} sections, ` +
-                  `${copied.teachers || 0} teachers, ${copied.classes || 0} classes, ` +
-                  `${copied.students || 0} students, ${copied.grades || 0} grades.`
-                );
-
-                if (totalCopied === 0) {
-                  toast.info('No matching rows found for the selected school year filter.');
-                }
-
-                if (warnings.length > 0) {
-                  toast.warn(`Copy warnings: ${warnings[0]}`);
-                }
-
-                await loadData();
-              } catch (e) {
-                toast.error(e.response?.data?.message || 'Failed to copy school year data');
-              } finally {
-                setCopyingAllData(false);
-              }
+              setShowCopyConfirmModal(true);
             }}
             disabled={copyingAllData || !activeSchoolYear || !viewingSchoolYear || Number(activeSchoolYear.id) === Number(viewingSchoolYear.id)}
             className="flex items-center gap-2 bg-yellow-500/90 text-white px-4 py-2 rounded-lg font-semibold hover:bg-yellow-500 transition disabled:opacity-60"
@@ -1219,6 +1228,51 @@ export default function AdminSchoolYear() {
                 className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition disabled:opacity-50"
               >
                 {isSubmitting ? 'Archiving...' : 'Archive'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copy Data Confirmation Modal */}
+      {showCopyConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-yellow-100 p-3 rounded-full">
+                <ExclamationTriangleIcon className="w-6 h-6 text-yellow-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold">Confirm Data Copy</h3>
+                <p className="text-sm text-gray-500">Copy selected school year data into active school year</p>
+              </div>
+            </div>
+
+            <p className="text-gray-700 mb-2">
+              Copy all core data from <strong>{viewingSchoolYear?.label}</strong> to active <strong>{activeSchoolYear?.label}</strong>?
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              Existing duplicates are skipped automatically.
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCopyConfirmModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowCopyConfirmModal(false);
+                  await handleCopyAllData();
+                }}
+                disabled={copyingAllData}
+                className="flex-1 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition disabled:opacity-50"
+              >
+                {copyingAllData ? 'Copying...' : 'Confirm Copy'}
               </button>
             </div>
           </div>
