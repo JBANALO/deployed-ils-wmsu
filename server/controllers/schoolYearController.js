@@ -236,56 +236,56 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
     );
 
     try {
-      // Move teachers from source SY into active SY. This is safer than cloning because
-      // username/email are globally unique in many deployments.
-      const [teacherMoveResult] = await connection.query(
-        `UPDATE teachers t
-         LEFT JOIN teachers x
-           ON x.id <> t.id
-          AND x.school_year_id = ?
-          AND (
-            (t.email IS NOT NULL AND x.email = t.email)
-            OR (t.username IS NOT NULL AND x.username = t.username)
-          )
-         SET t.school_year_id = ?, t.updated_at = NOW()
+      const [teacherCountRows] = await connection.query(
+        `SELECT COUNT(*) AS total
+         FROM teachers t
          WHERE (
-               t.school_year_id = ?
-               OR (
-                 t.school_year_id IS NULL
-                 AND ? IS NOT NULL
-                 AND ? IS NOT NULL
-                 AND DATE(COALESCE(t.created_at, NOW())) BETWEEN ? AND ?
-               )
-         )
-           AND x.id IS NULL`,
-        [active.id, active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate]
+              t.school_year_id = ?
+              OR (
+                t.school_year_id IS NULL
+                AND ? IS NOT NULL
+                AND ? IS NOT NULL
+                AND DATE(COALESCE(t.created_at, NOW())) BETWEEN ? AND ?
+              )
+         )`,
+        [source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate]
       );
-
-      copied.teachers = Number(teacherMoveResult?.affectedRows || 0);
+      const sourceTeacherCount = Number(teacherCountRows?.[0]?.total || 0);
+      copied.teachers = 0;
+      if (sourceTeacherCount > 0) {
+        warnings.push(`teachers: preserved ${sourceTeacherCount} source record(s); not moved to keep past-year data intact.`);
+      }
     } catch (stepErr) {
       warnings.push(`teachers: ${stepErr.message}`);
     }
 
-    await runStep(
-      'classes',
-      `UPDATE classes c
-       SET c.school_year_id = ?
-       WHERE (
-            c.school_year_id = ?
-            OR (
-              c.school_year_id IS NULL
-              AND ? IS NOT NULL
-              AND ? IS NOT NULL
-              AND DATE(COALESCE(c.createdAt, NOW())) BETWEEN ? AND ?
-            )
-       )`,
-      [active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate],
-      'classes'
-    );
+    try {
+      const [classCountRows] = await connection.query(
+        `SELECT COUNT(*) AS total
+         FROM classes c
+         WHERE (
+              c.school_year_id = ?
+              OR (
+                c.school_year_id IS NULL
+                AND ? IS NOT NULL
+                AND ? IS NOT NULL
+                AND DATE(COALESCE(c.createdAt, NOW())) BETWEEN ? AND ?
+              )
+         )`,
+        [source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate]
+      );
+      const sourceClassCount = Number(classCountRows?.[0]?.total || 0);
+      copied.classes = 0;
+      if (sourceClassCount > 0) {
+        warnings.push(`classes: preserved ${sourceClassCount} source record(s); not moved to keep past-year data intact.`);
+      }
+    } catch (stepErr) {
+      warnings.push(`classes: ${stepErr.message}`);
+    }
 
     try {
-      const [sourceStudents] = await connection.query(
-        `SELECT s.id, s.lrn
+      const [studentCountRows] = await connection.query(
+        `SELECT COUNT(*) AS total
          FROM students s
          WHERE (
               s.school_year_id = ?
@@ -295,63 +295,14 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
                 AND ? IS NOT NULL
                 AND DATE(COALESCE(s.created_at, NOW())) BETWEEN ? AND ?
               )
-         )
-           AND s.lrn IS NOT NULL
-           AND s.lrn <> ''
-         ORDER BY s.created_at ASC, s.id ASC`,
+         )`,
         [source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate]
       );
-
-      let movedStudents = 0;
-      const movedStudentIds = [];
-      const sourceLrns = [...new Set(
-        (sourceStudents || [])
-          .map((row) => String(row?.lrn || '').trim())
-          .filter(Boolean)
-      )];
-      for (const s of sourceStudents || []) {
-        const [dupRows] = await connection.query(
-          `SELECT id
-           FROM students
-           WHERE id <> ?
-             AND school_year_id = ?
-             AND lrn = ?
-           LIMIT 1`,
-          [s.id, active.id, s.lrn]
-        );
-
-        if (dupRows.length > 0) {
-          continue;
-        }
-
-        const [moveResult] = await connection.query(
-          'UPDATE students SET school_year_id = ?, updated_at = NOW() WHERE id = ?',
-          [active.id, s.id]
-        );
-
-        if (Number(moveResult?.affectedRows || 0) > 0) {
-          movedStudents += 1;
-          movedStudentIds.push(s.id);
-        }
+      const sourceStudentCount = Number(studentCountRows?.[0]?.total || 0);
+      copied.students = 0;
+      if (sourceStudentCount > 0) {
+        warnings.push(`students: preserved ${sourceStudentCount} source record(s); not moved to keep past-year data intact.`);
       }
-
-      // New school year should start fresh: clear active-year grades for all matching LRNs
-      // found in the selected source school year, even if some students were skipped as duplicates.
-      if (sourceLrns.length > 0) {
-        const placeholders = sourceLrns.map(() => '?').join(',');
-        await connection.query(
-          `DELETE g
-           FROM grades g
-           INNER JOIN students active_students
-             ON active_students.id = g.student_id
-            AND active_students.school_year_id = ?
-           WHERE g.school_year_id = ?
-             AND active_students.lrn IN (${placeholders})`,
-          [active.id, active.id, ...sourceLrns]
-        );
-      }
-
-      copied.students = movedStudents;
     } catch (stepErr) {
       warnings.push(`students: ${stepErr.message}`);
     }
