@@ -52,6 +52,47 @@ const getPreviousSchoolYear = async (activeStartDate) => {
   return rows[0] || null;
 };
 
+const getLatestHistoricalTeacherSchoolYear = async (targetSy) => {
+  if (!targetSy?.id) return null;
+
+  try {
+    if (targetSy.start_date) {
+      const byDate = await query(
+        `SELECT sy.id, sy.label, sy.start_date
+         FROM school_years sy
+         WHERE sy.is_archived = 0
+           AND sy.id <> ?
+           AND sy.start_date < ?
+           AND EXISTS (
+             SELECT 1 FROM teachers t WHERE t.school_year_id = sy.id LIMIT 1
+           )
+         ORDER BY sy.start_date DESC
+         LIMIT 1`,
+        [targetSy.id, targetSy.start_date]
+      );
+      if (byDate[0]) return byDate[0];
+    }
+
+    const byId = await query(
+      `SELECT sy.id, sy.label, sy.start_date
+       FROM school_years sy
+       WHERE sy.is_archived = 0
+         AND sy.id < ?
+         AND EXISTS (
+           SELECT 1 FROM teachers t WHERE t.school_year_id = sy.id LIMIT 1
+         )
+       ORDER BY sy.id DESC
+       LIMIT 1`,
+      [targetSy.id]
+    );
+    if (byId[0]) return byId[0];
+  } catch (err) {
+    console.log('getLatestHistoricalTeacherSchoolYear fallback:', err.message);
+  }
+
+  return getPreviousSchoolYear(targetSy.start_date);
+};
+
 const assertActiveTargetSchoolYear = async (targetSy) => {
   const active = await getActiveSchoolYear();
   if (!targetSy || targetSy.id !== active.id) {
@@ -805,8 +846,8 @@ const getPreviousYearTeachers = async (req, res) => {
   try {
     await ensureTeacherSchoolYearColumn();
     const targetSy = await resolveSchoolYear(req);
-    const prevSy = await getPreviousSchoolYear(targetSy.start_date);
-    if (!prevSy) return res.json({ success: true, data: [] });
+    const sourceSy = await getLatestHistoricalTeacherSchoolYear(targetSy);
+    if (!sourceSy) return res.json({ success: true, data: [] });
 
     const teachers = await query(
       `SELECT id, first_name, middle_name, last_name, username, email, role,
@@ -814,7 +855,7 @@ const getPreviousYearTeachers = async (req, res) => {
        FROM teachers
        WHERE school_year_id = ?
        ORDER BY first_name, last_name`,
-      [prevSy.id]
+      [sourceSy.id]
     );
 
     const formatted = teachers.map((t) => ({
@@ -822,7 +863,7 @@ const getPreviousYearTeachers = async (req, res) => {
       subjects: t.subjects,
     }));
 
-    res.json({ success: true, data: formatted, meta: { sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id } });
+    res.json({ success: true, data: formatted, meta: { sourceSchoolYearId: sourceSy.id, targetSchoolYearId: targetSy.id } });
   } catch (error) {
     console.error('Error fetching previous year teachers:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch previous year teachers' });
@@ -835,9 +876,9 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
     await ensureTeacherSchoolYearColumn();
     const targetSy = await resolveSchoolYear(req);
     await assertActiveTargetSchoolYear(targetSy);
-    const prevSy = await getPreviousSchoolYear(targetSy.start_date);
-    if (!prevSy) {
-      return res.status(400).json({ success: false, message: 'No previous school year found to fetch from' });
+    const sourceSy = await getLatestHistoricalTeacherSchoolYear(targetSy);
+    if (!sourceSy) {
+      return res.status(400).json({ success: false, message: 'No historical school year with teacher data found to fetch from' });
     }
 
     const { ids } = req.body || {};
@@ -850,12 +891,12 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
       const placeholders = idList.map(() => '?').join(',');
       prevTeachers = await query(
         `SELECT * FROM teachers WHERE school_year_id = ? AND id IN (${placeholders})`,
-        [prevSy.id, ...idList]
+        [sourceSy.id, ...idList]
       );
     } else {
       prevTeachers = await query(
         'SELECT * FROM teachers WHERE school_year_id = ?',
-        [prevSy.id]
+        [sourceSy.id]
       );
     }
 
@@ -909,7 +950,7 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
     res.json({
       success: true,
       message: 'Fetch complete',
-      data: { inserted, skipped, sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id }
+      data: { inserted, skipped, sourceSchoolYearId: sourceSy.id, targetSchoolYearId: targetSy.id }
     });
   } catch (error) {
     console.error('Error fetching teachers from previous year:', error);

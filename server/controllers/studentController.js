@@ -53,6 +53,47 @@ async function getPreviousSchoolYear(targetSy) {
   return byId[0] || null;
 }
 
+async function getLatestHistoricalStudentSchoolYear(targetSy) {
+  if (!targetSy?.id) return null;
+
+  try {
+    if (targetSy.start_date) {
+      const byDate = await query(
+        `SELECT sy.id, sy.label, sy.start_date
+         FROM school_years sy
+         WHERE sy.is_archived = 0
+           AND sy.id <> ?
+           AND sy.start_date < ?
+           AND EXISTS (
+             SELECT 1 FROM students s WHERE s.school_year_id = sy.id LIMIT 1
+           )
+         ORDER BY sy.start_date DESC
+         LIMIT 1`,
+        [targetSy.id, targetSy.start_date]
+      );
+      if (byDate[0]) return byDate[0];
+    }
+
+    const byId = await query(
+      `SELECT sy.id, sy.label, sy.start_date
+       FROM school_years sy
+       WHERE sy.is_archived = 0
+         AND sy.id < ?
+         AND EXISTS (
+           SELECT 1 FROM students s WHERE s.school_year_id = sy.id LIMIT 1
+         )
+       ORDER BY sy.id DESC
+       LIMIT 1`,
+      [targetSy.id]
+    );
+    if (byId[0]) return byId[0];
+  } catch (err) {
+    console.log('getLatestHistoricalStudentSchoolYear fallback:', err.message);
+  }
+
+  return getPreviousSchoolYear(targetSy);
+}
+
 async function ensureStudentSchoolYearColumn() {
   if (studentSyEnsured) return;
   const cols = await query('SHOW COLUMNS FROM students');
@@ -1325,9 +1366,9 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Fetching students is only allowed in the active school year.' });
     }
 
-    const prevSy = await getPreviousSchoolYear(targetSy);
-    if (!prevSy) {
-      return res.status(400).json({ success: false, message: 'No previous school year found to fetch from.' });
+    const sourceSy = await getLatestHistoricalStudentSchoolYear(targetSy);
+    if (!sourceSy) {
+      return res.status(400).json({ success: false, message: 'No historical school year with student data found to fetch from.' });
     }
 
     const selectedIds = Array.isArray(req.body?.ids)
@@ -1348,8 +1389,23 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
        WHERE ph.school_year_id = ?
          AND ph.status IN ('promoted', 'retained')
        ORDER BY ph.created_at DESC`,
-      [prevSy.id, prevSy.id]
+      [sourceSy.id, sourceSy.id]
     );
+
+    if (!promotionRows.length) {
+      // Fallback for returnees/transfers: allow latest historical records even without promotion logs.
+      promotionRows = await query(
+        `SELECT id AS student_id, lrn,
+                grade_level AS to_grade,
+                section AS to_section,
+                'historical' AS status,
+                created_at
+         FROM students
+         WHERE school_year_id = ?
+         ORDER BY created_at DESC`,
+        [sourceSy.id]
+      );
+    }
 
     if (selectedIds.length > 0) {
       const selectedSet = new Set(selectedIds);
@@ -1357,12 +1413,12 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     }
 
     if (!promotionRows.length) {
-      return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0, sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id } });
+      return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0, sourceSchoolYearId: sourceSy.id, targetSchoolYearId: targetSy.id } });
     }
 
     const sourceRows = await query(
       'SELECT * FROM students WHERE school_year_id = ?',
-      [prevSy.id]
+      [sourceSy.id]
     );
 
     const sourceById = new Map();
@@ -1444,7 +1500,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
         skipped,
         promotedInserted,
         retainedInserted,
-        sourceSchoolYearId: prevSy.id,
+        sourceSchoolYearId: sourceSy.id,
         targetSchoolYearId: targetSy.id
       }
     });
@@ -1471,12 +1527,17 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
     }
 
-    const prevSy = await getPreviousSchoolYear(targetSy);
-    if (!prevSy) {
+    const sourceSy = await getLatestHistoricalStudentSchoolYear(targetSy);
+    if (!sourceSy) {
       return res.json({ success: true, data: [], meta: { sourceSchoolYearId: null, targetSchoolYearId: targetSy.id } });
     }
 
-    const promotionRows = await query(
+    const sourceRows = await query(
+      'SELECT id, lrn, first_name, middle_name, last_name, grade_level, section, created_at FROM students WHERE school_year_id = ?',
+      [sourceSy.id]
+    );
+
+    let promotionRows = await query(
       `SELECT ph.student_id, ph.lrn, ph.from_grade, ph.from_section, ph.to_grade, ph.to_section, ph.status, ph.created_at
        FROM promotion_history ph
        INNER JOIN (
@@ -1490,14 +1551,21 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
        WHERE ph.school_year_id = ?
          AND ph.status IN ('promoted', 'retained')
        ORDER BY ph.created_at DESC`,
-      [prevSy.id, prevSy.id]
+      [sourceSy.id, sourceSy.id]
     );
 
     if (!promotionRows.length) {
-      return res.json({ success: true, data: [], meta: { sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id } });
+      promotionRows = sourceRows.map((row) => ({
+        student_id: row.id,
+        lrn: row.lrn,
+        from_grade: row.grade_level,
+        from_section: row.section,
+        to_grade: row.grade_level,
+        to_section: row.section,
+        status: 'historical',
+        created_at: row.created_at || null
+      }));
     }
-
-    const sourceRows = await query('SELECT id, lrn, first_name, middle_name, last_name, grade_level, section FROM students WHERE school_year_id = ?', [prevSy.id]);
     const sourceById = new Map();
     const sourceByLrn = new Map();
     sourceRows.forEach((row) => {
@@ -1549,8 +1617,8 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       success: true,
       data: candidates,
       meta: {
-        sourceSchoolYearId: prevSy.id,
-        sourceSchoolYearLabel: prevSy.label,
+        sourceSchoolYearId: sourceSy.id,
+        sourceSchoolYearLabel: sourceSy.label,
         targetSchoolYearId: targetSy.id,
         targetSchoolYearLabel: targetSy.label
       }
