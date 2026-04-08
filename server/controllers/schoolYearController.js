@@ -630,6 +630,30 @@ const REQUIRED_QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'];
 const KINDERGARTEN_ATTENDANCE_THRESHOLD = 75;
 const KINDERGARTEN_COUNTED_STATUSES = ['present', 'late', 'excused'];
 
+let attendanceColumnsCache = null;
+
+async function resolveAttendanceColumns(conn) {
+  if (attendanceColumnsCache) return attendanceColumnsCache;
+
+  const [columns] = await conn.query('SHOW COLUMNS FROM attendance');
+  const fields = new Set((columns || []).map((col) => String(col.Field || '').trim()));
+
+  const studentColumn = fields.has('student_id')
+    ? 'student_id'
+    : (fields.has('studentId') ? 'studentId' : null);
+
+  const dateColumn = fields.has('date')
+    ? 'date'
+    : (fields.has('created_at')
+      ? 'created_at'
+      : (fields.has('createdAt')
+        ? 'createdAt'
+        : (fields.has('timestamp') ? 'timestamp' : null)));
+
+  attendanceColumnsCache = { studentColumn, dateColumn };
+  return attendanceColumnsCache;
+}
+
 function toGradeKey(gradeLevel = '') {
   return String(gradeLevel).replace(/^Grade\s+/i, '').trim();
 }
@@ -661,12 +685,28 @@ function normalizeGradeLevel(value = '') {
 async function evaluateKindergartenEligibility(conn, student) {
   // For Kindergarten: attendance-based promotion
   // Formula: (Present + Late + Excused) / Total days × 100
+
+  const { studentColumn, dateColumn } = await resolveAttendanceColumns(conn);
+  if (!studentColumn || !dateColumn) {
+    return {
+      eligible: false,
+      average: 0,
+      attendancePercentage: 0,
+      totalDays: 0,
+      countedDays: 0,
+      hasCompleteGrades: false,
+      hasFailingGrade: false,
+      reason: 'Attendance table is missing required columns for Kindergarten promotion check',
+      attendanceStatus: 'schema-mismatch'
+    };
+  }
   
   const [attendanceRows] = await conn.query(
-    `SELECT DATE(date) as date, status
+    `SELECT DATE(${dateColumn}) as attendance_date, LOWER(status) as status
      FROM attendance
-     WHERE student_id = ? AND status IN ('present', 'late', 'absent', 'excused')
-     ORDER BY date`,
+     WHERE ${studentColumn} = ?
+       AND LOWER(status) IN ('present', 'late', 'absent', 'excused')
+     ORDER BY attendance_date`,
     [student.id]
   );
 
@@ -685,14 +725,14 @@ async function evaluateKindergartenEligibility(conn, student) {
   }
 
   // Group by date to count unique days
-  const uniqueDates = new Set(attendanceRows.map(r => r.date));
+  const uniqueDates = new Set(attendanceRows.map(r => r.attendance_date));
   const totalDays = uniqueDates.size;
   
   // Count days with attendance status (present, late, excused)
   const countedRecords = attendanceRows.filter(r => 
     KINDERGARTEN_COUNTED_STATUSES.includes(String(r.status || '').toLowerCase())
   );
-  const countedDays = new Set(countedRecords.map(r => r.date)).size;
+  const countedDays = new Set(countedRecords.map(r => r.attendance_date)).size;
   
   const attendancePercentage = totalDays > 0 
     ? Math.round((countedDays / totalDays) * 100)
