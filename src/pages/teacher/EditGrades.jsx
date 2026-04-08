@@ -404,21 +404,32 @@ export default function EditGrades() {
       // Fetch grading progress for this teacher
       fetchProgress(selectedQuarter);
 
-      // Fetch all students
-      const response = await api.get('/students', { params: schoolYearForRequests ? { schoolYearId: schoolYearForRequests } : {} });
-      const allStudents = response.data.data || response.data;
-      
-      // Filter students to only show those in assigned classes
-      const normalize = str => (str || '').toString().trim().toLowerCase();
-      const filteredStudents = (Array.isArray(allStudents) ? allStudents : []).filter(student => {
-        return uniqueClasses.some(c => 
-          normalize(c.grade) === normalize(getStudentGradeLevel(student)) && 
-          normalize(c.section) === normalize(getStudentSection(student))
-        );
-      });
-      
-      console.log('EditGrades - Total students:', allStudents.length, '→ Filtered:', filteredStudents.length);
-      setStudents(filteredStudents);
+      // Fetch students in teacher scope so averages/remarks reflect only allowed subject/class scope.
+      // Fallback to class-filtered all-students if teacherId endpoint is unavailable.
+      let scopedStudents = [];
+      try {
+        const scopedResponse = await api.get('/students', {
+          params: {
+            teacherId: userId,
+            ...(schoolYearForRequests ? { schoolYearId: schoolYearForRequests } : {})
+          }
+        });
+        scopedStudents = scopedResponse.data?.data || scopedResponse.data || [];
+      } catch (scopedErr) {
+        console.warn('EditGrades - teacher scoped students failed, using fallback:', scopedErr.message || scopedErr);
+        const response = await api.get('/students', { params: schoolYearForRequests ? { schoolYearId: schoolYearForRequests } : {} });
+        const allStudents = response.data.data || response.data;
+        const normalize = str => (str || '').toString().trim().toLowerCase();
+        scopedStudents = (Array.isArray(allStudents) ? allStudents : []).filter(student => {
+          return uniqueClasses.some(c =>
+            normalize(c.grade) === normalize(getStudentGradeLevel(student)) &&
+            normalize(c.section) === normalize(getStudentSection(student))
+          );
+        });
+      }
+
+      console.log('EditGrades - scoped students:', Array.isArray(scopedStudents) ? scopedStudents.length : 0);
+      setStudents(Array.isArray(scopedStudents) ? scopedStudents : []);
 
       // Fetch subjects for each assigned grade level from DB (replaces hard-coded list)
       const uniqueGrades = [...new Set(uniqueClasses.map(c => c.grade).filter(Boolean))];
@@ -757,8 +768,10 @@ export default function EditGrades() {
     });
 
     if (changedSubjects.length === 0) {
+      setShowGradeModal(false);
       setSuccessMessage('ℹ️ No grade changes to save.');
       setShowSuccessModal(true);
+      await fetchStudents();
       return;
     }
 
@@ -809,8 +822,10 @@ export default function EditGrades() {
     });
 
     if (Object.keys(quarterGrades).length === 0) {
+      setShowGradeModal(false);
       setSuccessMessage('ℹ️ No grade changes to save.');
       setShowSuccessModal(true);
+      await fetchStudents();
       return;
     }
 
@@ -862,6 +877,12 @@ export default function EditGrades() {
   const highestGrade = students.length > 0
     ? Math.max(...students.map(s => s.average || 0))
     : 0;
+
+  const isSubjectTeacherOnlyMode =
+    userRole === 'subject_teacher' ||
+    (userRole === 'teacher' && assignedSubjects.length > 0 && adviserClassIds.length === 0);
+  const averageColumnLabel = isSubjectTeacherOnlyMode ? 'My Subject Average' : 'Final Average';
+  const remarksColumnLabel = isSubjectTeacherOnlyMode ? 'My Remarks' : 'Remarks';
 
   return (
     <div className="space-y-6">
@@ -1086,8 +1107,10 @@ export default function EditGrades() {
                 <th className="px-6 py-4">LRN</th>
                 <th className="px-6 py-4">Student Name</th>
                 <th className="px-6 py-4">Grade & Section</th>
-                <th className="px-6 py-4 text-center">Final Average</th>
-                <th className="px-6 py-4">Remarks</th>                <th className="px-6 py-4 text-center">Report Card</th>              </tr>
+                <th className="px-6 py-4 text-center">{averageColumnLabel}</th>
+                <th className="px-6 py-4">{remarksColumnLabel}</th>
+                <th className="px-6 py-4 text-center">Report Card</th>
+              </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {loading ? (
@@ -1228,9 +1251,9 @@ export default function EditGrades() {
               <div className="overflow-x-auto scrollbar-hide">
                 {(() => {
                   const quarterOrder = ['q1', 'q2', 'q3', 'q4'];
-                  const quartersToShow = selectedQuarter === 'all'
-                    ? quarterOrder
-                    : quarterOrder.slice(0, quarterOrder.indexOf(selectedQuarter) + 1);
+                  // Always render all quarters in the modal and lock non-selected quarters
+                  // when a specific quarter is chosen.
+                  const quartersToShow = quarterOrder;
                   const isEditableQ = (q) => selectedQuarter === 'all' || q === selectedQuarter;
                   const getQLabel = (q) => q.toUpperCase();
                   const subjects = Object.keys(gradeData).filter(s => s !== 'Total Q1');
@@ -1280,7 +1303,8 @@ export default function EditGrades() {
                               </td>
                               {quartersToShow.map(q => {
                                 const quarterClosed = isQuarterClosed(q);
-                                const editable = canEdit && isEditableQ(q) && !isGradeLocked && !isViewOnlyMode && !quarterClosed;
+                                const lockedByQuarterSelection = !isEditableQ(q);
+                                const editable = canEdit && !lockedByQuarterSelection && !isGradeLocked && !isViewOnlyMode && !quarterClosed;
                                 const val = gradeData[subject]?.[q];
                                 const hasVal = val && val !== 0 && val !== '';
                                 return (
@@ -1303,8 +1327,8 @@ export default function EditGrades() {
                                           )}
                                         </>
                                       ) : (
-                                        <span className={`text-base font-semibold ${quarterClosed ? 'text-red-500' : (hasVal ? 'text-gray-700' : 'text-gray-300')}`}>
-                                          {hasVal ? val : (quarterClosed ? 'Closed' : '—')}
+                                        <span className={`text-base font-semibold ${(quarterClosed || lockedByQuarterSelection) ? 'text-red-500' : (hasVal ? 'text-gray-700' : 'text-gray-300')}`}>
+                                          {hasVal ? val : ((quarterClosed || lockedByQuarterSelection) ? 'Closed' : '—')}
                                         </span>
                                       )}
                                     </div>
