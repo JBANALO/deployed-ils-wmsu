@@ -1432,6 +1432,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     let skipped = 0;
     let promotedInserted = 0;
     let retainedInserted = 0;
+    const sourceLrns = new Set();
 
     for (const promo of promotionRows) {
       const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
@@ -1439,6 +1440,8 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
         skipped += 1;
         continue;
       }
+
+      sourceLrns.add(String(sourceStudent.lrn));
 
       const duplicate = await query(
         'SELECT id FROM students WHERE lrn = ? AND school_year_id = ? LIMIT 1',
@@ -1490,6 +1493,23 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       inserted += 1;
       if (String(promo.status).toLowerCase() === 'promoted') promotedInserted += 1;
       if (String(promo.status).toLowerCase() === 'retained') retainedInserted += 1;
+    }
+
+    // Fresh-start rule: after fetch, remove active-year grades for all matching LRNs
+    // so promoted/retained students do not carry old grades into the active year.
+    const lrnList = [...sourceLrns].filter(Boolean);
+    if (lrnList.length > 0) {
+      const placeholders = lrnList.map(() => '?').join(',');
+      await query(
+        `DELETE g
+         FROM grades g
+         INNER JOIN students s
+           ON s.id = g.student_id
+          AND s.school_year_id = ?
+         WHERE g.school_year_id = ?
+           AND s.lrn IN (${placeholders})`,
+        [targetSy.id, targetSy.id, ...lrnList]
+      );
     }
 
     return res.json({
