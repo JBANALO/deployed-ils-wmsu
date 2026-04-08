@@ -662,7 +662,16 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
     const { schoolYearId } = req.query;
     const [studentRow] = await query('SELECT id, school_year_id, grade_level, section FROM students WHERE id = ?', [id]);
     const targetSyId = schoolYearId || studentRow?.school_year_id || (await getActiveSchoolYear())?.id;
-    const allGrades = await query('SELECT * FROM grades WHERE student_id = ? AND (school_year_id = ? OR school_year_id IS NULL)', [id, targetSyId]);
+    const [targetSyRow] = await query('SELECT id, start_date FROM school_years WHERE id = ? LIMIT 1', [targetSyId]);
+    const targetSyStartDate = targetSyRow?.start_date || null;
+    const allGrades = await query(
+      `SELECT *
+       FROM grades
+       WHERE student_id = ?
+         AND school_year_id = ?
+         AND (? IS NULL OR (created_at IS NOT NULL AND DATE(created_at) >= DATE(?)))`,
+      [id, targetSyId, targetSyStartDate, targetSyStartDate]
+    );
 
     const user = req.user || {};
     const normalizedRole = normalizeRole(user.role || '');

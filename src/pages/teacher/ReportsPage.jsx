@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   LineChart,
   Line,
@@ -71,6 +71,7 @@ export default function ReportsPage() {
   const [emailResults, setEmailResults] = useState({});
   const [allSubjects, setAllSubjects] = useState([]);
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
+  const lastKnownActiveSchoolYearIdRef = useRef(null);
 
   const isPassingGradeValue = (value) => {
     const num = parseFloat(value);
@@ -123,25 +124,41 @@ export default function ReportsPage() {
     loadReportsData();
   }, [selectedSection, selectedMonth, selectedYear, selectedSchoolYearId, selectedAttendanceSubject]);
 
-  useEffect(() => {
-    const fetchActiveSchoolYear = async () => {
-      try {
-        const res = await axios.get('/school-years/active');
-        const activeSy = res.data?.data || res.data;
-        if (activeSy?.id) {
-          const nextActiveId = String(activeSy.id);
-          setTeacherActiveSchoolYearId(nextActiveId);
-          // Keep reports synced to active SY so mobile and web show the same attendance.
-          setSelectedSchoolYearId(nextActiveId);
-          setTeacherViewingSchoolYearId(nextActiveId);
-        }
-      } catch (error) {
-        console.warn('Could not load active school year:', error.message);
-      }
-    };
+  const fetchActiveSchoolYear = async () => {
+    try {
+      const res = await axios.get('/school-years/active');
+      const activeSy = res.data?.data || res.data;
+      if (!activeSy?.id) return;
 
+      const nextActiveId = String(activeSy.id);
+      const previousActiveId = lastKnownActiveSchoolYearIdRef.current;
+      setTeacherActiveSchoolYearId(nextActiveId);
+
+      const shouldAutoFollow =
+        !selectedSchoolYearId ||
+        !previousActiveId ||
+        String(selectedSchoolYearId) === String(previousActiveId);
+
+      if (shouldAutoFollow && String(selectedSchoolYearId || '') !== nextActiveId) {
+        setSelectedSchoolYearId(nextActiveId);
+        setTeacherViewingSchoolYearId(nextActiveId);
+      }
+
+      lastKnownActiveSchoolYearIdRef.current = nextActiveId;
+    } catch (error) {
+      console.warn('Could not load active school year:', error.message);
+    }
+  };
+
+  useEffect(() => {
     fetchActiveSchoolYear();
-  }, []);
+
+    const interval = setInterval(() => {
+      fetchActiveSchoolYear();
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [selectedSchoolYearId]);
 
   useEffect(() => {
     if (selectedSchoolYearId) {

@@ -11,6 +11,7 @@ const StudentPortal = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showReportCardModal, setShowReportCardModal] = useState(false);
+  const [currentSchoolYearId, setCurrentSchoolYearId] = useState(null);
   const { user } = useContext(UserContext); // Get logged-in user from context
 
   // Get studentId from localStorage user data (stored during login)
@@ -18,14 +19,16 @@ const StudentPortal = () => {
   const studentId = user?.id || storedUser.id || localStorage.getItem('studentId');
 
   useEffect(() => {
-    const fetchPortalData = async () => {
+    const fetchPortalData = async (silent = false) => {
       if (!studentId || studentId === 'null') {
         setLoading(false);
         return;
       }
 
       try {
-        toast.loading('Loading student data...', { id: 'studentData' });
+        if (!silent) {
+          toast.loading('Loading student data...', { id: 'studentData' });
+        }
         const baseURL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 
                  (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
         const [res, activeSchoolYearRes] = await Promise.all([
@@ -39,6 +42,14 @@ const StudentPortal = () => {
         if (activeSchoolYearRes.ok) {
           const activeResult = await activeSchoolYearRes.json();
           activeSchoolYear = activeResult?.data || null;
+          const nextSchoolYearId = activeSchoolYear?.id ? String(activeSchoolYear.id) : null;
+          if (nextSchoolYearId && currentSchoolYearId && currentSchoolYearId !== nextSchoolYearId) {
+            toast('School year has been updated. Showing current year records.', {
+              icon: 'ℹ️',
+              id: 'schoolYearSwitch'
+            });
+          }
+          setCurrentSchoolYearId(nextSchoolYearId);
         }
           
           // Map API response structure to frontend expectations
@@ -66,12 +77,16 @@ const StudentPortal = () => {
               previousScheduleHistory: studentData.previousScheduleHistory || []
             };
             setData(mappedData);
-            toast.success('Student data loaded successfully!', { id: 'studentData' });
+            if (!silent) {
+              toast.success('Student data loaded successfully!', { id: 'studentData' });
+            }
           } else {
-            toast('No student data found, but you are logged in correctly', { 
-              icon: 'ℹ️',
-              id: 'studentData' 
-            });
+            if (!silent) {
+              toast('No student data found, but you are logged in correctly', { 
+                icon: 'ℹ️',
+                id: 'studentData' 
+              });
+            }
             // Don't throw error, just set empty data to prevent login redirect
             setData({
               profile: {
@@ -93,14 +108,24 @@ const StudentPortal = () => {
             });
           }
       } catch (err) {
-        toast.error('No student data found. Please make sure you are logged in correctly.', { id: 'studentData' });
+        if (!silent) {
+          toast.error('No student data found. Please make sure you are logged in correctly.', { id: 'studentData' });
+        }
       } finally {
-        setLoading(false);
+        if (!silent) {
+          setLoading(false);
+        }
       }
     };
 
     fetchPortalData();
-  }, [studentId]);
+
+    const interval = setInterval(() => {
+      fetchPortalData(true);
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [studentId, currentSchoolYearId]);
 
   // ← SHOW THIS WHILE LOADING
   if (loading) {
@@ -1048,6 +1073,7 @@ const StudentPortal = () => {
                             <p className="font-semibold text-gray-800">
                               {record.gradeLevel || 'Previous Grade'}
                               {record.section ? ` - ${record.section}` : ''}
+                              {record.schoolYearLabel ? ` (${record.schoolYearLabel})` : ''}
                             </p>
                             {record.promotedAt && (
                               <p className="text-xs text-gray-500">

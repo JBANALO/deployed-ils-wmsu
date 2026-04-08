@@ -191,7 +191,9 @@ function formatStudent(s) {
     profilePic: s.profile_pic,
     qrCode: qrCodeUrl,
     status: s.status,
-    average: s.live_average != null ? Number(s.live_average) : (s.average ? Number(s.average) : null),
+    // Always report live average scoped from grades query results.
+    // This prevents stale cached student.average from leaking into a new school year.
+    average: s.live_average != null ? Number(s.live_average) : null,
     live_average: s.live_average != null ? Number(s.live_average) : null,
     q1_avg: s.q1_avg != null ? Number(s.q1_avg) : null,
     q2_avg: s.q2_avg != null ? Number(s.q2_avg) : null,
@@ -530,8 +532,11 @@ exports.getStudents = async (req, res) => {
           gradeRows = await query(
             `SELECT student_id, subject, quarter, grade
              FROM grades
-             WHERE school_year_id = ? AND student_id IN (${placeholders}) AND grade > 0`,
-            [targetSy.id, ...studentIds]
+             WHERE school_year_id = ?
+               AND student_id IN (${placeholders})
+               AND grade > 0
+               AND (? IS NULL OR (created_at IS NOT NULL AND DATE(created_at) >= DATE(?)))`,
+            [targetSy.id, ...studentIds, targetSy.start_date || null, targetSy.start_date || null]
           );
         }
 
@@ -591,13 +596,49 @@ exports.getStudents = async (req, res) => {
 
     // No teacherId — return all students (admin/web use)
     const allDbStudents = await query(`SELECT s.*,
-      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.grade > 0 AND g.school_year_id = ?) AS live_average,
-      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q1' AND g.grade > 0 AND g.school_year_id = ?) AS q1_avg,
-      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q2' AND g.grade > 0 AND g.school_year_id = ?) AS q2_avg,
-      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q3' AND g.grade > 0 AND g.school_year_id = ?) AS q3_avg,
-      (SELECT ROUND(AVG(g.grade), 2) FROM grades g WHERE g.student_id = s.id AND g.quarter = 'Q4' AND g.grade > 0 AND g.school_year_id = ?) AS q4_avg
+      (SELECT ROUND(AVG(g.grade), 2)
+       FROM grades g
+       WHERE g.student_id = s.id
+         AND g.grade > 0
+         AND g.school_year_id = ?
+         AND (? IS NULL OR (g.created_at IS NOT NULL AND DATE(g.created_at) >= DATE(?)))) AS live_average,
+      (SELECT ROUND(AVG(g.grade), 2)
+       FROM grades g
+       WHERE g.student_id = s.id
+         AND g.quarter = 'Q1'
+         AND g.grade > 0
+         AND g.school_year_id = ?
+         AND (? IS NULL OR (g.created_at IS NOT NULL AND DATE(g.created_at) >= DATE(?)))) AS q1_avg,
+      (SELECT ROUND(AVG(g.grade), 2)
+       FROM grades g
+       WHERE g.student_id = s.id
+         AND g.quarter = 'Q2'
+         AND g.grade > 0
+         AND g.school_year_id = ?
+         AND (? IS NULL OR (g.created_at IS NOT NULL AND DATE(g.created_at) >= DATE(?)))) AS q2_avg,
+      (SELECT ROUND(AVG(g.grade), 2)
+       FROM grades g
+       WHERE g.student_id = s.id
+         AND g.quarter = 'Q3'
+         AND g.grade > 0
+         AND g.school_year_id = ?
+         AND (? IS NULL OR (g.created_at IS NOT NULL AND DATE(g.created_at) >= DATE(?)))) AS q3_avg,
+      (SELECT ROUND(AVG(g.grade), 2)
+       FROM grades g
+       WHERE g.student_id = s.id
+         AND g.quarter = 'Q4'
+         AND g.grade > 0
+         AND g.school_year_id = ?
+         AND (? IS NULL OR (g.created_at IS NOT NULL AND DATE(g.created_at) >= DATE(?)))) AS q4_avg
      FROM students s WHERE s.school_year_id = ? ORDER BY s.created_at DESC`,
-     [targetSy.id, targetSy.id, targetSy.id, targetSy.id, targetSy.id, targetSy.id]);
+     [
+       targetSy.id, targetSy.start_date || null, targetSy.start_date || null,
+       targetSy.id, targetSy.start_date || null, targetSy.start_date || null,
+       targetSy.id, targetSy.start_date || null, targetSy.start_date || null,
+       targetSy.id, targetSy.start_date || null, targetSy.start_date || null,
+       targetSy.id, targetSy.start_date || null, targetSy.start_date || null,
+       targetSy.id
+     ]);
     const formattedStudents = allDbStudents.map(formatStudent);
     res.status(200).json({ status: 'success', data: formattedStudents });
   } catch (error) {
@@ -646,6 +687,15 @@ exports.getStudent = async (req, res) => {
     const student = students[0];
     const formattedStudent = formatStudent(student);
     const studentLRN = student.lrn; // LRN is used as studentId in attendance table
+    const siblingStudentRows = studentLRN
+      ? await query(
+          `SELECT id, school_year_id, grade_level, section
+           FROM students
+           WHERE lrn = ?
+           ORDER BY COALESCE(school_year_id, 0) DESC, id DESC`,
+          [studentLRN]
+        )
+      : [];
     
     const normalizeSubjectName = (value = '') => String(value)
       .replace(/\s*\(Grade\s+\d+\)\s*$/i, '')
@@ -665,8 +715,13 @@ exports.getStudent = async (req, res) => {
 
     // ======== FETCH GRADES ========
     const gradesRaw = await query(
-      'SELECT subject, quarter, grade, created_at FROM grades WHERE student_id = ? AND school_year_id = ? ORDER BY subject, quarter',
-      [studentId, targetSy.id]
+      `SELECT subject, quarter, grade, created_at
+       FROM grades
+       WHERE student_id = ?
+         AND school_year_id = ?
+         AND (? IS NULL OR (created_at IS NOT NULL AND DATE(created_at) >= DATE(?)))
+       ORDER BY subject, quarter`,
+      [studentId, targetSy.id, targetSy.start_date || null, targetSy.start_date || null]
     );
     
     // Group grades by subject with quarters
@@ -763,6 +818,26 @@ exports.getStudent = async (req, res) => {
       return { ...g, average, remarks };
     });
 
+    const formatGradesForDisplay = (rows = []) => {
+      const { map } = buildNormalizedMap(rows);
+      return Object.values(map).map((g) => {
+        const quarterGrades = [g.q1, g.q2, g.q3, g.q4].filter(x => x !== null && x > 0);
+        const average = quarterGrades.length > 0
+          ? (quarterGrades.reduce((a, b) => a + b, 0) / quarterGrades.length).toFixed(2)
+          : null;
+        const remarks = average ? (parseFloat(average) >= 75 ? 'Passed' : 'Failed') : 'Pending';
+        return {
+          subject: g.subject,
+          q1: g.q1 ?? null,
+          q2: g.q2 ?? null,
+          q3: g.q3 ?? null,
+          q4: g.q4 ?? null,
+          average,
+          remarks
+        };
+      });
+    };
+
     // Build previous-grade history (best effort): use promotion_history table if available
     // and map subjects by grade-level configuration so previous records remain visible after promotion.
     let gradeHistory = [];
@@ -835,6 +910,60 @@ exports.getStudent = async (req, res) => {
     } catch (historyErr) {
       // promotion_history may not exist yet in some environments; ignore safely
       console.log('promotion_history lookup skipped:', historyErr.message);
+    }
+
+    // Fallback/augmentation: if promotion snapshots are missing, build previous records
+    // from other student rows that share the same LRN in older school years.
+    try {
+      const historyByKey = new Set(
+        gradeHistory.map((row) => `${String(row.gradeLevel || '').toLowerCase()}::${String(row.section || '').toLowerCase()}`)
+      );
+
+      const historicalRows = siblingStudentRows.filter((row) => {
+        if (!row || !row.id || Number(row.id) === Number(studentId)) return false;
+        if (!row.school_year_id) return false;
+        return Number(row.school_year_id) !== Number(targetSy.id);
+      });
+
+      if (historicalRows.length > 0) {
+        const historicalSyIds = [...new Set(historicalRows.map((r) => r.school_year_id).filter(Boolean))];
+        let schoolYearLabelMap = {};
+        if (historicalSyIds.length > 0) {
+          const placeholders = historicalSyIds.map(() => '?').join(',');
+          const syRows = await query(
+            `SELECT id, label FROM school_years WHERE id IN (${placeholders})`,
+            historicalSyIds
+          );
+          schoolYearLabelMap = syRows.reduce((acc, row) => {
+            if (row?.id) acc[String(row.id)] = row.label || null;
+            return acc;
+          }, {});
+        }
+
+        for (const oldRow of historicalRows) {
+          const key = `${String(oldRow.grade_level || '').toLowerCase()}::${String(oldRow.section || '').toLowerCase()}`;
+          if (historyByKey.has(key)) continue;
+
+          const oldGradesRaw = await query(
+            'SELECT subject, quarter, grade, created_at FROM grades WHERE student_id = ? ORDER BY subject, quarter',
+            [oldRow.id]
+          );
+
+          const oldGrades = formatGradesForDisplay(oldGradesRaw);
+          if (oldGrades.length === 0) continue;
+
+          gradeHistory.push({
+            gradeLevel: oldRow.grade_level || null,
+            section: oldRow.section || null,
+            schoolYearLabel: schoolYearLabelMap[String(oldRow.school_year_id)] || null,
+            promotedAt: null,
+            grades: oldGrades
+          });
+          historyByKey.add(key);
+        }
+      }
+    } catch (historyFallbackErr) {
+      console.log('historical grade fallback skipped:', historyFallbackErr.message);
     }
     
     // ======== FETCH ATTENDANCE ========

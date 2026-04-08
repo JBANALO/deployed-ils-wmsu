@@ -304,6 +304,11 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
 
       let movedStudents = 0;
       const movedStudentIds = [];
+      const sourceLrns = [...new Set(
+        (sourceStudents || [])
+          .map((row) => String(row?.lrn || '').trim())
+          .filter(Boolean)
+      )];
       for (const s of sourceStudents || []) {
         const [dupRows] = await connection.query(
           `SELECT id
@@ -332,18 +337,19 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
 
       // New school year should start fresh: clear active-year grades for all matching LRNs
       // found in the selected source school year, even if some students were skipped as duplicates.
-      await connection.query(
-        `DELETE g
-         FROM grades g
-         INNER JOIN students active_students
-           ON active_students.id = g.student_id
-          AND active_students.school_year_id = ?
-         INNER JOIN students source_students
-           ON source_students.lrn = active_students.lrn
-          AND source_students.school_year_id = ?
-         WHERE g.school_year_id = ?`,
-        [active.id, source.id, active.id]
-      );
+      if (sourceLrns.length > 0) {
+        const placeholders = sourceLrns.map(() => '?').join(',');
+        await connection.query(
+          `DELETE g
+           FROM grades g
+           INNER JOIN students active_students
+             ON active_students.id = g.student_id
+            AND active_students.school_year_id = ?
+           WHERE g.school_year_id = ?
+             AND active_students.lrn IN (${placeholders})`,
+          [active.id, active.id, ...sourceLrns]
+        );
+      }
 
       copied.students = movedStudents;
     } catch (stepErr) {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   EyeIcon,
   PencilSquareIcon,
@@ -44,6 +44,7 @@ export default function ClassList() {
   const [deleteReason, setDeleteReason] = useState("");
   const [activeSchoolYearId, setActiveSchoolYearId] = useState(() => getTeacherActiveSchoolYearId());
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
+  const lastKnownActiveSchoolYearIdRef = useRef(null);
 
   const isViewOnlyMode = isTeacherViewOnlyMode(selectedSchoolYearId, activeSchoolYearId);
 
@@ -53,38 +54,46 @@ export default function ClassList() {
     ? Math.round(students.reduce((sum, s) => sum + (s.average || 0), 0) / students.length)
     : 0;
 
+  const fetchActiveSchoolYear = async () => {
+    try {
+      const res = await axios.get('/school-years/active');
+      const activeSy = res.data?.data || res.data;
+      if (!activeSy?.id) return;
+
+      const nextActiveId = String(activeSy.id);
+      const previousActiveId = lastKnownActiveSchoolYearIdRef.current;
+
+      setActiveSchoolYearId(nextActiveId);
+      setTeacherActiveSchoolYearId(nextActiveId);
+
+      const shouldAutoFollow =
+        !selectedSchoolYearId ||
+        !previousActiveId ||
+        String(selectedSchoolYearId) === String(previousActiveId);
+
+      if (shouldAutoFollow && String(selectedSchoolYearId || '') !== nextActiveId) {
+        setSelectedSchoolYearId(nextActiveId);
+        setTeacherViewingSchoolYearId(nextActiveId);
+      }
+
+      lastKnownActiveSchoolYearIdRef.current = nextActiveId;
+    } catch (error) {
+      console.warn('Could not load active school year:', error.message);
+    }
+  };
+
   useEffect(() => {
+    fetchActiveSchoolYear();
     fetchStudents();
     
     // Auto-refresh every 15 seconds
     const interval = setInterval(() => {
+      fetchActiveSchoolYear();
       fetchStudents();
     }, 15000);
     
     return () => clearInterval(interval);
   }, [selectedSchoolYearId]);
-
-  useEffect(() => {
-    const fetchActiveSchoolYear = async () => {
-      try {
-        const res = await axios.get('/school-years/active');
-        const activeSy = res.data?.data || res.data;
-        if (activeSy?.id) {
-          const nextActiveId = String(activeSy.id);
-          setActiveSchoolYearId(nextActiveId);
-          setTeacherActiveSchoolYearId(nextActiveId);
-          if (!selectedSchoolYearId) {
-            setSelectedSchoolYearId(nextActiveId);
-            setTeacherViewingSchoolYearId(nextActiveId);
-          }
-        }
-      } catch (error) {
-        console.warn('Could not load active school year:', error.message);
-      }
-    };
-
-    fetchActiveSchoolYear();
-  }, []);
 
   useEffect(() => {
     if (selectedSchoolYearId) {
