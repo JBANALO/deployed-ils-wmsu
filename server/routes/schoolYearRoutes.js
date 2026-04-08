@@ -17,6 +17,9 @@ router.get('/previous-year/leadership', schoolYearController.getPreviousYearLead
 // Copy leadership from previous year into active year
 router.post('/fetch-leadership-from-previous', schoolYearController.fetchLeadershipFromPrevious);
 
+// Copy all core data from a selected school year into active school year
+router.post('/copy-all-from-school-year', schoolYearController.copyAllDataFromSchoolYear);
+
 // Get students by grade (for chart)
 router.get('/students-by-grade', schoolYearController.getStudentsByGrade);
 

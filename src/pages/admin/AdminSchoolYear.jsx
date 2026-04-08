@@ -62,6 +62,7 @@ export default function AdminSchoolYear() {
   const [showPromoteModal, setShowPromoteModal] = useState(false);
   const [showArchivedList, setShowArchivedList] = useState(false);
   const [leadershipFetching, setLeadershipFetching] = useState(false);
+  const [copyingAllData, setCopyingAllData] = useState(false);
   const [selectedSchoolYear, setSelectedSchoolYear] = useState(null);
   const [formData, setFormData] = useState({
     label: '',
@@ -510,6 +511,50 @@ export default function AdminSchoolYear() {
           >
             <ArrowPathIcon className={`w-5 h-5 ${leadershipFetching ? 'animate-spin' : ''}`} />
             Fetch Principal (Prev SY)
+          </button>
+          <button
+            onClick={async () => {
+              if (!activeSchoolYear || !viewingSchoolYear) {
+                toast.error('Active and viewing school years are required.');
+                return;
+              }
+
+              if (Number(activeSchoolYear.id) === Number(viewingSchoolYear.id)) {
+                toast.info('Select a different school year to copy from.');
+                return;
+              }
+
+              const confirmed = window.confirm(
+                `Copy all core data from ${viewingSchoolYear.label} to active ${activeSchoolYear.label}?`
+              );
+              if (!confirmed) return;
+
+              setCopyingAllData(true);
+              try {
+                const res = await axios.post('/school-years/copy-all-from-school-year', {
+                  sourceSchoolYearId: viewingSchoolYear.id
+                });
+
+                const copied = res?.data?.data?.copied || {};
+                toast.success(
+                  `Copied from ${viewingSchoolYear.label}: ` +
+                  `${copied.subjects || 0} subjects, ${copied.sections || 0} sections, ` +
+                  `${copied.teachers || 0} teachers, ${copied.classes || 0} classes, ` +
+                  `${copied.students || 0} students, ${copied.grades || 0} grades.`
+                );
+                await loadData();
+              } catch (e) {
+                toast.error(e.response?.data?.message || 'Failed to copy school year data');
+              } finally {
+                setCopyingAllData(false);
+              }
+            }}
+            disabled={copyingAllData || !activeSchoolYear || !viewingSchoolYear || Number(activeSchoolYear.id) === Number(viewingSchoolYear.id)}
+            className="flex items-center gap-2 bg-yellow-500/90 text-white px-4 py-2 rounded-lg font-semibold hover:bg-yellow-500 transition disabled:opacity-60"
+            title="Copy all core data from selected viewing school year to active school year"
+          >
+            <ArrowPathIcon className={`w-5 h-5 ${copyingAllData ? 'animate-spin' : ''}`} />
+            {copyingAllData ? 'Copying Data...' : 'Copy Viewing SY -> Active'}
           </button>
         </div>
       </div>

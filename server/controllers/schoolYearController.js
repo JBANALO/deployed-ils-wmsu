@@ -126,6 +126,200 @@ exports.fetchLeadershipFromPrevious = async (req, res) => {
   }
 };
 
+// Copy core data from a selected school year into the active school year.
+// This is used when admins need to bring an entire school's setup/data into the current active year.
+exports.copyAllDataFromSchoolYear = async (req, res) => {
+  let connection;
+  try {
+    const sourceSchoolYearId = Number(req.body?.sourceSchoolYearId);
+    if (!Number.isInteger(sourceSchoolYearId) || sourceSchoolYearId <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid sourceSchoolYearId is required.' });
+    }
+
+    connection = await pool.getConnection();
+    const active = await getActiveSchoolYearMeta(connection);
+    if (!active) {
+      return res.status(400).json({ success: false, message: 'No active school year found.' });
+    }
+
+    const source = await getSchoolYearMetaById(connection, sourceSchoolYearId);
+    if (!source) {
+      return res.status(404).json({ success: false, message: 'Source school year not found.' });
+    }
+
+    if (Number(source.id) === Number(active.id)) {
+      return res.status(400).json({ success: false, message: 'Source and target school years are the same.' });
+    }
+
+    await connection.beginTransaction();
+
+    // Copy principal/assistant principal values.
+    const [leadershipRows] = await connection.query(
+      'SELECT principal_name, assistant_principal_name FROM school_years WHERE id = ? LIMIT 1',
+      [source.id]
+    );
+    const leadership = leadershipRows[0] || {};
+
+    await connection.query(
+      `UPDATE school_years
+       SET principal_name = ?, assistant_principal_name = ?
+       WHERE id = ?`,
+      [leadership.principal_name || null, leadership.assistant_principal_name || null, active.id]
+    );
+
+    // Subjects
+    const [subjectsResult] = await connection.query(
+      `INSERT INTO subjects (name, description, grade_levels, school_year_id, is_archived)
+       SELECT s.name, s.description, s.grade_levels, ?, 0
+       FROM subjects s
+       WHERE s.school_year_id = ?
+         AND IFNULL(s.is_archived, 0) = 0
+         AND NOT EXISTS (
+           SELECT 1
+           FROM subjects d
+           WHERE d.school_year_id = ?
+             AND d.name = s.name
+             AND IFNULL(d.grade_levels, '') = IFNULL(s.grade_levels, '')
+         )`,
+      [active.id, source.id, active.id]
+    );
+
+    // Sections
+    const [sectionsResult] = await connection.query(
+      `INSERT INTO sections (name, description, grade_level, school_year_id, is_archived)
+       SELECT s.name, s.description, s.grade_level, ?, 0
+       FROM sections s
+       WHERE s.school_year_id = ?
+         AND IFNULL(s.is_archived, 0) = 0
+         AND NOT EXISTS (
+           SELECT 1
+           FROM sections d
+           WHERE d.school_year_id = ?
+             AND d.name = s.name
+         )`,
+      [active.id, source.id, active.id]
+    );
+
+    // Teachers
+    const [teachersResult] = await connection.query(
+      `INSERT INTO teachers (
+         first_name, middle_name, last_name, username, email, password, role,
+         grade_level, section, subjects, bio, profile_pic, verification_status,
+         sex, contact_number, school_year_id, created_at, updated_at
+       )
+       SELECT
+         t.first_name, t.middle_name, t.last_name, t.username, t.email, t.password, t.role,
+         t.grade_level, t.section, t.subjects, t.bio, t.profile_pic, IFNULL(t.verification_status, 'approved'),
+         t.sex, t.contact_number, ?, NOW(), NOW()
+       FROM teachers t
+       WHERE t.school_year_id = ?
+         AND NOT EXISTS (
+           SELECT 1
+           FROM teachers d
+           WHERE d.school_year_id = ?
+             AND (d.email = t.email OR d.username = t.username)
+         )`,
+      [active.id, source.id, active.id]
+    );
+
+    // Classes
+    const [classesResult] = await connection.query(
+      `INSERT INTO classes (id, grade, section, adviser_id, adviser_name, school_year_id, createdAt)
+       SELECT UUID(), c.grade, c.section, NULL, NULL, ?, NOW()
+       FROM classes c
+       WHERE c.school_year_id = ?
+         AND NOT EXISTS (
+           SELECT 1
+           FROM classes d
+           WHERE d.school_year_id = ?
+             AND d.grade = c.grade
+             AND d.section = c.section
+         )`,
+      [active.id, source.id, active.id]
+    );
+
+    // Students
+    const [studentsResult] = await connection.query(
+      `INSERT INTO students (
+         lrn, first_name, middle_name, last_name, age, birth_date, sex,
+         grade_level, section, parent_first_name, parent_last_name,
+         parent_email, parent_contact, student_email, password,
+         profile_pic, qr_code, status, created_by, school_year_id, created_at, updated_at
+       )
+       SELECT
+         s.lrn, s.first_name, s.middle_name, s.last_name, s.age, s.birth_date, s.sex,
+         s.grade_level, s.section, s.parent_first_name, s.parent_last_name,
+         s.parent_email, s.parent_contact, s.student_email, s.password,
+         s.profile_pic, s.qr_code, IFNULL(s.status, 'Active'), IFNULL(s.created_by, 'system-copy'), ?, NOW(), NOW()
+       FROM students s
+       WHERE s.school_year_id = ?
+         AND s.lrn IS NOT NULL
+         AND s.lrn <> ''
+         AND NOT EXISTS (
+           SELECT 1
+           FROM students d
+           WHERE d.school_year_id = ?
+             AND d.lrn = s.lrn
+         )`,
+      [active.id, source.id, active.id]
+    );
+
+    // Grades (mapped by student LRN from source->target)
+    const [gradesResult] = await connection.query(
+      `INSERT INTO grades (student_id, subject, quarter, grade, teacher_id, school_year_id, created_at, updated_at)
+       SELECT ns.id, g.subject, g.quarter, g.grade, g.teacher_id, ?, NOW(), NOW()
+       FROM grades g
+       INNER JOIN students os
+         ON os.id = g.student_id
+        AND os.school_year_id = ?
+       INNER JOIN students ns
+         ON ns.lrn = os.lrn
+        AND ns.school_year_id = ?
+       WHERE g.school_year_id = ?
+         AND NOT EXISTS (
+           SELECT 1
+           FROM grades dg
+           WHERE dg.student_id = ns.id
+             AND dg.subject = g.subject
+             AND dg.quarter = g.quarter
+             AND dg.school_year_id = ?
+         )`,
+      [active.id, source.id, active.id, source.id, active.id]
+    );
+
+    await connection.commit();
+
+    res.json({
+      success: true,
+      message: 'School year data copied successfully.',
+      data: {
+        sourceSchoolYearId: source.id,
+        targetSchoolYearId: active.id,
+        copied: {
+          subjects: Number(subjectsResult?.affectedRows || 0),
+          sections: Number(sectionsResult?.affectedRows || 0),
+          teachers: Number(teachersResult?.affectedRows || 0),
+          classes: Number(classesResult?.affectedRows || 0),
+          students: Number(studentsResult?.affectedRows || 0),
+          grades: Number(gradesResult?.affectedRows || 0)
+        }
+      }
+    });
+  } catch (error) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        console.error('Rollback failed:', rollbackError);
+      }
+    }
+    console.error('Error copying school year data:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to copy school year data' });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
 // Get active school year
 exports.getActiveSchoolYear = async (req, res) => {
   try {
