@@ -236,82 +236,42 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
     );
 
     try {
-      const [sourceTeachers] = await connection.query(
-        `SELECT
-           t.first_name, t.middle_name, t.last_name, t.username, t.email, t.password, t.role,
-           t.grade_level, t.section, t.subjects, t.bio, t.profile_pic, t.verification_status
-         FROM teachers t
+      // Move teachers from source SY into active SY. This is safer than cloning because
+      // username/email are globally unique in many deployments.
+      const [teacherMoveResult] = await connection.query(
+        `UPDATE teachers t
+         SET t.school_year_id = ?, t.updated_at = NOW()
          WHERE (
-              t.school_year_id = ?
-              OR (
-                t.school_year_id IS NULL
-                AND ? IS NOT NULL
-                AND ? IS NOT NULL
-                AND DATE(COALESCE(t.created_at, NOW())) BETWEEN ? AND ?
-              )
-         )`,
-        [source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate]
+               t.school_year_id = ?
+               OR (
+                 t.school_year_id IS NULL
+                 AND ? IS NOT NULL
+                 AND ? IS NOT NULL
+                 AND DATE(COALESCE(t.created_at, NOW())) BETWEEN ? AND ?
+               )
+         )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM teachers x
+             WHERE x.id <> t.id
+               AND x.school_year_id = ?
+               AND (
+                 (t.email IS NOT NULL AND x.email = t.email)
+                 OR (t.username IS NOT NULL AND x.username = t.username)
+               )
+           )`,
+        [active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate, active.id]
       );
 
-      let insertedTeachers = 0;
-      for (const t of sourceTeachers || []) {
-        const email = t?.email || null;
-        const username = t?.username || null;
-
-        if (!email && !username) {
-          continue;
-        }
-
-        const [dupRows] = await connection.query(
-          `SELECT id FROM teachers
-           WHERE (? IS NOT NULL AND email = ?)
-              OR (? IS NOT NULL AND username = ?)
-           LIMIT 1`,
-          [email, email, username, username]
-        );
-
-        if (dupRows.length > 0) {
-          continue;
-        }
-
-        await connection.query(
-          `INSERT INTO teachers (
-             first_name, middle_name, last_name, username, email, password, role,
-             grade_level, section, subjects, bio, profile_pic, verification_status,
-             school_year_id, created_at, updated_at
-           )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-          [
-            t.first_name || '',
-            t.middle_name || null,
-            t.last_name || '',
-            username,
-            email,
-            t.password || null,
-            t.role || 'teacher',
-            t.grade_level || null,
-            t.section || null,
-            t.subjects || null,
-            t.bio || null,
-            t.profile_pic || null,
-            t.verification_status || 'approved',
-            active.id
-          ]
-        );
-
-        insertedTeachers += 1;
-      }
-
-      copied.teachers = insertedTeachers;
+      copied.teachers = Number(teacherMoveResult?.affectedRows || 0);
     } catch (stepErr) {
       warnings.push(`teachers: ${stepErr.message}`);
     }
 
     await runStep(
       'classes',
-      `INSERT INTO classes (id, grade, section, adviser_id, school_year_id, createdAt)
-       SELECT UUID(), c.grade, c.section, NULL, ?, NOW()
-       FROM classes c
+      `UPDATE classes c
+       SET c.school_year_id = ?
        WHERE (
             c.school_year_id = ?
             OR (
@@ -320,15 +280,8 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
               AND ? IS NOT NULL
               AND DATE(COALESCE(c.createdAt, NOW())) BETWEEN ? AND ?
             )
-       )
-         AND NOT EXISTS (
-           SELECT 1
-           FROM classes d
-           WHERE d.school_year_id = ?
-             AND d.grade = c.grade
-             AND d.section = c.section
-         )`,
-      [active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate, active.id],
+       )`,
+      [active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate],
       'classes'
     );
 
