@@ -151,6 +151,9 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Source and target school years are the same.' });
     }
 
+    const sourceStartDate = source.start_date ? String(source.start_date).slice(0, 10) : null;
+    const sourceEndDate = source.end_date ? String(source.end_date).slice(0, 10) : null;
+
     const warnings = [];
     const copied = {
       subjects: 0,
@@ -186,7 +189,15 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
       `INSERT INTO subjects (name, description, grade_levels, school_year_id, is_archived)
        SELECT s.name, s.description, s.grade_levels, ?, 0
        FROM subjects s
-       WHERE s.school_year_id = ?
+       WHERE (
+            s.school_year_id = ?
+            OR (
+              s.school_year_id IS NULL
+              AND ? IS NOT NULL
+              AND ? IS NOT NULL
+              AND DATE(COALESCE(s.created_at, NOW())) BETWEEN ? AND ?
+            )
+       )
          AND IFNULL(s.is_archived, 0) = 0
          AND NOT EXISTS (
            SELECT 1
@@ -195,7 +206,7 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
              AND d.name = s.name
              AND IFNULL(d.grade_levels, '') = IFNULL(s.grade_levels, '')
          )`,
-      [active.id, source.id, active.id],
+      [active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate, active.id],
       'subjects'
     );
 
@@ -204,7 +215,15 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
       `INSERT INTO sections (name, description, grade_level, school_year_id, is_archived)
        SELECT s.name, s.description, s.grade_level, ?, 0
        FROM sections s
-       WHERE s.school_year_id = ?
+       WHERE (
+            s.school_year_id = ?
+            OR (
+              s.school_year_id IS NULL
+              AND ? IS NOT NULL
+              AND ? IS NOT NULL
+              AND DATE(COALESCE(s.created_at, NOW())) BETWEEN ? AND ?
+            )
+       )
          AND IFNULL(s.is_archived, 0) = 0
          AND NOT EXISTS (
            SELECT 1
@@ -212,7 +231,7 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
            WHERE d.school_year_id = ?
              AND d.name = s.name
          )`,
-      [active.id, source.id, active.id],
+      [active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate, active.id],
       'sections'
     );
 
@@ -228,14 +247,22 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
          t.grade_level, t.section, t.subjects, t.bio, t.profile_pic, IFNULL(t.verification_status, 'approved'),
          ?, NOW(), NOW()
        FROM teachers t
-       WHERE t.school_year_id = ?
+       WHERE (
+            t.school_year_id = ?
+            OR (
+              t.school_year_id IS NULL
+              AND ? IS NOT NULL
+              AND ? IS NOT NULL
+              AND DATE(COALESCE(t.created_at, NOW())) BETWEEN ? AND ?
+            )
+       )
          AND NOT EXISTS (
            SELECT 1
            FROM teachers d
            WHERE d.school_year_id = ?
              AND (d.email = t.email OR d.username = t.username)
          )`,
-      [active.id, source.id, active.id],
+      [active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate, active.id],
       'teachers'
     );
 
@@ -244,7 +271,15 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
       `INSERT INTO classes (id, grade, section, adviser_id, school_year_id, createdAt)
        SELECT UUID(), c.grade, c.section, NULL, ?, NOW()
        FROM classes c
-       WHERE c.school_year_id = ?
+       WHERE (
+            c.school_year_id = ?
+            OR (
+              c.school_year_id IS NULL
+              AND ? IS NOT NULL
+              AND ? IS NOT NULL
+              AND DATE(COALESCE(c.createdAt, NOW())) BETWEEN ? AND ?
+            )
+       )
          AND NOT EXISTS (
            SELECT 1
            FROM classes d
@@ -252,7 +287,7 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
              AND d.grade = c.grade
              AND d.section = c.section
          )`,
-      [active.id, source.id, active.id],
+      [active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate, active.id],
       'classes'
     );
 
@@ -270,7 +305,15 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
          s.parent_email, s.parent_contact, s.student_email, s.password,
          s.profile_pic, s.qr_code, IFNULL(s.status, 'Active'), IFNULL(s.created_by, 'system-copy'), ?, NOW(), NOW()
        FROM students s
-       WHERE s.school_year_id = ?
+       WHERE (
+            s.school_year_id = ?
+            OR (
+              s.school_year_id IS NULL
+              AND ? IS NOT NULL
+              AND ? IS NOT NULL
+              AND DATE(COALESCE(s.created_at, NOW())) BETWEEN ? AND ?
+            )
+       )
          AND s.lrn IS NOT NULL
          AND s.lrn <> ''
          AND NOT EXISTS (
@@ -279,7 +322,7 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
            WHERE d.school_year_id = ?
              AND d.lrn = s.lrn
          )`,
-      [active.id, source.id, active.id],
+      [active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate, active.id],
       'students'
     );
 
@@ -290,11 +333,27 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
        FROM grades g
        INNER JOIN students os
          ON os.id = g.student_id
-        AND os.school_year_id = ?
+        AND (
+             os.school_year_id = ?
+             OR (
+               os.school_year_id IS NULL
+               AND ? IS NOT NULL
+               AND ? IS NOT NULL
+               AND DATE(COALESCE(os.created_at, NOW())) BETWEEN ? AND ?
+             )
+        )
        INNER JOIN students ns
          ON ns.lrn = os.lrn
         AND ns.school_year_id = ?
-       WHERE g.school_year_id = ?
+       WHERE (
+            g.school_year_id = ?
+            OR (
+              g.school_year_id IS NULL
+              AND ? IS NOT NULL
+              AND ? IS NOT NULL
+              AND DATE(COALESCE(g.created_at, NOW())) BETWEEN ? AND ?
+            )
+       )
          AND NOT EXISTS (
            SELECT 1
            FROM grades dg
@@ -303,7 +362,21 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
              AND dg.quarter = g.quarter
              AND dg.school_year_id = ?
          )`,
-      [active.id, source.id, active.id, source.id, active.id],
+      [
+        active.id,
+        source.id,
+        sourceStartDate,
+        sourceEndDate,
+        sourceStartDate,
+        sourceEndDate,
+        active.id,
+        source.id,
+        sourceStartDate,
+        sourceEndDate,
+        sourceStartDate,
+        sourceEndDate,
+        active.id
+      ],
       'grades'
     );
 
@@ -846,7 +919,7 @@ async function getSchoolYearMetaById(conn, schoolYearId) {
   const id = Number(schoolYearId);
   if (!Number.isInteger(id) || id <= 0) return null;
   const [rows] = await conn.query(
-    'SELECT id, label FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1',
+    'SELECT id, label, start_date, end_date FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1',
     [id]
   );
   return rows[0] || null;

@@ -536,12 +536,30 @@ export default function AdminSchoolYear() {
                 });
 
                 const copied = res?.data?.data?.copied || {};
+                const warnings = Array.isArray(res?.data?.data?.warnings) ? res.data.data.warnings : [];
+                const totalCopied =
+                  (copied.subjects || 0) +
+                  (copied.sections || 0) +
+                  (copied.teachers || 0) +
+                  (copied.classes || 0) +
+                  (copied.students || 0) +
+                  (copied.grades || 0);
+
                 toast.success(
                   `Copied from ${viewingSchoolYear.label}: ` +
                   `${copied.subjects || 0} subjects, ${copied.sections || 0} sections, ` +
                   `${copied.teachers || 0} teachers, ${copied.classes || 0} classes, ` +
                   `${copied.students || 0} students, ${copied.grades || 0} grades.`
                 );
+
+                if (totalCopied === 0) {
+                  toast.info('No matching rows found for the selected school year filter.');
+                }
+
+                if (warnings.length > 0) {
+                  toast.warn(`Copy warnings: ${warnings[0]}`);
+                }
+
                 await loadData();
               } catch (e) {
                 toast.error(e.response?.data?.message || 'Failed to copy school year data');
