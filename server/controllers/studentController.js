@@ -595,7 +595,7 @@ exports.getStudents = async (req, res) => {
     }
 
     // No teacherId — return all students (admin/web use)
-    const allDbStudents = await query(`SELECT s.*,
+    const averageSelectSql = `SELECT s.*,
       (SELECT ROUND(AVG(g.grade), 2)
        FROM grades g
        WHERE g.student_id = s.id
@@ -630,15 +630,40 @@ exports.getStudents = async (req, res) => {
          AND g.grade > 0
          AND g.school_year_id = ?
          AND (? IS NULL OR (g.created_at IS NOT NULL AND DATE(g.created_at) >= DATE(?)))) AS q4_avg
-     FROM students s WHERE s.school_year_id = ? ORDER BY s.created_at DESC`,
-     [
+     FROM students s`;
+
+    const averageParams = [
        targetSy.id, targetSy.start_date || null, targetSy.start_date || null,
        targetSy.id, targetSy.start_date || null, targetSy.start_date || null,
        targetSy.id, targetSy.start_date || null, targetSy.start_date || null,
        targetSy.id, targetSy.start_date || null, targetSy.start_date || null,
-       targetSy.id, targetSy.start_date || null, targetSy.start_date || null,
-       targetSy.id
-     ]);
+       targetSy.id, targetSy.start_date || null, targetSy.start_date || null
+     ];
+
+    let allDbStudents = await query(
+      `${averageSelectSql}
+       WHERE s.school_year_id = ?
+       ORDER BY s.created_at DESC`,
+      [...averageParams, targetSy.id]
+    );
+
+    // Recovery fallback for historical/year-view screens:
+    // if explicit school year is requested and no student rows are tied to that SY,
+    // derive list from grades recorded in that school year using current student profiles.
+    if (allDbStudents.length === 0 && schoolYearId) {
+      allDbStudents = await query(
+        `${averageSelectSql}
+         WHERE EXISTS (
+           SELECT 1
+           FROM grades gx
+           WHERE gx.student_id = s.id
+             AND gx.school_year_id = ?
+         )
+         ORDER BY s.created_at DESC`,
+        [...averageParams, targetSy.id]
+      );
+    }
+
     const formattedStudents = allDbStudents.map(formatStudent);
     res.status(200).json({ status: 'success', data: formattedStudents });
   } catch (error) {
@@ -1108,6 +1133,86 @@ exports.getStudent = async (req, res) => {
         .filter(Boolean);
     } catch (scheduleHistoryErr) {
       console.log('previous schedule history lookup skipped:', scheduleHistoryErr.message);
+    }
+
+    // Fallback: build previous schedule history from historical school years where grades exist
+    // (covers cases where promotion snapshot details_json is unavailable).
+    if (previousScheduleHistory.length === 0) {
+      try {
+        const historicalSchoolYears = await query(
+          `SELECT DISTINCT g.school_year_id, sy.label AS school_year_label
+           FROM grades g
+           LEFT JOIN school_years sy ON sy.id = g.school_year_id
+           WHERE g.student_id = ?
+             AND g.school_year_id IS NOT NULL
+             AND g.school_year_id <> ?
+           ORDER BY g.school_year_id DESC`,
+          [studentId, targetSy.id]
+        );
+
+        for (const syRow of historicalSchoolYears || []) {
+          const historicalSyId = Number(syRow?.school_year_id || 0);
+          if (!historicalSyId) continue;
+
+          const siblingInSy = siblingStudentRows.find(
+            (row) => Number(row?.school_year_id || 0) === historicalSyId
+          );
+
+          const fromGrade = siblingInSy?.grade_level || null;
+          const fromSection = siblingInSy?.section || null;
+          const scheduleGrade = fromGrade || student.grade_level;
+          const scheduleSection = fromSection || student.section;
+          if (!scheduleGrade || !scheduleSection) continue;
+
+          const scheduleClassSlug = `${String(scheduleGrade).toLowerCase().replace(/\s+/g, '-')}-${String(scheduleSection).toLowerCase()}`;
+          const classIdCandidates = new Set([scheduleClassSlug]);
+
+          try {
+            const classRows = await query(
+              `SELECT id
+               FROM classes
+               WHERE school_year_id = ?
+                 AND (grade = ? OR grade = ? OR REPLACE(LOWER(grade), 'grade ', '') = LOWER(?))
+                 AND section = ?`,
+              [historicalSyId, scheduleGrade, toGradeKey(scheduleGrade), toGradeKey(scheduleGrade), scheduleSection]
+            );
+
+            classRows.forEach((row) => {
+              if (row?.id) classIdCandidates.add(String(row.id));
+            });
+          } catch (classResolveErr) {
+            console.log('historical schedule class lookup skipped:', classResolveErr.message);
+          }
+
+          const classIdList = Array.from(classIdCandidates).filter(Boolean);
+          if (classIdList.length === 0) continue;
+
+          const placeholders = classIdList.map(() => '?').join(',');
+          const historicalSchedule = await query(
+            `SELECT subject, teacher_name, day, start_time, end_time
+             FROM subject_teachers
+             WHERE school_year_id = ?
+               AND class_id IN (${placeholders})
+             ORDER BY FIELD(day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'), start_time`,
+            [historicalSyId, ...classIdList]
+          );
+
+          if (!Array.isArray(historicalSchedule) || historicalSchedule.length === 0) continue;
+
+          previousScheduleHistory.push({
+            fromGrade,
+            fromSection,
+            toGrade: student.grade_level || null,
+            toSection: student.section || null,
+            status: 'historical',
+            promotedAt: null,
+            schoolYearLabel: syRow?.school_year_label || null,
+            schedule: historicalSchedule
+          });
+        }
+      } catch (historicalScheduleErr) {
+        console.log('historical previous schedule fallback skipped:', historicalScheduleErr.message);
+      }
     }
     
     // Also get adviser info for the class with fallbacks for legacy/alternate class IDs.

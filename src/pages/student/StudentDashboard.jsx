@@ -1291,6 +1291,7 @@ const StudentPortal = () => {
                               {record.fromSection ? ` - ${record.fromSection}` : ''}
                               {' '}→ {record.toGrade || 'Next Grade'}
                               {record.toSection ? ` - ${record.toSection}` : ''}
+                              {record.schoolYearLabel ? ` (${record.schoolYearLabel})` : ''}
                             </p>
                             {record.promotedAt && (
                               <p className="text-xs text-gray-500">
