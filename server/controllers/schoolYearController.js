@@ -235,36 +235,77 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
       'sections'
     );
 
-    await runStep(
-      'teachers',
-      `INSERT INTO teachers (
-         first_name, middle_name, last_name, username, email, password, role,
-         grade_level, section, subjects, bio, profile_pic, verification_status,
-         school_year_id, created_at, updated_at
-       )
-       SELECT
-         t.first_name, t.middle_name, t.last_name, t.username, t.email, t.password, t.role,
-         t.grade_level, t.section, t.subjects, t.bio, t.profile_pic, IFNULL(t.verification_status, 'approved'),
-         ?, NOW(), NOW()
-       FROM teachers t
-       WHERE (
-            t.school_year_id = ?
-            OR (
-              t.school_year_id IS NULL
-              AND ? IS NOT NULL
-              AND ? IS NOT NULL
-              AND DATE(COALESCE(t.created_at, NOW())) BETWEEN ? AND ?
-            )
-       )
-         AND NOT EXISTS (
-           SELECT 1
-           FROM teachers d
-           WHERE d.school_year_id = ?
-             AND (d.email = t.email OR d.username = t.username)
+    try {
+      const [sourceTeachers] = await connection.query(
+        `SELECT
+           t.first_name, t.middle_name, t.last_name, t.username, t.email, t.password, t.role,
+           t.grade_level, t.section, t.subjects, t.bio, t.profile_pic, t.verification_status
+         FROM teachers t
+         WHERE (
+              t.school_year_id = ?
+              OR (
+                t.school_year_id IS NULL
+                AND ? IS NOT NULL
+                AND ? IS NOT NULL
+                AND DATE(COALESCE(t.created_at, NOW())) BETWEEN ? AND ?
+              )
          )`,
-      [active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate, active.id],
-      'teachers'
-    );
+        [source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate]
+      );
+
+      let insertedTeachers = 0;
+      for (const t of sourceTeachers || []) {
+        const email = t?.email || null;
+        const username = t?.username || null;
+
+        if (!email && !username) {
+          continue;
+        }
+
+        const [dupRows] = await connection.query(
+          `SELECT id FROM teachers
+           WHERE (? IS NOT NULL AND email = ?)
+              OR (? IS NOT NULL AND username = ?)
+           LIMIT 1`,
+          [email, email, username, username]
+        );
+
+        if (dupRows.length > 0) {
+          continue;
+        }
+
+        await connection.query(
+          `INSERT INTO teachers (
+             first_name, middle_name, last_name, username, email, password, role,
+             grade_level, section, subjects, bio, profile_pic, verification_status,
+             school_year_id, created_at, updated_at
+           )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          [
+            t.first_name || '',
+            t.middle_name || null,
+            t.last_name || '',
+            username,
+            email,
+            t.password || null,
+            t.role || 'teacher',
+            t.grade_level || null,
+            t.section || null,
+            t.subjects || null,
+            t.bio || null,
+            t.profile_pic || null,
+            t.verification_status || 'approved',
+            active.id
+          ]
+        );
+
+        insertedTeachers += 1;
+      }
+
+      copied.teachers = insertedTeachers;
+    } catch (stepErr) {
+      warnings.push(`teachers: ${stepErr.message}`);
+    }
 
     await runStep(
       'classes',
