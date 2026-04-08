@@ -75,6 +75,7 @@ export default function EditGrades() {
   const [isGradeLocked, setIsGradeLocked] = useState(false);
   const [lockReason, setLockReason] = useState("");
   const [quarterEndDates, setQuarterEndDates] = useState({ q1: null, q2: null, q3: null, q4: null });
+  const [gradeEditLocks, setGradeEditLocks] = useState({});
   const [showReportCard, setShowReportCard] = useState(false);
   const [reportCardStudent, setReportCardStudent] = useState(null); // null = all students, array = selected students
   const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
@@ -210,31 +211,62 @@ export default function EditGrades() {
     return map[qKey] || qKey?.toUpperCase() || '';
   };
 
+  const isEditWindowLocked = (subject, qKey) => {
+    return Boolean(gradeEditLocks?.[subject]?.[qKey]?.expired);
+  };
+
   useEffect(() => {
     if (!showGradeModal || !selectedStudent) return;
 
     const quarterOrder = ['q1', 'q2', 'q3', 'q4'];
     const relevantQuarters = selectedQuarter === 'all'
       ? quarterOrder
-      : quarterOrder.slice(0, quarterOrder.indexOf(selectedQuarter) + 1);
+      : [selectedQuarter];
     const closedQuarters = relevantQuarters.filter((q) => isQuarterClosed(q));
+    const modalSubjects = Object.keys(gradeData || {}).filter((subject) => subject !== 'Total Q1');
+    const quarterFullyLockedByWindow = (qKey) => {
+      if (modalSubjects.length === 0) return false;
+      let hasLocked = false;
+      let hasEditable = false;
+      modalSubjects.forEach((subject) => {
+        if (isEditWindowLocked(subject, qKey)) {
+          hasLocked = true;
+        } else {
+          hasEditable = true;
+        }
+      });
+      return hasLocked && !hasEditable;
+    };
+    const windowLockedQuarters = relevantQuarters.filter((q) => quarterFullyLockedByWindow(q));
 
     if (selectedQuarter === 'all') {
-      const allClosed = relevantQuarters.length > 0 && closedQuarters.length === relevantQuarters.length;
-      setIsGradeLocked(allClosed);
-      if (allClosed) {
-        setLockReason('All quarters are already closed for editing.');
-      } else if (closedQuarters.length > 0) {
-        setLockReason(`${closedQuarters.map(quarterLabel).join(', ')} are closed. You can still edit open quarters.`);
+      const lockedQuarterSet = new Set([...closedQuarters, ...windowLockedQuarters]);
+      const allLocked = relevantQuarters.length > 0 && relevantQuarters.every((q) => lockedQuarterSet.has(q));
+      setIsGradeLocked(allLocked);
+
+      if (allLocked) {
+        setLockReason('All quarters are closed or beyond the 24-hour edit window.');
+      } else if (lockedQuarterSet.size > 0) {
+        const labels = [...lockedQuarterSet].map(quarterLabel).join(', ');
+        setLockReason(`${labels} are locked. You can still edit open quarters within 24 hours.`);
       } else {
         setLockReason('');
       }
     } else {
       const quarterClosed = isQuarterClosed(selectedQuarter);
-      setIsGradeLocked(quarterClosed);
-      setLockReason(quarterClosed ? `${quarterLabel(selectedQuarter)} is already closed for editing.` : '');
+      const quarterWindowLocked = quarterFullyLockedByWindow(selectedQuarter);
+      const fullyLocked = quarterClosed || quarterWindowLocked;
+      setIsGradeLocked(fullyLocked);
+
+      if (quarterClosed) {
+        setLockReason(`${quarterLabel(selectedQuarter)} is already closed for editing.`);
+      } else if (quarterWindowLocked) {
+        setLockReason(`${quarterLabel(selectedQuarter)} can only be edited within 24 hours after last save.`);
+      } else {
+        setLockReason('');
+      }
     }
-  }, [showGradeModal, selectedStudent, selectedQuarter, quarterEndDates, userRole]);
+  }, [showGradeModal, selectedStudent, selectedQuarter, quarterEndDates, userRole, gradeEditLocks, gradeData]);
 
   // Update available sections when grade level changes
   useEffect(() => {
@@ -480,6 +512,7 @@ export default function EditGrades() {
   // Open grade modal for a student
   const openGradeModal = async (student) => {
     setSelectedStudent(student);
+    setGradeEditLocks({});
 
     const quarterOrder = ['q1', 'q2', 'q3', 'q4'];
     const relevantQuarters = selectedQuarter === 'all'
@@ -601,8 +634,16 @@ export default function EditGrades() {
     // Fetch grades from API
     let studentGrades = {};
     try {
-      const gradesResponse = await api.get(`/students/${student.id}/grades`, { params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {} });
-      studentGrades = gradesResponse.data || {};
+      const gradeParams = {
+        ...(selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}),
+        includeLocks: 1
+      };
+      const gradesResponse = await api.get(`/students/${student.id}/grades`, { params: gradeParams });
+      const payload = gradesResponse.data || {};
+      setGradeEditLocks(payload.__meta?.editWindowLocks || {});
+      studentGrades = Object.fromEntries(
+        Object.entries(payload).filter(([key]) => key !== '__meta')
+      );
       console.log('Fetched grades from API:', studentGrades);
     } catch (error) {
       console.error('Error fetching grades:', error);
@@ -1304,7 +1345,8 @@ export default function EditGrades() {
                               {quartersToShow.map(q => {
                                 const quarterClosed = isQuarterClosed(q);
                                 const lockedByQuarterSelection = !isEditableQ(q);
-                                const editable = canEdit && !lockedByQuarterSelection && !isGradeLocked && !isViewOnlyMode && !quarterClosed;
+                                const editWindowLocked = isEditWindowLocked(subject, q);
+                                const editable = canEdit && !lockedByQuarterSelection && !editWindowLocked && !isGradeLocked && !isViewOnlyMode && !quarterClosed;
                                 const val = gradeData[subject]?.[q];
                                 const hasVal = val && val !== 0 && val !== '';
                                 return (
@@ -1327,8 +1369,8 @@ export default function EditGrades() {
                                           )}
                                         </>
                                       ) : (
-                                        <span className={`text-base font-semibold ${(quarterClosed || lockedByQuarterSelection) ? 'text-red-500' : (hasVal ? 'text-gray-700' : 'text-gray-300')}`}>
-                                          {hasVal ? val : ((quarterClosed || lockedByQuarterSelection) ? 'Closed' : '—')}
+                                        <span className={`text-base font-semibold ${(quarterClosed || lockedByQuarterSelection || editWindowLocked) ? 'text-red-500' : (hasVal ? 'text-gray-700' : 'text-gray-300')}`}>
+                                          {hasVal ? val : (editWindowLocked ? '24h lock' : ((quarterClosed || lockedByQuarterSelection) ? 'Closed' : '—'))}
                                         </span>
                                       )}
                                     </div>

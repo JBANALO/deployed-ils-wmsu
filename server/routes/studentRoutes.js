@@ -77,6 +77,23 @@ const quarterLabel = (qKey = '') => {
   return map[String(qKey || '').toLowerCase()] || String(qKey || '').toUpperCase();
 };
 
+const EDIT_WINDOW_HOURS = 24;
+const EDIT_WINDOW_MS = EDIT_WINDOW_HOURS * 60 * 60 * 1000;
+
+const getEditWindowExpiry = (gradeRow) => {
+  const baseRaw = gradeRow?.updated_at || gradeRow?.created_at;
+  if (!baseRaw) return null;
+  const baseDate = new Date(baseRaw);
+  if (Number.isNaN(baseDate.getTime())) return null;
+  return new Date(baseDate.getTime() + EDIT_WINDOW_MS);
+};
+
+const isEditWindowExpired = (gradeRow, now = new Date()) => {
+  const expiry = getEditWindowExpiry(gradeRow);
+  if (!expiry) return false;
+  return now > expiry;
+};
+
 const sanitizeEmail = (value = '') => {
   const email = String(value || '').trim();
   if (!email) return '';
@@ -327,6 +344,64 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
               });
             }
           }
+        }
+      }
+    }
+
+    const attemptedGradeEntries = [];
+    for (const [subject, gradeValue] of Object.entries(grades || {})) {
+      if (typeof gradeValue === 'object' && gradeValue !== null) {
+        Object.entries(gradeValue).forEach(([qKey, gValue]) => {
+          if (gValue && Number(gValue) > 0) {
+            attemptedGradeEntries.push({
+              subject: String(subject || '').trim(),
+              quarter: String(qKey || '').toUpperCase()
+            });
+          }
+        });
+      } else if (gradeValue && Number(gradeValue) > 0) {
+        attemptedGradeEntries.push({
+          subject: String(subject || '').trim(),
+          quarter: String(quarter || 'q1').toUpperCase()
+        });
+      }
+    }
+
+    // Enforce 24-hour edit window for non-admin users when editing an existing grade row.
+    if (normalizedRoleForDeadline !== 'admin' && attemptedGradeEntries.length > 0) {
+      const uniqueSubjects = [...new Set(attemptedGradeEntries.map((entry) => entry.subject).filter(Boolean))];
+      if (uniqueSubjects.length > 0) {
+        const subjectPlaceholders = uniqueSubjects.map(() => '?').join(', ');
+        const existingRows = await query(
+          `SELECT subject, quarter, created_at, updated_at
+           FROM grades
+           WHERE student_id = ?
+             AND school_year_id = ?
+             AND subject IN (${subjectPlaceholders})`,
+          [id, targetSyId, ...uniqueSubjects]
+        );
+
+        const normalizeSubjectKey = (value = '') => String(value || '').trim().toLowerCase();
+        const rowByKey = new Map(
+          (existingRows || []).map((row) => [
+            `${normalizeSubjectKey(row.subject)}||${String(row.quarter || '').toUpperCase()}`,
+            row
+          ])
+        );
+
+        const now = new Date();
+        const expiredEntry = attemptedGradeEntries.find((entry) => {
+          const key = `${normalizeSubjectKey(entry.subject)}||${String(entry.quarter || '').toUpperCase()}`;
+          const existing = rowByKey.get(key);
+          return existing && isEditWindowExpired(existing, now);
+        });
+
+        if (expiredEntry) {
+          return res.status(403).json({
+            success: false,
+            error: 'Edit window expired',
+            message: `${expiredEntry.subject} (${quarterLabel(String(expiredEntry.quarter || '').toLowerCase())}) can only be edited within ${EDIT_WINDOW_HOURS} hours after last save.`
+          });
         }
       }
     }
@@ -659,7 +734,7 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
     await ensureStudentSchoolYearColumn();
     await ensureGradesSchoolYearColumn();
     const { id } = req.params;
-    const { schoolYearId } = req.query;
+    const { schoolYearId, includeLocks } = req.query;
     const [studentRow] = await query('SELECT id, school_year_id, grade_level, section FROM students WHERE id = ?', [id]);
     const targetSyId = schoolYearId || studentRow?.school_year_id || (await getActiveSchoolYear())?.id;
     const [targetSyRow] = await query('SELECT id, start_date FROM school_years WHERE id = ? LIMIT 1', [targetSyId]);
@@ -691,7 +766,9 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
 
     // grades table: each row is one subject + quarter combo
     // Need to restructure: { "Filipino": { q1: 90, q2: 85, ... }, "English": { q1: 88, ... } }
+    const includeEditWindowLocks = String(includeLocks || '').toLowerCase() === '1' || String(includeLocks || '').toLowerCase() === 'true';
     const result = {};
+    const editWindowLocks = {};
     if (grades) {
       grades.forEach(r => {
         if (!result[r.subject]) {
@@ -700,6 +777,18 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
         // Map quarter name to key (Q1 -> q1, etc.)
         const quarterKey = r.quarter.toLowerCase();
         result[r.subject][quarterKey] = parseFloat(r.grade) || 0;
+
+        if (includeEditWindowLocks) {
+          if (!editWindowLocks[r.subject]) editWindowLocks[r.subject] = {};
+          const expiry = getEditWindowExpiry(r);
+          const expired = isEditWindowExpired(r);
+          editWindowLocks[r.subject][quarterKey] = {
+            expired,
+            editable: !expired,
+            expiresAt: expiry ? expiry.toISOString() : null,
+            reason: expired ? `This grade can only be edited within ${EDIT_WINDOW_HOURS} hours after last save.` : ''
+          };
+        }
       });
       // Calculate averages
       for (const subject of Object.keys(result)) {
@@ -707,6 +796,16 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
         const vals = [g.q1, g.q2, g.q3, g.q4].filter(v => v > 0);
         g.average = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
       }
+    }
+
+    if (includeEditWindowLocks) {
+      return res.json({
+        ...result,
+        __meta: {
+          editWindowHours: EDIT_WINDOW_HOURS,
+          editWindowLocks
+        }
+      });
     }
 
     res.json(result);
