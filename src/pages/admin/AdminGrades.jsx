@@ -5,6 +5,14 @@ import { toast } from 'react-toastify';
 import { useSchoolYear } from "../../context/SchoolYearContext";
 import AdminForm137Print from "../../components/admin/AdminForm137Print";
 
+const QUARTER_KEYS = ['q1', 'q2', 'q3', 'q4'];
+const QUARTER_LABELS = {
+  q1: 'Q1',
+  q2: 'Q2',
+  q3: 'Q3',
+  q4: 'Q4'
+};
+
 // DepEd K-12 Subjects
 const DEPED_SUBJECTS = {
   "Kindergarten": ["Filipino", "English", "Mathematics", "Values Education", "Music", "Arts", "Physical Education"],
@@ -233,11 +241,12 @@ export default function AdminGrades() {
     const initialGrades = {};
     subjects.forEach(subject => {
       const matchedGrade = getMatchedGrade(grades, subject);
-      if (Object.keys(matchedGrade).length > 0) {
-        initialGrades[subject] = matchedGrade.q1 || matchedGrade.q2 || matchedGrade.q3 || matchedGrade.q4 || 0;
-      } else {
-        initialGrades[subject] = 0;
-      }
+      initialGrades[subject] = {
+        q1: Number(matchedGrade.q1 || 0),
+        q2: Number(matchedGrade.q2 || 0),
+        q3: Number(matchedGrade.q3 || 0),
+        q4: Number(matchedGrade.q4 || 0)
+      };
     });
     
     setStudentGrades(grades);
@@ -255,20 +264,37 @@ export default function AdminGrades() {
     
     setSaving(true);
     try {
-      // Calculate average
-      const gradeValues = Object.values(editGrades).filter(g => g > 0);
+      // Build payload depending on selected quarter.
+      const payloadGrades = {};
+      Object.entries(editGrades).forEach(([subject, values]) => {
+        if (selectedQuarter === 'all') {
+          payloadGrades[subject] = {
+            q1: Number(values?.q1 || 0),
+            q2: Number(values?.q2 || 0),
+            q3: Number(values?.q3 || 0),
+            q4: Number(values?.q4 || 0)
+          };
+        } else {
+          payloadGrades[subject] = Number(values?.[selectedQuarter] || 0);
+        }
+      });
+
+      // Calculate average from currently edited scope.
+      const gradeValues = selectedQuarter === 'all'
+        ? Object.values(editGrades).flatMap((values) => QUARTER_KEYS.map((q) => Number(values?.[q] || 0))).filter((g) => g > 0)
+        : Object.values(editGrades).map((values) => Number(values?.[selectedQuarter] || 0)).filter((g) => g > 0);
       const average = gradeValues.length > 0 
         ? gradeValues.reduce((a, b) => a + parseFloat(b), 0) / gradeValues.length 
         : 0;
 
       const response = await axios.put(`/students/${selectedStudent.id}/grades`, {
-        grades: editGrades,
+        grades: payloadGrades,
         quarter: selectedQuarter,
         average: average.toFixed(2)
       });
 
       if (response.data.success) {
-        toast.success(`Grades saved for ${selectedQuarter.toUpperCase()}`);
+        toast.success(selectedQuarter === 'all' ? 'Grades saved for ALL QUARTERS' : `Grades saved for ${selectedQuarter.toUpperCase()}`);
         setShowEditModal(false);
         loadGradesData(); // Refresh data
       } else {
@@ -283,9 +309,15 @@ export default function AdminGrades() {
   };
 
   // Handle grade input change
-  const handleGradeChange = (subject, value) => {
+  const handleGradeChange = (subject, quarter, value) => {
     const numValue = Math.min(100, Math.max(0, parseFloat(value) || 0));
-    setEditGrades(prev => ({ ...prev, [subject]: numValue }));
+    setEditGrades(prev => ({
+      ...prev,
+      [subject]: {
+        ...prev[subject],
+        [quarter]: numValue
+      }
+    }));
   };
 
   // Filter students
@@ -746,6 +778,7 @@ export default function AdminGrades() {
                   <option value="q2">2nd Quarter</option>
                   <option value="q3">3rd Quarter</option>
                   <option value="q4">4th Quarter</option>
+                  <option value="all">All Quarters</option>
                 </select>
               </div>
 
@@ -753,28 +786,63 @@ export default function AdminGrades() {
                 <thead>
                   <tr className="bg-gray-100">
                     <th className="border p-2 text-left">Subject</th>
-                    <th className="border p-2 text-center">Current Grade</th>
-                    <th className="border p-2 text-center">New Grade ({selectedQuarter.toUpperCase()})</th>
+                    {selectedQuarter === 'all' ? (
+                      <>
+                        <th className="border p-2 text-center">Q1 (Current / New)</th>
+                        <th className="border p-2 text-center">Q2 (Current / New)</th>
+                        <th className="border p-2 text-center">Q3 (Current / New)</th>
+                        <th className="border p-2 text-center">Q4 (Current / New)</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="border p-2 text-center">Current Grade</th>
+                        <th className="border p-2 text-center">New Grade ({selectedQuarter.toUpperCase()})</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
                   {getSubjectsForStudent(selectedStudent).map(subject => {
-                    const currentGrade = getMatchedGrade(studentGrades, subject)?.[selectedQuarter] || '-';
+                    const matched = getMatchedGrade(studentGrades, subject);
                     return (
                       <tr key={subject}>
                         <td className="border p-2">{subject}</td>
-                        <td className="border p-2 text-center">{currentGrade}</td>
-                        <td className="border p-2 text-center">
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={editGrades[subject] || ''}
-                            onChange={(e) => handleGradeChange(subject, e.target.value)}
-                            className="border rounded px-2 py-1 w-20 text-center"
-                            placeholder="0-100"
-                          />
-                        </td>
+                        {selectedQuarter === 'all' ? (
+                          QUARTER_KEYS.map((qKey) => {
+                            const currentGrade = matched?.[qKey] || '-';
+                            return (
+                              <td key={`${subject}-${qKey}`} className="border p-2 text-center">
+                                <div className="flex items-center justify-center gap-2">
+                                  <span className="text-xs text-gray-500 w-8 text-right">{currentGrade}</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={editGrades?.[subject]?.[qKey] || ''}
+                                    onChange={(e) => handleGradeChange(subject, qKey, e.target.value)}
+                                    className="border rounded px-2 py-1 w-20 text-center"
+                                    placeholder={QUARTER_LABELS[qKey]}
+                                  />
+                                </div>
+                              </td>
+                            );
+                          })
+                        ) : (
+                          <>
+                            <td className="border p-2 text-center">{matched?.[selectedQuarter] || '-'}</td>
+                            <td className="border p-2 text-center">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={editGrades?.[subject]?.[selectedQuarter] || ''}
+                                onChange={(e) => handleGradeChange(subject, selectedQuarter, e.target.value)}
+                                className="border rounded px-2 py-1 w-20 text-center"
+                                placeholder="0-100"
+                              />
+                            </td>
+                          </>
+                        )}
                       </tr>
                     );
                   })}
