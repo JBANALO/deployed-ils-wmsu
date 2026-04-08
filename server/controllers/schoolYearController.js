@@ -151,24 +151,38 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Source and target school years are the same.' });
     }
 
-    await connection.beginTransaction();
+    const warnings = [];
+    const copied = {
+      subjects: 0,
+      sections: 0,
+      teachers: 0,
+      classes: 0,
+      students: 0,
+      grades: 0
+    };
 
-    // Copy principal/assistant principal values.
-    const [leadershipRows] = await connection.query(
-      'SELECT principal_name, assistant_principal_name FROM school_years WHERE id = ? LIMIT 1',
-      [source.id]
+    const runStep = async (stepName, sql, params, key) => {
+      try {
+        const [result] = await connection.query(sql, params);
+        copied[key] = Number(result?.affectedRows || 0);
+      } catch (stepErr) {
+        warnings.push(`${stepName}: ${stepErr.message}`);
+      }
+    };
+
+    await runStep(
+      'leadership',
+      `UPDATE school_years dst
+       JOIN school_years src ON src.id = ?
+       SET dst.principal_name = src.principal_name,
+           dst.assistant_principal_name = src.assistant_principal_name
+       WHERE dst.id = ?`,
+      [source.id, active.id],
+      '_leadership'
     );
-    const leadership = leadershipRows[0] || {};
 
-    await connection.query(
-      `UPDATE school_years
-       SET principal_name = ?, assistant_principal_name = ?
-       WHERE id = ?`,
-      [leadership.principal_name || null, leadership.assistant_principal_name || null, active.id]
-    );
-
-    // Subjects
-    const [subjectsResult] = await connection.query(
+    await runStep(
+      'subjects',
       `INSERT INTO subjects (name, description, grade_levels, school_year_id, is_archived)
        SELECT s.name, s.description, s.grade_levels, ?, 0
        FROM subjects s
@@ -181,11 +195,12 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
              AND d.name = s.name
              AND IFNULL(d.grade_levels, '') = IFNULL(s.grade_levels, '')
          )`,
-      [active.id, source.id, active.id]
+      [active.id, source.id, active.id],
+      'subjects'
     );
 
-    // Sections
-    const [sectionsResult] = await connection.query(
+    await runStep(
+      'sections',
       `INSERT INTO sections (name, description, grade_level, school_year_id, is_archived)
        SELECT s.name, s.description, s.grade_level, ?, 0
        FROM sections s
@@ -197,20 +212,21 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
            WHERE d.school_year_id = ?
              AND d.name = s.name
          )`,
-      [active.id, source.id, active.id]
+      [active.id, source.id, active.id],
+      'sections'
     );
 
-    // Teachers
-    const [teachersResult] = await connection.query(
+    await runStep(
+      'teachers',
       `INSERT INTO teachers (
          first_name, middle_name, last_name, username, email, password, role,
          grade_level, section, subjects, bio, profile_pic, verification_status,
-         sex, contact_number, school_year_id, created_at, updated_at
+         school_year_id, created_at, updated_at
        )
        SELECT
          t.first_name, t.middle_name, t.last_name, t.username, t.email, t.password, t.role,
          t.grade_level, t.section, t.subjects, t.bio, t.profile_pic, IFNULL(t.verification_status, 'approved'),
-         t.sex, t.contact_number, ?, NOW(), NOW()
+         ?, NOW(), NOW()
        FROM teachers t
        WHERE t.school_year_id = ?
          AND NOT EXISTS (
@@ -219,13 +235,14 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
            WHERE d.school_year_id = ?
              AND (d.email = t.email OR d.username = t.username)
          )`,
-      [active.id, source.id, active.id]
+      [active.id, source.id, active.id],
+      'teachers'
     );
 
-    // Classes
-    const [classesResult] = await connection.query(
-      `INSERT INTO classes (id, grade, section, adviser_id, adviser_name, school_year_id, createdAt)
-       SELECT UUID(), c.grade, c.section, NULL, NULL, ?, NOW()
+    await runStep(
+      'classes',
+      `INSERT INTO classes (id, grade, section, adviser_id, school_year_id, createdAt)
+       SELECT UUID(), c.grade, c.section, NULL, ?, NOW()
        FROM classes c
        WHERE c.school_year_id = ?
          AND NOT EXISTS (
@@ -235,19 +252,20 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
              AND d.grade = c.grade
              AND d.section = c.section
          )`,
-      [active.id, source.id, active.id]
+      [active.id, source.id, active.id],
+      'classes'
     );
 
-    // Students
-    const [studentsResult] = await connection.query(
+    await runStep(
+      'students',
       `INSERT INTO students (
-         lrn, first_name, middle_name, last_name, age, birth_date, sex,
+         lrn, first_name, middle_name, last_name, age, sex,
          grade_level, section, parent_first_name, parent_last_name,
          parent_email, parent_contact, student_email, password,
          profile_pic, qr_code, status, created_by, school_year_id, created_at, updated_at
        )
        SELECT
-         s.lrn, s.first_name, s.middle_name, s.last_name, s.age, s.birth_date, s.sex,
+         s.lrn, s.first_name, s.middle_name, s.last_name, s.age, s.sex,
          s.grade_level, s.section, s.parent_first_name, s.parent_last_name,
          s.parent_email, s.parent_contact, s.student_email, s.password,
          s.profile_pic, s.qr_code, IFNULL(s.status, 'Active'), IFNULL(s.created_by, 'system-copy'), ?, NOW(), NOW()
@@ -261,11 +279,12 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
            WHERE d.school_year_id = ?
              AND d.lrn = s.lrn
          )`,
-      [active.id, source.id, active.id]
+      [active.id, source.id, active.id],
+      'students'
     );
 
-    // Grades (mapped by student LRN from source->target)
-    const [gradesResult] = await connection.query(
+    await runStep(
+      'grades',
       `INSERT INTO grades (student_id, subject, quarter, grade, teacher_id, school_year_id, created_at, updated_at)
        SELECT ns.id, g.subject, g.quarter, g.grade, g.teacher_id, ?, NOW(), NOW()
        FROM grades g
@@ -284,35 +303,21 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
              AND dg.quarter = g.quarter
              AND dg.school_year_id = ?
          )`,
-      [active.id, source.id, active.id, source.id, active.id]
+      [active.id, source.id, active.id, source.id, active.id],
+      'grades'
     );
-
-    await connection.commit();
 
     res.json({
       success: true,
-      message: 'School year data copied successfully.',
+      message: warnings.length ? 'School year data copied with warnings.' : 'School year data copied successfully.',
       data: {
         sourceSchoolYearId: source.id,
         targetSchoolYearId: active.id,
-        copied: {
-          subjects: Number(subjectsResult?.affectedRows || 0),
-          sections: Number(sectionsResult?.affectedRows || 0),
-          teachers: Number(teachersResult?.affectedRows || 0),
-          classes: Number(classesResult?.affectedRows || 0),
-          students: Number(studentsResult?.affectedRows || 0),
-          grades: Number(gradesResult?.affectedRows || 0)
-        }
+        copied,
+        warnings
       }
     });
   } catch (error) {
-    if (connection) {
-      try {
-        await connection.rollback();
-      } catch (rollbackError) {
-        console.error('Rollback failed:', rollbackError);
-      }
-    }
     console.error('Error copying school year data:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to copy school year data' });
   } finally {
