@@ -1162,6 +1162,44 @@ exports.getStudent = async (req, res) => {
     const overallAverage = allAverages.length > 0 
       ? (allAverages.reduce((a, b) => a + b, 0) / allAverages.length).toFixed(2)
       : 'N/A';
+
+    // Remove duplicate previous-grade records. Prefer entries with school-year labels.
+    const normalizeHistoryPayload = (record) => JSON.stringify(
+      (record?.grades || []).map((g) => ({
+        subject: String(g?.subject || '').trim().toLowerCase(),
+        q1: g?.q1 ?? null,
+        q2: g?.q2 ?? null,
+        q3: g?.q3 ?? null,
+        q4: g?.q4 ?? null
+      }))
+    );
+
+    const dedupedHistory = [];
+    const labeledPayloads = new Set();
+    const labeledKeys = new Set();
+    const unlabeledPayloads = new Set();
+
+    for (const record of gradeHistory) {
+      const payload = normalizeHistoryPayload(record);
+      const label = String(record?.schoolYearLabel || '').trim().toLowerCase();
+
+      if (label) {
+        const key = `${label}::${payload}`;
+        if (labeledKeys.has(key)) continue;
+        labeledKeys.add(key);
+        labeledPayloads.add(payload);
+        dedupedHistory.push(record);
+        continue;
+      }
+
+      // If same payload already exists in a labeled record, drop unlabeled duplicate.
+      if (labeledPayloads.has(payload)) continue;
+      if (unlabeledPayloads.has(payload)) continue;
+      unlabeledPayloads.add(payload);
+      dedupedHistory.push(record);
+    }
+
+    gradeHistory = dedupedHistory;
     
     formattedStudent.average = overallAverage;
     formattedStudent.grades = grades;
