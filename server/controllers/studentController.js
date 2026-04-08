@@ -1188,7 +1188,7 @@ exports.getStudent = async (req, res) => {
           if (classIdList.length === 0) continue;
 
           const placeholders = classIdList.map(() => '?').join(',');
-          const historicalSchedule = await query(
+          let historicalSchedule = await query(
             `SELECT subject, teacher_name, day, start_time, end_time
              FROM subject_teachers
              WHERE school_year_id = ?
@@ -1196,6 +1196,27 @@ exports.getStudent = async (req, res) => {
              ORDER BY FIELD(day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'), start_time`,
             [historicalSyId, ...classIdList]
           );
+
+          if (!Array.isArray(historicalSchedule) || historicalSchedule.length === 0) {
+            const gradeSubjects = await query(
+              `SELECT DISTINCT subject
+               FROM grades
+               WHERE student_id = ?
+                 AND school_year_id = ?
+                 AND subject IS NOT NULL
+                 AND subject <> ''
+               ORDER BY subject`,
+              [studentId, historicalSyId]
+            );
+
+            historicalSchedule = (gradeSubjects || []).map((row) => ({
+              subject: row.subject,
+              teacher_name: '',
+              day: 'N/A',
+              start_time: '',
+              end_time: ''
+            }));
+          }
 
           if (!Array.isArray(historicalSchedule) || historicalSchedule.length === 0) continue;
 

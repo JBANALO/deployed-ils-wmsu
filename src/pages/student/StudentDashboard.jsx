@@ -1302,7 +1302,15 @@ const StudentPortal = () => {
 
                           {Array.isArray(record.schedule) && record.schedule.length > 0 ? (
                             <div className="grid gap-3">
-                              {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => {
+                              {(() => {
+                                const preferredOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                                const rawDays = [...new Set((record.schedule || []).map((s) => s.day || 'N/A'))];
+                                const orderedDays = [
+                                  ...preferredOrder.filter((day) => rawDays.includes(day)),
+                                  ...rawDays.filter((day) => !preferredOrder.includes(day))
+                                ];
+
+                                return orderedDays.map(day => {
                                 const daySchedule = record.schedule.filter(s => s.day === day);
                                 if (daySchedule.length === 0) return null;
                                 return (
@@ -1321,7 +1329,8 @@ const StudentPortal = () => {
                                     </div>
                                   </div>
                                 );
-                              })}
+                                });
+                              })()}
                             </div>
                           ) : (
                             <p className="text-sm text-gray-500">No saved schedule snapshot for this promotion record.</p>
