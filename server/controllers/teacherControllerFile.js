@@ -93,6 +93,46 @@ const getLatestHistoricalTeacherSchoolYear = async (targetSy) => {
   return getPreviousSchoolYear(targetSy.start_date);
 };
 
+const getNearestTeacherSchoolYearWithData = async (targetSy) => {
+  if (!targetSy?.id) return null;
+
+  try {
+    if (targetSy.start_date) {
+      const byDateDistance = await query(
+        `SELECT sy.id, sy.label, sy.start_date
+         FROM school_years sy
+         WHERE sy.is_archived = 0
+           AND sy.id <> ?
+           AND EXISTS (
+             SELECT 1 FROM teachers t WHERE t.school_year_id = sy.id LIMIT 1
+           )
+         ORDER BY ABS(DATEDIFF(sy.start_date, ?)) ASC, sy.start_date DESC
+         LIMIT 1`,
+        [targetSy.id, targetSy.start_date]
+      );
+      if (byDateDistance[0]) return byDateDistance[0];
+    }
+
+    const byIdDistance = await query(
+      `SELECT sy.id, sy.label, sy.start_date
+       FROM school_years sy
+       WHERE sy.is_archived = 0
+         AND sy.id <> ?
+         AND EXISTS (
+           SELECT 1 FROM teachers t WHERE t.school_year_id = sy.id LIMIT 1
+         )
+       ORDER BY ABS(sy.id - ?) ASC, sy.id DESC
+       LIMIT 1`,
+      [targetSy.id, targetSy.id]
+    );
+    if (byIdDistance[0]) return byIdDistance[0];
+  } catch (err) {
+    console.log('getNearestTeacherSchoolYearWithData fallback:', err.message);
+  }
+
+  return null;
+};
+
 const assertActiveTargetSchoolYear = async (targetSy) => {
   const active = await getActiveSchoolYear();
   if (!targetSy || targetSy.id !== active.id) {
@@ -487,7 +527,8 @@ const getAllTeachers = async (req, res) => {
       const unifiedTeachers = Array.from(mergedByIdentity.values());
 
       if (unifiedTeachers.length === 0 && isExplicitSchoolYearScope) {
-        const fallbackSy = await getLatestHistoricalTeacherSchoolYear(targetSy);
+        const fallbackSy = await getNearestTeacherSchoolYearWithData(targetSy)
+          || await getLatestHistoricalTeacherSchoolYear(targetSy);
         if (fallbackSy && String(fallbackSy.id) !== String(targetSy.id)) {
           const fallbackTeachers = dbTeachers
             .filter((teacher) => belongsToSchoolYear(teacher, fallbackSy))

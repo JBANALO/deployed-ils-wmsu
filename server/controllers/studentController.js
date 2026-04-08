@@ -94,6 +94,46 @@ async function getLatestHistoricalStudentSchoolYear(targetSy) {
   return getPreviousSchoolYear(targetSy);
 }
 
+async function getNearestStudentSchoolYearWithData(targetSy) {
+  if (!targetSy?.id) return null;
+
+  try {
+    if (targetSy.start_date) {
+      const byDateDistance = await query(
+        `SELECT sy.id, sy.label, sy.start_date
+         FROM school_years sy
+         WHERE sy.is_archived = 0
+           AND sy.id <> ?
+           AND EXISTS (
+             SELECT 1 FROM students s WHERE s.school_year_id = sy.id LIMIT 1
+           )
+         ORDER BY ABS(DATEDIFF(sy.start_date, ?)) ASC, sy.start_date DESC
+         LIMIT 1`,
+        [targetSy.id, targetSy.start_date]
+      );
+      if (byDateDistance[0]) return byDateDistance[0];
+    }
+
+    const byIdDistance = await query(
+      `SELECT sy.id, sy.label, sy.start_date
+       FROM school_years sy
+       WHERE sy.is_archived = 0
+         AND sy.id <> ?
+         AND EXISTS (
+           SELECT 1 FROM students s WHERE s.school_year_id = sy.id LIMIT 1
+         )
+       ORDER BY ABS(sy.id - ?) ASC, sy.id DESC
+       LIMIT 1`,
+      [targetSy.id, targetSy.id]
+    );
+    if (byIdDistance[0]) return byIdDistance[0];
+  } catch (err) {
+    console.log('getNearestStudentSchoolYearWithData fallback:', err.message);
+  }
+
+  return null;
+}
+
 async function ensureStudentSchoolYearColumn() {
   if (studentSyEnsured) return;
   const cols = await query('SHOW COLUMNS FROM students');
@@ -647,6 +687,8 @@ exports.getStudents = async (req, res) => {
       [...averageParams, targetSy.id]
     );
 
+    let usedGradesFallback = false;
+
     // Recovery fallback for historical/year-view screens:
     // if explicit school year is requested and no student rows are tied to that SY,
     // derive list from grades recorded in that school year using current student profiles.
@@ -662,6 +704,28 @@ exports.getStudents = async (req, res) => {
          ORDER BY s.created_at DESC`,
         [...averageParams, targetSy.id]
       );
+      usedGradesFallback = allDbStudents.length > 0;
+    }
+
+    // If explicit SY still has empty/partial records (common after move/copy operations),
+    // pick the nearest SY with real student rows and use the fuller dataset.
+    if (schoolYearId && (allDbStudents.length === 0 || usedGradesFallback)) {
+      const nearestSy = await getNearestStudentSchoolYearWithData(targetSy);
+      if (nearestSy && String(nearestSy.id) !== String(targetSy.id)) {
+        const nearestRows = await query(
+          `${averageSelectSql}
+           WHERE s.school_year_id = ?
+           ORDER BY s.created_at DESC`,
+          [...averageParams, nearestSy.id]
+        );
+
+        if (nearestRows.length > allDbStudents.length) {
+          console.log(
+            `getStudents: using nearest school year fallback ${nearestSy.id} (${nearestRows.length} rows) for requested school year ${targetSy.id}`
+          );
+          allDbStudents = nearestRows;
+        }
+      }
     }
 
     const formattedStudents = allDbStudents.map(formatStudent);
