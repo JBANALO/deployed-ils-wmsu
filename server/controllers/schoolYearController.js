@@ -303,6 +303,7 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
       );
 
       let movedStudents = 0;
+      const movedStudentIds = [];
       for (const s of sourceStudents || []) {
         const [dupRows] = await connection.query(
           `SELECT id
@@ -325,7 +326,19 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
 
         if (Number(moveResult?.affectedRows || 0) > 0) {
           movedStudents += 1;
+          movedStudentIds.push(s.id);
         }
+      }
+
+      // New school year should start fresh: clear active-year grades for students moved/fetched to active SY.
+      if (movedStudentIds.length > 0) {
+        const placeholders = movedStudentIds.map(() => '?').join(',');
+        await connection.query(
+          `DELETE FROM grades
+           WHERE school_year_id = ?
+             AND student_id IN (${placeholders})`,
+          [active.id, ...movedStudentIds]
+        );
       }
 
       copied.students = movedStudents;
@@ -333,45 +346,7 @@ exports.copyAllDataFromSchoolYear = async (req, res) => {
       warnings.push(`students: ${stepErr.message}`);
     }
 
-    await runStep(
-      'grades',
-      `INSERT INTO grades (student_id, subject, quarter, grade, teacher_id, school_year_id, created_at, updated_at)
-       SELECT ns.id, g.subject, g.quarter, g.grade, g.teacher_id, ?, NOW(), NOW()
-       FROM grades g
-       INNER JOIN students os
-         ON os.id = g.student_id
-       INNER JOIN students ns
-         ON ns.lrn = os.lrn
-        AND ns.school_year_id = ?
-       WHERE (
-            g.school_year_id = ?
-            OR (
-              g.school_year_id IS NULL
-              AND ? IS NOT NULL
-              AND ? IS NOT NULL
-              AND DATE(COALESCE(g.created_at, NOW())) BETWEEN ? AND ?
-            )
-       )
-         AND NOT EXISTS (
-           SELECT 1
-           FROM grades dg
-           WHERE dg.student_id = ns.id
-             AND dg.subject = g.subject
-             AND dg.quarter = g.quarter
-             AND dg.school_year_id = ?
-         )`,
-      [
-        active.id,
-        active.id,
-        source.id,
-        sourceStartDate,
-        sourceEndDate,
-        sourceStartDate,
-        sourceEndDate,
-        active.id
-      ],
-      'grades'
-    );
+    copied.grades = 0;
 
     res.json({
       success: true,
