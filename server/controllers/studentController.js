@@ -919,6 +919,59 @@ exports.getStudent = async (req, res) => {
         gradeHistory.map((row) => `${String(row.gradeLevel || '').toLowerCase()}::${String(row.section || '').toLowerCase()}`)
       );
 
+      const historyBySchoolYear = new Set(
+        gradeHistory
+          .map((row) => String(row.schoolYearLabel || '').trim().toLowerCase())
+          .filter(Boolean)
+      );
+
+      // Fallback A: same student row may have old grades kept in historical school_year_id entries.
+      // Build previous records directly from historical grades for this student ID.
+      const historicalGradeRows = await query(
+        `SELECT g.school_year_id, sy.label AS school_year_label, g.subject, g.quarter, g.grade, g.created_at
+         FROM grades g
+         LEFT JOIN school_years sy ON sy.id = g.school_year_id
+         WHERE g.student_id = ?
+           AND g.school_year_id IS NOT NULL
+           AND g.school_year_id <> ?
+         ORDER BY g.school_year_id DESC, g.subject, g.quarter`,
+        [studentId, targetSy.id]
+      );
+
+      const gradeRowsBySchoolYearId = {};
+      for (const row of historicalGradeRows || []) {
+        const syIdKey = String(row.school_year_id || '');
+        if (!syIdKey) continue;
+        if (!gradeRowsBySchoolYearId[syIdKey]) {
+          gradeRowsBySchoolYearId[syIdKey] = {
+            schoolYearLabel: row.school_year_label || null,
+            rows: []
+          };
+        }
+        gradeRowsBySchoolYearId[syIdKey].rows.push(row);
+      }
+
+      for (const syId of Object.keys(gradeRowsBySchoolYearId)) {
+        const schoolYearLabel = String(gradeRowsBySchoolYearId[syId].schoolYearLabel || '').trim();
+        const schoolYearKey = schoolYearLabel.toLowerCase();
+        if (schoolYearKey && historyBySchoolYear.has(schoolYearKey)) continue;
+
+        const historicalGrades = formatGradesForDisplay(gradeRowsBySchoolYearId[syId].rows || []);
+        if (historicalGrades.length === 0) continue;
+
+        gradeHistory.push({
+          gradeLevel: null,
+          section: null,
+          schoolYearLabel: schoolYearLabel || null,
+          promotedAt: null,
+          grades: historicalGrades
+        });
+
+        if (schoolYearKey) {
+          historyBySchoolYear.add(schoolYearKey);
+        }
+      }
+
       const historicalRows = siblingStudentRows.filter((row) => {
         if (!row || !row.id || Number(row.id) === Number(studentId)) return false;
         if (!row.school_year_id) return false;
@@ -960,6 +1013,11 @@ exports.getStudent = async (req, res) => {
             grades: oldGrades
           });
           historyByKey.add(key);
+
+          const schoolYearLabel = String(schoolYearLabelMap[String(oldRow.school_year_id)] || '').trim().toLowerCase();
+          if (schoolYearLabel) {
+            historyBySchoolYear.add(schoolYearLabel);
+          }
         }
       }
     } catch (historyFallbackErr) {
