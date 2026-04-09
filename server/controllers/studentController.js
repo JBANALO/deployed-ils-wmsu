@@ -1349,6 +1349,48 @@ exports.getStudent = async (req, res) => {
         console.log('class_assignments adviser lookup failed:', assignmentErr.message);
       }
     }
+
+    let publishedRankings = [];
+    try {
+      const rankingRows = await query(
+        `SELECT ranking_type, quarter_key, subject_name, rank_position, score, total_students, published_at
+         FROM ranking_publications
+         WHERE school_year_id = ?
+           AND grade_level = ?
+           AND section = ?
+           AND student_id = ?
+         ORDER BY FIELD(ranking_type, 'overall', 'quarter', 'subject'), quarter_key, subject_name, published_at DESC`,
+        [targetSy.id, student.grade_level, student.section, String(studentId)]
+      );
+
+      const quarterMap = { q1: 'Quarter 1', q2: 'Quarter 2', q3: 'Quarter 3', q4: 'Quarter 4' };
+      publishedRankings = (rankingRows || []).map((row) => {
+        const type = String(row.ranking_type || '').toLowerCase();
+        const quarterKey = String(row.quarter_key || '').toLowerCase();
+        const subjectName = String(row.subject_name || '').trim();
+
+        let title = 'Published Ranking';
+        if (type === 'overall') title = 'Final Overall Ranking';
+        else if (type === 'quarter') title = `${quarterMap[quarterKey] || quarterKey.toUpperCase()} Ranking`;
+        else if (type === 'subject') {
+          const quarterLabel = quarterKey ? (quarterMap[quarterKey] || quarterKey.toUpperCase()) : '';
+          title = `${subjectName}${quarterLabel ? ` (${quarterLabel})` : ''} Ranking`;
+        }
+
+        return {
+          rankingType: type,
+          quarter: quarterKey || null,
+          subject: subjectName || null,
+          rank: row.rank_position != null ? Number(row.rank_position) : null,
+          score: row.score != null ? Number(row.score) : null,
+          totalStudents: row.total_students != null ? Number(row.total_students) : null,
+          title,
+          publishedAt: row.published_at || null
+        };
+      });
+    } catch (rankingErr) {
+      console.log('published ranking lookup skipped:', rankingErr.message);
+    }
     
     // Calculate overall average for profile
     const allAverages = grades.map(g => parseFloat(g.average)).filter(x => x > 0);
@@ -1402,6 +1444,7 @@ exports.getStudent = async (req, res) => {
     formattedStudent.schedule = scheduleRaw;
     formattedStudent.previousScheduleHistory = previousScheduleHistory;
     formattedStudent.adviserName = adviserName;
+    formattedStudent.publishedRankings = publishedRankings;
     
     console.log('✅ Student portal data loaded:', {
       gradesCount: grades.length,

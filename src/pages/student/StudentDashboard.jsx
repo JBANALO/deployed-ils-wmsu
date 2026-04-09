@@ -74,7 +74,8 @@ const StudentPortal = () => {
               attendance: studentData.attendance || [],
               attendanceSummary: studentData.attendanceSummary || {},
               schedule: studentData.schedule || [],
-              previousScheduleHistory: studentData.previousScheduleHistory || []
+              previousScheduleHistory: studentData.previousScheduleHistory || [],
+              publishedRankings: studentData.publishedRankings || []
             };
             setData(mappedData);
             if (!silent) {
@@ -104,7 +105,8 @@ const StudentPortal = () => {
               attendance: [],
               attendanceSummary: {},
               schedule: [],
-              previousScheduleHistory: []
+              previousScheduleHistory: [],
+              publishedRankings: []
             });
           }
       } catch (err) {
@@ -156,6 +158,20 @@ const StudentPortal = () => {
   }
 
   const { profile, grades = [], gradeHistory = [] } = data;
+
+  const publishedRankings = Array.isArray(data?.publishedRankings) ? data.publishedRankings : [];
+
+  const formatRankingScore = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed.toFixed(2) : 'N/A';
+  };
+
+  const getRankingBadgeClass = (rank) => {
+    if (rank === 1) return 'bg-yellow-100 text-yellow-800';
+    if (rank === 2) return 'bg-gray-200 text-gray-800';
+    if (rank === 3) return 'bg-orange-100 text-orange-800';
+    return 'bg-blue-100 text-blue-800';
+  };
 
   // Report card preview function
   const previewReportCard = () => {
@@ -1018,6 +1034,35 @@ const StudentPortal = () => {
                     <Download className="w-5 h-5" /> Preview Report Card
                   </button>
                 </div>
+
+                {publishedRankings.length > 0 && (
+                  <div className="mb-8 rounded-xl border border-green-200 bg-green-50 p-4">
+                    <h4 className="text-lg font-bold text-green-800 mb-3">Posted Rankings From Teacher</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {publishedRankings.map((ranking, idx) => (
+                        <div key={`${ranking.rankingType || 'ranking'}-${ranking.quarter || 'all'}-${ranking.subject || 'general'}-${idx}`} className="rounded-lg bg-white border border-green-100 p-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-semibold text-gray-800">{ranking.title || 'Published Ranking'}</p>
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${getRankingBadgeClass(Number(ranking.rank))}`}>
+                              Rank #{ranking.rank || '-'}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-700 mt-2">
+                            Score: <strong>{formatRankingScore(ranking.score)}</strong>
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            Population: {ranking.totalStudents || 0} students
+                          </p>
+                          {ranking.publishedAt && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              Posted on {new Date(ranking.publishedAt).toLocaleString('en-US')}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {grades.length === 0 ? (
                   <div className="text-center py-16 text-gray-500">

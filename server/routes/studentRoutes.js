@@ -11,6 +11,7 @@ let gradesSyEnsured = false;
 let studentSyEnsured = false;
 let notificationsEnsured = false;
 let schoolYearQuarterColumnsEnsured = false;
+let rankingPublicationsEnsured = false;
 
 const normalizeRole = (value = '') => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 
@@ -72,9 +73,59 @@ const ensureSchoolYearQuarterColumns = async () => {
   schoolYearQuarterColumnsEnsured = true;
 };
 
+const ensureRankingPublicationsTable = async () => {
+  if (rankingPublicationsEnsured) return;
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS ranking_publications (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      school_year_id INT NOT NULL,
+      grade_level VARCHAR(60) NOT NULL,
+      section VARCHAR(120) NOT NULL,
+      ranking_type ENUM('overall', 'quarter', 'subject') NOT NULL,
+      quarter_key VARCHAR(16) NOT NULL DEFAULT '',
+      subject_name VARCHAR(255) NOT NULL DEFAULT '',
+      student_id VARCHAR(100) NOT NULL,
+      student_name VARCHAR(255) NULL,
+      rank_position INT NOT NULL,
+      score DECIMAL(7,2) NULL,
+      total_students INT NOT NULL,
+      published_by VARCHAR(100) NULL,
+      published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_ranking_publication_entry (
+        school_year_id,
+        grade_level,
+        section,
+        ranking_type,
+        quarter_key,
+        subject_name,
+        student_id
+      ),
+      INDEX idx_ranking_publication_lookup (
+        school_year_id,
+        grade_level,
+        section,
+        ranking_type,
+        quarter_key,
+        subject_name
+      ),
+      INDEX idx_ranking_publication_student (student_id, school_year_id)
+    )
+  `);
+
+  rankingPublicationsEnsured = true;
+};
+
 const quarterLabel = (qKey = '') => {
   const map = { q1: 'Quarter 1', q2: 'Quarter 2', q3: 'Quarter 3', q4: 'Quarter 4' };
   return map[String(qKey || '').toLowerCase()] || String(qKey || '').toUpperCase();
+};
+
+const normalizeQuarterKey = (value = '') => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'q1' || normalized === 'q2' || normalized === 'q3' || normalized === 'q4') return normalized;
+  return '';
 };
 
 const EDIT_WINDOW_HOURS = 24;
@@ -856,6 +907,167 @@ router.post('/:id/send-grade-report', verifyUserForGrades, async (req, res) => {
   } catch (err) {
     console.error('Error sending grade report email:', err);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /ranking-publications - Publish a ranking snapshot to student dashboard
+router.post('/ranking-publications', verifyUserForGrades, async (req, res) => {
+  try {
+    await ensureRankingPublicationsTable();
+
+    const allowedRoles = new Set(['admin', 'teacher', 'adviser', 'subject_teacher']);
+    const userRole = normalizeRole(req.user?.role || '');
+    if (!allowedRoles.has(userRole)) {
+      return res.status(403).json({ success: false, error: 'Only teachers, advisers, and admins can publish rankings.' });
+    }
+
+    const {
+      schoolYearId,
+      gradeLevel,
+      section,
+      rankingType,
+      quarter,
+      subject,
+      rankings
+    } = req.body || {};
+
+    const normalizedRankingType = String(rankingType || '').trim().toLowerCase();
+    const normalizedQuarter = normalizeQuarterKey(quarter);
+    const normalizedSubject = String(subject || '').trim();
+    const cleanGradeLevel = String(gradeLevel || '').trim();
+    const cleanSection = String(section || '').trim();
+
+    if (!cleanGradeLevel || !cleanSection) {
+      return res.status(400).json({ success: false, error: 'gradeLevel and section are required.' });
+    }
+
+    if (!['overall', 'quarter', 'subject'].includes(normalizedRankingType)) {
+      return res.status(400).json({ success: false, error: 'rankingType must be overall, quarter, or subject.' });
+    }
+
+    if (normalizedRankingType === 'quarter' && !normalizedQuarter) {
+      return res.status(400).json({ success: false, error: 'quarter ranking requires quarter key (q1, q2, q3, q4).' });
+    }
+
+    if (normalizedRankingType === 'subject' && !normalizedSubject) {
+      return res.status(400).json({ success: false, error: 'subject ranking requires subject name.' });
+    }
+
+    if (!Array.isArray(rankings) || rankings.length === 0) {
+      return res.status(400).json({ success: false, error: 'rankings payload is required.' });
+    }
+
+    const activeSy = await getActiveSchoolYear();
+    const targetSchoolYearId = Number(schoolYearId) || activeSy?.id;
+    if (!targetSchoolYearId) {
+      return res.status(400).json({ success: false, error: 'No active school year found for publishing.' });
+    }
+
+    const normalizedRankings = rankings
+      .map((row) => {
+        const rankPosition = Number(row?.rank);
+        const parsedScore = Number(row?.score);
+        const totalStudents = Number(row?.totalStudents);
+        const studentId = String(row?.studentId || '').trim();
+        const studentName = String(row?.studentName || '').trim();
+
+        return {
+          studentId,
+          studentName,
+          rankPosition: Number.isFinite(rankPosition) ? Math.max(1, Math.floor(rankPosition)) : 0,
+          score: Number.isFinite(parsedScore) ? parsedScore : null,
+          totalStudents: Number.isFinite(totalStudents) && totalStudents > 0 ? Math.floor(totalStudents) : 0
+        };
+      })
+      .filter((row) => row.studentId && row.rankPosition > 0);
+
+    if (normalizedRankings.length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid ranking rows to publish.' });
+    }
+
+    const fallbackTotalStudents = normalizedRankings.length;
+
+    await query(
+      `DELETE FROM ranking_publications
+       WHERE school_year_id = ?
+         AND grade_level = ?
+         AND section = ?
+         AND ranking_type = ?
+         AND quarter_key = ?
+         AND subject_name = ?`,
+      [
+        targetSchoolYearId,
+        cleanGradeLevel,
+        cleanSection,
+        normalizedRankingType,
+        normalizedRankingType === 'quarter' || normalizedRankingType === 'subject' ? normalizedQuarter : '',
+        normalizedRankingType === 'subject' ? normalizedSubject : ''
+      ]
+    );
+
+    for (const row of normalizedRankings) {
+      await query(
+        `INSERT INTO ranking_publications (
+          school_year_id,
+          grade_level,
+          section,
+          ranking_type,
+          quarter_key,
+          subject_name,
+          student_id,
+          student_name,
+          rank_position,
+          score,
+          total_students,
+          published_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          student_name = VALUES(student_name),
+          rank_position = VALUES(rank_position),
+          score = VALUES(score),
+          total_students = VALUES(total_students),
+          published_by = VALUES(published_by),
+          published_at = CURRENT_TIMESTAMP`,
+        [
+          targetSchoolYearId,
+          cleanGradeLevel,
+          cleanSection,
+          normalizedRankingType,
+          normalizedRankingType === 'quarter' || normalizedRankingType === 'subject' ? normalizedQuarter : '',
+          normalizedRankingType === 'subject' ? normalizedSubject : '',
+          row.studentId,
+          row.studentName || null,
+          row.rankPosition,
+          row.score,
+          row.totalStudents > 0 ? row.totalStudents : fallbackTotalStudents,
+          req.user?.id ? String(req.user.id) : null
+        ]
+      );
+    }
+
+    const summary =
+      normalizedRankingType === 'overall'
+        ? 'Overall ranking'
+        : normalizedRankingType === 'quarter'
+          ? `${quarterLabel(normalizedQuarter)} ranking`
+          : `${normalizedSubject} ${normalizedQuarter ? `(${quarterLabel(normalizedQuarter)})` : ''} ranking`.trim();
+
+    return res.status(200).json({
+      success: true,
+      message: `${summary} published to student dashboard.`,
+      data: {
+        schoolYearId: targetSchoolYearId,
+        gradeLevel: cleanGradeLevel,
+        section: cleanSection,
+        rankingType: normalizedRankingType,
+        quarter: normalizedQuarter,
+        subject: normalizedSubject,
+        totalPublished: normalizedRankings.length
+      }
+    });
+  } catch (err) {
+    console.error('Error publishing rankings:', err);
+    return res.status(500).json({ success: false, error: 'Failed to publish rankings', details: err.message });
   }
 });
 

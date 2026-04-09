@@ -71,6 +71,8 @@ export default function ReportsPage() {
   const [emailResults, setEmailResults] = useState({});
   const [allSubjects, setAllSubjects] = useState([]);
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
+  const [publishingRanking, setPublishingRanking] = useState(false);
+  const [publishStatus, setPublishStatus] = useState(null);
   const lastKnownActiveSchoolYearIdRef = useRef(null);
 
   const isPassingGradeValue = (value) => {
@@ -544,6 +546,184 @@ export default function ReportsPage() {
       setEmailResults(prev => ({ ...prev, [student.id]: { success: false, msg: '\u274C ' + msg } }));
     }
     setSendingEmailFor(null);
+  };
+
+  const buildRankingPublicationPayload = () => {
+    if (!selectedSection) {
+      return { error: 'Select a Grade & Section first before posting ranking.' };
+    }
+
+    const sectionParts = String(selectedSection).split(' - ');
+    const gradeLevel = (sectionParts[0] || '').trim();
+    const section = sectionParts.slice(1).join(' - ').trim();
+    if (!gradeLevel || !section) {
+      return { error: 'Invalid section format. Please reselect the class section.' };
+    }
+
+    const activeStudents = students.filter((s) => !isInactiveStudent(s));
+    if (activeStudents.length === 0) {
+      return { error: 'No students found in this section to rank.' };
+    }
+
+    const completeStudents = activeStudents.filter(isStudentReportCardComplete);
+    if (completeStudents.length !== activeStudents.length) {
+      return {
+        error: `Ranking is inactive until all report card grades are complete. Pending students: ${activeStudents.length - completeStudents.length}`
+      };
+    }
+
+    if (gradesSubTab === 'overall') {
+      const sorted = [...activeStudents]
+        .filter((student) => Number(student?.average) > 0)
+        .sort((a, b) => (Number(b?.average) || 0) - (Number(a?.average) || 0));
+
+      if (sorted.length === 0) {
+        return { error: 'No overall averages available to publish.' };
+      }
+
+      const rankings = sorted.map((student, idx) => ({
+        studentId: student.id,
+        studentName: `${student.lastName}, ${student.firstName}`,
+        rank: idx + 1,
+        score: Number((Number(student.average) || 0).toFixed(2)),
+        totalStudents: sorted.length
+      }));
+
+      return {
+        payload: {
+          schoolYearId: selectedSchoolYearId,
+          gradeLevel,
+          section,
+          rankingType: 'overall',
+          quarter: '',
+          subject: '',
+          rankings
+        }
+      };
+    }
+
+    if (gradesSubTab === 'per-subject') {
+      if (!selectedSubjectForRanking) {
+        return { error: 'Select a subject first before posting ranking.' };
+      }
+
+      const getSubjectScore = (student) => {
+        const subjectGrades = student?.grades?.[selectedSubjectForRanking];
+        if (!subjectGrades) return 0;
+
+        if (selectedQuarterForView === 'all') {
+          const vals = [subjectGrades.q1, subjectGrades.q2, subjectGrades.q3, subjectGrades.q4]
+            .map((val) => Number(val))
+            .filter((val) => Number.isFinite(val) && val > 0);
+          return vals.length > 0 ? vals.reduce((acc, val) => acc + val, 0) / vals.length : 0;
+        }
+
+        const selectedValue = Number(subjectGrades[selectedQuarterForView]);
+        return Number.isFinite(selectedValue) && selectedValue > 0 ? selectedValue : 0;
+      };
+
+      const sorted = [...activeStudents]
+        .filter((student) => getSubjectScore(student) > 0)
+        .sort((a, b) => getSubjectScore(b) - getSubjectScore(a));
+
+      if (sorted.length === 0) {
+        return { error: `No grades found for ${selectedSubjectForRanking}.` };
+      }
+
+      const rankings = sorted.map((student, idx) => ({
+        studentId: student.id,
+        studentName: `${student.lastName}, ${student.firstName}`,
+        rank: idx + 1,
+        score: Number(getSubjectScore(student).toFixed(2)),
+        totalStudents: sorted.length
+      }));
+
+      return {
+        payload: {
+          schoolYearId: selectedSchoolYearId,
+          gradeLevel,
+          section,
+          rankingType: 'subject',
+          quarter: selectedQuarterForView === 'all' ? '' : selectedQuarterForView,
+          subject: selectedSubjectForRanking,
+          rankings
+        }
+      };
+    }
+
+    if (gradesSubTab === 'by-quarter') {
+      const quarter = String(selectedQuarterForView || '').toLowerCase();
+      if (!['q1', 'q2', 'q3', 'q4'].includes(quarter)) {
+        return { error: 'Select a valid quarter before posting ranking.' };
+      }
+
+      const getQuarterAverage = (student) => {
+        const quarterGrades = allSubjects
+          .map((subjectName) => Number(student?.grades?.[subjectName]?.[quarter]))
+          .filter((val) => Number.isFinite(val) && val > 0);
+
+        return quarterGrades.length > 0
+          ? quarterGrades.reduce((acc, val) => acc + val, 0) / quarterGrades.length
+          : 0;
+      };
+
+      const sorted = [...activeStudents]
+        .map((student) => ({ student, score: getQuarterAverage(student) }))
+        .filter((row) => row.score > 0)
+        .sort((a, b) => b.score - a.score);
+
+      if (sorted.length === 0) {
+        return { error: `No quarter averages found for ${quarter.toUpperCase()}.` };
+      }
+
+      const rankings = sorted.map((row, idx) => ({
+        studentId: row.student.id,
+        studentName: `${row.student.lastName}, ${row.student.firstName}`,
+        rank: idx + 1,
+        score: Number(row.score.toFixed(2)),
+        totalStudents: sorted.length
+      }));
+
+      return {
+        payload: {
+          schoolYearId: selectedSchoolYearId,
+          gradeLevel,
+          section,
+          rankingType: 'quarter',
+          quarter,
+          subject: '',
+          rankings
+        }
+      };
+    }
+
+    return { error: 'Unsupported ranking tab selected.' };
+  };
+
+  const publishCurrentRanking = async () => {
+    const { payload, error } = buildRankingPublicationPayload();
+    if (error) {
+      setPublishStatus({ type: 'error', message: error });
+      return;
+    }
+
+    setPublishingRanking(true);
+    setPublishStatus(null);
+
+    try {
+      const response = await axios.post('/students/ranking-publications', payload);
+      setPublishStatus({
+        type: 'success',
+        message: response?.data?.message || 'Ranking posted to student dashboard.'
+      });
+    } catch (err) {
+      setPublishStatus({
+        type: 'error',
+        message: err?.response?.data?.error || err?.response?.data?.message || 'Failed to post ranking.'
+      });
+    } finally {
+      setPublishingRanking(false);
+    }
   };
 
   return (
@@ -1039,19 +1219,37 @@ export default function ReportsPage() {
       {activeTab === "grades" && (
         <>
           {/* Sub-tabs */}
-          <div className="bg-white rounded-2xl shadow-lg p-4 border border-gray-200 flex gap-2 flex-wrap">
-            {[
-              { key: 'overall', label: '🏆 Overall Average Ranking' },
-              { key: 'per-subject', label: '📚 Per Subject Ranking' },
-              { key: 'by-quarter', label: '📅 By Quarter' },
-            ].map(tab => (
-              <button key={tab.key} onClick={() => setGradesSubTab(tab.key)}
-                className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                  gradesSubTab === tab.key ? 'bg-red-800 text-white shadow' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}>
-                {tab.label}
+          <div className="bg-white rounded-2xl shadow-lg p-4 border border-gray-200">
+            <div className="flex gap-2 flex-wrap items-center justify-between">
+              <div className="flex gap-2 flex-wrap">
+                {[
+                  { key: 'overall', label: '🏆 Overall Average Ranking' },
+                  { key: 'per-subject', label: '📚 Per Subject Ranking' },
+                  { key: 'by-quarter', label: '📅 By Quarter' },
+                ].map(tab => (
+                  <button key={tab.key} onClick={() => setGradesSubTab(tab.key)}
+                    className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
+                      gradesSubTab === tab.key ? 'bg-red-800 text-white shadow' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}>
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={publishCurrentRanking}
+                disabled={publishingRanking}
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {publishingRanking ? 'Posting...' : 'Post Current Ranking'}
               </button>
-            ))}
+            </div>
+
+            {publishStatus && (
+              <p className={`mt-3 text-sm font-medium ${publishStatus.type === 'success' ? 'text-green-700' : 'text-red-600'}`}>
+                {publishStatus.message}
+              </p>
+            )}
           </div>
 
           {/* Overall Average Ranking */}
