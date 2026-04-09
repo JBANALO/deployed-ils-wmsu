@@ -71,7 +71,7 @@ function App() {
         <SchoolYearProvider>
           <Router>
           <Toaster 
-            position="top-right"          
+            position="bottom-right"          
             toastOptions={{
               duration: 5000,             
               style: {
@@ -170,7 +170,7 @@ function App() {
           </Routes>
         </Router>
         <ToastContainer
-          position="top-right"
+          position="bottom-right"
           autoClose={5000}
           hideProgressBar={false}
           newestOnTop={false}
