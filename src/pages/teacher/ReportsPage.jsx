@@ -168,6 +168,13 @@ export default function ReportsPage() {
     }
   }, [selectedSchoolYearId]);
 
+  useEffect(() => {
+    if (!isAdviser && gradesSubTab !== 'per-subject') {
+      setGradesSubTab('per-subject');
+      setPublishStatus(null);
+    }
+  }, [isAdviser, gradesSubTab]);
+
   const loadReportsData = async () => {
     try {
       setLoading(true);
@@ -549,6 +556,10 @@ export default function ReportsPage() {
   };
 
   const buildRankingPublicationPayload = () => {
+    if (!isAdviser && gradesSubTab !== 'per-subject') {
+      return { error: 'Subject teachers can only post per-subject rankings.' };
+    }
+
     if (!selectedSection) {
       return { error: 'Select a Grade & Section first before posting ranking.' };
     }
@@ -1227,11 +1238,16 @@ export default function ReportsPage() {
           <div className="bg-white rounded-2xl shadow-lg p-4 border border-gray-200">
             <div className="flex gap-2 flex-wrap items-center justify-between">
               <div className="flex gap-2 flex-wrap">
-                {[
-                  { key: 'overall', label: '🏆 Overall Average Ranking' },
-                  { key: 'per-subject', label: '📚 Per Subject Ranking' },
-                  { key: 'by-quarter', label: '📅 By Quarter' },
-                ].map(tab => (
+                {(isAdviser
+                  ? [
+                      { key: 'overall', label: '🏆 Overall Average Ranking' },
+                      { key: 'per-subject', label: '📚 Per Subject Ranking' },
+                      { key: 'by-quarter', label: '📅 By Quarter' }
+                    ]
+                  : [
+                      { key: 'per-subject', label: '📚 Per Subject Ranking' }
+                    ]
+                ).map(tab => (
                   <button key={tab.key} onClick={() => setGradesSubTab(tab.key)}
                     className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
                       gradesSubTab === tab.key ? 'bg-red-800 text-white shadow' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -1255,10 +1271,16 @@ export default function ReportsPage() {
                 {publishStatus.message}
               </p>
             )}
+
+            {!isAdviser && (
+              <p className="mt-2 text-sm text-blue-700">
+                Subject-teacher view: only your subject ranking is available for this class.
+              </p>
+            )}
           </div>
 
           {/* Overall Average Ranking */}
-          {gradesSubTab === 'overall' && (
+          {isAdviser && gradesSubTab === 'overall' && (
             <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
               {(() => {
                 const sortedStudents = [...students].filter((s) => !isInactiveStudent(s)).sort((a, b) => (b.average || 0) - (a.average || 0));
@@ -1447,7 +1469,7 @@ export default function ReportsPage() {
           )}
 
           {/* By Quarter — full class grade grid */}
-          {gradesSubTab === 'by-quarter' && (
+          {isAdviser && gradesSubTab === 'by-quarter' && (
             <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
               {(() => {
                 const activeStudents = students.filter((s) => !isInactiveStudent(s));

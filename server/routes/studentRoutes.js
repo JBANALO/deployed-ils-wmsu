@@ -945,6 +945,10 @@ router.post('/ranking-publications', verifyUserForGrades, async (req, res) => {
       return res.status(400).json({ success: false, error: 'rankingType must be overall, quarter, or subject.' });
     }
 
+    if (userRole === 'subject_teacher' && normalizedRankingType !== 'subject') {
+      return res.status(403).json({ success: false, error: 'Subject teachers can only publish subject rankings.' });
+    }
+
     if (normalizedRankingType === 'quarter' && !normalizedQuarter) {
       return res.status(400).json({ success: false, error: 'quarter ranking requires quarter key (q1, q2, q3, q4).' });
     }
