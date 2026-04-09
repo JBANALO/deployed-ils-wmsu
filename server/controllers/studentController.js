@@ -1822,6 +1822,20 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       ? req.body.ids.map((id) => String(id || '').trim()).filter(Boolean)
       : [];
 
+    const statusPriority = (status = '') => {
+      const normalized = String(status || '').toLowerCase();
+      if (normalized === 'promoted') return 3;
+      if (normalized === 'retained') return 2;
+      if (normalized === 'historical') return 1;
+      return 0;
+    };
+
+    const toTimestamp = (value) => {
+      const date = value ? new Date(value) : null;
+      const time = date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
+      return time;
+    };
+
     let promotionRows = await query(
       `SELECT ph.student_id, ph.lrn, ph.to_grade, ph.to_section, ph.status, ph.created_at
        FROM promotion_history ph
@@ -1854,15 +1868,6 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       );
     }
 
-    if (selectedIds.length > 0) {
-      const selectedSet = new Set(selectedIds);
-      promotionRows = promotionRows.filter((row) => selectedSet.has(String(row.student_id || '')));
-    }
-
-    if (!promotionRows.length) {
-      return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0, sourceSchoolYearId: sourceSy.id, targetSchoolYearId: targetSy.id } });
-    }
-
     const sourceRows = await query(
       'SELECT * FROM students WHERE school_year_id = ?',
       [sourceSy.id]
@@ -1875,14 +1880,60 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       if (row.lrn) sourceByLrn.set(String(row.lrn), row);
     });
 
+    // Canonicalize by source-school-year student/LRN and collapse conflicting history rows.
+    const latestByLrn = new Map();
+    for (const promo of promotionRows) {
+      const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
+      if (!sourceStudent || !sourceStudent.lrn) continue;
+
+      const canonicalLrn = String(sourceStudent.lrn);
+      const candidate = {
+        ...promo,
+        canonical_student_id: String(sourceStudent.id || promo.student_id || ''),
+        canonical_lrn: canonicalLrn,
+        sourceStudent
+      };
+
+      const existing = latestByLrn.get(canonicalLrn);
+      if (!existing) {
+        latestByLrn.set(canonicalLrn, candidate);
+        continue;
+      }
+
+      const existingPriority = statusPriority(existing.status);
+      const candidatePriority = statusPriority(candidate.status);
+      if (candidatePriority > existingPriority) {
+        latestByLrn.set(canonicalLrn, candidate);
+        continue;
+      }
+
+      if (candidatePriority === existingPriority && toTimestamp(candidate.created_at) > toTimestamp(existing.created_at)) {
+        latestByLrn.set(canonicalLrn, candidate);
+      }
+    }
+
+    let normalizedPromotionRows = Array.from(latestByLrn.values())
+      .sort((a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at));
+
+    if (selectedIds.length > 0) {
+      const selectedSet = new Set(selectedIds);
+      normalizedPromotionRows = normalizedPromotionRows.filter((row) =>
+        selectedSet.has(String(row.canonical_student_id || '')) || selectedSet.has(String(row.student_id || ''))
+      );
+    }
+
+    if (!normalizedPromotionRows.length) {
+      return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0, sourceSchoolYearId: sourceSy.id, targetSchoolYearId: targetSy.id } });
+    }
+
     let inserted = 0;
     let skipped = 0;
     let promotedInserted = 0;
     let retainedInserted = 0;
     const sourceLrns = new Set();
 
-    for (const promo of promotionRows) {
-      const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
+    for (const promo of normalizedPromotionRows) {
+      const sourceStudent = promo.sourceStudent || sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
       if (!sourceStudent || !sourceStudent.lrn) {
         skipped += 1;
         continue;
@@ -2004,6 +2055,20 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       [sourceSy.id]
     );
 
+    const statusPriority = (status = '') => {
+      const normalized = String(status || '').toLowerCase();
+      if (normalized === 'promoted') return 3;
+      if (normalized === 'retained') return 2;
+      if (normalized === 'historical') return 1;
+      return 0;
+    };
+
+    const toTimestamp = (value) => {
+      const date = value ? new Date(value) : null;
+      const time = date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
+      return time;
+    };
+
     let promotionRows = await query(
       `SELECT ph.student_id, ph.lrn, ph.from_grade, ph.from_section, ph.to_grade, ph.to_section, ph.status, ph.created_at
        FROM promotion_history ph
@@ -2021,18 +2086,6 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       [sourceSy.id, sourceSy.id]
     );
 
-    if (!promotionRows.length) {
-      promotionRows = sourceRows.map((row) => ({
-        student_id: row.id,
-        lrn: row.lrn,
-        from_grade: row.grade_level,
-        from_section: row.section,
-        to_grade: row.grade_level,
-        to_section: row.section,
-        status: 'historical',
-        created_at: row.created_at || null
-      }));
-    }
     const sourceById = new Map();
     const sourceByLrn = new Map();
     sourceRows.forEach((row) => {
@@ -2040,11 +2093,58 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       if (row.lrn) sourceByLrn.set(String(row.lrn), row);
     });
 
-    const lrns = [...new Set(
-      promotionRows
-        .map((promo) => sourceById.get(String(promo.student_id || ''))?.lrn || sourceByLrn.get(String(promo.lrn || ''))?.lrn)
-        .filter(Boolean)
-    )];
+    // Canonicalize and dedupe by source-school-year LRN.
+    const latestByLrn = new Map();
+    for (const promo of promotionRows) {
+      const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
+      if (!sourceStudent || !sourceStudent.lrn) continue;
+
+      const canonicalLrn = String(sourceStudent.lrn);
+      const candidate = {
+        ...promo,
+        canonical_student_id: String(sourceStudent.id || promo.student_id || ''),
+        canonical_lrn: canonicalLrn,
+        sourceStudent
+      };
+
+      const existing = latestByLrn.get(canonicalLrn);
+      if (!existing) {
+        latestByLrn.set(canonicalLrn, candidate);
+        continue;
+      }
+
+      const existingPriority = statusPriority(existing.status);
+      const candidatePriority = statusPriority(candidate.status);
+      if (candidatePriority > existingPriority) {
+        latestByLrn.set(canonicalLrn, candidate);
+        continue;
+      }
+
+      if (candidatePriority === existingPriority && toTimestamp(candidate.created_at) > toTimestamp(existing.created_at)) {
+        latestByLrn.set(canonicalLrn, candidate);
+      }
+    }
+
+    let normalizedPromotionRows = Array.from(latestByLrn.values());
+    if (!normalizedPromotionRows.length) {
+      normalizedPromotionRows = sourceRows
+        .filter((row) => row?.id && row?.lrn)
+        .map((row) => ({
+          student_id: row.id,
+          canonical_student_id: String(row.id),
+          canonical_lrn: String(row.lrn),
+          lrn: row.lrn,
+          from_grade: row.grade_level,
+          from_section: row.section,
+          to_grade: row.grade_level,
+          to_section: row.section,
+          status: 'historical',
+          created_at: row.created_at || null,
+          sourceStudent: row
+        }));
+    }
+
+    const lrns = [...new Set(normalizedPromotionRows.map((promo) => promo.canonical_lrn).filter(Boolean))];
 
     const existingLrnsInTarget = new Set();
     if (lrns.length > 0) {
@@ -2058,8 +2158,10 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       });
     }
 
-    const candidates = promotionRows.map((promo) => {
-      const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
+    const candidates = normalizedPromotionRows
+      .sort((a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at))
+      .map((promo) => {
+      const sourceStudent = promo.sourceStudent || sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
       const lrn = sourceStudent?.lrn || promo.lrn || null;
       const firstName = sourceStudent?.first_name || '';
       const middleName = sourceStudent?.middle_name || '';
@@ -2067,7 +2169,7 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       const fullName = `${firstName} ${middleName || ''} ${lastName}`.replace(/\s+/g, ' ').trim();
 
       return {
-        id: String(promo.student_id || sourceStudent?.id || ''),
+        id: String(promo.canonical_student_id || promo.student_id || sourceStudent?.id || ''),
         lrn,
         fullName: fullName || 'Unknown Student',
         fromGrade: promo.from_grade || sourceStudent?.grade_level || null,
@@ -2078,7 +2180,7 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
         promotedAt: promo.created_at,
         alreadyFetched: lrn ? existingLrnsInTarget.has(String(lrn)) : false
       };
-    }).filter((item) => item.id && item.lrn);
+    }).filter((item) => item.id && item.lrn && item.fullName !== 'Unknown Student');
 
     return res.json({
       success: true,
