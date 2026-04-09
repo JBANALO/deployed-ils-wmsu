@@ -1352,15 +1352,19 @@ exports.getStudent = async (req, res) => {
 
     let publishedRankings = [];
     try {
+      const studentGradeNormalized = String(student.grade_level || '').replace(/^Grade\s+/i, '').trim();
       const rankingRows = await query(
         `SELECT ranking_type, quarter_key, subject_name, rank_position, score, total_students, published_at
          FROM ranking_publications
          WHERE school_year_id = ?
-           AND grade_level = ?
+           AND (
+             grade_level = ?
+             OR REPLACE(LOWER(grade_level), 'grade ', '') = LOWER(?)
+           )
            AND section = ?
            AND student_id = ?
          ORDER BY FIELD(ranking_type, 'overall', 'quarter', 'subject'), quarter_key, subject_name, published_at DESC`,
-        [targetSy.id, student.grade_level, student.section, String(studentId)]
+        [targetSy.id, student.grade_level, studentGradeNormalized, student.section, String(studentId)]
       );
 
       const quarterMap = { q1: 'Quarter 1', q2: 'Quarter 2', q3: 'Quarter 3', q4: 'Quarter 4' };

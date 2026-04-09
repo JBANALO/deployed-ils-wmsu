@@ -554,9 +554,9 @@ export default function ReportsPage() {
     }
 
     const sectionParts = String(selectedSection).split(' - ');
-    const gradeLevel = (sectionParts[0] || '').trim();
-    const section = sectionParts.slice(1).join(' - ').trim();
-    if (!gradeLevel || !section) {
+    const parsedGradeLevel = (sectionParts[0] || '').trim();
+    const parsedSection = sectionParts.slice(1).join(' - ').trim();
+    if (!parsedGradeLevel || !parsedSection) {
       return { error: 'Invalid section format. Please reselect the class section.' };
     }
 
@@ -571,6 +571,11 @@ export default function ReportsPage() {
         error: `Ranking is inactive until all report card grades are complete. Pending students: ${activeStudents.length - completeStudents.length}`
       };
     }
+
+    // Prefer normalized values from actual student records in the selected section.
+    const referenceStudent = activeStudents.find((s) => s?.gradeLevel && s?.section) || null;
+    const gradeLevel = String(referenceStudent?.gradeLevel || parsedGradeLevel).trim();
+    const section = String(referenceStudent?.section || parsedSection).trim();
 
     if (gradesSubTab === 'overall') {
       const sorted = [...activeStudents]

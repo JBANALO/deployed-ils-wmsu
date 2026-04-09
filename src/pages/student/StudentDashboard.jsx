@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { Download, Calendar, BookOpen, X, Printer } from 'lucide-react';
+import { Download, Calendar, BookOpen, X, Printer, Trophy } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import StudentTopbar from '@/layouts/student/StudentTopbar'; // ← Use @/ if you have alias, or correct path
 import { UserContext } from '@/context/UserContext'; // Import UserContext
@@ -11,6 +11,7 @@ const StudentPortal = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showReportCardModal, setShowReportCardModal] = useState(false);
+  const [showRankingModal, setShowRankingModal] = useState(false);
   const [currentSchoolYearId, setCurrentSchoolYearId] = useState(null);
   const { user } = useContext(UserContext); // Get logged-in user from context
 
@@ -1030,39 +1031,24 @@ const StudentPortal = () => {
                       Final Average: <strong className="text-2xl text-green-600">{profile.finalAverage || 'N/A'}</strong>
                     </p>
                   </div>
-                  <button onClick={() => previewReportCard()} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2">
-                    <Download className="w-5 h-5" /> Preview Report Card
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowRankingModal(true)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2"
+                    >
+                      <Trophy className="w-5 h-5" /> View Ranking
+                    </button>
+                    <button onClick={() => previewReportCard()} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2">
+                      <Download className="w-5 h-5" /> Preview Report Card
+                    </button>
+                  </div>
                 </div>
 
-                {publishedRankings.length > 0 && (
-                  <div className="mb-8 rounded-xl border border-green-200 bg-green-50 p-4">
-                    <h4 className="text-lg font-bold text-green-800 mb-3">Posted Rankings From Teacher</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {publishedRankings.map((ranking, idx) => (
-                        <div key={`${ranking.rankingType || 'ranking'}-${ranking.quarter || 'all'}-${ranking.subject || 'general'}-${idx}`} className="rounded-lg bg-white border border-green-100 p-4">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="font-semibold text-gray-800">{ranking.title || 'Published Ranking'}</p>
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${getRankingBadgeClass(Number(ranking.rank))}`}>
-                              Rank #{ranking.rank || '-'}
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-700 mt-2">
-                            Score: <strong>{formatRankingScore(ranking.score)}</strong>
-                          </p>
-                          <p className="text-sm text-gray-600">
-                            Population: {ranking.totalStudents || 0} students
-                          </p>
-                          {ranking.publishedAt && (
-                            <p className="text-xs text-gray-500 mt-1">
-                              Posted on {new Date(ranking.publishedAt).toLocaleString('en-US')}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <p className="text-sm text-gray-600 mb-6">
+                  {publishedRankings.length > 0
+                    ? `${publishedRankings.length} ranking update(s) posted by your teacher.`
+                    : 'No ranking has been posted yet. Tap View Ranking to check updates.'}
+                </p>
 
                 {grades.length === 0 ? (
                   <div className="text-center py-16 text-gray-500">
@@ -1390,6 +1376,56 @@ const StudentPortal = () => {
           </div>
         </div>
       </div>
+
+      {/* Ranking Modal */}
+      {showRankingModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-3xl w-full max-h-[85vh] overflow-auto">
+            <div className="bg-blue-700 text-white px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+              <h1 className="text-lg font-semibold tracking-wide">Posted Ranking</h1>
+              <button
+                onClick={() => setShowRankingModal(false)}
+                className="flex items-center gap-2 text-white font-semibold px-4 py-2 hover:bg-blue-800 transition rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {publishedRankings.length === 0 ? (
+                <div className="text-center py-10 text-gray-600">
+                  <p className="text-lg font-semibold text-gray-700">No ranking posted yet</p>
+                  <p className="text-sm mt-2">Your adviser/teacher has not posted ranking for your class yet.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {publishedRankings.map((ranking, idx) => (
+                    <div key={`${ranking.rankingType || 'ranking'}-${ranking.quarter || 'all'}-${ranking.subject || 'general'}-${idx}`} className="rounded-lg bg-white border border-blue-100 p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-semibold text-gray-800">{ranking.title || 'Published Ranking'}</p>
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${getRankingBadgeClass(Number(ranking.rank))}`}>
+                          Rank #{ranking.rank || '-'}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700 mt-2">
+                        Score: <strong>{formatRankingScore(ranking.score)}</strong>
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Population: {ranking.totalStudents || 0} students
+                      </p>
+                      {ranking.publishedAt && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Posted on {new Date(ranking.publishedAt).toLocaleString('en-US')}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Report Card Preview Modal */}
       {showReportCardModal && (
