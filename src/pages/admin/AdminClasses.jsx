@@ -47,6 +47,34 @@ export default function AdminClasses() {
   const normalizeSection = (value) => String(value || '').trim().toLowerCase();
   const sectionKey = (grade, section) => `${normalizeGrade(grade)}-${normalizeSection(section)}`;
 
+  const getGradeSortOrder = (gradeValue = '') => {
+    const raw = String(gradeValue || '').trim().toLowerCase();
+    if (!raw) return 99;
+    if (raw === 'kindergarten' || raw === 'kinder') return 0;
+
+    const directMatch = raw.match(/^grade\s*(\d+)$/i);
+    if (directMatch) return Number(directMatch[1]);
+
+    const compactMatch = raw.match(/^grade(\d+)$/i);
+    if (compactMatch) return Number(compactMatch[1]);
+
+    const numberOnly = raw.match(/^(\d+)$/);
+    if (numberOnly) return Number(numberOnly[1]);
+
+    return 99;
+  };
+
+  const compareClassRows = (a, b) => {
+    const gradeOrderA = getGradeSortOrder(a?.grade);
+    const gradeOrderB = getGradeSortOrder(b?.grade);
+    if (gradeOrderA !== gradeOrderB) return gradeOrderA - gradeOrderB;
+
+    const gradeLabelCompare = String(a?.grade || '').localeCompare(String(b?.grade || ''), undefined, { sensitivity: 'base' });
+    if (gradeLabelCompare !== 0) return gradeLabelCompare;
+
+    return String(a?.section || '').localeCompare(String(b?.section || ''), undefined, { sensitivity: 'base' });
+  };
+
 
   const fetchSchoolYears = async () => {
     try {
@@ -341,11 +369,13 @@ export default function AdminClasses() {
 
 
 
+  const sortedClasses = [...classesData].sort(compareClassRows);
+
   const filteredClasses = gradeFilter === "All" 
 
-    ? classesData 
+    ? sortedClasses 
 
-    : classesData.filter(cls => cls.grade === gradeFilter);
+    : sortedClasses.filter(cls => cls.grade === gradeFilter);
 
 
   const togglePrevSelection = (id) => {
@@ -448,7 +478,12 @@ export default function AdminClasses() {
 
   const totalStudents = classesData.reduce((sum, cls) => sum + cls.students, 0);
 
-  const uniqueGrades = [...new Set(classesData.map(cls => cls.grade))];
+  const uniqueGrades = [...new Set(classesData.map(cls => cls.grade))].sort((a, b) => {
+    const orderA = getGradeSortOrder(a);
+    const orderB = getGradeSortOrder(b);
+    if (orderA !== orderB) return orderA - orderB;
+    return String(a || '').localeCompare(String(b || ''), undefined, { sensitivity: 'base' });
+  });
 
   const uniqueSections = [...new Set(classesData.map(cls => cls.section))];
 

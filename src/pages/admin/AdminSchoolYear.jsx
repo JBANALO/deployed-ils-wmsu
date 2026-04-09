@@ -55,6 +55,7 @@ export default function AdminSchoolYear() {
   const [promotionAssignments, setPromotionAssignments] = useState({});
   const [historyGradeFilter, setHistoryGradeFilter] = useState('All Grades');
   const [historySectionFilter, setHistorySectionFilter] = useState('All Sections');
+  const [showPromotionHistory, setShowPromotionHistory] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -850,90 +851,105 @@ export default function AdminSchoolYear() {
             <ArchiveBoxIcon className="w-5 h-5 text-red-800" />
             Promotion History Logs
           </h3>
-          <span className="text-xs text-gray-500">Showing {filteredPromotionHistory.length} of {promotionHistory.length} records</span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Filter by Grade</label>
-            <select
-              value={historyGradeFilter}
-              onChange={(e) => setHistoryGradeFilter(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowPromotionHistory((prev) => !prev)}
+              className="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
             >
-              {historyGrades.map((g) => (
-                <option key={g} value={g}>{g}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Filter by Section</label>
-            <select
-              value={historySectionFilter}
-              onChange={(e) => setHistorySectionFilter(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            >
-              {historySections.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+              {showPromotionHistory ? 'Hide Logs' : 'Show Logs'}
+            </button>
+            <span className="text-xs text-gray-500">Showing {filteredPromotionHistory.length} of {promotionHistory.length} records</span>
           </div>
         </div>
 
-        {filteredPromotionHistory.length === 0 ? (
-          <p className="text-gray-400 text-center py-6">No promotion history yet</p>
+        {!showPromotionHistory ? (
+          <p className="text-gray-400 text-center py-6">Promotion history is hidden for now.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Date</th>
-                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Student</th>
-                  <th className="text-left py-2 px-3 text-gray-500 font-medium">LRN</th>
-                  <th className="text-left py-2 px-3 text-gray-500 font-medium">From</th>
-                  <th className="text-left py-2 px-3 text-gray-500 font-medium">To</th>
-                  <th className="text-center py-2 px-3 text-gray-500 font-medium">Average</th>
-                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Status</th>
-                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredPromotionHistory.map((row) => (
-                  <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-2 px-3 text-gray-600">{new Date(row.created_at).toLocaleString()}</td>
-                    <td className="py-2 px-3 font-medium text-gray-800">
-                      {row.student_id ? (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenStudentReportCard(row)}
-                          className="text-blue-700 hover:text-blue-900 hover:underline"
-                          title="View report card"
-                        >
-                          {row.student_name}
-                        </button>
-                      ) : (
-                        row.student_name
-                      )}
-                    </td>
-                    <td className="py-2 px-3 text-gray-700">{row.lrn || '-'}</td>
-                    <td className="py-2 px-3 text-gray-700">{row.from_grade}{row.from_section ? ` - ${row.from_section}` : ''}</td>
-                    <td className="py-2 px-3 text-gray-700">{row.to_grade || '-'}{row.to_section ? ` - ${row.to_section}` : ''}</td>
-                    <td className="py-2 px-3 text-center text-gray-700">{row.average ?? '-'}</td>
-                    <td className="py-2 px-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                        row.status === 'promoted' ? 'bg-green-100 text-green-700' :
-                        row.status === 'graduated' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-orange-100 text-orange-700'
-                      }`}>
-                        {row.status}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-gray-600">{row.reason || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Filter by Grade</label>
+                <select
+                  value={historyGradeFilter}
+                  onChange={(e) => setHistoryGradeFilter(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                >
+                  {historyGrades.map((g) => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Filter by Section</label>
+                <select
+                  value={historySectionFilter}
+                  onChange={(e) => setHistorySectionFilter(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                >
+                  {historySections.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {filteredPromotionHistory.length === 0 ? (
+              <p className="text-gray-400 text-center py-6">No promotion history yet</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left py-2 px-3 text-gray-500 font-medium">Date</th>
+                      <th className="text-left py-2 px-3 text-gray-500 font-medium">Student</th>
+                      <th className="text-left py-2 px-3 text-gray-500 font-medium">LRN</th>
+                      <th className="text-left py-2 px-3 text-gray-500 font-medium">From</th>
+                      <th className="text-left py-2 px-3 text-gray-500 font-medium">To</th>
+                      <th className="text-center py-2 px-3 text-gray-500 font-medium">Average</th>
+                      <th className="text-left py-2 px-3 text-gray-500 font-medium">Status</th>
+                      <th className="text-left py-2 px-3 text-gray-500 font-medium">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPromotionHistory.map((row) => (
+                      <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-2 px-3 text-gray-600">{new Date(row.created_at).toLocaleString()}</td>
+                        <td className="py-2 px-3 font-medium text-gray-800">
+                          {row.student_id ? (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenStudentReportCard(row)}
+                              className="text-blue-700 hover:text-blue-900 hover:underline"
+                              title="View report card"
+                            >
+                              {row.student_name}
+                            </button>
+                          ) : (
+                            row.student_name
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-gray-700">{row.lrn || '-'}</td>
+                        <td className="py-2 px-3 text-gray-700">{row.from_grade}{row.from_section ? ` - ${row.from_section}` : ''}</td>
+                        <td className="py-2 px-3 text-gray-700">{row.to_grade || '-'}{row.to_section ? ` - ${row.to_section}` : ''}</td>
+                        <td className="py-2 px-3 text-center text-gray-700">{row.average ?? '-'}</td>
+                        <td className="py-2 px-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                            row.status === 'promoted' ? 'bg-green-100 text-green-700' :
+                            row.status === 'graduated' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-orange-100 text-orange-700'
+                          }`}>
+                            {row.status}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-gray-600">{row.reason || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
       </div>
 
