@@ -1889,7 +1889,55 @@ function shouldAttemptRetainedOverride(status, reason) {
   return String(status || '').toLowerCase() === 'retained' && OVERRIDABLE_RETAINED_REASON_REGEX.test(String(reason || ''));
 }
 
-async function applyAutoPromotionOverride(candidate, sourceStudent, sourceSchoolYearId, cache) {
+function normalizeSectionName(value = '') {
+  return String(value || '').trim().toLowerCase();
+}
+
+function toGradeKey(value = '') {
+  return String(value || '').replace(/^Grade\s+/i, '').trim();
+}
+
+async function resolveDestinationSectionForGrade(sourceSchoolYearId, gradeLevel, preferredSection, cache) {
+  const schoolYearIdNum = Number(sourceSchoolYearId || 0);
+  if (!Number.isInteger(schoolYearIdNum) || schoolYearIdNum <= 0 || !gradeLevel) return null;
+
+  const cacheKey = `${schoolYearIdNum}:${String(gradeLevel).toLowerCase()}`;
+  let sections = cache.get(cacheKey);
+  if (!sections) {
+    const gradeKey = toGradeKey(gradeLevel);
+    const rows = await query(
+      `SELECT DISTINCT TRIM(section) AS section
+       FROM classes
+       WHERE school_year_id = ?
+         AND section IS NOT NULL
+         AND TRIM(section) <> ''
+         AND (
+           LOWER(TRIM(grade)) = LOWER(TRIM(?))
+           OR LOWER(TRIM(grade)) = LOWER(TRIM(?))
+           OR REPLACE(LOWER(TRIM(grade)), 'grade ', '') = LOWER(TRIM(?))
+         )
+       ORDER BY section ASC`,
+      [schoolYearIdNum, gradeLevel, gradeKey, gradeKey]
+    );
+
+    sections = rows
+      .map((row) => String(row?.section || '').trim())
+      .filter(Boolean);
+    cache.set(cacheKey, sections);
+  }
+
+  if (!sections.length) return null;
+
+  const preferredNorm = normalizeSectionName(preferredSection);
+  if (preferredNorm) {
+    const nonMatching = sections.find((section) => normalizeSectionName(section) !== preferredNorm);
+    if (nonMatching) return nonMatching;
+  }
+
+  return sections[0];
+}
+
+async function applyAutoPromotionOverride(candidate, sourceStudent, sourceSchoolYearId, cache, sectionCache) {
   if (!sourceStudent || !shouldAttemptRetainedOverride(candidate?.status, candidate?.reason)) {
     return candidate;
   }
@@ -1913,13 +1961,20 @@ async function applyAutoPromotionOverride(candidate, sourceStudent, sourceSchool
     return candidate;
   }
 
+  const resolvedSection = await resolveDestinationSectionForGrade(
+    sourceSchoolYearId,
+    nextGrade,
+    sourceStudent.section || candidate.to_section || null,
+    sectionCache
+  );
+
   return {
     ...candidate,
     status: 'promoted',
     from_grade: fromGrade,
     from_section: candidate.from_section || sourceStudent.section || null,
     to_grade: nextGrade,
-    to_section: sourceStudent.section || candidate.to_section || null,
+    to_section: resolvedSection || null,
     reason: 'Auto-corrected from grade evidence'
   };
 }
@@ -2006,6 +2061,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     // Canonicalize by source-school-year student/LRN and collapse conflicting history rows.
     const latestByLrn = new Map();
     const derivedEligibilityCache = new Map();
+    const destinationSectionCache = new Map();
     for (const promo of promotionRows) {
       const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
       if (!sourceStudent || !sourceStudent.lrn) continue;
@@ -2017,7 +2073,13 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
         canonical_lrn: canonicalLrn,
         sourceStudent
       };
-      const candidate = await applyAutoPromotionOverride(baseCandidate, sourceStudent, sourceSy.id, derivedEligibilityCache);
+      const candidate = await applyAutoPromotionOverride(
+        baseCandidate,
+        sourceStudent,
+        sourceSy.id,
+        derivedEligibilityCache,
+        destinationSectionCache
+      );
 
       const existing = latestByLrn.get(canonicalLrn);
       if (!existing) {
@@ -2076,7 +2138,18 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       }
 
       const nextGradeLevel = promo.to_grade || sourceStudent.grade_level;
-      const nextSection = promo.to_section || sourceStudent.section;
+      let nextSection = promo.to_section || sourceStudent.section;
+      if (String(promo.status || '').toLowerCase() === 'promoted' && nextGradeLevel) {
+        const resolvedSection = await resolveDestinationSectionForGrade(
+          sourceSy.id,
+          nextGradeLevel,
+          nextSection,
+          destinationSectionCache
+        );
+        if (resolvedSection) {
+          nextSection = resolvedSection;
+        }
+      }
       const normalizedStatus = String(sourceStudent.status || '').toLowerCase();
       const nextStatus = (normalizedStatus === 'declined' || normalizedStatus === 'pending' || normalizedStatus === 'rejected')
         ? 'Active'
@@ -2213,6 +2286,7 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
     // Canonicalize and dedupe by source-school-year LRN.
     const latestByLrn = new Map();
     const derivedEligibilityCache = new Map();
+    const destinationSectionCache = new Map();
     for (const promo of promotionRows) {
       const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
       if (!sourceStudent || !sourceStudent.lrn) continue;
@@ -2224,7 +2298,13 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
         canonical_lrn: canonicalLrn,
         sourceStudent
       };
-      const candidate = await applyAutoPromotionOverride(baseCandidate, sourceStudent, sourceSy.id, derivedEligibilityCache);
+      const candidate = await applyAutoPromotionOverride(
+        baseCandidate,
+        sourceStudent,
+        sourceSy.id,
+        derivedEligibilityCache,
+        destinationSectionCache
+      );
 
       const existing = latestByLrn.get(canonicalLrn);
       if (!existing) {
