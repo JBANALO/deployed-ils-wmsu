@@ -948,41 +948,53 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
     let skipped = 0;
 
     for (const t of prevTeachers) {
-      // Skip duplicates in current school year by email or username
+      // Skip duplicates globally by email/username to satisfy unique constraints.
       const dup = await query(
-        'SELECT id FROM teachers WHERE (email = ? OR username = ?) AND school_year_id = ?',
-        [t.email, t.username, targetSy.id]
+        `SELECT id
+         FROM teachers
+         WHERE LOWER(TRIM(CONVERT(email USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+            OR LOWER(TRIM(CONVERT(username USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+         LIMIT 1`,
+        [t.email || '', t.username || '']
       );
       if (dup.length) {
         skipped += 1;
         continue;
       }
 
-      await query(
-        `INSERT INTO teachers (first_name, middle_name, last_name, username, email, password, role,
-                               grade_level, section, subjects, bio, profile_pic, verification_status,
-                               sex, contact_number,
-                               school_year_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-        [
-          t.first_name,
-          t.middle_name,
-          t.last_name,
-          t.username,
-          t.email,
-          t.password,
-          t.role,
-          t.grade_level,
-          t.section,
-          t.subjects,
-          t.bio,
-          t.profile_pic,
-          t.verification_status || 'approved',
-          t.sex || null,
-          t.contact_number || null,
-          targetSy.id
-        ]
-      );
+      try {
+        await query(
+          `INSERT INTO teachers (first_name, middle_name, last_name, username, email, password, role,
+                                 grade_level, section, subjects, bio, profile_pic, verification_status,
+                                 sex, contact_number,
+                                 school_year_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          [
+            t.first_name,
+            t.middle_name,
+            t.last_name,
+            t.username,
+            t.email,
+            t.password,
+            t.role,
+            t.grade_level,
+            t.section,
+            t.subjects,
+            t.bio,
+            t.profile_pic,
+            t.verification_status || 'approved',
+            t.sex || null,
+            t.contact_number || null,
+            targetSy.id
+          ]
+        );
+      } catch (insertErr) {
+        if (insertErr?.code === 'ER_DUP_ENTRY') {
+          skipped += 1;
+          continue;
+        }
+        throw insertErr;
+      }
 
       inserted += 1;
     }
