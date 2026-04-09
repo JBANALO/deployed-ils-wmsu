@@ -120,20 +120,6 @@ export default function AdminSchoolYear() {
         // Sort newest to oldest by start_date
         const sorted = [...list].sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
         setSchoolYears(sorted.map((sy) => ({ ...sy, label: formatSchoolYearLabel(sy.label) })));
-        // Auto-set newest as active if current active is older
-        const newest = sorted[0] || null;
-        const activeRaw = activeRes.status === 'fulfilled' ? (activeRes.value.data?.data || null) : null;
-        if (newest && (!activeRaw || Number(activeRaw.id) !== Number(newest.id))) {
-          try {
-            await axios.put(`/school-years/${newest.id}/activate`);
-            toast.success(`${formatSchoolYearLabel(newest.label)} set as active (older years locked).`);
-            // Reload after activation to refresh badges/state
-            await loadData();
-            return;
-          } catch (e) {
-            console.error('Auto-activate newest failed:', e.message);
-          }
-        }
       }
 
       if (activeRes.status === 'fulfilled') {
@@ -622,9 +608,7 @@ export default function AdminSchoolYear() {
               schoolYears.map((sy, idx) => {
                 const isActive = sy.is_active === 1;
                 const isViewing = viewingSchoolYear && viewingSchoolYear.id === sy.id;
-                const newestStart = schoolYears[0]?.start_date;
-                const isNewest = newestStart && new Date(sy.start_date).getTime() === new Date(newestStart).getTime();
-                const canActivate = !isActive && isNewest; // Only newest (latest) non-active year can be activated
+                const canActivate = !isActive;
 
                 return (
                   <button
@@ -668,7 +652,7 @@ export default function AdminSchoolYear() {
                             handleSetActive(sy.id);
                           }}
                           className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition"
-                          title="Set as Active (locks previous year)"
+                          title="Set as Active"
                         >
                           <CheckCircleIcon className="w-5 h-5" />
                         </button>
