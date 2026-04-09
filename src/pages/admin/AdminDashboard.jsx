@@ -122,7 +122,14 @@ export default function AdminDashboard() {
     try {
       const res = await axios.get('/school-years');
       const list = res.data?.data || [];
-      setSchoolYears(list.map((sy) => ({ ...sy, label: formatSchoolYearLabel(sy.label) })));
+      const normalized = list.map((sy) => ({ ...sy, label: formatSchoolYearLabel(sy.label) }));
+      setSchoolYears(normalized);
+
+      const activeFromList = normalized.find((sy) => Number(sy.is_active) === 1) || null;
+      if (activeFromList) {
+        setActiveSchoolYear((prev) => prev || activeFromList);
+        setContextActiveSchoolYear(activeFromList);
+      }
     } catch (err) {
       console.error('Error fetching school years:', err);
     }
@@ -388,10 +395,28 @@ const loadDashboardStats = async (overrideSyId) => {
     setLoading(false);
 
   } catch (error) {
+    try {
+      const activeRes = await axios.get('/school-years/active');
+      const activeSy = activeRes.data?.data || null;
+      if (activeSy) {
+        const normalized = { ...activeSy, label: formatSchoolYearLabel(activeSy.label) };
+        setActiveSchoolYear(normalized);
+        setContextActiveSchoolYear(normalized);
+      }
+    } catch (syFallbackErr) {
+      console.error('Fallback school year hydrate failed:', syFallbackErr);
+    }
+
     toast.error('Error loading dashboard stats: ' + error.message);
     setLoading(false);
   }
 };
+
+  const selectedSchoolYear = schoolYears.find((sy) => String(sy.id) === String(selectedSchoolYearId)) || null;
+  const displayedSchoolYear = viewingSchoolYear || selectedSchoolYear || activeSchoolYear || null;
+  const isViewingPastSchoolYear = Boolean(
+    selectedSchoolYearId && activeSchoolYear?.id && Number(selectedSchoolYearId) !== Number(activeSchoolYear.id)
+  );
 
   const getTimeAgo = (dateString) => {
     const date = new Date(dateString);
@@ -580,15 +605,15 @@ const loadDashboardStats = async (overrideSyId) => {
   return (
     <div className="space-y-4 md:space-y-8">
       {/* Active School Year Banner */}
-      {activeSchoolYear && (
+      {displayedSchoolYear && (
         <div className="bg-gradient-to-r from-red-800 to-red-600 rounded-xl p-4 text-white shadow-lg">
           <div className="flex items-center gap-3">
             <div className="bg-white/20 p-2 rounded-full">
               <CalendarDaysIcon className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-xs text-red-100">Active School Year</p>
-              <p className="text-xl font-bold">{activeSchoolYear.label}</p>
+              <p className="text-xs text-red-100">{isViewingPastSchoolYear ? 'Viewing School Year' : 'Active School Year'}</p>
+              <p className="text-xl font-bold">{displayedSchoolYear.label}</p>
             </div>
           </div>
         </div>
