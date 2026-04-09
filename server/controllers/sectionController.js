@@ -443,20 +443,101 @@ const deleteSection = async (req, res) => {
   try {
     const { id } = req.params;
 
+    const existing = await query(
+      'SELECT id, name, grade_level, school_year_id FROM sections WHERE id = ? LIMIT 1',
+      [id]
+    );
+    if (!existing.length) {
+      return res.status(404).json({ success: false, message: 'Section not found' });
+    }
+
+    const targetSection = existing[0];
     const activeSy = await getActiveSchoolYear();
-    const sectionSy = await query('SELECT school_year_id FROM sections WHERE id = ?', [id]);
-    if (sectionSy[0]?.school_year_id !== activeSy.id) {
+    if (Number(targetSection.school_year_id) !== Number(activeSy.id)) {
       return res.status(403).json({ success: false, message: 'Cannot delete sections from previous school years (view only).' });
     }
 
-    // Check if section is in use in any class
-    const inUse = await query('SELECT COUNT(*) as count FROM classes WHERE section = (SELECT name FROM sections WHERE id = ?)', [id]);
-    if (inUse[0]?.count > 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Cannot delete section that is assigned to classes. Archive it instead.' 
+    const sectionName = String(targetSection.name || '').trim();
+    const gradeLevel = String(targetSection.grade_level || '').trim();
+
+    // Protect real enrolled classes from accidental deletion.
+    const enrolledRows = await query(
+      `SELECT COUNT(*) AS count
+       FROM students
+       WHERE school_year_id = ?
+         AND LOWER(TRIM(CONVERT(section USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+         AND (
+           LOWER(REPLACE(TRIM(CONVERT(grade_level USING utf8mb4)), 'Grade ', '')) COLLATE utf8mb4_general_ci = LOWER(REPLACE(TRIM(CONVERT(? USING utf8mb4)), 'Grade ', '')) COLLATE utf8mb4_general_ci
+           OR LOWER(TRIM(CONVERT(grade_level USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+         )`,
+      [activeSy.id, sectionName, gradeLevel, gradeLevel]
+    );
+
+    if ((enrolledRows[0]?.count || 0) > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete section with enrolled students. Move/archive students first.'
       });
     }
+
+    const classRows = await query(
+      `SELECT id, grade, section
+       FROM classes
+       WHERE school_year_id = ?`,
+      [activeSy.id]
+    );
+
+    const normalizeGrade = (value = '') => normalizeGradeForCompare(value);
+    const normalizeSection = (value = '') => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+    const matchedClasses = classRows.filter((row) => (
+      normalizeSection(row.section) === normalizeSection(sectionName)
+      && normalizeGrade(row.grade) === normalizeGrade(gradeLevel)
+    ));
+
+    const classKeys = [];
+    matchedClasses.forEach((row) => {
+      const idKey = String(row.id || '').trim();
+      if (idKey) classKeys.push(idKey);
+
+      const gradeSlug = String(row.grade || '').trim().toLowerCase().replace(/\s+/g, '-');
+      const sectionSlug = String(row.section || '').trim().toLowerCase().replace(/\s+/g, '-');
+      if (gradeSlug && sectionSlug) classKeys.push(`${gradeSlug}-${sectionSlug}`);
+    });
+
+    // Remove linked subject-teacher assignments for this section's class IDs/slugs in the active SY.
+    for (const key of [...new Set(classKeys)]) {
+      await query(
+        `DELETE FROM subject_teachers
+         WHERE school_year_id = ?
+           AND LOWER(TRIM(CONVERT(class_id USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci`,
+        [activeSy.id, key]
+      );
+    }
+
+    // Remove linked adviser assignments for this exact grade + section in active SY.
+    await query(
+      `DELETE FROM class_assignments
+       WHERE school_year_id = ?
+         AND LOWER(TRIM(CONVERT(section USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+         AND (
+           LOWER(REPLACE(TRIM(CONVERT(grade_level USING utf8mb4)), 'Grade ', '')) COLLATE utf8mb4_general_ci = LOWER(REPLACE(TRIM(CONVERT(? USING utf8mb4)), 'Grade ', '')) COLLATE utf8mb4_general_ci
+           OR LOWER(TRIM(CONVERT(grade_level USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+         )`,
+      [activeSy.id, sectionName, gradeLevel, gradeLevel]
+    );
+
+    // Remove linked classes for this exact grade + section in active SY.
+    await query(
+      `DELETE FROM classes
+       WHERE school_year_id = ?
+         AND LOWER(TRIM(CONVERT(section USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+         AND (
+           LOWER(REPLACE(TRIM(CONVERT(grade USING utf8mb4)), 'Grade ', '')) COLLATE utf8mb4_general_ci = LOWER(REPLACE(TRIM(CONVERT(? USING utf8mb4)), 'Grade ', '')) COLLATE utf8mb4_general_ci
+           OR LOWER(TRIM(CONVERT(grade USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+         )`,
+      [activeSy.id, sectionName, gradeLevel, gradeLevel]
+    );
 
     await query('DELETE FROM sections WHERE id = ?', [id]);
 
