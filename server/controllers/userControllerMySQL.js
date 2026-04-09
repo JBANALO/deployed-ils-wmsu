@@ -180,9 +180,15 @@ exports.getAllUsers = async (req, res) => {
         const allUsers = await query(
           `SELECT DISTINCT u.id, u.${firstNameCol}, u.${lastNameCol}, u.username, u.email, u.role, u.${createdAtCol}
            FROM users u
-           LEFT JOIN teachers t ON (t.id = u.id OR LOWER(TRIM(t.email)) = LOWER(TRIM(u.email))) AND t.school_year_id = ?
-           LEFT JOIN subject_teachers st ON (st.teacher_id = u.id OR LOWER(TRIM(st.teacher_name)) = LOWER(TRIM(CONCAT(u.${firstNameCol}, ' ', u.${lastNameCol})))) AND st.school_year_id = ?
-           LEFT JOIN class_assignments ca ON ca.adviser_id = u.id AND ca.school_year_id = ?
+           LEFT JOIN teachers t ON (
+             CONVERT(t.id USING utf8mb4) COLLATE utf8mb4_general_ci = CONVERT(u.id USING utf8mb4) COLLATE utf8mb4_general_ci
+             OR LOWER(TRIM(CONVERT(t.email USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(u.email USING utf8mb4))) COLLATE utf8mb4_general_ci
+           ) AND t.school_year_id = ?
+           LEFT JOIN subject_teachers st ON (
+             CONVERT(st.teacher_id USING utf8mb4) COLLATE utf8mb4_general_ci = CONVERT(u.id USING utf8mb4) COLLATE utf8mb4_general_ci
+             OR LOWER(TRIM(CONVERT(st.teacher_name USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(CONCAT(u.${firstNameCol}, ' ', u.${lastNameCol}) USING utf8mb4))) COLLATE utf8mb4_general_ci
+           ) AND st.school_year_id = ?
+           LEFT JOIN class_assignments ca ON CONVERT(ca.adviser_id USING utf8mb4) COLLATE utf8mb4_general_ci = CONVERT(u.id USING utf8mb4) COLLATE utf8mb4_general_ci AND ca.school_year_id = ?
            WHERE u.role IN ('teacher', 'subject_teacher', 'adviser')
            AND (t.id IS NOT NULL OR st.id IS NOT NULL OR ca.id IS NOT NULL)
            ORDER BY u.${createdAtCol} DESC`,
@@ -194,7 +200,10 @@ exports.getAllUsers = async (req, res) => {
         const fallbackUsers = await query(
           `SELECT DISTINCT u.id, u.${firstNameCol}, u.${lastNameCol}, u.username, u.email, u.role, u.${createdAtCol}
            FROM users u
-           JOIN teachers t ON (t.id = u.id OR LOWER(TRIM(t.email)) = LOWER(TRIM(u.email)))
+           JOIN teachers t ON (
+             CONVERT(t.id USING utf8mb4) COLLATE utf8mb4_general_ci = CONVERT(u.id USING utf8mb4) COLLATE utf8mb4_general_ci
+             OR LOWER(TRIM(CONVERT(t.email USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(u.email USING utf8mb4))) COLLATE utf8mb4_general_ci
+           )
            WHERE t.school_year_id = ?
              AND u.role IN ('teacher', 'subject_teacher', 'adviser')
            ORDER BY u.${createdAtCol} DESC`,
