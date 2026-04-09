@@ -670,9 +670,41 @@ function toGradeKey(gradeLevel = '') {
   return String(gradeLevel).replace(/^Grade\s+/i, '').trim();
 }
 
-async function getRequiredSubjectsForGrade(conn, gradeLevel) {
+async function getRequiredSubjectsForGrade(conn, gradeLevel, schoolYearId = null) {
   const gradeKey = toGradeKey(gradeLevel);
   if (!gradeKey) return [];
+
+  const targetSchoolYearId = Number(schoolYearId || 0);
+
+  if (Number.isInteger(targetSchoolYearId) && targetSchoolYearId > 0) {
+    const [scopedRows] = await conn.query(
+      `SELECT name
+       FROM subjects
+       WHERE is_archived = 0
+         AND school_year_id = ?
+         AND FIND_IN_SET(?, grade_levels)
+       ORDER BY name`,
+      [targetSchoolYearId, gradeKey]
+    );
+
+    if (scopedRows.length > 0) {
+      return scopedRows.map((r) => r.name).filter(Boolean);
+    }
+
+    const [legacyRows] = await conn.query(
+      `SELECT name
+       FROM subjects
+       WHERE is_archived = 0
+         AND (school_year_id IS NULL OR school_year_id = 0)
+         AND FIND_IN_SET(?, grade_levels)
+       ORDER BY name`,
+      [gradeKey]
+    );
+
+    if (legacyRows.length > 0) {
+      return legacyRows.map((r) => r.name).filter(Boolean);
+    }
+  }
 
   const [rows] = await conn.query(
     'SELECT name FROM subjects WHERE is_archived = 0 AND FIND_IN_SET(?, grade_levels) ORDER BY name',
@@ -767,14 +799,15 @@ async function evaluateKindergartenEligibility(conn, student) {
   };
 }
 
-async function evaluatePromotionEligibility(conn, student) {
+async function evaluatePromotionEligibility(conn, student, schoolYearId = null) {
   // Special handling for Kindergarten: attendance-based promotion
   if (normalizeGradeLevel(student.grade_level) === 'kindergarten') {
     return await evaluateKindergartenEligibility(conn, student);
   }
 
   // Grade 1-6: Subject-based grading promotion
-  const requiredSubjects = await getRequiredSubjectsForGrade(conn, student.grade_level);
+  const targetSchoolYearId = Number(schoolYearId || student.school_year_id || 0);
+  const requiredSubjects = await getRequiredSubjectsForGrade(conn, student.grade_level, targetSchoolYearId);
   if (requiredSubjects.length === 0) {
     return {
       eligible: false,
@@ -785,12 +818,19 @@ async function evaluatePromotionEligibility(conn, student) {
     };
   }
 
-  const [gradeRows] = await conn.query(
+  const gradeParams = [student.id];
+  let gradesSql =
     `SELECT subject, quarter, grade
      FROM grades
-     WHERE student_id = ? AND quarter IN ('Q1','Q2','Q3','Q4')`,
-    [student.id]
-  );
+     WHERE student_id = ?
+       AND quarter IN ('Q1','Q2','Q3','Q4')`;
+
+  if (Number.isInteger(targetSchoolYearId) && targetSchoolYearId > 0) {
+    gradesSql += ' AND school_year_id = ?';
+    gradeParams.push(targetSchoolYearId);
+  }
+
+  const [gradeRows] = await conn.query(gradesSql, gradeParams);
 
   const gradeMap = new Map();
   for (const row of gradeRows) {
@@ -943,7 +983,7 @@ async function getStudentsForPromotion(conn, studentIds = null, schoolYearId = n
   if (Array.isArray(studentIds) && studentIds.length > 0) {
     const placeholders = studentIds.map(() => '?').join(',');
     const [rows] = await conn.query(
-      `SELECT id, lrn, first_name, last_name, grade_level, section
+      `SELECT id, lrn, first_name, last_name, grade_level, section, school_year_id
        FROM students
        WHERE id IN (${placeholders})
          AND school_year_id = ?
@@ -954,7 +994,7 @@ async function getStudentsForPromotion(conn, studentIds = null, schoolYearId = n
   }
 
   const [rows] = await conn.query(
-    `SELECT id, lrn, first_name, last_name, grade_level, section
+    `SELECT id, lrn, first_name, last_name, grade_level, section, school_year_id
      FROM students
      WHERE school_year_id = ?
      ORDER BY grade_level, section, last_name, first_name`,
@@ -963,7 +1003,7 @@ async function getStudentsForPromotion(conn, studentIds = null, schoolYearId = n
   return rows;
 }
 
-async function buildPromotionCandidate(conn, student) {
+async function buildPromotionCandidate(conn, student, schoolYearId = null) {
   const currentGrade = student.grade_level || '';
   const nextGrade = GRADE_PROGRESSION[currentGrade];
   const studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim();
@@ -985,7 +1025,7 @@ async function buildPromotionCandidate(conn, student) {
     };
   }
 
-  const eligibility = await evaluatePromotionEligibility(conn, student);
+  const eligibility = await evaluatePromotionEligibility(conn, student, schoolYearId);
   return {
     id: student.id,
     lrn: student.lrn || null,
@@ -1009,8 +1049,13 @@ function buildClassIdFromGradeSection(gradeLevel = '', section = '') {
   return `${grade}-${sec}`;
 }
 
-async function getScheduleSnapshotForClass(conn, gradeLevel, section) {
+async function getScheduleSnapshotForClass(conn, gradeLevel, section, schoolYearId = null) {
   if (!gradeLevel || !section) return [];
+
+  const targetSchoolYearId = Number(schoolYearId || 0);
+  const hasTargetSchoolYear = Number.isInteger(targetSchoolYearId) && targetSchoolYearId > 0;
+  const classScopeSql = hasTargetSchoolYear ? ' AND school_year_id = ?' : '';
+  const classScopeParams = hasTargetSchoolYear ? [targetSchoolYearId] : [];
 
   const classIdCandidates = new Set();
   const slugId = buildClassIdFromGradeSection(gradeLevel, section);
@@ -1020,8 +1065,8 @@ async function getScheduleSnapshotForClass(conn, gradeLevel, section) {
     `SELECT id
      FROM classes
      WHERE (grade = ? OR grade = ? OR REPLACE(LOWER(grade), 'grade ', '') = LOWER(?))
-       AND section = ?`,
-    [gradeLevel, toGradeKey(gradeLevel), toGradeKey(gradeLevel), section]
+       AND section = ?${classScopeSql}`,
+    [gradeLevel, toGradeKey(gradeLevel), toGradeKey(gradeLevel), section, ...classScopeParams]
   );
 
   classRows.forEach((row) => {
@@ -1051,17 +1096,24 @@ async function getScheduleSnapshotForClass(conn, gradeLevel, section) {
 
 // Pick destination class for promoted student in the target grade.
 // Strategy: choose class with lowest current student count to balance sections.
-async function pickDestinationClass(conn, targetGrade) {
+async function pickDestinationClass(conn, targetGrade, schoolYearId = null) {
+  const targetSchoolYearId = Number(schoolYearId || 0);
+  const hasTargetSchoolYear = Number.isInteger(targetSchoolYearId) && targetSchoolYearId > 0;
+  const classScopeSql = hasTargetSchoolYear ? ' AND c.school_year_id = ?' : '';
+  const classScopeParams = hasTargetSchoolYear ? [targetSchoolYearId] : [];
+  const studentScopeSql = hasTargetSchoolYear ? ' AND s.school_year_id = c.school_year_id' : '';
+
   const [rows] = await conn.query(
     `SELECT c.id, c.grade, c.section, c.adviser_id, c.adviser_name,
             COUNT(s.id) AS student_count
      FROM classes c
      LEFT JOIN students s
-       ON s.grade_level = c.grade AND s.section = c.section
-     WHERE c.grade = ?
+       ON LOWER(TRIM(CONVERT(s.grade_level USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(c.grade USING utf8mb4))) COLLATE utf8mb4_general_ci
+      AND LOWER(TRIM(CONVERT(s.section USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(c.section USING utf8mb4))) COLLATE utf8mb4_general_ci${studentScopeSql}
+     WHERE c.grade = ?${classScopeSql}
      GROUP BY c.id, c.grade, c.section, c.adviser_id, c.adviser_name
      ORDER BY student_count ASC, c.section ASC`,
-    [targetGrade]
+    [targetGrade, ...classScopeParams]
   );
 
   return rows[0] || null;
@@ -1119,10 +1171,12 @@ exports.promoteStudents = async (req, res) => {
       if (!nextGrade) continue; // unknown grade level — skip
 
       try {
-        const eligibility = await evaluatePromotionEligibility(connection, student);
+        const eligibility = await evaluatePromotionEligibility(connection, student, activeSY?.id || null);
         const avg = Number(eligibility.average || 0);
         const passed = eligibility.eligible;
-        const previousSchedule = passed ? await getScheduleSnapshotForClass(connection, currentGrade, currentSection) : [];
+        const previousSchedule = passed
+          ? await getScheduleSnapshotForClass(connection, currentGrade, currentSection, activeSY?.id || null)
+          : [];
 
         if (!passed) {
           // Retain student
@@ -1188,9 +1242,9 @@ exports.promoteStudents = async (req, res) => {
             const [rows] = await connection.query(
               `SELECT id, grade, section, adviser_id, adviser_name
                FROM classes
-               WHERE id = ? AND grade = ?
+               WHERE id = ? AND grade = ? AND school_year_id = ?
                LIMIT 1`,
-              [requestedClassId, nextGrade]
+              [requestedClassId, nextGrade, activeSY?.id || null]
             );
             destinationClass = rows[0] || null;
           }
@@ -1203,7 +1257,7 @@ exports.promoteStudents = async (req, res) => {
                 message: `Missing or invalid destination class assignment for ${studentName} (${nextGrade})`
               });
             }
-            destinationClass = await pickDestinationClass(connection, nextGrade);
+            destinationClass = await pickDestinationClass(connection, nextGrade, activeSY?.id || null);
           }
 
           const nextSection = destinationClass?.section || currentSection || null;
@@ -1340,7 +1394,7 @@ exports.getPromotionCandidates = async (req, res) => {
 
     const candidates = [];
     for (const student of students) {
-      const candidate = await buildPromotionCandidate(connection, student);
+      const candidate = await buildPromotionCandidate(connection, student, activeSY?.id || student.school_year_id || null);
       if (candidate.toGrade) {
         candidates.push(candidate);
       }
@@ -1399,7 +1453,7 @@ exports.getPromotionPreview = async (req, res) => {
       let failingCount = 0;
 
       for (const student of students) {
-        const eligibility = await evaluatePromotionEligibility(connection, student);
+        const eligibility = await evaluatePromotionEligibility(connection, student, activeSY.id);
         if (eligibility.hasCompleteGrades) completeCount += 1;
         else incompleteCount += 1;
         if (eligibility.hasFailingGrade) failingCount += 1;
