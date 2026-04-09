@@ -1149,17 +1149,60 @@ exports.getStudent = async (req, res) => {
     // ======== FETCH SCHEDULE (from subject_teachers) ========
     const gradeLevel = student.grade_level;
     const section = student.section;
-    const classId = `${gradeLevel.toLowerCase().replace(/\s+/g, '-')}-${section.toLowerCase()}`;
-    
-    const scheduleRaw = await query(
-      `SELECT subject, teacher_name, day, start_time, end_time 
-       FROM subject_teachers 
-       WHERE class_id = ? AND school_year_id = ?
-       ORDER BY 
-         FIELD(day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'),
-         start_time`,
-      [classId, targetSy.id]
-    );
+    const classIdSlug = `${String(gradeLevel || '').toLowerCase().replace(/\s+/g, '-')}-${String(section || '').toLowerCase()}`;
+    const classIdCandidates = new Set([classIdSlug]);
+
+    try {
+      const classRows = await query(
+        `SELECT id
+         FROM classes
+         WHERE school_year_id = ?
+           AND (grade = ? OR grade = ? OR REPLACE(LOWER(grade), 'grade ', '') = LOWER(?))
+           AND section = ?`,
+        [targetSy.id, gradeLevel, toGradeKey(gradeLevel), toGradeKey(gradeLevel), section]
+      );
+
+      classRows.forEach((row) => {
+        if (row?.id) classIdCandidates.add(String(row.id));
+      });
+    } catch (classResolveErr) {
+      console.log('student schedule class lookup skipped:', classResolveErr.message);
+    }
+
+    try {
+      const assignmentRows = await query(
+        `SELECT class_id
+         FROM class_assignments
+         WHERE school_year_id = ?
+           AND LOWER(TRIM(grade_level)) = LOWER(TRIM(?))
+           AND LOWER(TRIM(section)) = LOWER(TRIM(?))`,
+        [targetSy.id, gradeLevel, section]
+      );
+
+      assignmentRows.forEach((row) => {
+        if (row?.class_id) classIdCandidates.add(String(row.class_id));
+      });
+    } catch (assignmentResolveErr) {
+      console.log('student schedule class_assignments lookup skipped:', assignmentResolveErr.message);
+    }
+
+    const classIdList = Array.from(classIdCandidates).filter(Boolean);
+    const classId = classIdList[0] || classIdSlug;
+
+    let scheduleRaw = [];
+    if (classIdList.length > 0) {
+      const classPlaceholders = classIdList.map(() => '?').join(',');
+      scheduleRaw = await query(
+        `SELECT subject, teacher_name, day, start_time, end_time
+         FROM subject_teachers
+         WHERE school_year_id = ?
+           AND class_id IN (${classPlaceholders})
+         ORDER BY
+           FIELD(day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'),
+           start_time`,
+        [targetSy.id, ...classIdList]
+      );
+    }
 
     // Previous schedule snapshots (captured at promotion time)
     let previousScheduleHistory = [];
