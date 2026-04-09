@@ -1747,6 +1747,9 @@ exports.updateStudent = async (req, res) => {
     const normalizedActorId = String(actorId || '').trim();
     const currentStatus = String(existingStudents[0].status || '').trim().toLowerCase();
     const nextStatus = String(status || '').trim().toLowerCase();
+    const normalizedStatusValue = status === undefined
+      ? undefined
+      : (nextStatus === 'inactive' ? 'inactive' : nextStatus === 'active' || nextStatus === 'approved' ? 'Active' : status);
 
     if (isTeacherActor && !isAdminActor) {
       if (!normalizedActorId) {
@@ -1802,7 +1805,7 @@ exports.updateStudent = async (req, res) => {
     if (parentEmail !== undefined) { updates.push('parent_email = ?'); params.push(parentEmail); }
     if (parentContact !== undefined) { updates.push('parent_contact = ?'); params.push(parentContact); }
     if (studentEmail !== undefined) { updates.push('student_email = ?'); params.push(studentEmail); }
-    if (status !== undefined) { updates.push('status = ?'); params.push(status); }
+    if (normalizedStatusValue !== undefined) { updates.push('status = ?'); params.push(normalizedStatusValue); }
 
     // Always update the updated_at timestamp
     updates.push('updated_at = NOW()');

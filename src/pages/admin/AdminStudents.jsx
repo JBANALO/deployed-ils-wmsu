@@ -362,13 +362,22 @@ export default function AdminStudents() {
           toast.error('Previous school years are view-only. Switch to the active year to edit.');
           return;
         }
+    const normalizedStatus = String(student.status || '').trim().toLowerCase();
+    const statusForEdit = normalizedStatus === 'inactive' ? 'inactive' : 'Active';
     setSelectedStudent(student);
-    setEditFormData({ ...student });
+    setEditFormData({ ...student, status: statusForEdit });
     setShowEditModal(true);
   };
 
   const handleUpdateStudent = async () => {
     try {
+      const actor = JSON.parse(localStorage.getItem('user') || '{}');
+      const actorRole = String(actor?.role || 'admin').toLowerCase();
+      const actorId = actor?.id ? String(actor.id) : null;
+      const statusPayload = String(editFormData.status || 'Active').trim().toLowerCase() === 'inactive'
+        ? 'inactive'
+        : 'Active';
+
       // Create the update data object with all fields
       const updateData = {
         lrn: editFormData.lrn,
@@ -386,7 +395,9 @@ export default function AdminStudents() {
         // Include other existing fields that might be needed
         email: editFormData.email,
         username: editFormData.username,
-        status: editFormData.status
+        status: statusPayload,
+        actorRole,
+        actorId
       };
 
       const response = await fetch(`${API_BASE_URL}/students/${selectedStudent.id}`, {
@@ -1373,6 +1384,18 @@ export default function AdminStudents() {
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
                 </select>
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Account Status</label>
+                <select
+                  value={editFormData.status || 'Active'}
+                  onChange={(e) => setEditFormData({...editFormData, status: e.target.value})}
+                  className="w-full border p-2 rounded-lg"
+                >
+                  <option value="Active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Inactive students cannot login. Admin can set them back to Active when they return.</p>
               </div>
               <div className="border-t pt-4 mt-4">
                 <h4 className="font-bold text-red-800 mb-3">📧 Parent/Guardian Contact Info</h4>

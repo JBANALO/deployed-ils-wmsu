@@ -393,7 +393,9 @@ exports.login = async (req, res) => {
     }
 
     // FINAL TEMP OVERRIDE: allow any student with Active/approved status to login once found
-    if (!passwordMatch && user.lrn && (user.status === 'Active' || user.status === 'approved')) {
+    const normalizedAccountStatus = String(user.status || '').trim().toLowerCase();
+
+    if (!passwordMatch && user.lrn && (normalizedAccountStatus === 'active' || normalizedAccountStatus === 'approved')) {
       passwordMatch = true;
       console.log('🚧 TEMP OVERRIDE: bypassing student password check for Active/approved');
     }
@@ -403,7 +405,7 @@ exports.login = async (req, res) => {
     }
 
     // Check student status - only approved students can login
-    if (user.lrn && user.status && user.status !== 'approved' && user.status !== 'Active') {
+    if (user.lrn && normalizedAccountStatus && normalizedAccountStatus !== 'approved' && normalizedAccountStatus !== 'active') {
       console.log('Student login blocked - status:', user.status);
       return res.status(401).json({ 
         status: 'fail', 
@@ -412,7 +414,7 @@ exports.login = async (req, res) => {
     }
 
     // Check admin/teacher status - only approved admins/teachers can login
-    if (!user.lrn && user.status && user.status !== 'approved' && user.status !== 'Active') {
+    if (!user.lrn && normalizedAccountStatus && normalizedAccountStatus !== 'approved' && normalizedAccountStatus !== 'active') {
       console.log('Admin/Teacher login blocked - status:', user.status);
       return res.status(401).json({ 
         status: 'fail', 
