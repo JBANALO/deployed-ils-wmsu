@@ -102,6 +102,66 @@ export default function ReportsPage() {
     });
   };
 
+  const getQuarterLabel = (quarterKey) => {
+    const labels = {
+      q1: 'Quarter 1',
+      q2: 'Quarter 2',
+      q3: 'Quarter 3',
+      q4: 'Quarter 4',
+      all: 'All Quarters'
+    };
+    return labels[String(quarterKey || '').toLowerCase()] || 'Selected Quarter';
+  };
+
+  const getSubjectsForScope = (student, subjectsForScope = []) => {
+    if (Array.isArray(subjectsForScope) && subjectsForScope.length > 0) return subjectsForScope;
+    return Object.keys(student?.grades || {});
+  };
+
+  const isStudentRankingComplete = (student, quarterKey, subjectsForScope = []) => {
+    const quarter = String(quarterKey || '').toLowerCase();
+    if (quarter === 'all') {
+      const grades = student?.grades || {};
+      const scopedSubjects = getSubjectsForScope(student, subjectsForScope);
+      if (scopedSubjects.length === 0) return false;
+
+      return scopedSubjects.every((subject) => {
+        const quarterGrades = grades[subject] || {};
+        return ['q1', 'q2', 'q3', 'q4'].every((q) => isPassingGradeValue(quarterGrades[q]));
+      });
+    }
+    if (!['q1', 'q2', 'q3', 'q4'].includes(quarter)) return false;
+
+    const scopedSubjects = getSubjectsForScope(student, subjectsForScope);
+    return isStudentQuarterComplete(student, quarter, scopedSubjects);
+  };
+
+  const getStudentQuarterAverageForScope = (student, quarterKey, subjectsForScope = []) => {
+    const quarter = String(quarterKey || '').toLowerCase();
+    if (!['q1', 'q2', 'q3', 'q4'].includes(quarter)) return 0;
+
+    const scopedSubjects = getSubjectsForScope(student, subjectsForScope);
+    const quarterGrades = scopedSubjects
+      .map((subjectName) => Number(student?.grades?.[subjectName]?.[quarter]))
+      .filter((val) => Number.isFinite(val) && val > 0);
+
+    return quarterGrades.length > 0
+      ? quarterGrades.reduce((acc, val) => acc + val, 0) / quarterGrades.length
+      : 0;
+  };
+
+  const buildRankingInactiveMessage = (sectionLabel, quarterKey, pendingCount) => {
+    const prefix = sectionLabel
+      ? `Ranking is inactive for ${sectionLabel}.`
+      : 'Ranking is inactive.';
+
+    if (String(quarterKey || '').toLowerCase() === 'all') {
+      return `${prefix} Complete all report card grades (Q1-Q4 per subject) for all students first. Pending students: ${pendingCount}`;
+    }
+
+    return `${prefix} Complete ${getQuarterLabel(quarterKey)} grades per subject for all students first. Pending students: ${pendingCount}`;
+  };
+
   const isInactiveStudent = (student) => {
     const status = String(student?.status || '').trim().toLowerCase();
     return status === 'inactive';
@@ -124,7 +184,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     loadReportsData();
-  }, [selectedSection, selectedMonth, selectedYear, selectedSchoolYearId, selectedAttendanceSubject]);
+  }, [selectedSection, selectedMonth, selectedYear, selectedSchoolYearId, selectedAttendanceSubject, selectedQuarterForView]);
 
   const fetchActiveSchoolYear = async () => {
     try {
@@ -458,32 +518,42 @@ export default function ReportsPage() {
 
       // Get top performing students — only those with avg >= 85 (honor level and above)
       const rankingEligibleStudents = studentsWithGrades.filter((s) => !isInactiveStudent(s));
+      const subjectsForScope = [...subjectSet];
+      const rankingScopeQuarter = String(selectedQuarterForView || 'q1').toLowerCase();
+      const getRankingScore = (student) => {
+        if (rankingScopeQuarter === 'all') {
+          return Number(student?.average) || 0;
+        }
+        return getStudentQuarterAverageForScope(student, rankingScopeQuarter, subjectsForScope);
+      };
 
       const topPerformers = rankingEligibleStudents
-        .filter(s => s.average && s.average >= 85)
-        .sort((a, b) => (b.average || 0) - (a.average || 0))
+        .map((s) => ({ student: s, score: getRankingScore(s) }))
+        .filter((row) => row.score >= 85)
+        .sort((a, b) => b.score - a.score)
         .map((s, idx) => ({
           rank: idx + 1,
-          id: s.id,
-          name: `${s.lastName}, ${s.firstName}`,
-          avg: s.average || 0,
-          section: `${s.gradeLevel} - ${s.section}`,
-          parentEmail: s.parentEmail,
+          id: s.student.id,
+          name: `${s.student.lastName}, ${s.student.firstName}`,
+          avg: Number(s.score.toFixed(2)) || 0,
+          section: `${s.student.gradeLevel} - ${s.student.section}`,
+          parentEmail: s.student.parentEmail,
         }));
 
       setTopStudents(topPerformers);
 
       // Get lowest performing students (only those with avg <= 80 — actual underperformers)
       const lowestPerformers = rankingEligibleStudents
-        .filter(s => s.average && s.average > 0 && s.average <= 80)
-        .sort((a, b) => (a.average || 0) - (b.average || 0))
+        .map((s) => ({ student: s, score: getRankingScore(s) }))
+        .filter((row) => row.score > 0 && row.score <= 80)
+        .sort((a, b) => a.score - b.score)
         .map((s, idx) => ({
           rank: idx + 1,
-          id: s.id,
-          name: `${s.lastName}, ${s.firstName}`,
-          avg: s.average || 0,
-          section: `${s.gradeLevel} - ${s.section}`,
-          parentEmail: s.parentEmail,
+          id: s.student.id,
+          name: `${s.student.lastName}, ${s.student.firstName}`,
+          avg: Number(s.score.toFixed(2)) || 0,
+          section: `${s.student.gradeLevel} - ${s.student.section}`,
+          parentEmail: s.student.parentEmail,
         }));
 
       setLowestStudents(lowestPerformers);
@@ -571,15 +641,26 @@ export default function ReportsPage() {
       return { error: 'Invalid section format. Please reselect the class section.' };
     }
 
+    if (gradesSubTab === 'per-subject' && !selectedSubjectForRanking) {
+      return { error: 'Select a subject first before posting ranking.' };
+    }
+
     const activeStudents = students.filter((s) => !isInactiveStudent(s));
     if (activeStudents.length === 0) {
       return { error: 'No students found in this section to rank.' };
     }
 
-    const completeStudents = activeStudents.filter(isStudentReportCardComplete);
+    const rankingQuarterForReadiness = selectedQuarterForView === 'all' ? 'all' : String(selectedQuarterForView || 'q1').toLowerCase();
+    const readinessSubjects = gradesSubTab === 'per-subject' && selectedSubjectForRanking
+      ? [selectedSubjectForRanking]
+      : allSubjects;
+
+    const completeStudents = activeStudents.filter((student) =>
+      isStudentRankingComplete(student, rankingQuarterForReadiness, readinessSubjects)
+    );
     if (completeStudents.length !== activeStudents.length) {
       return {
-        error: `Ranking is inactive until all report card grades are complete. Pending students: ${activeStudents.length - completeStudents.length}`
+        error: buildRankingInactiveMessage(selectedSection, rankingQuarterForReadiness, activeStudents.length - completeStudents.length)
       };
     }
 
@@ -589,19 +670,27 @@ export default function ReportsPage() {
     const section = String(referenceStudent?.section || parsedSection).trim();
 
     if (gradesSubTab === 'overall') {
+      const getOverallScore = (student) => {
+        if (rankingQuarterForReadiness === 'all') {
+          return Number(student?.average) || 0;
+        }
+        return getStudentQuarterAverageForScope(student, rankingQuarterForReadiness, allSubjects);
+      };
+
       const sorted = [...activeStudents]
-        .filter((student) => Number(student?.average) > 0)
-        .sort((a, b) => (Number(b?.average) || 0) - (Number(a?.average) || 0));
+        .map((student) => ({ student, score: getOverallScore(student) }))
+        .filter((row) => row.score > 0)
+        .sort((a, b) => b.score - a.score);
 
       if (sorted.length === 0) {
         return { error: 'No overall averages available to publish.' };
       }
 
-      const rankings = sorted.map((student, idx) => ({
-        studentId: student.id,
-        studentName: `${student.lastName}, ${student.firstName}`,
+      const rankings = sorted.map((row, idx) => ({
+        studentId: row.student.id,
+        studentName: `${row.student.lastName}, ${row.student.firstName}`,
         rank: idx + 1,
-        score: Number((Number(student.average) || 0).toFixed(2)),
+        score: Number(row.score.toFixed(2)),
         totalStudents: sorted.length
       }));
 
@@ -611,7 +700,7 @@ export default function ReportsPage() {
           gradeLevel,
           section,
           rankingType: 'overall',
-          quarter: '',
+          quarter: rankingQuarterForReadiness === 'all' ? '' : rankingQuarterForReadiness,
           subject: '',
           rankings
         }
@@ -942,6 +1031,15 @@ export default function ReportsPage() {
                 Top Performing Students
               </h3>
               <div className="flex items-center gap-2">
+                <span className="text-sm text-red-200">Quarter:</span>
+                <select value={selectedQuarterForView} onChange={e => setSelectedQuarterForView(e.target.value)}
+                  className="px-2 py-1 rounded bg-red-700 text-white text-sm border border-red-500 focus:outline-none">
+                  <option value="q1">Q1</option>
+                  <option value="q2">Q2</option>
+                  <option value="q3">Q3</option>
+                  <option value="q4">Q4</option>
+                  <option value="all">All</option>
+                </select>
                 <span className="text-sm text-red-200">Show:</span>
                 <select value={topLimit} onChange={e => setTopLimit(e.target.value === 'all' ? 9999 : Number(e.target.value))}
                   className="px-2 py-1 rounded bg-red-700 text-white text-sm border border-red-500 focus:outline-none">
@@ -957,9 +1055,11 @@ export default function ReportsPage() {
               <div className="space-y-4">
                 {(() => {
                   const activeStudents = students.filter((s) => !isInactiveStudent(s));
+                  const rankingQuarter = selectedQuarterForView === 'all' ? 'all' : String(selectedQuarterForView || 'q1').toLowerCase();
+                  const rankingSubjects = allSubjects;
                   const rankingReady = Boolean(selectedSection)
                     && activeStudents.length > 0
-                    && activeStudents.every(isStudentReportCardComplete);
+                    && activeStudents.every((s) => isStudentRankingComplete(s, rankingQuarter, rankingSubjects));
 
                   if (loading) {
                     return <p className="text-center text-gray-500">Loading top students...</p>;
@@ -970,10 +1070,10 @@ export default function ReportsPage() {
                   }
 
                   if (!rankingReady) {
-                    const pendingCount = activeStudents.filter((s) => !isStudentReportCardComplete(s)).length;
+                    const pendingCount = activeStudents.filter((s) => !isStudentRankingComplete(s, rankingQuarter, rankingSubjects)).length;
                     return (
                       <p className="text-center text-amber-700">
-                        Ranking is inactive for {selectedSection}. Complete all report card grades (Q1-Q4 per subject) for all students first. Pending students: {pendingCount}
+                        {buildRankingInactiveMessage(selectedSection, rankingQuarter, pendingCount)}
                       </p>
                     );
                   }
@@ -1043,9 +1143,11 @@ export default function ReportsPage() {
               <div className="space-y-4">
                 {(() => {
                   const activeStudents = students.filter((s) => !isInactiveStudent(s));
+                  const rankingQuarter = selectedQuarterForView === 'all' ? 'all' : String(selectedQuarterForView || 'q1').toLowerCase();
+                  const rankingSubjects = allSubjects;
                   const rankingReady = Boolean(selectedSection)
                     && activeStudents.length > 0
-                    && activeStudents.every(isStudentReportCardComplete);
+                    && activeStudents.every((s) => isStudentRankingComplete(s, rankingQuarter, rankingSubjects));
 
                   if (loading) {
                     return <p className="text-center text-gray-500">Loading students...</p>;
@@ -1056,10 +1158,10 @@ export default function ReportsPage() {
                   }
 
                   if (!rankingReady) {
-                    const pendingCount = activeStudents.filter((s) => !isStudentReportCardComplete(s)).length;
+                    const pendingCount = activeStudents.filter((s) => !isStudentRankingComplete(s, rankingQuarter, rankingSubjects)).length;
                     return (
                       <p className="text-center text-amber-700">
-                        Ranking is inactive for {selectedSection}. Complete all report card grades (Q1-Q4 per subject) for all students first. Pending students: {pendingCount}
+                        {buildRankingInactiveMessage(selectedSection, rankingQuarter, pendingCount)}
                       </p>
                     );
                   }
@@ -1284,18 +1386,46 @@ export default function ReportsPage() {
             <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
               {(() => {
                 const sortedStudents = [...students].filter((s) => !isInactiveStudent(s)).sort((a, b) => (b.average || 0) - (a.average || 0));
-                const completeStudents = sortedStudents.filter(isStudentReportCardComplete);
+                const rankingQuarter = selectedQuarterForView === 'all' ? 'all' : String(selectedQuarterForView || 'q1').toLowerCase();
+                const rankingSubjects = allSubjects;
+                const completeStudents = sortedStudents.filter((s) => isStudentRankingComplete(s, rankingQuarter, rankingSubjects));
                 const isRankingActive = Boolean(selectedSection) && sortedStudents.length > 0 && completeStudents.length === sortedStudents.length;
                 const pendingCount = sortedStudents.length - completeStudents.length;
-                const rowsToRank = isRankingActive ? sortedStudents : [];
+                const getOverallScore = (student) => {
+                  if (rankingQuarter === 'all') {
+                    return Number(student?.average) || 0;
+                  }
+                  return getStudentQuarterAverageForScope(student, rankingQuarter, rankingSubjects);
+                };
+                const rowsToRank = isRankingActive
+                  ? [...sortedStudents]
+                      .map((student) => ({ student, score: getOverallScore(student) }))
+                      .filter((row) => row.score > 0)
+                      .sort((a, b) => b.score - a.score)
+                  : [];
 
                 return (
                   <>
               <div className="bg-gradient-to-r from-red-800 to-red-900 text-white px-6 py-5">
-                <h3 className="text-xl font-bold">🏆 Overall Average Ranking</h3>
-                <p className="text-red-200 text-sm mt-1">
-                  {selectedSection || 'All Sections'} — {isRankingActive ? 'ranking active' : 'ranking inactive'}
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xl font-bold">🏆 Overall Average Ranking</h3>
+                    <p className="text-red-200 text-sm mt-1">
+                      {selectedSection || 'All Sections'} — {isRankingActive ? 'ranking active' : 'ranking inactive'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-red-200">Quarter:</span>
+                    <select value={selectedQuarterForView} onChange={e => setSelectedQuarterForView(e.target.value)}
+                      className="px-3 py-1.5 rounded bg-red-700 text-white text-sm border border-red-400 focus:outline-none">
+                      <option value="q1">Quarter 1</option>
+                      <option value="q2">Quarter 2</option>
+                      <option value="q3">Quarter 3</option>
+                      <option value="q4">Quarter 4</option>
+                      <option value="all">All Quarters (Avg)</option>
+                    </select>
+                  </div>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1321,33 +1451,33 @@ export default function ReportsPage() {
                     ) : !isRankingActive ? (
                       <tr>
                         <td colSpan={6 + allSubjects.length} className="px-6 py-8 text-center text-amber-700 bg-amber-50">
-                          Ranking is inactive. Please complete all report card grades (Q1-Q4 per subject) for all students first. Pending students: {pendingCount}
+                          {buildRankingInactiveMessage('', rankingQuarter, pendingCount)}
                         </td>
                       </tr>
-                    ) : rowsToRank.map((student, idx) => (
-                      <tr key={student.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    ) : rowsToRank.map((row, idx) => (
+                      <tr key={row.student.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="px-4 py-3 font-bold text-gray-700">#{idx + 1}</td>
-                        <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">{student.lastName}, {student.firstName}</td>
-                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{student.gradeLevel} - {student.section}</td>
+                        <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">{row.student.lastName}, {row.student.firstName}</td>
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{row.student.gradeLevel} - {row.student.section}</td>
                         {allSubjects.map(subj => {
-                          const g = student.grades?.[subj];
+                          const g = row.student.grades?.[subj];
                           const vals = g ? [g.q1, g.q2, g.q3, g.q4].filter(v => v > 0) : [];
                           const avg = vals.length > 0 ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '—';
                           return <td key={subj} className="px-3 py-3 text-center text-gray-700">{avg}</td>;
                         })}
-                        <td className="px-4 py-3 text-center font-bold text-gray-900">{student.average?.toFixed(2) || '—'}</td>
+                        <td className="px-4 py-3 text-center font-bold text-gray-900">{Number(row.score || 0).toFixed(2)}</td>
                         <td className="px-4 py-3 text-center">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            (student.average || 0) >= 98 ? 'bg-yellow-100 text-yellow-800' :
-                            (student.average || 0) >= 95 ? 'bg-green-100 text-green-800' :
-                            (student.average || 0) >= 85 ? 'bg-emerald-100 text-emerald-800' :
-                            (student.average || 0) >= 75 ? 'bg-blue-100 text-blue-800' :
+                            (row.score || 0) >= 98 ? 'bg-yellow-100 text-yellow-800' :
+                            (row.score || 0) >= 95 ? 'bg-green-100 text-green-800' :
+                            (row.score || 0) >= 85 ? 'bg-emerald-100 text-emerald-800' :
+                            (row.score || 0) >= 75 ? 'bg-blue-100 text-blue-800' :
                             'bg-red-100 text-red-800'
                           }`}>
-                            {(student.average || 0) >= 98 ? '🥇 With Highest Honors' :
-                             (student.average || 0) >= 95 ? '🥈 With High Honors' :
-                             (student.average || 0) >= 85 ? '🥉 With Honors' :
-                             (student.average || 0) >= 75 ? '✅ No Award' :
+                            {(row.score || 0) >= 98 ? '🥇 With Highest Honors' :
+                             (row.score || 0) >= 95 ? '🥈 With High Honors' :
+                             (row.score || 0) >= 85 ? '🥉 With Honors' :
+                             (row.score || 0) >= 75 ? '✅ No Award' :
                              '❌ Failed'}
                           </span>
                         </td>
@@ -1367,7 +1497,9 @@ export default function ReportsPage() {
             <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
               {(() => {
                 const activeStudents = students.filter((s) => !isInactiveStudent(s));
-                const completeStudents = activeStudents.filter(isStudentReportCardComplete);
+                const rankingQuarter = selectedQuarterForView === 'all' ? 'all' : String(selectedQuarterForView || 'q1').toLowerCase();
+                const rankingSubjects = selectedSubjectForRanking ? [selectedSubjectForRanking] : [];
+                const completeStudents = activeStudents.filter((s) => isStudentRankingComplete(s, rankingQuarter, rankingSubjects));
                 const isRankingActive = Boolean(selectedSection)
                   && activeStudents.length > 0
                   && completeStudents.length === activeStudents.length;
@@ -1427,7 +1559,7 @@ export default function ReportsPage() {
                         return (
                           <tr>
                             <td colSpan={8} className="px-6 py-8 text-center text-amber-700 bg-amber-50">
-                              Ranking is inactive. Please complete all report card grades (Q1-Q4 per subject) for all students first. Pending students: {pendingCount}
+                              {buildRankingInactiveMessage('', rankingQuarter, pendingCount)}
                             </td>
                           </tr>
                         );
@@ -1473,7 +1605,9 @@ export default function ReportsPage() {
             <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
               {(() => {
                 const activeStudents = students.filter((s) => !isInactiveStudent(s));
-                const completeStudents = activeStudents.filter(isStudentReportCardComplete);
+                const rankingQuarter = String(selectedQuarterForView || 'q1').toLowerCase();
+                const rankingSubjects = allSubjects;
+                const completeStudents = activeStudents.filter((s) => isStudentRankingComplete(s, rankingQuarter, rankingSubjects));
                 const isQuarterRankingActive = Boolean(selectedSection)
                   && activeStudents.length > 0
                   && completeStudents.length === activeStudents.length;
@@ -1514,10 +1648,18 @@ export default function ReportsPage() {
                     ) : !isQuarterRankingActive ? (
                       <tr>
                         <td colSpan={3 + allSubjects.length} className="px-6 py-8 text-center text-amber-700 bg-amber-50">
-                          Ranking is inactive. Please complete all report card grades (Q1-Q4 per subject) for all students first. Pending students: {pendingCount}
+                          {buildRankingInactiveMessage('', rankingQuarter, pendingCount)}
                         </td>
                       </tr>
-                    ) : [...students].sort((a, b) => (b.average || 0) - (a.average || 0)).map((student, idx) => {
+                    ) : [...students]
+                      .map((student) => ({
+                        student,
+                        score: getStudentQuarterAverageForScope(student, rankingQuarter, allSubjects)
+                      }))
+                      .filter((row) => row.score > 0)
+                      .sort((a, b) => b.score - a.score)
+                      .map((row, idx) => {
+                      const student = row.student;
                       const gradeVals = allSubjects.map(s => student.grades?.[s]?.[selectedQuarterForView] || 0).filter(v => v > 0);
                       const qAvg = gradeVals.length > 0 ? (gradeVals.reduce((a, b) => a + b, 0) / gradeVals.length).toFixed(2) : '—';
                       return (
