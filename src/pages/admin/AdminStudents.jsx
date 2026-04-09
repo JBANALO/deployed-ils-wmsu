@@ -150,6 +150,16 @@ export default function AdminStudents() {
 
     try {
       setPrevCandidatesLoading(true);
+
+      const sectionsResponse = await fetch(
+        `${API_BASE_URL}/sections?schoolYearId=${encodeURIComponent(String(targetSchoolYearId))}`
+      );
+      const sectionsPayload = await sectionsResponse.json().catch(() => ({}));
+      const activeSections = Array.isArray(sectionsPayload?.data) ? sectionsPayload.data : [];
+      if (!sectionsResponse.ok || activeSections.length === 0) {
+        throw new Error('Set up active-year sections first before fetching students from previous year.');
+      }
+
       const response = await fetch(
         `${API_BASE_URL}/students/previous-year-promotion-candidates?schoolYearId=${encodeURIComponent(String(targetSchoolYearId))}`
       );
@@ -182,7 +192,7 @@ export default function AdminStudents() {
 
   const toggleSelectAllPrev = () => {
     const selectableIds = prevCandidates
-      .filter((student) => !student.alreadyFetched)
+      .filter((student) => !student.alreadyFetched && !student.needsSectionSetup)
       .map((student) => student.id);
 
     const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedPrevIds.has(id));
@@ -1129,7 +1139,7 @@ export default function AdminStudents() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                      {selectedPrevIds.size} selected / {prevCandidates.filter((student) => !student.alreadyFetched).length} available
+                      {selectedPrevIds.size} selected / {prevCandidates.filter((student) => !student.alreadyFetched && !student.needsSectionSetup).length} available
                     </div>
                     <button
                       onClick={toggleSelectAllPrev}
@@ -1156,7 +1166,7 @@ export default function AdminStudents() {
                             <td className="p-3 border text-center">
                               <input
                                 type="checkbox"
-                                disabled={student.alreadyFetched}
+                                disabled={student.alreadyFetched || student.needsSectionSetup}
                                 checked={selectedPrevIds.has(student.id)}
                                 onChange={() => togglePrevSelection(student.id)}
                                 className="w-4 h-4"
@@ -1166,11 +1176,13 @@ export default function AdminStudents() {
                             <td className="p-3 border font-medium">{student.fullName}</td>
                             <td className="p-3 border">
                               {student.fromGrade} {student.fromSection ? `- ${student.fromSection}` : ''} {' -> '}
-                              {student.toGrade} {student.toSection ? `- ${student.toSection}` : ''}
+                              {student.toGrade || '-'} {student.toSection ? `- ${student.toSection}` : ''}
                             </td>
                             <td className="p-3 border">
                               {student.alreadyFetched ? (
                                 <span className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-200 text-gray-700">Already Fetched</span>
+                              ) : student.needsSectionSetup ? (
+                                <span className="px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">Needs Section Setup</span>
                               ) : (
                                 <span className={`px-2 py-1 rounded-full text-xs font-semibold ${student.status === 'promoted' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                                   {student.status}

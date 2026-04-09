@@ -1954,15 +1954,38 @@ function toGradeKey(value = '') {
   return String(value || '').replace(/^Grade\s+/i, '').trim();
 }
 
-async function resolveDestinationSectionForGrade(sourceSchoolYearId, gradeLevel, preferredSection, cache) {
-  const schoolYearIdNum = Number(sourceSchoolYearId || 0);
-  if (!Number.isInteger(schoolYearIdNum) || schoolYearIdNum <= 0 || !gradeLevel) return null;
+async function getAvailableSectionsForGrade(targetSchoolYearId, gradeLevel, cache) {
+  const schoolYearIdNum = Number(targetSchoolYearId || 0);
+  if (!Number.isInteger(schoolYearIdNum) || schoolYearIdNum <= 0 || !gradeLevel) return [];
 
   const cacheKey = `${schoolYearIdNum}:${String(gradeLevel).toLowerCase()}`;
   let sections = cache.get(cacheKey);
-  if (!sections) {
-    const gradeKey = toGradeKey(gradeLevel);
-    const rows = await query(
+  if (sections) return sections;
+
+  const gradeKey = toGradeKey(gradeLevel);
+
+  const sectionRows = await query(
+    `SELECT DISTINCT TRIM(name) AS section
+     FROM sections
+     WHERE school_year_id = ?
+       AND is_archived = 0
+       AND name IS NOT NULL
+       AND TRIM(name) <> ''
+       AND (
+         LOWER(TRIM(COALESCE(grade_level, ''))) = LOWER(TRIM(?))
+         OR LOWER(TRIM(COALESCE(grade_level, ''))) = LOWER(TRIM(?))
+         OR REPLACE(LOWER(TRIM(COALESCE(grade_level, ''))), 'grade ', '') = LOWER(TRIM(?))
+       )
+     ORDER BY section ASC`,
+    [schoolYearIdNum, gradeLevel, gradeKey, gradeKey]
+  );
+
+  sections = sectionRows
+    .map((row) => String(row?.section || '').trim())
+    .filter(Boolean);
+
+  if (!sections.length) {
+    const classRows = await query(
       `SELECT DISTINCT TRIM(section) AS section
        FROM classes
        WHERE school_year_id = ?
@@ -1977,24 +2000,29 @@ async function resolveDestinationSectionForGrade(sourceSchoolYearId, gradeLevel,
       [schoolYearIdNum, gradeLevel, gradeKey, gradeKey]
     );
 
-    sections = rows
+    sections = classRows
       .map((row) => String(row?.section || '').trim())
       .filter(Boolean);
-    cache.set(cacheKey, sections);
   }
 
+  cache.set(cacheKey, sections);
+  return sections;
+}
+
+async function resolveDestinationSectionForGrade(targetSchoolYearId, gradeLevel, preferredSection, cache) {
+  const sections = await getAvailableSectionsForGrade(targetSchoolYearId, gradeLevel, cache);
   if (!sections.length) return null;
 
   const preferredNorm = normalizeSectionName(preferredSection);
   if (preferredNorm) {
-    const nonMatching = sections.find((section) => normalizeSectionName(section) !== preferredNorm);
-    if (nonMatching) return nonMatching;
+    const exact = sections.find((section) => normalizeSectionName(section) === preferredNorm);
+    if (exact) return exact;
   }
 
-  return sections[0];
+  return sections[0] || null;
 }
 
-async function applyAutoPromotionOverride(candidate, sourceStudent, sourceSchoolYearId, cache, sectionCache) {
+async function applyAutoPromotionOverride(candidate, sourceStudent, sourceSchoolYearId, targetSchoolYearId, cache, sectionCache) {
   if (!sourceStudent || !shouldAttemptRetainedOverride(candidate?.status, candidate?.reason)) {
     return candidate;
   }
@@ -2019,7 +2047,7 @@ async function applyAutoPromotionOverride(candidate, sourceStudent, sourceSchool
   }
 
   const resolvedSection = await resolveDestinationSectionForGrade(
-    sourceSchoolYearId,
+    targetSchoolYearId,
     nextGrade,
     sourceStudent.section || candidate.to_section || null,
     sectionCache
@@ -2159,6 +2187,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
         baseCandidate,
         sourceStudent,
         sourceStudent.school_year_id || sourceSy.id,
+        targetSy.id,
         derivedEligibilityCache,
         destinationSectionCache
       );
@@ -2218,6 +2247,31 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0, sourceSchoolYearId: sourceSy.id, targetSchoolYearId: targetSy.id } });
     }
 
+    const requiredGrades = new Set();
+    for (const promo of normalizedPromotionRows) {
+      const sourceStudent = promo.sourceStudent || sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
+      if (!sourceStudent || isGraduateCandidate(promo, sourceStudent)) continue;
+
+      const targetGrade = String((promo.to_grade || sourceStudent.grade_level || '')).trim();
+      if (!targetGrade || isGraduateGrade(targetGrade)) continue;
+      requiredGrades.add(targetGrade);
+    }
+
+    const missingGradeSetups = [];
+    for (const grade of requiredGrades) {
+      const availableSections = await getAvailableSectionsForGrade(targetSy.id, grade, destinationSectionCache);
+      if (!availableSections.length) {
+        missingGradeSetups.push(grade);
+      }
+    }
+
+    if (missingGradeSetups.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Set up sections first for ${missingGradeSetups.join(', ')} in the active school year before fetching students.`
+      });
+    }
+
     let inserted = 0;
     let skipped = 0;
     let updated = 0;
@@ -2242,7 +2296,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       let nextSection = promo.to_section || sourceStudent.section;
       if (String(promo.status || '').toLowerCase() === 'promoted' && nextGradeLevel) {
         const resolvedSection = await resolveDestinationSectionForGrade(
-          sourceStudent.school_year_id || sourceSy.id,
+          targetSy.id,
           nextGradeLevel,
           nextSection,
           destinationSectionCache
@@ -2254,6 +2308,16 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       if (!nextGradeLevel || isGraduateGrade(nextGradeLevel)) {
         skipped += 1;
         continue;
+      }
+
+      const resolvedTargetSection = await resolveDestinationSectionForGrade(
+        targetSy.id,
+        nextGradeLevel,
+        nextSection || sourceStudent.section || null,
+        destinationSectionCache
+      );
+      if (resolvedTargetSection) {
+        nextSection = resolvedTargetSection;
       }
 
       if (!nextSection || !String(nextSection).trim()) {
@@ -2515,6 +2579,7 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
         baseCandidate,
         sourceStudent,
         sourceStudent.school_year_id || sourceSy.id,
+        targetSy.id,
         derivedEligibilityCache,
         destinationSectionCache
       );
@@ -2592,30 +2657,48 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       });
     }
 
-    const candidates = normalizedPromotionRows
-      .sort((a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at))
-      .map((promo) => {
+    const sortedRows = normalizedPromotionRows
+      .sort((a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at));
+
+    const candidates = [];
+    for (const promo of sortedRows) {
       const sourceStudent = promo.sourceStudent || sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
-      if (isGraduateCandidate(promo, sourceStudent)) return null;
+      if (isGraduateCandidate(promo, sourceStudent)) continue;
+
       const lrn = sourceStudent?.lrn || promo.lrn || null;
       const firstName = sourceStudent?.first_name || '';
       const middleName = sourceStudent?.middle_name || '';
       const lastName = sourceStudent?.last_name || '';
       const fullName = `${firstName} ${middleName || ''} ${lastName}`.replace(/\s+/g, ' ').trim();
 
-      return {
+      const toGrade = promo.to_grade || sourceStudent?.grade_level || null;
+      const toSection = toGrade
+        ? await resolveDestinationSectionForGrade(
+            targetSy.id,
+            toGrade,
+            promo.to_section || sourceStudent?.section || null,
+            destinationSectionCache
+          )
+        : null;
+
+      const item = {
         id: String(promo.canonical_student_id || promo.student_id || sourceStudent?.id || ''),
         lrn,
         fullName: fullName || 'Unknown Student',
         fromGrade: promo.from_grade || sourceStudent?.grade_level || null,
         fromSection: promo.from_section || sourceStudent?.section || null,
-        toGrade: promo.to_grade || sourceStudent?.grade_level || null,
-        toSection: promo.to_section || sourceStudent?.section || null,
+        toGrade,
+        toSection,
         status: promo.status,
         promotedAt: promo.created_at,
-        alreadyFetched: lrn ? existingLrnsInTarget.has(String(lrn)) : false
+        alreadyFetched: lrn ? existingLrnsInTarget.has(String(lrn)) : false,
+        needsSectionSetup: Boolean(toGrade) && !toSection
       };
-    }).filter((item) => item && item.id && item.lrn && item.fullName !== 'Unknown Student');
+
+      if (item.id && item.lrn && item.fullName !== 'Unknown Student') {
+        candidates.push(item);
+      }
+    }
 
     return res.json({
       success: true,
