@@ -1839,18 +1839,10 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     let promotionRows = await query(
       `SELECT ph.student_id, ph.lrn, ph.to_grade, ph.to_section, ph.status, ph.created_at
        FROM promotion_history ph
-       INNER JOIN (
-         SELECT student_id, MAX(created_at) AS latest_created_at
-         FROM promotion_history
-         WHERE school_year_id = ? AND status IN ('promoted', 'retained')
-         GROUP BY student_id
-       ) latest
-         ON latest.student_id = ph.student_id
-        AND latest.latest_created_at = ph.created_at
        WHERE ph.school_year_id = ?
-         AND ph.status IN ('promoted', 'retained')
+         AND LOWER(ph.status) IN ('promoted', 'retained')
        ORDER BY ph.created_at DESC`,
-      [sourceSy.id, sourceSy.id]
+      [sourceSy.id]
     );
 
     if (!promotionRows.length) {
@@ -2072,18 +2064,10 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
     let promotionRows = await query(
       `SELECT ph.student_id, ph.lrn, ph.from_grade, ph.from_section, ph.to_grade, ph.to_section, ph.status, ph.created_at
        FROM promotion_history ph
-       INNER JOIN (
-         SELECT student_id, MAX(created_at) AS latest_created_at
-         FROM promotion_history
-         WHERE school_year_id = ? AND status IN ('promoted', 'retained')
-         GROUP BY student_id
-       ) latest
-         ON latest.student_id = ph.student_id
-        AND latest.latest_created_at = ph.created_at
        WHERE ph.school_year_id = ?
-         AND ph.status IN ('promoted', 'retained')
+         AND LOWER(ph.status) IN ('promoted', 'retained')
        ORDER BY ph.created_at DESC`,
-      [sourceSy.id, sourceSy.id]
+      [sourceSy.id]
     );
 
     const sourceById = new Map();
