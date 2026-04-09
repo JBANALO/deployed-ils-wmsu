@@ -223,11 +223,12 @@ export default function AdminStudents() {
       }
 
       const inserted = Number(payload?.data?.inserted || 0);
+      const updated = Number(payload?.data?.updated || 0);
       const skipped = Number(payload?.data?.skipped || 0);
       const promoted = Number(payload?.data?.promotedInserted || 0);
       const retained = Number(payload?.data?.retainedInserted || 0);
 
-      toast.success(`Fetch complete: ${inserted} added (${promoted} promoted, ${retained} retained), ${skipped} skipped.`);
+      toast.success(`Fetch complete: ${inserted} added, ${updated} updated (${promoted} promoted, ${retained} retained), ${skipped} skipped.`);
       setShowFetchPrevModal(false);
       setSelectedPrevIds(new Set());
       await fetchStudents();

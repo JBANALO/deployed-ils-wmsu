@@ -1933,6 +1933,23 @@ function normalizeSectionName(value = '') {
   return String(value || '').trim().toLowerCase();
 }
 
+function isGraduateGrade(value = '') {
+  return String(value || '').trim().toLowerCase() === 'graduate';
+}
+
+function isGraduatedStatus(value = '') {
+  return String(value || '').trim().toLowerCase() === 'graduated';
+}
+
+function isGraduateCandidate(promo = {}, sourceStudent = null) {
+  if (isGraduateGrade(promo?.from_grade) || isGraduateGrade(promo?.to_grade)) return true;
+  if (isGraduatedStatus(promo?.status)) return true;
+  if (!sourceStudent) return false;
+  if (isGraduateGrade(sourceStudent.grade_level)) return true;
+  if (isGraduatedStatus(sourceStudent.status)) return true;
+  return false;
+}
+
 function toGradeKey(value = '') {
   return String(value || '').replace(/^Grade\s+/i, '').trim();
 }
@@ -2026,7 +2043,6 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
   try {
     await ensureStudentSchoolYearColumn();
     await ensureStudentBirthDateColumn();
-    await ensureGradesSchoolYearColumn();
 
     let targetSy;
     try {
@@ -2077,6 +2093,8 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
        FROM promotion_history ph
        WHERE ph.school_year_id IN (${sourcePlaceholders})
          AND LOWER(ph.status) IN ('promoted', 'retained')
+         AND LOWER(COALESCE(ph.from_grade, '')) <> 'graduate'
+         AND LOWER(COALESCE(ph.to_grade, '')) <> 'graduate'
        ORDER BY ph.created_at DESC`,
       sourceSchoolYearIds
     );
@@ -2092,6 +2110,8 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
                 created_at
          FROM students
          WHERE school_year_id IN (${sourcePlaceholders})
+           AND LOWER(COALESCE(grade_level, '')) <> 'graduate'
+           AND LOWER(COALESCE(status, '')) <> 'graduated'
          ORDER BY school_year_id DESC, created_at DESC`,
         sourceSchoolYearIds
       );
@@ -2101,6 +2121,8 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       `SELECT *
        FROM students
        WHERE school_year_id IN (${sourcePlaceholders})
+         AND LOWER(COALESCE(grade_level, '')) <> 'graduate'
+         AND LOWER(COALESCE(status, '')) <> 'graduated'
        ORDER BY school_year_id DESC, created_at DESC`,
       sourceSchoolYearIds
     );
@@ -2124,6 +2146,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     for (const promo of promotionRows) {
       const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
       if (!sourceStudent || !sourceStudent.lrn) continue;
+      if (isGraduateCandidate(promo, sourceStudent)) continue;
 
       const canonicalLrn = String(sourceStudent.lrn);
       const baseCandidate = {
@@ -2161,6 +2184,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     // Include historical students without promotion logs (e.g., long-stop returnees).
     for (const row of sourceRows) {
       if (!row?.id || !row?.lrn) continue;
+      if (isGraduateGrade(row.grade_level) || isGraduatedStatus(row.status)) continue;
       const canonicalLrn = String(row.lrn);
       if (latestByLrn.has(canonicalLrn)) continue;
 
@@ -2190,20 +2214,13 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       );
     }
 
-    // Graduates should not be fetched into active student lists.
-    normalizedPromotionRows = normalizedPromotionRows.filter((promo) => {
-      const sourceStudent = promo.sourceStudent || sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
-      const fromGrade = String(promo.from_grade || sourceStudent?.grade_level || '').trim().toLowerCase();
-      const toGrade = String(promo.to_grade || sourceStudent?.grade_level || '').trim().toLowerCase();
-      return fromGrade !== 'graduate' && toGrade !== 'graduate';
-    });
-
     if (!normalizedPromotionRows.length) {
       return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0, sourceSchoolYearId: sourceSy.id, targetSchoolYearId: targetSy.id } });
     }
 
     let inserted = 0;
     let skipped = 0;
+    let updated = 0;
     let promotedInserted = 0;
     let retainedInserted = 0;
     const sourceLrns = new Set();
@@ -2214,17 +2231,12 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
         skipped += 1;
         continue;
       }
-
-      sourceLrns.add(String(sourceStudent.lrn));
-
-      const duplicate = await query(
-        'SELECT id FROM students WHERE lrn = ? AND school_year_id = ? LIMIT 1',
-        [sourceStudent.lrn, targetSy.id]
-      );
-      if (duplicate.length > 0) {
+      if (isGraduateCandidate(promo, sourceStudent)) {
         skipped += 1;
         continue;
       }
+
+      sourceLrns.add(String(sourceStudent.lrn));
 
       const nextGradeLevel = promo.to_grade || sourceStudent.grade_level;
       let nextSection = promo.to_section || sourceStudent.section;
@@ -2239,50 +2251,128 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
           nextSection = resolvedSection;
         }
       }
-      const normalizedStatus = String(sourceStudent.status || '').toLowerCase();
-      const nextStatus = (normalizedStatus === 'declined' || normalizedStatus === 'pending' || normalizedStatus === 'rejected')
-        ? 'Active'
-        : (sourceStudent.status || 'Active');
-
-      try {
-        await query(
-          `INSERT INTO students (
-            lrn, first_name, middle_name, last_name, age, birth_date, sex,
-            grade_level, section, parent_first_name, parent_last_name,
-            parent_email, parent_contact, student_email, password,
-            profile_pic, qr_code, status, created_by, school_year_id, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-          [
-            sourceStudent.lrn,
-            sourceStudent.first_name || '',
-            sourceStudent.middle_name || null,
-            sourceStudent.last_name || '',
-            sourceStudent.age || 0,
-            sourceStudent.birth_date || null,
-            sourceStudent.sex || 'N/A',
-            nextGradeLevel,
-            nextSection,
-            sourceStudent.parent_first_name || null,
-            sourceStudent.parent_last_name || null,
-            sourceStudent.parent_email || null,
-            sourceStudent.parent_contact || null,
-            sourceStudent.student_email || null,
-            sourceStudent.password || null,
-            sourceStudent.profile_pic || null,
-            sourceStudent.qr_code || null,
-            nextStatus,
-            'system-fetch',
-            targetSy.id
-          ]
-        );
-      } catch (insertErr) {
-        // If older schemas still have a global unique key (e.g., lrn), skip instead of failing whole batch.
-        if (insertErr?.code === 'ER_DUP_ENTRY') {
-          skipped += 1;
-          continue;
-        }
-        throw insertErr;
+      if (!nextGradeLevel || isGraduateGrade(nextGradeLevel)) {
+        skipped += 1;
+        continue;
       }
+
+      if (!nextSection || !String(nextSection).trim()) {
+        nextSection = sourceStudent.section || null;
+      }
+      if (!nextSection || !String(nextSection).trim()) {
+        skipped += 1;
+        continue;
+      }
+
+      const nextStatus = 'Active';
+
+      const duplicate = await query(
+        'SELECT id, school_year_id FROM students WHERE lrn = ? LIMIT 1',
+        [sourceStudent.lrn]
+      );
+
+      if (duplicate.length > 0) {
+        const existing = duplicate[0];
+        const existingSy = Number(existing.school_year_id || 0);
+
+        if (existingSy === Number(targetSy.id)) {
+          await query(
+            `UPDATE students
+             SET first_name = ?, middle_name = ?, last_name = ?, age = ?, birth_date = ?, sex = ?,
+                 grade_level = ?, section = ?, parent_first_name = ?, parent_last_name = ?,
+                 parent_email = ?, parent_contact = ?, student_email = ?,
+                 profile_pic = ?, qr_code = ?, status = ?, created_by = ?, updated_at = NOW()
+             WHERE id = ?`,
+            [
+              sourceStudent.first_name || '',
+              sourceStudent.middle_name || null,
+              sourceStudent.last_name || '',
+              sourceStudent.age || 0,
+              sourceStudent.birth_date || null,
+              sourceStudent.sex || 'N/A',
+              nextGradeLevel,
+              nextSection,
+              sourceStudent.parent_first_name || null,
+              sourceStudent.parent_last_name || null,
+              sourceStudent.parent_email || null,
+              sourceStudent.parent_contact || null,
+              sourceStudent.student_email || null,
+              sourceStudent.profile_pic || null,
+              sourceStudent.qr_code || null,
+              nextStatus,
+              'system-fetch',
+              existing.id
+            ]
+          );
+        } else {
+          await query(
+            `UPDATE students
+             SET first_name = ?, middle_name = ?, last_name = ?, age = ?, birth_date = ?, sex = ?,
+                 grade_level = ?, section = ?, parent_first_name = ?, parent_last_name = ?,
+                 parent_email = ?, parent_contact = ?, student_email = ?, password = ?,
+                 profile_pic = ?, qr_code = ?, status = ?, created_by = ?, school_year_id = ?, updated_at = NOW()
+             WHERE id = ?`,
+            [
+              sourceStudent.first_name || '',
+              sourceStudent.middle_name || null,
+              sourceStudent.last_name || '',
+              sourceStudent.age || 0,
+              sourceStudent.birth_date || null,
+              sourceStudent.sex || 'N/A',
+              nextGradeLevel,
+              nextSection,
+              sourceStudent.parent_first_name || null,
+              sourceStudent.parent_last_name || null,
+              sourceStudent.parent_email || null,
+              sourceStudent.parent_contact || null,
+              sourceStudent.student_email || null,
+              sourceStudent.password || null,
+              sourceStudent.profile_pic || null,
+              sourceStudent.qr_code || null,
+              nextStatus,
+              'system-fetch',
+              targetSy.id,
+              existing.id
+            ]
+          );
+        }
+
+        updated += 1;
+        if (String(promo.status).toLowerCase() === 'promoted') promotedInserted += 1;
+        if (String(promo.status).toLowerCase() === 'retained') retainedInserted += 1;
+        continue;
+      }
+
+      await query(
+        `INSERT INTO students (
+          lrn, first_name, middle_name, last_name, age, birth_date, sex,
+          grade_level, section, parent_first_name, parent_last_name,
+          parent_email, parent_contact, student_email, password,
+          profile_pic, qr_code, status, created_by, school_year_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        [
+          sourceStudent.lrn,
+          sourceStudent.first_name || '',
+          sourceStudent.middle_name || null,
+          sourceStudent.last_name || '',
+          sourceStudent.age || 0,
+          sourceStudent.birth_date || null,
+          sourceStudent.sex || 'N/A',
+          nextGradeLevel,
+          nextSection,
+          sourceStudent.parent_first_name || null,
+          sourceStudent.parent_last_name || null,
+          sourceStudent.parent_email || null,
+          sourceStudent.parent_contact || null,
+          sourceStudent.student_email || null,
+          sourceStudent.password || null,
+          sourceStudent.profile_pic || null,
+          sourceStudent.qr_code || null,
+          nextStatus,
+          'system-fetch',
+          targetSy.id
+        ]
+      );
 
       inserted += 1;
       if (String(promo.status).toLowerCase() === 'promoted') promotedInserted += 1;
@@ -2311,6 +2401,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       message: 'Fetch complete',
       data: {
         inserted,
+        updated,
         skipped,
         promotedInserted,
         retainedInserted,
@@ -2324,7 +2415,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Promotion history is not available yet. Please run promotion first.' });
     }
     console.error('Error fetching students from previous year:', error);
-    return res.status(500).json({ success: false, message: 'Failed to fetch students from previous year' });
+    return res.status(500).json({ success: false, message: error.message || 'Failed to fetch students from previous year' });
   }
 };
 
@@ -2361,6 +2452,8 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       `SELECT id, lrn, first_name, middle_name, last_name, grade_level, section, school_year_id, created_at
        FROM students
        WHERE school_year_id IN (${sourcePlaceholders})
+         AND LOWER(COALESCE(grade_level, '')) <> 'graduate'
+         AND LOWER(COALESCE(status, '')) <> 'graduated'
        ORDER BY school_year_id DESC, created_at DESC`,
       sourceSchoolYearIds
     );
@@ -2384,6 +2477,8 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
        FROM promotion_history ph
        WHERE ph.school_year_id IN (${sourcePlaceholders})
          AND LOWER(ph.status) IN ('promoted', 'retained')
+         AND LOWER(COALESCE(ph.from_grade, '')) <> 'graduate'
+         AND LOWER(COALESCE(ph.to_grade, '')) <> 'graduate'
        ORDER BY ph.created_at DESC`,
       sourceSchoolYearIds
     );
@@ -2407,6 +2502,7 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
     for (const promo of promotionRows) {
       const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
       if (!sourceStudent || !sourceStudent.lrn) continue;
+      if (isGraduateCandidate(promo, sourceStudent)) continue;
 
       const canonicalLrn = String(sourceStudent.lrn);
       const baseCandidate = {
@@ -2444,6 +2540,7 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
     // Include historical students without promotion logs (e.g., long-stop returnees).
     for (const row of sourceRows) {
       if (!row?.id || !row?.lrn) continue;
+      if (isGraduateGrade(row.grade_level) || isGraduatedStatus(row.status)) continue;
       const canonicalLrn = String(row.lrn);
       if (latestByLrn.has(canonicalLrn)) continue;
 
@@ -2499,6 +2596,7 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       .sort((a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at))
       .map((promo) => {
       const sourceStudent = promo.sourceStudent || sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
+      if (isGraduateCandidate(promo, sourceStudent)) return null;
       const lrn = sourceStudent?.lrn || promo.lrn || null;
       const firstName = sourceStudent?.first_name || '';
       const middleName = sourceStudent?.middle_name || '';
@@ -2517,12 +2615,7 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
         promotedAt: promo.created_at,
         alreadyFetched: lrn ? existingLrnsInTarget.has(String(lrn)) : false
       };
-    }).filter((item) => {
-      if (!item.id || !item.lrn || item.fullName === 'Unknown Student') return false;
-      const fromGrade = String(item.fromGrade || '').trim().toLowerCase();
-      const toGrade = String(item.toGrade || '').trim().toLowerCase();
-      return fromGrade !== 'graduate' && toGrade !== 'graduate';
-    });
+    }).filter((item) => item && item.id && item.lrn && item.fullName !== 'Unknown Student');
 
     return res.json({
       success: true,
