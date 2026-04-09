@@ -50,10 +50,49 @@ const assertActiveTargetSchoolYear = async (targetSy) => {
 
 const getPreviousSchoolYear = async (activeStartDate) => {
   const rows = await query(
-    'SELECT id, label FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
+    'SELECT id, label, start_date FROM school_years WHERE is_archived = 0 AND start_date < ? ORDER BY start_date DESC LIMIT 1',
     [activeStartDate]
   );
   return rows[0] || null;
+};
+
+const getSourceSubjectsForSchoolYear = async ({ sourceSchoolYearId, ids = [] }) => {
+  const idList = Array.isArray(ids)
+    ? ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+
+  if (!sourceSchoolYearId) {
+    return { rows: [], usedLegacyFallback: false };
+  }
+
+  const idFilterSql = idList.length > 0
+    ? ` AND id IN (${idList.map(() => '?').join(',')})`
+    : '';
+
+  const scopedRows = await query(
+    `SELECT *
+     FROM subjects
+     WHERE is_archived = FALSE
+       AND school_year_id = ?${idFilterSql}
+     ORDER BY grade_levels, name`,
+    [sourceSchoolYearId, ...idList]
+  );
+
+  if (scopedRows.length > 0) {
+    return { rows: scopedRows, usedLegacyFallback: false };
+  }
+
+  // Legacy environments may contain old subjects with NULL school_year_id.
+  const legacyRows = await query(
+    `SELECT *
+     FROM subjects
+     WHERE is_archived = FALSE
+       AND (school_year_id IS NULL OR school_year_id = 0)${idFilterSql}
+     ORDER BY grade_levels, name`,
+    idList
+  );
+
+  return { rows: legacyRows, usedLegacyFallback: legacyRows.length > 0 };
 };
 
 const formatDuplicateCheck = async ({ name, grade_levels, school_year_id, excludeId = null }) => {
@@ -312,12 +351,20 @@ const getPreviousYearSubjects = async (req, res) => {
     const prevSy = await getPreviousSchoolYear(targetSy.start_date);
     if (!prevSy) return res.json({ success: true, data: [] });
 
-    const subjects = await query(
-      'SELECT * FROM subjects WHERE is_archived = FALSE AND school_year_id = ? ORDER BY grade_levels, name',
-      [prevSy.id]
-    );
+    const { rows: subjects, usedLegacyFallback } = await getSourceSubjectsForSchoolYear({
+      sourceSchoolYearId: prevSy.id,
+      ids: []
+    });
 
-    res.json({ success: true, data: subjects, meta: { sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id } });
+    res.json({
+      success: true,
+      data: subjects,
+      meta: {
+        sourceSchoolYearId: prevSy.id,
+        targetSchoolYearId: targetSy.id,
+        usedLegacyFallback
+      }
+    });
   } catch (error) {
     console.error('Error fetching previous year subjects:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch previous year subjects' });
@@ -336,24 +383,10 @@ const fetchSubjectsFromPreviousYear = async (req, res) => {
     }
 
     const { ids } = req.body || {};
-    const idList = Array.isArray(ids)
-      ? ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
-      : [];
-
-    let prevSubjects = [];
-    if (idList.length > 0) {
-      const placeholders = idList.map(() => '?').join(',');
-      prevSubjects = await query(
-        `SELECT * FROM subjects
-         WHERE is_archived = FALSE AND school_year_id = ? AND id IN (${placeholders})`,
-        [prevSy.id, ...idList]
-      );
-    } else {
-      prevSubjects = await query(
-        'SELECT * FROM subjects WHERE is_archived = FALSE AND school_year_id = ?',
-        [prevSy.id]
-      );
-    }
+    const { rows: prevSubjects, usedLegacyFallback } = await getSourceSubjectsForSchoolYear({
+      sourceSchoolYearId: prevSy.id,
+      ids
+    });
 
     if (!prevSubjects.length) {
       return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0 } });
@@ -380,7 +413,17 @@ const fetchSubjectsFromPreviousYear = async (req, res) => {
       inserted += 1;
     }
 
-    res.json({ success: true, message: 'Fetch complete', data: { inserted, skipped, sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id } });
+    res.json({
+      success: true,
+      message: 'Fetch complete',
+      data: {
+        inserted,
+        skipped,
+        sourceSchoolYearId: prevSy.id,
+        targetSchoolYearId: targetSy.id,
+        usedLegacyFallback
+      }
+    });
   } catch (error) {
     console.error('Error fetching subjects from previous year:', error);
     const status = error.statusCode || 500;
