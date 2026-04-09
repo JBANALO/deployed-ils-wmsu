@@ -647,9 +647,37 @@ const syncSectionsFromStudents = async (req, res) => {
     await ensureSectionColumns();
     const activeSy = await getActiveSchoolYear();
 
-    const students = await query(
-      "SELECT DISTINCT TRIM(gradeLevel) AS gradeLevel, TRIM(section) AS section FROM students WHERE gradeLevel IS NOT NULL AND section IS NOT NULL AND gradeLevel <> '' AND section <> ''"
-    );
+    const studentColumns = await query('SHOW COLUMNS FROM students');
+    const hasSchoolYearColumn = studentColumns.some((c) => c.Field === 'school_year_id');
+    const gradeColumn = studentColumns.some((c) => c.Field === 'grade_level')
+      ? 'grade_level'
+      : (studentColumns.some((c) => c.Field === 'gradeLevel') ? 'gradeLevel' : null);
+    const sectionColumn = studentColumns.some((c) => c.Field === 'section') ? 'section' : null;
+
+    if (!gradeColumn || !sectionColumn) {
+      return res.status(400).json({ success: false, message: 'Students table is missing grade/section columns' });
+    }
+
+    const studentsSql = hasSchoolYearColumn
+      ? `SELECT DISTINCT TRIM(${gradeColumn}) AS gradeLevel, TRIM(${sectionColumn}) AS section
+         FROM students
+         WHERE school_year_id = ?
+           AND ${gradeColumn} IS NOT NULL
+           AND ${sectionColumn} IS NOT NULL
+           AND TRIM(${gradeColumn}) <> ''
+           AND TRIM(${sectionColumn}) <> ''
+           AND LOWER(TRIM(${gradeColumn})) <> 'graduate'`
+      : `SELECT DISTINCT TRIM(${gradeColumn}) AS gradeLevel, TRIM(${sectionColumn}) AS section
+         FROM students
+         WHERE ${gradeColumn} IS NOT NULL
+           AND ${sectionColumn} IS NOT NULL
+           AND TRIM(${gradeColumn}) <> ''
+           AND TRIM(${sectionColumn}) <> ''
+           AND LOWER(TRIM(${gradeColumn})) <> 'graduate'`;
+
+    const students = hasSchoolYearColumn
+      ? await query(studentsSql, [activeSy.id])
+      : await query(studentsSql);
 
     let inserted = 0;
     let skipped = 0;
@@ -686,7 +714,7 @@ const syncSectionsFromStudents = async (req, res) => {
     res.json({ success: true, message: 'Sync complete', data: { inserted, skipped } });
   } catch (error) {
     console.error('Error syncing sections from students:', error);
-    res.status(500).json({ success: false, message: 'Failed to sync sections from students' });
+    res.status(500).json({ success: false, message: error.message || 'Failed to sync sections from students' });
   }
 };
 
