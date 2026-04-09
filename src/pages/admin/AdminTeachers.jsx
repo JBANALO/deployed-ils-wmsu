@@ -46,6 +46,7 @@ export default function AdminTeachers() {
   const [loading, setLoading] = useState(true);
   const [refreshLoading, setRefreshLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [selectedTeachers, setSelectedTeachers] = useState(new Set());
   const [selectedAdvisers, setSelectedAdvisers] = useState(new Set());
   const [selectedSubjectTeachers, setSelectedSubjectTeachers] = useState(new Set());
@@ -80,8 +81,22 @@ export default function AdminTeachers() {
   const normalizeTeacherRole = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, '_');
 
   const normalizeTeacherStatus = (teacher) => {
-    const rawStatus = teacher?.status ?? teacher?.approval_status ?? 'approved';
+    const rawStatus = teacher?.status ?? teacher?.verification_status ?? teacher?.approval_status ?? 'approved';
     return String(rawStatus).trim().toLowerCase();
+  };
+
+  const isVisibleTeacherStatus = (status) => {
+    const normalized = String(status || '').trim().toLowerCase();
+    return normalized !== 'declined' && normalized !== 'rejected';
+  };
+
+  const matchesStatusFilter = (status, filter) => {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (filter === 'all') return true;
+    if (filter === 'inactive') return normalized === 'inactive';
+    if (filter === 'pending') return normalized === 'pending';
+    if (filter === 'active') return normalized === 'approved' || normalized === 'active';
+    return true;
   };
 
   const normalizeTeacherRecord = (teacher) => ({
@@ -430,7 +445,7 @@ export default function AdminTeachers() {
               const role = teacher.role;
               console.log('Checking teacher:', teacher.firstName, role, status);
               const isRoleMatch = role === 'adviser' || role === 'subject_teacher' || role === 'teacher';
-              const isVisibleStatus = status === 'approved' || status === 'pending';
+              const isVisibleStatus = isVisibleTeacherStatus(status);
               return isRoleMatch && isVisibleStatus;
             })
           : [];
@@ -455,7 +470,7 @@ export default function AdminTeachers() {
                 const role = u.role;
                 console.log('Checking user from fallback:', u.firstName, role, status);
                 const isRoleMatch = role === 'adviser' || role === 'subject_teacher' || role === 'teacher';
-                const isVisibleStatus = status === 'approved' || status === 'pending';
+                const isVisibleStatus = isVisibleTeacherStatus(status);
                 return isRoleMatch && isVisibleStatus;
               })
             : [];
@@ -535,8 +550,9 @@ export default function AdminTeachers() {
       const ids = Array.from(selectedPrevTeacherIds);
       const res = await api.post(`/teachers/fetch-from-previous?schoolYearId=${selectedSchoolYearId}`, { ids });
       const inserted = res.data?.data?.inserted ?? 0;
+      const updated = res.data?.data?.updated ?? 0;
       const skipped = res.data?.data?.skipped ?? 0;
-      toast.success(`Fetched ${inserted} teacher(s), skipped ${skipped}`);
+      toast.success(`Fetched ${inserted} teacher(s), updated ${updated}, skipped ${skipped}`);
       await fetchTeachers(true);
       setShowFetchModal(false);
     } catch (error) {
@@ -567,12 +583,33 @@ export default function AdminTeachers() {
 
   // Filter teachers by search
   const filteredTeachers = teachers.filter(teacher => {
+    const normalizedStatus = normalizeTeacherStatus(teacher);
     const matchesSearch = searchQuery === '' ||
       (teacher.firstName && teacher.firstName.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (teacher.lastName && teacher.lastName.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (teacher.email && teacher.email.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesSearch;
+    const matchesStatus = matchesStatusFilter(normalizedStatus, statusFilter);
+    return matchesSearch && matchesStatus;
   });
+
+  const statusFilterOptions = [
+    { key: 'all', label: 'All', count: teachers.length },
+    {
+      key: 'active',
+      label: 'Active',
+      count: teachers.filter((teacher) => matchesStatusFilter(normalizeTeacherStatus(teacher), 'active')).length
+    },
+    {
+      key: 'inactive',
+      label: 'Inactive',
+      count: teachers.filter((teacher) => matchesStatusFilter(normalizeTeacherStatus(teacher), 'inactive')).length
+    },
+    {
+      key: 'pending',
+      label: 'Pending',
+      count: teachers.filter((teacher) => matchesStatusFilter(normalizeTeacherStatus(teacher), 'pending')).length
+    }
+  ];
 
   // Selection handlers for different teacher types
   const handleSelectAdviser = (teacherId) => {
@@ -1244,6 +1281,21 @@ export default function AdminTeachers() {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
             />
           </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-sm text-gray-600">Status:</span>
+            {statusFilterOptions.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => setStatusFilter(option.key)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition ${statusFilter === option.key
+                  ? 'bg-red-700 text-white border-red-700'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'}`}
+              >
+                {option.label} ({option.count})
+              </button>
+            ))}
+          </div>
           {searchQuery && (
             <div className="text-sm text-gray-600 mt-2">
               Searching for "{searchQuery}" <span className="font-semibold">{filteredTeachers.length} result{filteredTeachers.length !== 1 ? 's' : ''}</span>
@@ -1608,8 +1660,8 @@ export default function AdminTeachers() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div>
-                <h3 className="text-xl font-bold text-gray-900">Fetch Teachers from Previous School Year</h3>
-                <p className="text-sm text-gray-600">Selected teachers are copied into the active school year. Existing email/username in the active year are skipped.</p>
+                <h3 className="text-xl font-bold text-gray-900">Fetch Teachers from Previous School Years</h3>
+                <p className="text-sm text-gray-600">Selected teachers are copied into the active school year. Existing records are updated and reactivated automatically.</p>
               </div>
               <button
                 onClick={() => setShowFetchModal(false)}
@@ -1621,7 +1673,7 @@ export default function AdminTeachers() {
 
             <div className="flex items-center justify-between px-6 py-3">
               <div className="text-sm text-gray-700">
-                {fetchPrevLoading ? 'Loading previous year teachers...' : `${prevTeachers.length} teacher(s) available from previous year`}
+                {fetchPrevLoading ? 'Loading previous year teachers...' : `${prevTeachers.length} teacher(s) available from previous years`}
               </div>
               <button
                 onClick={toggleSelectAllPrevTeachers}
@@ -1646,6 +1698,7 @@ export default function AdminTeachers() {
                         <th className="p-3 text-left">Name</th>
                         <th className="p-3 text-left">Email</th>
                         <th className="p-3 text-left">Role</th>
+                        <th className="p-3 text-left">Status</th>
                         <th className="p-3 text-left">Class/Section</th>
                         <th className="p-3 text-left">Subjects</th>
                       </tr>
@@ -1658,6 +1711,7 @@ export default function AdminTeachers() {
                           firstName: teacher.first_name,
                           lastName: teacher.last_name,
                         });
+                        const prevStatus = normalizeTeacherStatus(teacher);
                         return (
                           <tr key={teacher.id} className="border-t hover:bg-gray-50">
                             <td className="p-3">
@@ -1674,6 +1728,17 @@ export default function AdminTeachers() {
                             <td className="p-3 text-gray-700">{teacher.email}</td>
                             <td className="p-3">
                               <span className="text-xs font-semibold px-2 py-1 rounded bg-gray-100 text-gray-700 capitalize">{teacher.role?.replace('_', ' ') || 'teacher'}</span>
+                            </td>
+                            <td className="p-3">
+                              <span className={`text-xs font-semibold px-2 py-1 rounded capitalize ${prevStatus === 'inactive'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : prevStatus === 'approved' || prevStatus === 'active'
+                                  ? 'bg-green-100 text-green-700'
+                                  : prevStatus === 'pending'
+                                    ? 'bg-blue-100 text-blue-700'
+                                    : 'bg-gray-100 text-gray-700'}`}>
+                                {prevStatus || 'approved'}
+                              </span>
                             </td>
                             <td className="p-3 text-gray-700">{fixed.actualGradeLevel && fixed.actualSection ? `${fixed.actualGradeLevel} - ${fixed.actualSection}` : '-'}</td>
                             <td className="p-3 text-gray-700">{fixed.actualSubjects?.length ? fixed.actualSubjects.join(', ') : '-'}</td>

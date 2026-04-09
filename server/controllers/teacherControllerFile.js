@@ -93,6 +93,46 @@ const getLatestHistoricalTeacherSchoolYear = async (targetSy) => {
   return getPreviousSchoolYear(targetSy.start_date);
 };
 
+const getHistoricalTeacherSchoolYears = async (targetSy) => {
+  if (!targetSy?.id) return [];
+
+  try {
+    if (targetSy.start_date) {
+      const rowsByDate = await query(
+        `SELECT sy.id, sy.label, sy.start_date
+         FROM school_years sy
+         WHERE sy.is_archived = 0
+           AND sy.id <> ?
+           AND sy.start_date < ?
+           AND EXISTS (
+             SELECT 1 FROM teachers t WHERE t.school_year_id = sy.id LIMIT 1
+           )
+         ORDER BY sy.start_date DESC`,
+        [targetSy.id, targetSy.start_date]
+      );
+      if (rowsByDate.length > 0) return rowsByDate;
+    }
+
+    const rowsById = await query(
+      `SELECT sy.id, sy.label, sy.start_date
+       FROM school_years sy
+       WHERE sy.is_archived = 0
+         AND sy.id < ?
+         AND EXISTS (
+           SELECT 1 FROM teachers t WHERE t.school_year_id = sy.id LIMIT 1
+         )
+       ORDER BY sy.id DESC`,
+      [targetSy.id]
+    );
+    return rowsById;
+  } catch (err) {
+    console.log('getHistoricalTeacherSchoolYears fallback:', err.message);
+  }
+
+  const latest = await getLatestHistoricalTeacherSchoolYear(targetSy);
+  return latest ? [latest] : [];
+};
+
 const getNearestTeacherSchoolYearWithData = async (targetSy) => {
   if (!targetSy?.id) return null;
 
@@ -200,6 +240,56 @@ const parseSubjects = (subjects) => {
     return subjects.split(',').map(subject => subject.trim()).filter(Boolean);
   }
   return [];
+};
+
+const toTimeValue = (value) => {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return 0;
+  return date.getTime();
+};
+
+const getTeacherIdentityKey = (teacher = {}) => {
+  const email = String(teacher.email || '').trim().toLowerCase();
+  if (email) return `email:${email}`;
+
+  const username = String(teacher.username || '').trim().toLowerCase();
+  if (username) return `username:${username}`;
+
+  const fullName = normalizeName(`${teacher.first_name || teacher.firstName || ''} ${teacher.last_name || teacher.lastName || ''}`);
+  if (fullName) return `name:${fullName}`;
+
+  const id = String(teacher.id || '').trim();
+  if (id) return `id:${id}`;
+
+  return null;
+};
+
+const pickLatestTeacherRecordPerIdentity = (rows = []) => {
+  const byIdentity = new Map();
+
+  for (const row of rows) {
+    const key = getTeacherIdentityKey(row);
+    if (!key) continue;
+
+    const existing = byIdentity.get(key);
+    if (!existing) {
+      byIdentity.set(key, row);
+      continue;
+    }
+
+    const existingSy = Number(existing.school_year_id || 0);
+    const rowSy = Number(row.school_year_id || 0);
+    if (rowSy > existingSy) {
+      byIdentity.set(key, row);
+      continue;
+    }
+
+    if (rowSy === existingSy && toTimeValue(row.created_at) > toTimeValue(existing.created_at)) {
+      byIdentity.set(key, row);
+    }
+  }
+
+  return Array.from(byIdentity.values());
 };
 
 const belongsToSchoolYear = (record = {}, schoolYear = null) => {
@@ -944,24 +1034,52 @@ const getPreviousYearTeachers = async (req, res) => {
   try {
     await ensureTeacherSchoolYearColumn();
     const targetSy = await resolveSchoolYear(req);
-    const sourceSy = await getLatestHistoricalTeacherSchoolYear(targetSy);
-    if (!sourceSy) return res.json({ success: true, data: [] });
+    const sourceSchoolYears = await getHistoricalTeacherSchoolYears(targetSy);
+    const sourceSy = sourceSchoolYears[0] || null;
+    if (!sourceSy) {
+      return res.json({
+        success: true,
+        data: [],
+        meta: { sourceSchoolYearId: null, sourceSchoolYearIds: [], targetSchoolYearId: targetSy.id }
+      });
+    }
+
+    const sourceSchoolYearIds = sourceSchoolYears
+      .map((sy) => Number(sy?.id || 0))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    const sourcePlaceholders = sourceSchoolYearIds.map(() => '?').join(',');
 
     const teachers = await query(
       `SELECT id, first_name, middle_name, last_name, username, email, role,
-              grade_level, section, subjects, bio, profile_pic, verification_status, sex, contact_number, created_at
+              grade_level, section, subjects, bio, profile_pic, verification_status,
+              sex, contact_number, school_year_id, created_at
        FROM teachers
-       WHERE school_year_id = ?
-       ORDER BY first_name, last_name`,
-      [sourceSy.id]
+       WHERE school_year_id IN (${sourcePlaceholders})
+         AND LOWER(COALESCE(verification_status, '')) NOT IN ('declined', 'rejected')
+       ORDER BY school_year_id DESC, created_at DESC`,
+      sourceSchoolYearIds
     );
 
-    const formatted = teachers.map((t) => ({
+    const canonicalTeachers = pickLatestTeacherRecordPerIdentity(teachers);
+
+    const formatted = canonicalTeachers.map((t) => ({
       ...t,
       subjects: t.subjects,
     }));
 
-    res.json({ success: true, data: formatted, meta: { sourceSchoolYearId: sourceSy.id, targetSchoolYearId: targetSy.id } });
+    res.json({
+      success: true,
+      data: formatted,
+      meta: {
+        sourceSchoolYearId: sourceSy.id,
+        sourceSchoolYearIds,
+        sourceSchoolYearLabel: sourceSchoolYears.length > 1
+          ? `${sourceSy.label} and older years`
+          : sourceSy.label,
+        targetSchoolYearId: targetSy.id,
+        targetSchoolYearLabel: targetSy.label
+      }
+    });
   } catch (error) {
     console.error('Error fetching previous year teachers:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch previous year teachers' });
@@ -974,8 +1092,16 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
     await ensureTeacherSchoolYearColumn();
     const targetSy = await resolveSchoolYear(req);
     await assertActiveTargetSchoolYear(targetSy);
-    const sourceSy = await getLatestHistoricalTeacherSchoolYear(targetSy);
+    const sourceSchoolYears = await getHistoricalTeacherSchoolYears(targetSy);
+    const sourceSy = sourceSchoolYears[0] || null;
     if (!sourceSy) {
+      return res.status(400).json({ success: false, message: 'No historical school year with teacher data found to fetch from' });
+    }
+
+    const sourceSchoolYearIds = sourceSchoolYears
+      .map((sy) => Number(sy?.id || 0))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    if (!sourceSchoolYearIds.length) {
       return res.status(400).json({ success: false, message: 'No historical school year with teacher data found to fetch from' });
     }
 
@@ -984,84 +1110,101 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
       ? ids.map((id) => String(id).trim()).filter(Boolean)
       : [];
 
+    const sourcePlaceholders = sourceSchoolYearIds.map(() => '?').join(',');
     let prevTeachers = [];
+    prevTeachers = await query(
+      `SELECT *
+       FROM teachers
+       WHERE school_year_id IN (${sourcePlaceholders})
+         AND LOWER(COALESCE(verification_status, '')) NOT IN ('declined', 'rejected')
+       ORDER BY school_year_id DESC, created_at DESC`,
+      sourceSchoolYearIds
+    );
+
+    prevTeachers = pickLatestTeacherRecordPerIdentity(prevTeachers);
+
     if (idList.length > 0) {
-      const placeholders = idList.map(() => '?').join(',');
-      prevTeachers = await query(
-        `SELECT * FROM teachers WHERE school_year_id = ? AND id IN (${placeholders})`,
-        [sourceSy.id, ...idList]
-      );
-    } else {
-      prevTeachers = await query(
-        'SELECT * FROM teachers WHERE school_year_id = ?',
-        [sourceSy.id]
-      );
+      const selectedSet = new Set(idList);
+      prevTeachers = prevTeachers.filter((teacher) => selectedSet.has(String(teacher.id || '')));
     }
 
     if (!prevTeachers.length) {
-      return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0 } });
+      return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, updated: 0, skipped: 0 } });
     }
 
     let inserted = 0;
+    let updated = 0;
     let skipped = 0;
 
     for (const t of prevTeachers) {
       // Skip duplicates globally by email/username to satisfy unique constraints.
-      const dup = await query(
-        `SELECT id, school_year_id
-         FROM teachers
-         WHERE LOWER(TRIM(CONVERT(email USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
-            OR LOWER(TRIM(CONVERT(username USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
-         LIMIT 1`,
-        [t.email || '', t.username || '']
-      );
+      const dedupeConditions = [];
+      const dedupeParams = [];
+      if (t.email) {
+        dedupeConditions.push('LOWER(TRIM(CONVERT(email USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci');
+        dedupeParams.push(t.email);
+      }
+      if (t.username) {
+        dedupeConditions.push('LOWER(TRIM(CONVERT(username USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci');
+        dedupeParams.push(t.username);
+      }
+
+      let dup = [];
+      if (dedupeConditions.length > 0) {
+        dup = await query(
+          `SELECT id, school_year_id
+           FROM teachers
+           WHERE ${dedupeConditions.join(' OR ')}
+           LIMIT 1`,
+          dedupeParams
+        );
+      }
+
       if (dup.length) {
         const existing = dup[0];
-        if (Number(existing.school_year_id || 0) !== Number(targetSy.id)) {
-          await query(
-            `UPDATE teachers
-             SET first_name = ?,
-                 middle_name = ?,
-                 last_name = ?,
-                 username = ?,
-                 email = ?,
-                 password = ?,
-                 role = ?,
-                 grade_level = ?,
-                 section = ?,
-                 subjects = ?,
-                 bio = ?,
-                 profile_pic = ?,
-                 verification_status = ?,
-                 sex = ?,
-                 contact_number = ?,
-                 school_year_id = ?,
-                 updated_at = NOW()
-             WHERE id = ?`,
-            [
-              t.first_name,
-              t.middle_name,
-              t.last_name,
-              t.username,
-              t.email,
-              t.password,
-              t.role,
-              t.grade_level,
-              t.section,
-              t.subjects,
-              t.bio,
-              t.profile_pic,
-              t.verification_status || 'approved',
-              t.sex || null,
-              t.contact_number || null,
-              targetSy.id,
-              existing.id
-            ]
-          );
-          inserted += 1;
-        } else {
-          skipped += 1;
-        }
+
+        await query(
+          `UPDATE teachers
+           SET first_name = ?,
+               middle_name = ?,
+               last_name = ?,
+               username = ?,
+               email = ?,
+               password = ?,
+               role = ?,
+               grade_level = ?,
+               section = ?,
+               subjects = ?,
+               bio = ?,
+               profile_pic = ?,
+               verification_status = ?,
+               sex = ?,
+               contact_number = ?,
+               school_year_id = ?,
+               updated_at = NOW()
+           WHERE id = ?`,
+          [
+            t.first_name,
+            t.middle_name,
+            t.last_name,
+            t.username,
+            t.email,
+            t.password,
+            t.role,
+            t.grade_level,
+            t.section,
+            t.subjects,
+            t.bio,
+            t.profile_pic,
+            'approved',
+            t.sex || null,
+            t.contact_number || null,
+            targetSy.id,
+            existing.id
+          ]
+        );
+
+        updated += 1;
         continue;
       }
 
@@ -1085,7 +1228,7 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
             t.subjects,
             t.bio,
             t.profile_pic,
-            t.verification_status || 'approved',
+            'approved',
             t.sex || null,
             t.contact_number || null,
             targetSy.id
@@ -1105,7 +1248,14 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
     res.json({
       success: true,
       message: 'Fetch complete',
-      data: { inserted, skipped, sourceSchoolYearId: sourceSy.id, targetSchoolYearId: targetSy.id }
+      data: {
+        inserted,
+        updated,
+        skipped,
+        sourceSchoolYearId: sourceSy.id,
+        sourceSchoolYearIds,
+        targetSchoolYearId: targetSy.id
+      }
     });
   } catch (error) {
     console.error('Error fetching teachers from previous year:', error);
