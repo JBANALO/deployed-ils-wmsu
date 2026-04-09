@@ -2,9 +2,41 @@
 const { query } = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
 
+const getSchoolYearById = async (schoolYearId) => {
+  if (!schoolYearId) return null;
+  const rows = await query(
+    'SELECT id FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1',
+    [schoolYearId]
+  );
+  return rows[0] || null;
+};
+
+const getActiveSchoolYear = async () => {
+  const rows = await query('SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+  return rows[0] || null;
+};
+
+const resolveSchoolYearId = async (req) => {
+  const requestedId = req?.query?.schoolYearId || req?.body?.schoolYearId;
+  if (requestedId) {
+    const row = await getSchoolYearById(requestedId);
+    if (row?.id) return Number(row.id);
+  }
+  const active = await getActiveSchoolYear();
+  return active?.id ? Number(active.id) : null;
+};
+
 exports.getAllGrades = async (req, res) => {
   try {
-    const grades = await query('SELECT COUNT(*) as totalGrades FROM grades');
+    const schoolYearId = await resolveSchoolYearId(req);
+    if (!schoolYearId) {
+      return res.json({ totalGrades: 0 });
+    }
+
+    const grades = await query(
+      'SELECT COUNT(*) as totalGrades FROM grades WHERE school_year_id = ?',
+      [schoolYearId]
+    );
     res.json({ totalGrades: grades[0].totalGrades });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -30,7 +62,15 @@ exports.createGrade = async (req, res) => {
 exports.getGradesByStudent = async (req, res) => {
   try {
     const { studentId } = req.params;
-    const grades = await query('SELECT * FROM grades WHERE student_id = ? ORDER BY subject', [studentId]);
+    const schoolYearId = await resolveSchoolYearId(req);
+    if (!schoolYearId) {
+      return res.json([]);
+    }
+
+    const grades = await query(
+      'SELECT * FROM grades WHERE student_id = ? AND school_year_id = ? ORDER BY subject',
+      [studentId, schoolYearId]
+    );
     res.json(grades);
   } catch (error) {
     res.status(500).json({ error: error.message });

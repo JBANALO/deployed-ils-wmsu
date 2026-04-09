@@ -122,24 +122,14 @@ exports.getAllClasses = async (req, res) => {
       {
         sql: `SELECT class_id, grade_level, section, adviser_id, adviser_name
               FROM class_assignments
-              WHERE school_year_id = ? OR school_year_id IS NULL`,
+              WHERE school_year_id = ?`,
         params: [targetSy.id]
       },
       {
         sql: `SELECT NULL AS class_id, grade_level, section, adviser_id, adviser_name
               FROM class_assignments
-              WHERE school_year_id = ? OR school_year_id IS NULL`,
+              WHERE school_year_id = ?`,
         params: [targetSy.id]
-      },
-      {
-        sql: `SELECT class_id, grade_level, section, adviser_id, adviser_name
-              FROM class_assignments`,
-        params: []
-      },
-      {
-        sql: `SELECT NULL AS class_id, grade_level, section, adviser_id, adviser_name
-              FROM class_assignments`,
-        params: []
       }
     ]);
 
@@ -172,7 +162,7 @@ exports.getAllClasses = async (req, res) => {
                   LEFT JOIN users u ON st.teacher_id = u.id COLLATE utf8mb4_unicode_ci
                   LEFT JOIN teachers t ON st.teacher_id = t.id
                   WHERE (st.class_id = ? OR st.class_id = ?)
-                    AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
+                    AND st.school_year_id = ?`,
             params: [cls.id, legacyClassId, targetSy.id]
           },
           {
@@ -182,14 +172,14 @@ exports.getAllClasses = async (req, res) => {
                   LEFT JOIN users u ON st.teacher_id = u.id COLLATE utf8mb4_unicode_ci
                   LEFT JOIN teachers t ON st.teacher_id = t.id
                   WHERE (st.class_id = ? OR st.class_id = ?)
-                    AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
+                    AND st.school_year_id = ?`,
             params: [cls.id, legacyClassId, targetSy.id]
           },
           {
             sql: `SELECT st.*
                   FROM subject_teachers st
                   WHERE (st.class_id = ? OR st.class_id = ?)
-                    AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
+                    AND st.school_year_id = ?`,
             params: [cls.id, legacyClassId, targetSy.id]
           }
         ]);
@@ -232,7 +222,7 @@ exports.getAllClasses = async (req, res) => {
                 sql: `SELECT id, first_name, last_name
                       FROM teachers
                       WHERE id = ? AND role IN ('adviser', 'teacher', 'subject_teacher')
-                      AND (school_year_id = ? OR school_year_id IS NULL)
+                      AND school_year_id = ?
                       ORDER BY school_year_id DESC
                       LIMIT 1`,
                 params: [adviserId, targetSy.id]
@@ -289,7 +279,7 @@ exports.getAllClasses = async (req, res) => {
                WHERE role IN ('adviser', 'teacher', 'subject_teacher')
                AND LOWER(REPLACE(TRIM(grade_level), 'grade ', '')) = ?
                AND LOWER(TRIM(section)) = ?
-               AND (school_year_id = ? OR school_year_id IS NULL)
+               AND school_year_id = ?
                ORDER BY school_year_id DESC`,
               [normalizedGrade, normalizedSection, targetSy.id]
             );
