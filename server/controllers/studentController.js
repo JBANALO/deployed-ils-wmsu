@@ -94,6 +94,46 @@ async function getLatestHistoricalStudentSchoolYear(targetSy) {
   return getPreviousSchoolYear(targetSy);
 }
 
+async function getHistoricalStudentSchoolYears(targetSy) {
+  if (!targetSy?.id) return [];
+
+  try {
+    if (targetSy.start_date) {
+      const rowsByDate = await query(
+        `SELECT sy.id, sy.label, sy.start_date
+         FROM school_years sy
+         WHERE sy.is_archived = 0
+           AND sy.id <> ?
+           AND sy.start_date < ?
+           AND EXISTS (
+             SELECT 1 FROM students s WHERE s.school_year_id = sy.id LIMIT 1
+           )
+         ORDER BY sy.start_date DESC`,
+        [targetSy.id, targetSy.start_date]
+      );
+      if (rowsByDate.length > 0) return rowsByDate;
+    }
+
+    const rowsById = await query(
+      `SELECT sy.id, sy.label, sy.start_date
+       FROM school_years sy
+       WHERE sy.is_archived = 0
+         AND sy.id < ?
+         AND EXISTS (
+           SELECT 1 FROM students s WHERE s.school_year_id = sy.id LIMIT 1
+         )
+       ORDER BY sy.id DESC`,
+      [targetSy.id]
+    );
+    return rowsById;
+  } catch (err) {
+    console.log('getHistoricalStudentSchoolYears fallback:', err.message);
+  }
+
+  const latest = await getLatestHistoricalStudentSchoolYear(targetSy);
+  return latest ? [latest] : [];
+}
+
 async function getNearestStudentSchoolYearWithData(targetSy) {
   if (!targetSy?.id) return null;
 
@@ -1999,8 +2039,16 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Fetching students is only allowed in the active school year.' });
     }
 
-    const sourceSy = await getLatestHistoricalStudentSchoolYear(targetSy);
+    const sourceSchoolYears = await getHistoricalStudentSchoolYears(targetSy);
+    const sourceSy = sourceSchoolYears[0] || null;
     if (!sourceSy) {
+      return res.status(400).json({ success: false, message: 'No historical school year with student data found to fetch from.' });
+    }
+
+    const sourceSchoolYearIds = sourceSchoolYears
+      .map((sy) => Number(sy?.id || 0))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    if (!sourceSchoolYearIds.length) {
       return res.status(400).json({ success: false, message: 'No historical school year with student data found to fetch from.' });
     }
 
@@ -2022,13 +2070,14 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       return time;
     };
 
+    const sourcePlaceholders = sourceSchoolYearIds.map(() => '?').join(',');
     let promotionRows = await query(
-      `SELECT ph.student_id, ph.lrn, ph.to_grade, ph.to_section, ph.status, ph.reason, ph.created_at
+      `SELECT ph.student_id, ph.lrn, ph.to_grade, ph.to_section, ph.status, ph.reason, ph.created_at, ph.school_year_id
        FROM promotion_history ph
-       WHERE ph.school_year_id = ?
+       WHERE ph.school_year_id IN (${sourcePlaceholders})
          AND LOWER(ph.status) IN ('promoted', 'retained')
        ORDER BY ph.created_at DESC`,
-      [sourceSy.id]
+      sourceSchoolYearIds
     );
 
     if (!promotionRows.length) {
@@ -2038,24 +2087,33 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
                 grade_level AS to_grade,
                 section AS to_section,
                 'historical' AS status,
+                school_year_id,
                 created_at
          FROM students
-         WHERE school_year_id = ?
-         ORDER BY created_at DESC`,
-        [sourceSy.id]
+         WHERE school_year_id IN (${sourcePlaceholders})
+         ORDER BY school_year_id DESC, created_at DESC`,
+        sourceSchoolYearIds
       );
     }
 
     const sourceRows = await query(
-      'SELECT * FROM students WHERE school_year_id = ?',
-      [sourceSy.id]
+      `SELECT *
+       FROM students
+       WHERE school_year_id IN (${sourcePlaceholders})
+       ORDER BY school_year_id DESC, created_at DESC`,
+      sourceSchoolYearIds
     );
 
     const sourceById = new Map();
     const sourceByLrn = new Map();
     sourceRows.forEach((row) => {
-      sourceById.set(String(row.id), row);
-      if (row.lrn) sourceByLrn.set(String(row.lrn), row);
+      const rowId = String(row.id || '');
+      if (rowId && !sourceById.has(rowId)) {
+        sourceById.set(rowId, row);
+      }
+      if (row.lrn && !sourceByLrn.has(String(row.lrn))) {
+        sourceByLrn.set(String(row.lrn), row);
+      }
     });
 
     // Canonicalize by source-school-year student/LRN and collapse conflicting history rows.
@@ -2076,7 +2134,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       const candidate = await applyAutoPromotionOverride(
         baseCandidate,
         sourceStudent,
-        sourceSy.id,
+        sourceStudent.school_year_id || sourceSy.id,
         derivedEligibilityCache,
         destinationSectionCache
       );
@@ -2097,6 +2155,28 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       if (candidatePriority === existingPriority && toTimestamp(candidate.created_at) > toTimestamp(existing.created_at)) {
         latestByLrn.set(canonicalLrn, candidate);
       }
+    }
+
+    // Include historical students without promotion logs (e.g., long-stop returnees).
+    for (const row of sourceRows) {
+      if (!row?.id || !row?.lrn) continue;
+      const canonicalLrn = String(row.lrn);
+      if (latestByLrn.has(canonicalLrn)) continue;
+
+      latestByLrn.set(canonicalLrn, {
+        student_id: row.id,
+        canonical_student_id: String(row.id),
+        canonical_lrn: canonicalLrn,
+        lrn: row.lrn,
+        from_grade: row.grade_level,
+        from_section: row.section,
+        to_grade: row.grade_level,
+        to_section: row.section,
+        status: 'historical',
+        reason: 'No promotion history found',
+        created_at: row.created_at || null,
+        sourceStudent: row
+      });
     }
 
     let normalizedPromotionRows = Array.from(latestByLrn.values())
@@ -2141,7 +2221,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       let nextSection = promo.to_section || sourceStudent.section;
       if (String(promo.status || '').toLowerCase() === 'promoted' && nextGradeLevel) {
         const resolvedSection = await resolveDestinationSectionForGrade(
-          sourceSy.id,
+          sourceStudent.school_year_id || sourceSy.id,
           nextGradeLevel,
           nextSection,
           destinationSectionCache
@@ -2217,6 +2297,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
         promotedInserted,
         retainedInserted,
         sourceSchoolYearId: sourceSy.id,
+        sourceSchoolYearIds,
         targetSchoolYearId: targetSy.id
       }
     });
@@ -2243,14 +2324,27 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
     }
 
-    const sourceSy = await getLatestHistoricalStudentSchoolYear(targetSy);
+    const sourceSchoolYears = await getHistoricalStudentSchoolYears(targetSy);
+    const sourceSy = sourceSchoolYears[0] || null;
     if (!sourceSy) {
       return res.json({ success: true, data: [], meta: { sourceSchoolYearId: null, targetSchoolYearId: targetSy.id } });
     }
 
+    const sourceSchoolYearIds = sourceSchoolYears
+      .map((sy) => Number(sy?.id || 0))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    if (!sourceSchoolYearIds.length) {
+      return res.json({ success: true, data: [], meta: { sourceSchoolYearId: null, targetSchoolYearId: targetSy.id } });
+    }
+
+    const sourcePlaceholders = sourceSchoolYearIds.map(() => '?').join(',');
+
     const sourceRows = await query(
-      'SELECT id, lrn, first_name, middle_name, last_name, grade_level, section, created_at FROM students WHERE school_year_id = ?',
-      [sourceSy.id]
+      `SELECT id, lrn, first_name, middle_name, last_name, grade_level, section, school_year_id, created_at
+       FROM students
+       WHERE school_year_id IN (${sourcePlaceholders})
+       ORDER BY school_year_id DESC, created_at DESC`,
+      sourceSchoolYearIds
     );
 
     const statusPriority = (status = '') => {
@@ -2268,19 +2362,24 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
     };
 
     let promotionRows = await query(
-      `SELECT ph.student_id, ph.lrn, ph.from_grade, ph.from_section, ph.to_grade, ph.to_section, ph.status, ph.reason, ph.created_at
+      `SELECT ph.student_id, ph.lrn, ph.from_grade, ph.from_section, ph.to_grade, ph.to_section, ph.status, ph.reason, ph.created_at, ph.school_year_id
        FROM promotion_history ph
-       WHERE ph.school_year_id = ?
+       WHERE ph.school_year_id IN (${sourcePlaceholders})
          AND LOWER(ph.status) IN ('promoted', 'retained')
        ORDER BY ph.created_at DESC`,
-      [sourceSy.id]
+      sourceSchoolYearIds
     );
 
     const sourceById = new Map();
     const sourceByLrn = new Map();
     sourceRows.forEach((row) => {
-      sourceById.set(String(row.id), row);
-      if (row.lrn) sourceByLrn.set(String(row.lrn), row);
+      const rowId = String(row.id || '');
+      if (rowId && !sourceById.has(rowId)) {
+        sourceById.set(rowId, row);
+      }
+      if (row.lrn && !sourceByLrn.has(String(row.lrn))) {
+        sourceByLrn.set(String(row.lrn), row);
+      }
     });
 
     // Canonicalize and dedupe by source-school-year LRN.
@@ -2301,7 +2400,7 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       const candidate = await applyAutoPromotionOverride(
         baseCandidate,
         sourceStudent,
-        sourceSy.id,
+        sourceStudent.school_year_id || sourceSy.id,
         derivedEligibilityCache,
         destinationSectionCache
       );
@@ -2322,6 +2421,27 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       if (candidatePriority === existingPriority && toTimestamp(candidate.created_at) > toTimestamp(existing.created_at)) {
         latestByLrn.set(canonicalLrn, candidate);
       }
+    }
+
+    // Include historical students without promotion logs (e.g., long-stop returnees).
+    for (const row of sourceRows) {
+      if (!row?.id || !row?.lrn) continue;
+      const canonicalLrn = String(row.lrn);
+      if (latestByLrn.has(canonicalLrn)) continue;
+
+      latestByLrn.set(canonicalLrn, {
+        student_id: row.id,
+        canonical_student_id: String(row.id),
+        canonical_lrn: canonicalLrn,
+        lrn: row.lrn,
+        from_grade: row.grade_level,
+        from_section: row.section,
+        to_grade: row.grade_level,
+        to_section: row.section,
+        status: 'historical',
+        created_at: row.created_at || null,
+        sourceStudent: row
+      });
     }
 
     let normalizedPromotionRows = Array.from(latestByLrn.values());
@@ -2386,7 +2506,10 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       data: candidates,
       meta: {
         sourceSchoolYearId: sourceSy.id,
-        sourceSchoolYearLabel: sourceSy.label,
+        sourceSchoolYearIds,
+        sourceSchoolYearLabel: sourceSchoolYears.length > 1
+          ? `${sourceSy.label} and older years`
+          : sourceSy.label,
         targetSchoolYearId: targetSy.id,
         targetSchoolYearLabel: targetSy.label
       }
