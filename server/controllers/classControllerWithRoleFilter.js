@@ -52,12 +52,35 @@ const normalizeSectionLabel = (value = '') => String(value || '').trim().replace
 const syncClassesFromSectionsForSchoolYear = async (schoolYearId) => {
   if (!schoolYearId) return { inserted: 0, skipped: 0 };
 
+  const [sectionColumns] = await pool.query('SHOW COLUMNS FROM sections');
+  const sectionFieldSet = new Set(sectionColumns.map((column) => column.Field));
+  const sectionNameField = sectionFieldSet.has('name') ? 'name' : (sectionFieldSet.has('section_name') ? 'section_name' : null);
+  const gradeField = sectionFieldSet.has('grade_level') ? 'grade_level' : (sectionFieldSet.has('grade') ? 'grade' : null);
+  const hasSchoolYear = sectionFieldSet.has('school_year_id');
+  const hasIsArchived = sectionFieldSet.has('is_archived');
+
+  if (!sectionNameField || !gradeField) {
+    return { inserted: 0, skipped: 0 };
+  }
+
+  const whereParts = [];
+  const params = [];
+
+  if (hasSchoolYear) {
+    whereParts.push('school_year_id = ?');
+    params.push(schoolYearId);
+  }
+
+  if (hasIsArchived) {
+    whereParts.push('(is_archived IS NULL OR is_archived = 0)');
+  }
+
+  const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
   const [sections] = await pool.query(
-    `SELECT grade_level, section_name
+    `SELECT ${gradeField} AS grade_level, ${sectionNameField} AS section_name
      FROM sections
-     WHERE school_year_id = ?
-       AND (is_archived IS NULL OR is_archived = 0)`,
-    [schoolYearId]
+     ${whereClause}`,
+    params
   );
 
   if (!sections.length) return { inserted: 0, skipped: 0 };
