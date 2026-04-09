@@ -526,51 +526,6 @@ const getAllTeachers = async (req, res) => {
 
       const unifiedTeachers = Array.from(mergedByIdentity.values());
 
-      if (unifiedTeachers.length === 0 && isExplicitSchoolYearScope) {
-        const fallbackSy = await getNearestTeacherSchoolYearWithData(targetSy)
-          || await getLatestHistoricalTeacherSchoolYear(targetSy);
-        if (fallbackSy && String(fallbackSy.id) !== String(targetSy.id)) {
-          const fallbackTeachers = dbTeachers
-            .filter((teacher) => belongsToSchoolYear(teacher, fallbackSy))
-            .map((teacher) => ({
-              id: teacher.id,
-              firstName: teacher.first_name || '',
-              middleName: teacher.middle_name || '',
-              lastName: teacher.last_name || '',
-              fullName: `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim(),
-              username: teacher.username,
-              email: teacher.email,
-              role: teacher.role || 'teacher',
-              gradeLevel: teacher.grade_level || '',
-              section: teacher.section || '',
-              position: teacher.role || 'teacher',
-              subjectsHandled: parseSubjects(teacher.subjects),
-              subjects: parseSubjects(teacher.subjects),
-              classSections: [],
-              bio: teacher.bio || '',
-              profilePic: teacher.profile_pic || '',
-              sex: teacher.sex || '',
-              contactNumber: teacher.contact_number || '',
-              status: teacher.verification_status || 'approved',
-              createdAt: teacher.created_at,
-              school_year_id: teacher.school_year_id || null
-            }));
-
-          console.log(
-            `getAllTeachers: No rows for school year ${targetSy.id}; using fallback school year ${fallbackSy.id} with ${fallbackTeachers.length} teacher(s)`
-          );
-
-          return res.json({
-            status: 'success',
-            data: {
-              teachers: fallbackTeachers
-            },
-            teachers: fallbackTeachers,
-            meta: { schoolYearId: targetSy.id, fallbackFromSchoolYearId: fallbackSy.id }
-          });
-        }
-      }
-
       console.log(`getAllTeachers: Returning ${unifiedTeachers.length} teachers for school year ${targetSy.id}`);
 
       return res.json({

@@ -591,6 +591,17 @@ exports.restoreSchoolYear = async (req, res) => {
 // Get student count by grade level (for chart)
 exports.getStudentsByGrade = async (req, res) => {
   try {
+    const requestedSchoolYearId = Number(req.query?.schoolYearId || 0);
+    const activeSchoolYear = await query('SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+    const activeSchoolYearId = Number(activeSchoolYear?.[0]?.id || 0);
+    const targetSchoolYearId = Number.isInteger(requestedSchoolYearId) && requestedSchoolYearId > 0
+      ? requestedSchoolYearId
+      : activeSchoolYearId;
+
+    if (!targetSchoolYearId) {
+      return res.json({ success: true, data: [] });
+    }
+
     const rows = await query(`
       SELECT 
         CASE
@@ -605,9 +616,10 @@ exports.getStudentsByGrade = async (req, res) => {
         END AS grade,
         COUNT(*) as count
       FROM students
+      WHERE school_year_id = ?
       GROUP BY grade
       ORDER BY grade
-    `);
+    `, [targetSchoolYearId]);
     res.json({ success: true, data: rows });
   } catch (error) {
     console.error('Error fetching students by grade:', error);
@@ -917,21 +929,36 @@ async function logPromotionHistory(conn, payload) {
   );
 }
 
-async function getStudentsForPromotion(conn, studentIds = null) {
+async function getStudentsForPromotion(conn, studentIds = null, schoolYearId = null) {
+  let targetSchoolYearId = Number(schoolYearId || 0);
+  if (!Number.isInteger(targetSchoolYearId) || targetSchoolYearId <= 0) {
+    const activeSy = await getActiveSchoolYearMeta(conn);
+    targetSchoolYearId = Number(activeSy?.id || 0);
+  }
+
+  if (!targetSchoolYearId) {
+    return [];
+  }
+
   if (Array.isArray(studentIds) && studentIds.length > 0) {
     const placeholders = studentIds.map(() => '?').join(',');
     const [rows] = await conn.query(
       `SELECT id, lrn, first_name, last_name, grade_level, section
        FROM students
        WHERE id IN (${placeholders})
+         AND school_year_id = ?
        ORDER BY grade_level, section, last_name, first_name`,
-      studentIds
+      [...studentIds, targetSchoolYearId]
     );
     return rows;
   }
 
   const [rows] = await conn.query(
-    'SELECT id, lrn, first_name, last_name, grade_level, section FROM students ORDER BY grade_level, section, last_name, first_name'
+    `SELECT id, lrn, first_name, last_name, grade_level, section
+     FROM students
+     WHERE school_year_id = ?
+     ORDER BY grade_level, section, last_name, first_name`,
+    [targetSchoolYearId]
   );
   return rows;
 }
@@ -1072,7 +1099,11 @@ exports.promoteStudents = async (req, res) => {
     const selectedSY = await getSchoolYearMetaById(connection, requestedSchoolYearId);
     const activeSY = selectedSY || await getActiveSchoolYearMeta(connection);
 
-    const students = await getStudentsForPromotion(connection, requestedStudentIds.length > 0 ? requestedStudentIds : null);
+    const students = await getStudentsForPromotion(
+      connection,
+      requestedStudentIds.length > 0 ? requestedStudentIds : null,
+      activeSY?.id || null
+    );
 
     if (requestedStudentIds.length > 0 && students.length === 0) {
       await connection.rollback();
@@ -1302,7 +1333,10 @@ exports.getPromotionCandidates = async (req, res) => {
   let connection;
   try {
     connection = await pool.getConnection();
-    const students = await getStudentsForPromotion(connection, null);
+    const requestedSchoolYearId = Number(req.query?.schoolYearId || 0);
+    const selectedSY = await getSchoolYearMetaById(connection, requestedSchoolYearId);
+    const activeSY = selectedSY || await getActiveSchoolYearMeta(connection);
+    const students = await getStudentsForPromotion(connection, null, activeSY?.id || null);
 
     const candidates = [];
     for (const student of students) {
@@ -1326,6 +1360,13 @@ exports.getPromotionPreview = async (req, res) => {
   let connection;
   try {
     connection = await pool.getConnection();
+    const requestedSchoolYearId = Number(req.query?.schoolYearId || 0);
+    const selectedSY = await getSchoolYearMetaById(connection, requestedSchoolYearId);
+    const activeSY = selectedSY || await getActiveSchoolYearMeta(connection);
+
+    if (!activeSY?.id) {
+      return res.json({ success: true, data: [] });
+    }
 
     // For each grade level, count how many students will pass (avg >= 75) vs be retained
     const gradeOrder = ['Kindergarten','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6'];
@@ -1336,13 +1377,19 @@ exports.getPromotionPreview = async (req, res) => {
       const isGraduating = nextGrade === 'Graduate';
 
       // Students in this grade
-      const totalRows = await query('SELECT COUNT(*) as cnt FROM students WHERE grade_level = ?', [grade]);
+      const totalRows = await query(
+        'SELECT COUNT(*) as cnt FROM students WHERE grade_level = ? AND school_year_id = ?',
+        [grade, activeSY.id]
+      );
       const totalCount = Number(totalRows?.[0]?.cnt || 0);
       if (totalCount === 0) continue;
 
       const [students] = await connection.query(
-        'SELECT id, first_name, last_name, grade_level, section FROM students WHERE grade_level = ? ORDER BY last_name, first_name',
-        [grade]
+        `SELECT id, first_name, last_name, grade_level, section
+         FROM students
+         WHERE grade_level = ? AND school_year_id = ?
+         ORDER BY last_name, first_name`,
+        [grade, activeSY.id]
       );
 
       let willPromote = 0;
