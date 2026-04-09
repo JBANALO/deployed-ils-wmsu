@@ -152,6 +152,37 @@ const resolveSchoolYear = async (req) => {
   return getActiveSchoolYear();
 };
 
+const makeTeacherViewOnlyError = () => {
+  const err = new Error('Editing past school years is not allowed (view only).');
+  err.statusCode = 403;
+  return err;
+};
+
+const assertTeacherEditableInActiveSchoolYear = async (teacherId, fileRecord = null) => {
+  await ensureTeacherSchoolYearColumn();
+  const activeSy = await getActiveSchoolYear();
+
+  let recordSchoolYearId = null;
+  try {
+    const dbRows = await query('SELECT school_year_id FROM teachers WHERE id = ? LIMIT 1', [teacherId]);
+    if (dbRows.length > 0) {
+      recordSchoolYearId = dbRows[0].school_year_id;
+    }
+  } catch (dbErr) {
+    console.log('Teacher school year edit guard DB check skipped:', dbErr.message);
+  }
+
+  if ((recordSchoolYearId === null || recordSchoolYearId === undefined) && fileRecord) {
+    recordSchoolYearId = fileRecord.school_year_id ?? fileRecord.schoolYearId ?? null;
+  }
+
+  if (recordSchoolYearId !== null && recordSchoolYearId !== undefined && Number(recordSchoolYearId) !== Number(activeSy.id)) {
+    throw makeTeacherViewOnlyError();
+  }
+
+  return activeSy;
+};
+
 const normalizeName = (value = '') => value.toString().trim().toLowerCase().replace(/\s+/g, ' ');
 
 const parseSubjects = (subjects) => {
@@ -714,7 +745,7 @@ const getAdvisers = (req, res) => {
 };
 
 // Archive a teacher
-const archiveTeacher = (req, res) => {
+const archiveTeacher = async (req, res) => {
   try {
     const { id } = req.params;
     const users = readUsers();
@@ -729,6 +760,8 @@ const archiveTeacher = (req, res) => {
     }
     
     const teacher = users[teacherIndex];
+
+    await assertTeacherEditableInActiveSchoolYear(id, teacher);
     
     // Check if it's a teacher role
     if (!['adviser', 'teacher', 'subject_teacher'].includes(teacher.role)) {
@@ -761,16 +794,17 @@ const archiveTeacher = (req, res) => {
     }
   } catch (error) {
     console.error('Error in archiveTeacher:', error);
-    res.status(500).json({
+    const status = error.statusCode || 500;
+    res.status(status).json({
       success: false,
-      message: 'Error archiving teacher',
+      message: error.message || 'Error archiving teacher',
       error: error.message
     });
   }
 };
 
 // Restore an archived teacher
-const restoreTeacher = (req, res) => {
+const restoreTeacher = async (req, res) => {
   try {
     const { id } = req.params;
     const users = readUsers();
@@ -785,6 +819,8 @@ const restoreTeacher = (req, res) => {
     }
     
     const teacher = users[teacherIndex];
+
+    await assertTeacherEditableInActiveSchoolYear(id, teacher);
     
     // Check if it's archived
     if (!teacher.archived) {
@@ -818,16 +854,17 @@ const restoreTeacher = (req, res) => {
     }
   } catch (error) {
     console.error('Error in restoreTeacher:', error);
-    res.status(500).json({
+    const status = error.statusCode || 500;
+    res.status(status).json({
       success: false,
-      message: 'Error restoring teacher',
+      message: error.message || 'Error restoring teacher',
       error: error.message
     });
   }
 };
 
 // Delete a teacher (permanent)
-const deleteTeacher = (req, res) => {
+const deleteTeacher = async (req, res) => {
   try {
     const { id } = req.params;
     const users = readUsers();
@@ -842,6 +879,8 @@ const deleteTeacher = (req, res) => {
     }
     
     const teacher = users[teacherIndex];
+
+    await assertTeacherEditableInActiveSchoolYear(id, teacher);
     
     // Check if it's a teacher role
     if (!['adviser', 'teacher', 'subject_teacher'].includes(teacher.role)) {
@@ -870,9 +909,10 @@ const deleteTeacher = (req, res) => {
     }
   } catch (error) {
     console.error('Error in deleteTeacher:', error);
-    res.status(500).json({
+    const status = error.statusCode || 500;
+    res.status(status).json({
       success: false,
-      message: 'Error deleting teacher',
+      message: error.message || 'Error deleting teacher',
       error: error.message
     });
   }
@@ -1205,6 +1245,17 @@ const updateTeacher = async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = { ...req.body };
+    let activeSchoolYear;
+
+    try {
+      activeSchoolYear = await assertTeacherEditableInActiveSchoolYear(id);
+    } catch (guardErr) {
+      const status = guardErr.statusCode || 500;
+      return res.status(status).json({
+        success: false,
+        message: guardErr.message || 'Failed to validate active school year lock'
+      });
+    }
 
     // Normalize and validate institutional email domain.
     if (updateData.email !== undefined) {
@@ -1229,7 +1280,7 @@ const updateTeacher = async (req, res) => {
     try {
       const teacherRows = await query(
         `SELECT id, first_name, middle_name, last_name, username, email, role,
-          grade_level, section, subjects, bio, verification_status, sex, contact_number
+          grade_level, section, subjects, bio, verification_status, sex, contact_number, school_year_id
          FROM teachers
          WHERE id = ?
          LIMIT 1`,
@@ -1238,6 +1289,17 @@ const updateTeacher = async (req, res) => {
 
       if (teacherRows.length > 0) {
         const current = teacherRows[0];
+
+        if (
+          current.school_year_id !== null &&
+          current.school_year_id !== undefined &&
+          Number(current.school_year_id) !== Number(activeSchoolYear.id)
+        ) {
+          return res.status(403).json({
+            success: false,
+            message: 'Editing past school years is not allowed (view only).'
+          });
+        }
 
         if (updateData.email) {
           const duplicateEmailRows = await query(
@@ -1333,6 +1395,17 @@ const updateTeacher = async (req, res) => {
       });
     }
 
+    if (teacherIndex !== -1) {
+      const fileTeacher = users[teacherIndex];
+      const fileSy = fileTeacher?.school_year_id ?? fileTeacher?.schoolYearId ?? null;
+      if (fileSy !== null && fileSy !== undefined && Number(fileSy) !== Number(activeSchoolYear.id)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Editing past school years is not allowed (view only).'
+        });
+      }
+    }
+
     let fileUpdatedTeacher = null;
     let fileSaved = true;
 
@@ -1373,7 +1446,7 @@ const updateTeacher = async (req, res) => {
 };
 
 // Approve a teacher
-const approveTeacher = (req, res) => {
+const approveTeacher = async (req, res) => {
   try {
     const { id } = req.params;
     const users = readUsers();
@@ -1386,6 +1459,8 @@ const approveTeacher = (req, res) => {
         message: 'Teacher not found'
       });
     }
+
+    await assertTeacherEditableInActiveSchoolYear(id, users[teacherIndex]);
     
     // Approve teacher
     users[teacherIndex] = {
@@ -1411,15 +1486,16 @@ const approveTeacher = (req, res) => {
     }
   } catch (error) {
     console.error('Error in approveTeacher:', error);
-    res.status(500).json({
+    const status = error.statusCode || 500;
+    res.status(status).json({
       success: false,
-      message: 'Error approving teacher'
+      message: error.message || 'Error approving teacher'
     });
   }
 };
 
 // Decline a teacher
-const declineTeacher = (req, res) => {
+const declineTeacher = async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
@@ -1433,6 +1509,8 @@ const declineTeacher = (req, res) => {
         message: 'Teacher not found'
       });
     }
+
+    await assertTeacherEditableInActiveSchoolYear(id, users[teacherIndex]);
     
     // Decline teacher
     users[teacherIndex] = {
@@ -1459,9 +1537,10 @@ const declineTeacher = (req, res) => {
     }
   } catch (error) {
     console.error('Error in declineTeacher:', error);
-    res.status(500).json({
+    const status = error.statusCode || 500;
+    res.status(status).json({
       success: false,
-      message: 'Error declining teacher'
+      message: error.message || 'Error declining teacher'
     });
   }
 };
