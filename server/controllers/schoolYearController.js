@@ -1087,134 +1087,193 @@ exports.promoteStudents = async (req, res) => {
 
       if (!nextGrade) continue; // unknown grade level — skip
 
-      const eligibility = await evaluatePromotionEligibility(connection, student);
-      const avg = Number(eligibility.average || 0);
-      const passed = eligibility.eligible;
-      const previousSchedule = passed ? await getScheduleSnapshotForClass(connection, currentGrade, currentSection) : [];
+      try {
+        const eligibility = await evaluatePromotionEligibility(connection, student);
+        const avg = Number(eligibility.average || 0);
+        const passed = eligibility.eligible;
+        const previousSchedule = passed ? await getScheduleSnapshotForClass(connection, currentGrade, currentSection) : [];
 
-      if (!passed) {
-        // Retain student
-        const retainedRow = {
+        if (!passed) {
+          // Retain student
+          const retainedRow = {
+            id: student.id,
+            name: studentName,
+            grade: currentGrade,
+            avg: avg.toFixed(2),
+            reason: eligibility.reason
+          };
+          retained.push(retainedRow);
+
+          await logPromotionHistory(connection, {
+            schoolYearId: activeSY?.id,
+            schoolYearLabel: activeSY?.label,
+            studentId: student.id,
+            lrn: student.lrn,
+            studentName,
+            fromGrade: currentGrade,
+            fromSection: currentSection,
+            toGrade: currentGrade,
+            toSection: currentSection,
+            average: avg,
+            status: 'retained',
+            reason: eligibility.reason,
+            details: { hasCompleteGrades: eligibility.hasCompleteGrades, hasFailingGrade: eligibility.hasFailingGrade }
+          });
+          continue;
+        }
+
+        if (nextGrade === 'Graduate') {
+          // Mark as graduated
+          await connection.query(
+            "UPDATE students SET grade_level = 'Graduate', status = 'graduated' WHERE id = ?",
+            [student.id]
+          );
+          const row = { id: student.id, name: studentName, fromGrade: currentGrade, avg: avg.toFixed(2) };
+          graduates.push(row);
+
+          await logPromotionHistory(connection, {
+            schoolYearId: activeSY?.id,
+            schoolYearLabel: activeSY?.label,
+            studentId: student.id,
+            lrn: student.lrn,
+            studentName,
+            fromGrade: currentGrade,
+            fromSection: currentSection,
+            toGrade: 'Graduate',
+            toSection: currentSection,
+            average: avg,
+            status: 'graduated',
+            reason: 'Completed all subjects and passed all quarters',
+            details: {
+              hasCompleteGrades: true,
+              hasFailingGrade: false,
+              previousSchedule
+            }
+          });
+        } else {
+          let destinationClass = null;
+          const requestedClassId = assignmentByStudentId.get(String(student.id));
+          if (requestedClassId) {
+            const [rows] = await connection.query(
+              `SELECT id, grade, section, adviser_id, adviser_name
+               FROM classes
+               WHERE id = ? AND grade = ?
+               LIMIT 1`,
+              [requestedClassId, nextGrade]
+            );
+            destinationClass = rows[0] || null;
+          }
+
+          if (!destinationClass) {
+            if (requestedStudentIds.length > 0) {
+              await connection.rollback();
+              return res.status(400).json({
+                success: false,
+                message: `Missing or invalid destination class assignment for ${studentName} (${nextGrade})`
+              });
+            }
+            destinationClass = await pickDestinationClass(connection, nextGrade);
+          }
+
+          const nextSection = destinationClass?.section || currentSection || null;
+          if (!nextSection) {
+            const reason = `No destination section available for ${nextGrade}`;
+            retained.push({
+              id: student.id,
+              name: studentName,
+              grade: currentGrade,
+              avg: avg.toFixed(2),
+              reason
+            });
+
+            await logPromotionHistory(connection, {
+              schoolYearId: activeSY?.id,
+              schoolYearLabel: activeSY?.label,
+              studentId: student.id,
+              lrn: student.lrn,
+              studentName,
+              fromGrade: currentGrade,
+              fromSection: currentSection,
+              toGrade: currentGrade,
+              toSection: currentSection,
+              average: avg,
+              status: 'retained',
+              reason,
+              details: { hasCompleteGrades: true, hasFailingGrade: false }
+            });
+            continue;
+          }
+
+          await connection.query(
+            'UPDATE students SET grade_level = ?, section = ? WHERE id = ?',
+            [nextGrade, nextSection, student.id]
+          );
+
+          const row = {
+            id: student.id,
+            name: studentName,
+            fromGrade: currentGrade,
+            fromSection: currentSection,
+            toGrade: nextGrade,
+            toSection: nextSection,
+            adviser: destinationClass?.adviser_name || null,
+            avg: avg.toFixed(2)
+          };
+          promotions.push(row);
+
+          await logPromotionHistory(connection, {
+            schoolYearId: activeSY?.id,
+            schoolYearLabel: activeSY?.label,
+            studentId: student.id,
+            lrn: student.lrn,
+            studentName,
+            fromGrade: currentGrade,
+            fromSection: currentSection,
+            toGrade: nextGrade,
+            toSection: nextSection,
+            average: avg,
+            status: 'promoted',
+            reason: 'Completed all subjects and passed all quarters',
+            details: {
+              hasCompleteGrades: true,
+              hasFailingGrade: false,
+              destinationClassId: destinationClass?.id || null,
+              destinationAdviserId: destinationClass?.adviser_id || null,
+              destinationAdviserName: destinationClass?.adviser_name || null,
+              previousSchedule
+            }
+          });
+        }
+      } catch (studentError) {
+        console.error(`Promotion processing failed for student ${student.id}:`, studentError.message);
+        const reason = `Promotion processing error: ${studentError.message}`;
+        retained.push({
           id: student.id,
           name: studentName,
           grade: currentGrade,
-          avg: avg.toFixed(2),
-          reason: eligibility.reason
-        };
-        retained.push(retainedRow);
-
-        await logPromotionHistory(connection, {
-          schoolYearId: activeSY?.id,
-          schoolYearLabel: activeSY?.label,
-          studentId: student.id,
-          lrn: student.lrn,
-          studentName,
-          fromGrade: currentGrade,
-          fromSection: currentSection,
-          toGrade: currentGrade,
-          toSection: currentSection,
-          average: avg,
-          status: 'retained',
-          reason: eligibility.reason,
-          details: { hasCompleteGrades: eligibility.hasCompleteGrades, hasFailingGrade: eligibility.hasFailingGrade }
+          avg: '0.00',
+          reason
         });
-        continue;
-      }
 
-      if (nextGrade === 'Graduate') {
-        // Mark as graduated
-        await connection.query(
-          "UPDATE students SET grade_level = 'Graduate', status = 'graduated' WHERE id = ?",
-          [student.id]
-        );
-        const row = { id: student.id, name: studentName, fromGrade: currentGrade, avg: avg.toFixed(2) };
-        graduates.push(row);
-
-        await logPromotionHistory(connection, {
-          schoolYearId: activeSY?.id,
-          schoolYearLabel: activeSY?.label,
-          studentId: student.id,
-          lrn: student.lrn,
-          studentName,
-          fromGrade: currentGrade,
-          fromSection: currentSection,
-          toGrade: 'Graduate',
-          toSection: currentSection,
-          average: avg,
-          status: 'graduated',
-          reason: 'Completed all subjects and passed all quarters',
-          details: {
-            hasCompleteGrades: true,
-            hasFailingGrade: false,
-            previousSchedule
-          }
-        });
-      } else {
-        let destinationClass = null;
-        const requestedClassId = assignmentByStudentId.get(String(student.id));
-        if (requestedClassId) {
-          const [rows] = await connection.query(
-            `SELECT id, grade, section, adviser_id, adviser_name
-             FROM classes
-             WHERE id = ? AND grade = ?
-             LIMIT 1`,
-            [requestedClassId, nextGrade]
-          );
-          destinationClass = rows[0] || null;
+        try {
+          await logPromotionHistory(connection, {
+            schoolYearId: activeSY?.id,
+            schoolYearLabel: activeSY?.label,
+            studentId: student.id,
+            lrn: student.lrn,
+            studentName,
+            fromGrade: currentGrade,
+            fromSection: currentSection,
+            toGrade: currentGrade,
+            toSection: currentSection,
+            average: 0,
+            status: 'retained',
+            reason,
+            details: { processingError: true }
+          });
+        } catch (historyError) {
+          console.error(`Failed to log promotion error for student ${student.id}:`, historyError.message);
         }
-
-        if (!destinationClass) {
-          if (requestedStudentIds.length > 0) {
-            await connection.rollback();
-            return res.status(400).json({
-              success: false,
-              message: `Missing or invalid destination class assignment for ${studentName} (${nextGrade})`
-            });
-          }
-          destinationClass = await pickDestinationClass(connection, nextGrade);
-        }
-
-        const nextSection = destinationClass?.section || currentSection;
-
-        await connection.query(
-          'UPDATE students SET grade_level = ?, section = ? WHERE id = ?',
-          [nextGrade, nextSection, student.id]
-        );
-
-        const row = {
-          id: student.id,
-          name: studentName,
-          fromGrade: currentGrade,
-          fromSection: currentSection,
-          toGrade: nextGrade,
-          toSection: nextSection,
-          adviser: destinationClass?.adviser_name || null,
-          avg: avg.toFixed(2)
-        };
-        promotions.push(row);
-
-        await logPromotionHistory(connection, {
-          schoolYearId: activeSY?.id,
-          schoolYearLabel: activeSY?.label,
-          studentId: student.id,
-          lrn: student.lrn,
-          studentName,
-          fromGrade: currentGrade,
-          fromSection: currentSection,
-          toGrade: nextGrade,
-          toSection: nextSection,
-          average: avg,
-          status: 'promoted',
-          reason: 'Completed all subjects and passed all quarters',
-          details: {
-            hasCompleteGrades: true,
-            hasFailingGrade: false,
-            destinationClassId: destinationClass?.id || null,
-            destinationAdviserId: destinationClass?.adviser_id || null,
-            destinationAdviserName: destinationClass?.adviser_name || null,
-            previousSchedule
-          }
-        });
       }
     }
 
@@ -1232,7 +1291,7 @@ exports.promoteStudents = async (req, res) => {
   } catch (error) {
     if (connection) await connection.rollback();
     console.error('Error promoting students:', error);
-    res.status(500).json({ success: false, message: 'Failed to promote students' });
+    res.status(500).json({ success: false, message: error.message || 'Failed to promote students' });
   } finally {
     if (connection) connection.release();
   }
