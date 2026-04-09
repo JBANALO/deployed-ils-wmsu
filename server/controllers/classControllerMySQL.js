@@ -13,6 +13,52 @@ const ensureClassSchoolYearColumn = async () => {
     await query('ALTER TABLE classes ADD COLUMN school_year_id INT NULL');
     await query('CREATE INDEX idx_classes_school_year ON classes (school_year_id)');
   }
+
+  try {
+    const indexRows = await query('SHOW INDEX FROM classes');
+    const uniqueByName = new Map();
+    indexRows
+      .filter((idx) => Number(idx.Non_unique) === 0)
+      .forEach((idx) => {
+        const key = idx.Key_name;
+        if (!uniqueByName.has(key)) uniqueByName.set(key, []);
+        uniqueByName.get(key).push({ seq: Number(idx.Seq_in_index), col: idx.Column_name });
+      });
+
+    const getCols = (name) => (uniqueByName.get(name) || [])
+      .sort((a, b) => a.seq - b.seq)
+      .map((entry) => entry.col);
+
+    let globalGradeSectionUnique = null;
+    let hasSchoolYearScopedUnique = false;
+
+    for (const key of uniqueByName.keys()) {
+      const cols = getCols(key);
+      if (cols.length === 2 && cols[0] === 'grade' && cols[1] === 'section') {
+        globalGradeSectionUnique = key;
+      }
+      if (cols.length === 3 && cols[0] === 'grade' && cols[1] === 'section' && cols[2] === 'school_year_id') {
+        hasSchoolYearScopedUnique = true;
+      }
+    }
+
+    if (globalGradeSectionUnique && !hasSchoolYearScopedUnique) {
+      try {
+        await query(`ALTER TABLE classes DROP INDEX \`${globalGradeSectionUnique}\``);
+      } catch (dropErr) {
+        console.log('ensureClassSchoolYearColumn drop global unique skipped:', dropErr.message);
+      }
+
+      try {
+        await query('CREATE UNIQUE INDEX idx_classes_grade_section_sy ON classes (grade, section, school_year_id)');
+      } catch (createErr) {
+        console.log('ensureClassSchoolYearColumn create scoped unique skipped:', createErr.message);
+      }
+    }
+  } catch (indexErr) {
+    console.log('ensureClassSchoolYearColumn index check skipped:', indexErr.message);
+  }
+
   classSyEnsured = true;
 };
 

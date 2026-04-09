@@ -3,6 +3,7 @@ const { query } = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
 
 let sectionColumnsEnsured = false;
+let classUniquenessEnsured = false;
 
 const ensureSectionColumns = async () => {
   if (sectionColumnsEnsured) return;
@@ -112,7 +113,60 @@ const getPreviousSchoolYear = async (activeStartDate) => {
 const normalizeGradeForCompare = (value = '') =>
   String(value || '').trim().toLowerCase().replace(/^grade\s+/i, '');
 
+const ensureClassesSchoolYearScopedUniqueness = async () => {
+  if (classUniquenessEnsured) return;
+
+  try {
+    const indexes = await query('SHOW INDEX FROM classes');
+    const uniqueByName = new Map();
+    indexes
+      .filter((idx) => Number(idx.Non_unique) === 0)
+      .forEach((idx) => {
+        const key = idx.Key_name;
+        if (!uniqueByName.has(key)) uniqueByName.set(key, []);
+        uniqueByName.get(key).push({ seq: Number(idx.Seq_in_index), col: idx.Column_name });
+      });
+
+    const getCols = (name) => (uniqueByName.get(name) || [])
+      .sort((a, b) => a.seq - b.seq)
+      .map((entry) => entry.col);
+
+    let globalGradeSectionUnique = null;
+    let hasSchoolYearScopedUnique = false;
+
+    for (const key of uniqueByName.keys()) {
+      const cols = getCols(key);
+      if (cols.length === 2 && cols[0] === 'grade' && cols[1] === 'section') {
+        globalGradeSectionUnique = key;
+      }
+      if (cols.length === 3 && cols[0] === 'grade' && cols[1] === 'section' && cols[2] === 'school_year_id') {
+        hasSchoolYearScopedUnique = true;
+      }
+    }
+
+    if (globalGradeSectionUnique && !hasSchoolYearScopedUnique) {
+      try {
+        await query(`ALTER TABLE classes DROP INDEX \`${globalGradeSectionUnique}\``);
+      } catch (dropErr) {
+        console.log('ensureClassesSchoolYearScopedUniqueness drop global unique skipped:', dropErr.message);
+      }
+
+      try {
+        await query('CREATE UNIQUE INDEX idx_classes_grade_section_sy ON classes (grade, section, school_year_id)');
+      } catch (createErr) {
+        console.log('ensureClassesSchoolYearScopedUniqueness create scoped unique skipped:', createErr.message);
+      }
+    }
+  } catch (error) {
+    console.log('ensureClassesSchoolYearScopedUniqueness skipped:', error.message);
+  }
+
+  classUniquenessEnsured = true;
+};
+
 const ensureClassForSection = async ({ sectionName, gradeLevel, schoolYearId }) => {
+  await ensureClassesSchoolYearScopedUniqueness();
+
   const section = String(sectionName || '').trim();
   const grade = String(gradeLevel || '').trim();
   const syId = Number(schoolYearId || 0);
