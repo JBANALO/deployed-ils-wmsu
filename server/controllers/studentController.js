@@ -2026,6 +2026,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
   try {
     await ensureStudentSchoolYearColumn();
     await ensureStudentBirthDateColumn();
+    await ensureGradesSchoolYearColumn();
 
     let targetSy;
     try {
@@ -2189,6 +2190,14 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       );
     }
 
+    // Graduates should not be fetched into active student lists.
+    normalizedPromotionRows = normalizedPromotionRows.filter((promo) => {
+      const sourceStudent = promo.sourceStudent || sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
+      const fromGrade = String(promo.from_grade || sourceStudent?.grade_level || '').trim().toLowerCase();
+      const toGrade = String(promo.to_grade || sourceStudent?.grade_level || '').trim().toLowerCase();
+      return fromGrade !== 'graduate' && toGrade !== 'graduate';
+    });
+
     if (!normalizedPromotionRows.length) {
       return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0, sourceSchoolYearId: sourceSy.id, targetSchoolYearId: targetSy.id } });
     }
@@ -2235,36 +2244,45 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
         ? 'Active'
         : (sourceStudent.status || 'Active');
 
-      await query(
-        `INSERT INTO students (
-          lrn, first_name, middle_name, last_name, age, birth_date, sex,
-          grade_level, section, parent_first_name, parent_last_name,
-          parent_email, parent_contact, student_email, password,
-          profile_pic, qr_code, status, created_by, school_year_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-        [
-          sourceStudent.lrn,
-          sourceStudent.first_name || '',
-          sourceStudent.middle_name || null,
-          sourceStudent.last_name || '',
-          sourceStudent.age || 0,
-          sourceStudent.birth_date || null,
-          sourceStudent.sex || 'N/A',
-          nextGradeLevel,
-          nextSection,
-          sourceStudent.parent_first_name || null,
-          sourceStudent.parent_last_name || null,
-          sourceStudent.parent_email || null,
-          sourceStudent.parent_contact || null,
-          sourceStudent.student_email || null,
-          sourceStudent.password || null,
-          sourceStudent.profile_pic || null,
-          sourceStudent.qr_code || null,
-          nextStatus,
-          'system-fetch',
-          targetSy.id
-        ]
-      );
+      try {
+        await query(
+          `INSERT INTO students (
+            lrn, first_name, middle_name, last_name, age, birth_date, sex,
+            grade_level, section, parent_first_name, parent_last_name,
+            parent_email, parent_contact, student_email, password,
+            profile_pic, qr_code, status, created_by, school_year_id, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          [
+            sourceStudent.lrn,
+            sourceStudent.first_name || '',
+            sourceStudent.middle_name || null,
+            sourceStudent.last_name || '',
+            sourceStudent.age || 0,
+            sourceStudent.birth_date || null,
+            sourceStudent.sex || 'N/A',
+            nextGradeLevel,
+            nextSection,
+            sourceStudent.parent_first_name || null,
+            sourceStudent.parent_last_name || null,
+            sourceStudent.parent_email || null,
+            sourceStudent.parent_contact || null,
+            sourceStudent.student_email || null,
+            sourceStudent.password || null,
+            sourceStudent.profile_pic || null,
+            sourceStudent.qr_code || null,
+            nextStatus,
+            'system-fetch',
+            targetSy.id
+          ]
+        );
+      } catch (insertErr) {
+        // If older schemas still have a global unique key (e.g., lrn), skip instead of failing whole batch.
+        if (insertErr?.code === 'ER_DUP_ENTRY') {
+          skipped += 1;
+          continue;
+        }
+        throw insertErr;
+      }
 
       inserted += 1;
       if (String(promo.status).toLowerCase() === 'promoted') promotedInserted += 1;
@@ -2499,7 +2517,12 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
         promotedAt: promo.created_at,
         alreadyFetched: lrn ? existingLrnsInTarget.has(String(lrn)) : false
       };
-    }).filter((item) => item.id && item.lrn && item.fullName !== 'Unknown Student');
+    }).filter((item) => {
+      if (!item.id || !item.lrn || item.fullName === 'Unknown Student') return false;
+      const fromGrade = String(item.fromGrade || '').trim().toLowerCase();
+      const toGrade = String(item.toGrade || '').trim().toLowerCase();
+      return fromGrade !== 'graduate' && toGrade !== 'graduate';
+    });
 
     return res.json({
       success: true,

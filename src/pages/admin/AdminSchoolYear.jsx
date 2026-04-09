@@ -94,20 +94,25 @@ export default function AdminSchoolYear() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [viewingSchoolYear?.id]);
 
   const loadData = async () => {
     setLoading(true);
     try {
+      const scopedSchoolYearId = Number(viewingSchoolYear?.id || activeSchoolYear?.id || 0);
+      const scopedRequestConfig = Number.isInteger(scopedSchoolYearId) && scopedSchoolYearId > 0
+        ? { params: { schoolYearId: scopedSchoolYearId } }
+        : undefined;
+
       const [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes, candidatesRes, classesRes] = await Promise.allSettled([
         axios.get('/school-years'),
         axios.get('/school-years/active'),
-        axios.get('/school-years/students-by-grade'),
-        axios.get('/school-years/promotion-preview'),
+        axios.get('/school-years/students-by-grade', scopedRequestConfig),
+        axios.get('/school-years/promotion-preview', scopedRequestConfig),
         axios.get('/school-years/archived'),
-        axios.get('/school-years/promotion-history'),
-        axios.get('/school-years/promotion-candidates'),
-        axios.get('/classes')
+        axios.get('/school-years/promotion-history', scopedRequestConfig),
+        axios.get('/school-years/promotion-candidates', scopedRequestConfig),
+        axios.get('/classes', scopedRequestConfig)
       ]);
 
       if (syRes.status === 'fulfilled') {
@@ -483,19 +488,25 @@ export default function AdminSchoolYear() {
     fill: GRADE_COLORS[item.grade] || '#6b7280'
   }));
 
+  const scopedPromotionHistory = promotionHistory.filter((row) => {
+    const scopedSchoolYearId = Number(viewingSchoolYear?.id || activeSchoolYear?.id || 0);
+    if (!scopedSchoolYearId) return true;
+    return Number(row.school_year_id || 0) === scopedSchoolYearId;
+  });
+
   const historyGrades = ['All Grades', ...new Set(
-    promotionHistory
+    scopedPromotionHistory
       .map(h => h.from_grade)
       .filter(Boolean)
   )];
 
   const historySections = ['All Sections', ...new Set(
-    promotionHistory
+    scopedPromotionHistory
       .map(h => h.from_section)
       .filter(Boolean)
   )];
 
-  const filteredPromotionHistory = promotionHistory.filter((row) => {
+  const filteredPromotionHistory = scopedPromotionHistory.filter((row) => {
     const gradeOk = historyGradeFilter === 'All Grades' || row.from_grade === historyGradeFilter;
     const sectionOk = historySectionFilter === 'All Sections' || row.from_section === historySectionFilter;
     return gradeOk && sectionOk;
@@ -859,7 +870,7 @@ export default function AdminSchoolYear() {
             >
               {showPromotionHistory ? 'Hide Logs' : 'Show Logs'}
             </button>
-            <span className="text-xs text-gray-500">Showing {filteredPromotionHistory.length} of {promotionHistory.length} records</span>
+            <span className="text-xs text-gray-500">Showing {filteredPromotionHistory.length} of {scopedPromotionHistory.length} records</span>
           </div>
         </div>
 
