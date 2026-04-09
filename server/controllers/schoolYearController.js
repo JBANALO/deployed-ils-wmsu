@@ -507,7 +507,7 @@ exports.setActiveSchoolYear = async (req, res) => {
     const { id } = req.params;
 
     // Allow activating any non-archived school year; older ones become locked automatically
-    const [targetRows] = await query('SELECT id, is_archived FROM school_years WHERE id = ? LIMIT 1', [id]);
+    const targetRows = await query('SELECT id, is_archived FROM school_years WHERE id = ? LIMIT 1', [id]);
     const target = targetRows[0];
     if (!target || target.is_archived) {
       return res.status(404).json({ success: false, message: 'School year not found or archived' });

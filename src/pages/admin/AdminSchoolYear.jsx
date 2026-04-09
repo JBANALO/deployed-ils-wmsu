@@ -123,7 +123,7 @@ export default function AdminSchoolYear() {
         // Auto-set newest as active if current active is older
         const newest = sorted[0] || null;
         const activeRaw = activeRes.status === 'fulfilled' ? (activeRes.value.data?.data || null) : null;
-        if (newest && (!activeRaw || activeRaw.id !== newest.id)) {
+        if (newest && (!activeRaw || Number(activeRaw.id) !== Number(newest.id))) {
           try {
             await axios.put(`/school-years/${newest.id}/activate`);
             toast.success(`${formatSchoolYearLabel(newest.label)} set as active (older years locked).`);
