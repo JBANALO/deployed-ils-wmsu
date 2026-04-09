@@ -1353,22 +1353,45 @@ exports.getStudent = async (req, res) => {
     let publishedRankings = [];
     try {
       const studentGradeNormalized = String(student.grade_level || '').replace(/^Grade\s+/i, '').trim();
+      const studentFullNameNormalized = `${String(student.first_name || '').trim()} ${String(student.last_name || '').trim()}`
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+      const studentIdCandidates = new Set(
+        [
+          String(studentId || '').trim(),
+          String(student.lrn || '').trim(),
+          ...siblingStudentRows.map((row) => String(row?.id || '').trim())
+        ].filter(Boolean)
+      );
+
       const rankingRows = await query(
-        `SELECT ranking_type, quarter_key, subject_name, rank_position, score, total_students, published_at
+        `SELECT ranking_type, quarter_key, subject_name, student_id, student_name, rank_position, score, total_students, published_at
          FROM ranking_publications
          WHERE school_year_id = ?
            AND (
              grade_level = ?
              OR REPLACE(LOWER(grade_level), 'grade ', '') = LOWER(?)
            )
-           AND section = ?
-           AND student_id = ?
+           AND LOWER(TRIM(section)) = LOWER(TRIM(?))
          ORDER BY FIELD(ranking_type, 'overall', 'quarter', 'subject'), quarter_key, subject_name, published_at DESC`,
-        [targetSy.id, student.grade_level, studentGradeNormalized, student.section, String(studentId)]
+        [targetSy.id, student.grade_level, studentGradeNormalized, student.section]
       );
 
+      const matchedRows = (rankingRows || []).filter((row) => {
+        const rowStudentId = String(row?.student_id || '').trim();
+        const rowStudentName = String(row?.student_name || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .toLowerCase();
+
+        if (rowStudentId && studentIdCandidates.has(rowStudentId)) return true;
+        if (studentFullNameNormalized && rowStudentName && rowStudentName === studentFullNameNormalized) return true;
+        return false;
+      });
+
       const quarterMap = { q1: 'Quarter 1', q2: 'Quarter 2', q3: 'Quarter 3', q4: 'Quarter 4' };
-      publishedRankings = (rankingRows || []).map((row) => {
+      publishedRankings = matchedRows.map((row) => {
         const type = String(row.ranking_type || '').toLowerCase();
         const quarterKey = String(row.quarter_key || '').toLowerCase();
         const subjectName = String(row.subject_name || '').trim();
