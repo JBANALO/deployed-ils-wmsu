@@ -1793,6 +1793,137 @@ exports.deleteStudent = async (req, res) => {
   }
 };
 
+const PREVIOUS_FETCH_GRADE_PROGRESSION = {
+  'Kindergarten': 'Grade 1',
+  'Grade 1': 'Grade 2',
+  'Grade 2': 'Grade 3',
+  'Grade 3': 'Grade 4',
+  'Grade 4': 'Grade 5',
+  'Grade 5': 'Grade 6',
+  'Grade 6': 'Graduate'
+};
+
+const OVERRIDABLE_RETAINED_REASON_REGEX = /incomplete grades for|promotion processing error|illegal mix of collations/i;
+
+function normalizePromotionSubjectKey(value = '') {
+  const key = String(value || '')
+    .replace(/\s*\(grade\s*\d+\)\s*$/i, '')
+    .replace(/\s*\(kindergarten\)\s*$/i, '')
+    .trim()
+    .toLowerCase();
+
+  if (!key) return '';
+
+  const aliases = {
+    language: 'english',
+    'language arts': 'english',
+    english: 'english',
+    makabansa: 'makabansa',
+    'araling panlipunan': 'makabansa',
+    hekasi: 'makabansa',
+    'sibika at kultura': 'makabansa',
+    gmrc: 'gmrc',
+    'values education': 'gmrc'
+  };
+
+  return aliases[key] || key;
+}
+
+async function deriveEligibilityFromSourceGrades(studentId, sourceSchoolYearId) {
+  const rows = await query(
+    `SELECT subject, quarter, grade
+     FROM grades
+     WHERE student_id = ?
+       AND school_year_id = ?
+       AND quarter IN ('Q1','Q2','Q3','Q4')`,
+    [studentId, sourceSchoolYearId]
+  );
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { decisive: false, eligible: false };
+  }
+
+  const subjectMap = new Map();
+  for (const row of rows) {
+    const subjectKey = normalizePromotionSubjectKey(row?.subject || '');
+    const quarter = String(row?.quarter || '').toUpperCase();
+    const grade = Number(row?.grade || 0);
+    if (!subjectKey || !['Q1', 'Q2', 'Q3', 'Q4'].includes(quarter)) continue;
+
+    if (!subjectMap.has(subjectKey)) subjectMap.set(subjectKey, new Map());
+    subjectMap.get(subjectKey).set(quarter, grade);
+  }
+
+  if (!subjectMap.size) {
+    return { decisive: false, eligible: false };
+  }
+
+  let completeSubjectCount = 0;
+  let hasFailingGrade = false;
+  let hasPartialSubjects = false;
+
+  for (const byQuarter of subjectMap.values()) {
+    const complete = ['Q1', 'Q2', 'Q3', 'Q4'].every((q) => byQuarter.has(q) && Number(byQuarter.get(q) || 0) > 0);
+    if (!complete) {
+      hasPartialSubjects = true;
+      continue;
+    }
+
+    completeSubjectCount += 1;
+    for (const q of ['Q1', 'Q2', 'Q3', 'Q4']) {
+      if (Number(byQuarter.get(q) || 0) < 75) {
+        hasFailingGrade = true;
+        break;
+      }
+    }
+  }
+
+  if (completeSubjectCount === 0 || hasPartialSubjects) {
+    return { decisive: false, eligible: false, hasFailingGrade };
+  }
+
+  return { decisive: true, eligible: !hasFailingGrade, hasFailingGrade };
+}
+
+function shouldAttemptRetainedOverride(status, reason) {
+  return String(status || '').toLowerCase() === 'retained' && OVERRIDABLE_RETAINED_REASON_REGEX.test(String(reason || ''));
+}
+
+async function applyAutoPromotionOverride(candidate, sourceStudent, sourceSchoolYearId, cache) {
+  if (!sourceStudent || !shouldAttemptRetainedOverride(candidate?.status, candidate?.reason)) {
+    return candidate;
+  }
+
+  const cacheKey = String(sourceStudent.id || candidate.student_id || '');
+  if (!cacheKey) return candidate;
+
+  let derived = cache.get(cacheKey);
+  if (!derived) {
+    derived = await deriveEligibilityFromSourceGrades(sourceStudent.id, sourceSchoolYearId);
+    cache.set(cacheKey, derived);
+  }
+
+  if (!derived?.decisive || !derived?.eligible) {
+    return candidate;
+  }
+
+  const fromGrade = candidate.from_grade || sourceStudent.grade_level || null;
+  const nextGrade = PREVIOUS_FETCH_GRADE_PROGRESSION[fromGrade];
+  if (!nextGrade || nextGrade === 'Graduate') {
+    return candidate;
+  }
+
+  return {
+    ...candidate,
+    status: 'promoted',
+    from_grade: fromGrade,
+    from_section: candidate.from_section || sourceStudent.section || null,
+    to_grade: nextGrade,
+    to_section: sourceStudent.section || candidate.to_section || null,
+    reason: 'Auto-corrected from grade evidence'
+  };
+}
+
 // -----------------------------
 // FETCH PROMOTED/RETAINED FROM PREVIOUS SCHOOL YEAR
 // -----------------------------
@@ -1837,7 +1968,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     };
 
     let promotionRows = await query(
-      `SELECT ph.student_id, ph.lrn, ph.to_grade, ph.to_section, ph.status, ph.created_at
+      `SELECT ph.student_id, ph.lrn, ph.to_grade, ph.to_section, ph.status, ph.reason, ph.created_at
        FROM promotion_history ph
        WHERE ph.school_year_id = ?
          AND LOWER(ph.status) IN ('promoted', 'retained')
@@ -1874,17 +2005,19 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
 
     // Canonicalize by source-school-year student/LRN and collapse conflicting history rows.
     const latestByLrn = new Map();
+    const derivedEligibilityCache = new Map();
     for (const promo of promotionRows) {
       const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
       if (!sourceStudent || !sourceStudent.lrn) continue;
 
       const canonicalLrn = String(sourceStudent.lrn);
-      const candidate = {
+      const baseCandidate = {
         ...promo,
         canonical_student_id: String(sourceStudent.id || promo.student_id || ''),
         canonical_lrn: canonicalLrn,
         sourceStudent
       };
+      const candidate = await applyAutoPromotionOverride(baseCandidate, sourceStudent, sourceSy.id, derivedEligibilityCache);
 
       const existing = latestByLrn.get(canonicalLrn);
       if (!existing) {
@@ -2062,7 +2195,7 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
     };
 
     let promotionRows = await query(
-      `SELECT ph.student_id, ph.lrn, ph.from_grade, ph.from_section, ph.to_grade, ph.to_section, ph.status, ph.created_at
+      `SELECT ph.student_id, ph.lrn, ph.from_grade, ph.from_section, ph.to_grade, ph.to_section, ph.status, ph.reason, ph.created_at
        FROM promotion_history ph
        WHERE ph.school_year_id = ?
          AND LOWER(ph.status) IN ('promoted', 'retained')
@@ -2079,17 +2212,19 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
 
     // Canonicalize and dedupe by source-school-year LRN.
     const latestByLrn = new Map();
+    const derivedEligibilityCache = new Map();
     for (const promo of promotionRows) {
       const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
       if (!sourceStudent || !sourceStudent.lrn) continue;
 
       const canonicalLrn = String(sourceStudent.lrn);
-      const candidate = {
+      const baseCandidate = {
         ...promo,
         canonical_student_id: String(sourceStudent.id || promo.student_id || ''),
         canonical_lrn: canonicalLrn,
         sourceStudent
       };
+      const candidate = await applyAutoPromotionOverride(baseCandidate, sourceStudent, sourceSy.id, derivedEligibilityCache);
 
       const existing = latestByLrn.get(canonicalLrn);
       if (!existing) {
