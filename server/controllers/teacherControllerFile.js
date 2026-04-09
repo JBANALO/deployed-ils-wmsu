@@ -950,7 +950,7 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
     for (const t of prevTeachers) {
       // Skip duplicates globally by email/username to satisfy unique constraints.
       const dup = await query(
-        `SELECT id
+        `SELECT id, school_year_id
          FROM teachers
          WHERE LOWER(TRIM(CONVERT(email USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
             OR LOWER(TRIM(CONVERT(username USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
@@ -958,7 +958,52 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
         [t.email || '', t.username || '']
       );
       if (dup.length) {
-        skipped += 1;
+        const existing = dup[0];
+        if (Number(existing.school_year_id || 0) !== Number(targetSy.id)) {
+          await query(
+            `UPDATE teachers
+             SET first_name = ?,
+                 middle_name = ?,
+                 last_name = ?,
+                 username = ?,
+                 email = ?,
+                 password = ?,
+                 role = ?,
+                 grade_level = ?,
+                 section = ?,
+                 subjects = ?,
+                 bio = ?,
+                 profile_pic = ?,
+                 verification_status = ?,
+                 sex = ?,
+                 contact_number = ?,
+                 school_year_id = ?,
+                 updated_at = NOW()
+             WHERE id = ?`,
+            [
+              t.first_name,
+              t.middle_name,
+              t.last_name,
+              t.username,
+              t.email,
+              t.password,
+              t.role,
+              t.grade_level,
+              t.section,
+              t.subjects,
+              t.bio,
+              t.profile_pic,
+              t.verification_status || 'approved',
+              t.sex || null,
+              t.contact_number || null,
+              targetSy.id,
+              existing.id
+            ]
+          );
+          inserted += 1;
+        } else {
+          skipped += 1;
+        }
         continue;
       }
 
