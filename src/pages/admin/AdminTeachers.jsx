@@ -85,6 +85,8 @@ export default function AdminTeachers() {
     return String(rawStatus).trim().toLowerCase();
   };
 
+  const isAssignmentOnlyTeacher = (teacher) => String(teacher?.id || '').trim().startsWith('assignment-');
+
   const isVisibleTeacherStatus = (status) => {
     const normalized = String(status || '').trim().toLowerCase();
     return normalized !== 'declined' && normalized !== 'rejected';
@@ -968,6 +970,11 @@ export default function AdminTeachers() {
   };
 
   const handleEditTeacher = (teacher) => {
+    if (isAssignmentOnlyTeacher(teacher)) {
+      toast.error('This row is assignment-only. Fetch or create the teacher account first.');
+      return;
+    }
+
     setSelectedTeacher(teacher);
     const normalizedStatus = normalizeTeacherStatus(teacher);
     const statusForForm = normalizedStatus === 'inactive' ? 'inactive' : 'active';
@@ -1001,6 +1008,11 @@ export default function AdminTeachers() {
   const handleSaveEdit = async () => {
     if (isViewOnly) {
       toast.error('Previous school years are view-only. Switch to the active year to edit.');
+      setShowEditModal(false);
+      return;
+    }
+    if (isAssignmentOnlyTeacher(selectedTeacher)) {
+      toast.error('Cannot update assignment-only row. Fetch/create teacher account first.');
       setShowEditModal(false);
       return;
     }
