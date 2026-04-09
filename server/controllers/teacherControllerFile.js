@@ -292,12 +292,16 @@ const pickLatestTeacherRecordPerIdentity = (rows = []) => {
   return Array.from(byIdentity.values());
 };
 
-const belongsToSchoolYear = (record = {}, schoolYear = null) => {
+const belongsToSchoolYear = (record = {}, schoolYear = null, strictSchoolYearIdOnly = false) => {
   if (!schoolYear) return true;
 
   const recordSchoolYearId = record.school_year_id ?? record.schoolYearId;
   if (recordSchoolYearId !== undefined && recordSchoolYearId !== null && String(recordSchoolYearId) === String(schoolYear.id)) {
     return true;
+  }
+
+  if (strictSchoolYearIdOnly) {
+    return false;
   }
 
   const recordCreatedAt = record.created_at || record.createdAt;
@@ -408,7 +412,7 @@ const getAllTeachers = async (req, res) => {
       const resolveClassInfo = (classId) => classByIdOrSlug.get(normalizeClassId(classId)) || null;
 
       const dbFormatted = dbTeachers
-        .filter((teacher) => belongsToSchoolYear(teacher, targetSy))
+        .filter((teacher) => belongsToSchoolYear(teacher, targetSy, isExplicitSchoolYearScope))
         .map((teacher) => {
         const fullName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim();
         const normalizedFullName = normalizeName(fullName);
@@ -587,7 +591,7 @@ const getAllTeachers = async (req, res) => {
           (u.role === 'adviser' || u.role === 'teacher' || u.role === 'subject_teacher' ||
             (u.position && u.position.includes('Adviser'))) &&
           !u.archived &&
-          belongsToSchoolYear(u, targetSy)
+          belongsToSchoolYear(u, targetSy, isExplicitSchoolYearScope)
         )
         .map((u) => ({
           id: u.id,
@@ -689,7 +693,7 @@ const getAllTeachers = async (req, res) => {
         u.role === 'subject_teacher' ||
         (u.position && u.position.includes('Adviser'))) &&
           !u.archived &&
-          belongsToSchoolYear(u, targetSy)
+          belongsToSchoolYear(u, targetSy, isExplicitSchoolYearScope)
       )
       .map(u => ({
         id: u.id,

@@ -425,10 +425,12 @@ export default function AdminTeachers() {
       
       // Fetch teachers using the same pattern as assignadviser page
       let allTeachers = [];
+      let primaryTeachersLoaded = false;
       try {
         const response = await api.get('/teachers', {
           params: { schoolYearId: selectedSchoolYearId }
         });
+        primaryTeachersLoaded = true;
         const teachersData = response.data?.data?.teachers || response.data?.teachers || [];
         console.log('Teachers fetched from /teachers:', teachersData);
         console.log('Teachers data type:', typeof teachersData);
@@ -454,7 +456,7 @@ export default function AdminTeachers() {
       }
       
       // If /teachers didn't work, try the fallback pattern from assignadviser
-      if (allTeachers.length === 0) {
+      if (!primaryTeachersLoaded) {
         try {
           const usersResponse = await api.get('/users', {
             params: { schoolYearId: selectedSchoolYearId }
@@ -967,6 +969,8 @@ export default function AdminTeachers() {
 
   const handleEditTeacher = (teacher) => {
     setSelectedTeacher(teacher);
+    const normalizedStatus = normalizeTeacherStatus(teacher);
+    const statusForForm = normalizedStatus === 'inactive' ? 'inactive' : 'active';
     // Handle subjects field - it can be string or array
     let subjectsArray = [];
     if (teacher.subjects) {
@@ -985,6 +989,7 @@ export default function AdminTeachers() {
       sex: teacher.sex || '',
       contactNumber: teacher.contactNumber || teacher.contact_number || '',
       role: teacher.role || 'adviser',
+      status: statusForForm,
       subjects: subjectsArray,
       kindergartenSubjects: teacher.kindergartenSubjects || '',
       gradeLevel: teacher.gradeLevel || teacher.grade_level || '',
@@ -1011,6 +1016,9 @@ export default function AdminTeachers() {
         toast.error('Email must use @wmsu.edu.ph');
         return;
       }
+
+      const normalizedEditStatus = String(editFormData.status || 'active').trim().toLowerCase();
+      const statusPayload = normalizedEditStatus === 'inactive' ? 'inactive' : 'approved';
       
       // Prepare the data for API call - handle kindergarten subjects properly
       let updateData;
@@ -1026,6 +1034,7 @@ export default function AdminTeachers() {
           sex: String(editFormData.sex || ''),
           contactNumber: String(editFormData.contactNumber || ''),
           role: String(editFormData.role || ''),
+          status: statusPayload,
           gradeLevel: String(editFormData.gradeLevel || ''),
           section: String(editFormData.section || ''),
           subjects: null, // No fixed subjects for kindergarten
@@ -1042,6 +1051,7 @@ export default function AdminTeachers() {
           sex: String(editFormData.sex || ''),
           contactNumber: String(editFormData.contactNumber || ''),
           role: String(editFormData.role || ''),
+          status: statusPayload,
           gradeLevel: String(editFormData.gradeLevel || ''),
           section: String(editFormData.section || ''),
           subjects: JSON.stringify(editFormData.subjects || []),
@@ -1999,6 +2009,17 @@ export default function AdminTeachers() {
                   <option value="teacher">Unassigned</option>
                   <option value="adviser">Adviser</option>
                   <option value="subject_teacher">Subject Teacher</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Account Status</label>
+                <select
+                  value={editFormData.status || 'active'}
+                  onChange={(e) => setEditFormData({...editFormData, status: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
                 </select>
               </div>
               <div>
