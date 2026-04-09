@@ -46,7 +46,7 @@ export default function AdminTeachers() {
   const [loading, setLoading] = useState(true);
   const [refreshLoading, setRefreshLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('active');
   const [selectedTeachers, setSelectedTeachers] = useState(new Set());
   const [selectedAdvisers, setSelectedAdvisers] = useState(new Set());
   const [selectedSubjectTeachers, setSelectedSubjectTeachers] = useState(new Set());
@@ -95,7 +95,7 @@ export default function AdminTeachers() {
     if (filter === 'all') return true;
     if (filter === 'inactive') return normalized === 'inactive';
     if (filter === 'pending') return normalized === 'pending';
-    if (filter === 'active') return normalized === 'approved' || normalized === 'active';
+    if (filter === 'active') return normalized === 'approved' || normalized === 'active' || normalized === 'pending';
     return true;
   };
 
