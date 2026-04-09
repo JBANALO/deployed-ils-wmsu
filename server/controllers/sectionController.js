@@ -1,5 +1,6 @@
 // Section Controller - CRUD operations for sections
 const { query } = require('../config/database');
+const { v4: uuidv4 } = require('uuid');
 
 let sectionColumnsEnsured = false;
 
@@ -108,6 +109,51 @@ const getPreviousSchoolYear = async (activeStartDate) => {
   return rows[0] || null;
 };
 
+const normalizeGradeForCompare = (value = '') =>
+  String(value || '').trim().toLowerCase().replace(/^grade\s+/i, '');
+
+const ensureClassForSection = async ({ sectionName, gradeLevel, schoolYearId }) => {
+  const section = String(sectionName || '').trim();
+  const grade = String(gradeLevel || '').trim();
+  const syId = Number(schoolYearId || 0);
+
+  if (!section || !grade || !Number.isInteger(syId) || syId <= 0) return false;
+
+  const existing = await query(
+    `SELECT id
+     FROM classes
+     WHERE school_year_id = ?
+       AND LOWER(TRIM(CONVERT(section USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+       AND (
+         LOWER(REPLACE(TRIM(CONVERT(grade USING utf8mb4)), 'Grade ', '')) COLLATE utf8mb4_general_ci = LOWER(REPLACE(TRIM(CONVERT(? USING utf8mb4)), 'Grade ', '')) COLLATE utf8mb4_general_ci
+         OR LOWER(TRIM(CONVERT(grade USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+       )
+     LIMIT 1`,
+    [syId, section, grade, grade]
+  );
+
+  if (existing.length > 0) return false;
+
+  const classId = uuidv4();
+  try {
+    await query(
+      `INSERT INTO classes (id, grade, section, adviser_id, adviser_name, school_year_id, createdAt, updatedAt)
+       VALUES (?, ?, ?, NULL, NULL, ?, NOW(), NOW())`,
+      [classId, grade, section, syId]
+    );
+    return true;
+  } catch (firstErr) {
+    if (firstErr?.code === 'ER_DUP_ENTRY') return false;
+
+    await query(
+      `INSERT INTO classes (id, grade, section, adviser_id, adviser_name, school_year_id)
+       VALUES (?, ?, ?, NULL, NULL, ?)`,
+      [classId, grade, section, syId]
+    );
+    return true;
+  }
+};
+
 // Get all sections (excluding archived)
 const getAllSections = async (req, res) => {
   try {
@@ -193,7 +239,14 @@ const createSection = async (req, res) => {
     }
 
     // Check if section already exists
-    const existing = await query('SELECT id FROM sections WHERE name = ? AND school_year_id = ?', [name.trim(), activeSy.id]);
+    const existing = await query(
+      `SELECT id
+       FROM sections
+       WHERE school_year_id = ?
+         AND LOWER(TRIM(CONVERT(name USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+       LIMIT 1`,
+      [activeSy.id, name.trim()]
+    );
     if (existing.length > 0) {
       return res.status(400).json({ success: false, message: 'Section already exists' });
     }
@@ -203,6 +256,16 @@ const createSection = async (req, res) => {
       [name.trim(), description?.trim() || null, gradeLevel?.trim() || null, activeSy.id]
     );
 
+    try {
+      await ensureClassForSection({
+        sectionName: name.trim(),
+        gradeLevel: gradeLevel?.trim() || null,
+        schoolYearId: activeSy.id
+      });
+    } catch (classErr) {
+      console.warn('Section created but class sync failed:', classErr.message);
+    }
+
     res.status(201).json({ 
       success: true, 
       message: 'Section created successfully',
@@ -210,6 +273,9 @@ const createSection = async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating section:', error);
+    if (error?.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ success: false, message: 'Section already exists' });
+    }
     res.status(500).json({ success: false, message: 'Failed to create section' });
   }
 };
@@ -250,6 +316,16 @@ const updateSection = async (req, res) => {
       'UPDATE sections SET name = ?, description = ?, grade_level = ? WHERE id = ?',
       [name.trim(), description?.trim() || null, gradeLevel?.trim() || null, id]
     );
+
+    try {
+      await ensureClassForSection({
+        sectionName: name.trim(),
+        gradeLevel: gradeLevel?.trim() || null,
+        schoolYearId: existing[0].school_year_id
+      });
+    } catch (classErr) {
+      console.warn('Section updated but class sync failed:', classErr.message);
+    }
 
     res.json({ success: true, message: 'Section updated successfully' });
   } catch (error) {
@@ -409,6 +485,16 @@ const fetchSectionsFromPreviousYear = async (req, res) => {
         'INSERT INTO sections (name, description, grade_level, school_year_id, is_archived) VALUES (?, ?, ?, ?, FALSE)',
         [sec.name, sec.description, sec.grade_level || null, targetSy.id]
       );
+
+      try {
+        await ensureClassForSection({
+          sectionName: sec.name,
+          gradeLevel: sec.grade_level || null,
+          schoolYearId: targetSy.id
+        });
+      } catch (classErr) {
+        console.warn('Section fetch copied section but class sync failed:', classErr.message);
+      }
       inserted += 1;
     }
 
@@ -449,6 +535,16 @@ const syncSectionsFromStudents = async (req, res) => {
         'INSERT INTO sections (name, description, grade_level, school_year_id, is_archived) VALUES (?, NULL, ?, ?, FALSE)',
         [sectionName, gradeLevel, activeSy.id]
       );
+
+      try {
+        await ensureClassForSection({
+          sectionName,
+          gradeLevel,
+          schoolYearId: activeSy.id
+        });
+      } catch (classErr) {
+        console.warn('Section sync inserted section but class sync failed:', classErr.message);
+      }
       inserted += 1;
     }
 

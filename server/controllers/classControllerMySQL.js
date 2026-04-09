@@ -92,6 +92,71 @@ const assertActiveTargetSchoolYear = async (targetSy) => {
   return active;
 };
 
+const syncClassesFromSectionsForSchoolYear = async (schoolYearId) => {
+  const targetSyId = Number(schoolYearId || 0);
+  if (!Number.isInteger(targetSyId) || targetSyId <= 0) return;
+
+  try {
+    const sectionColumns = await query('SHOW COLUMNS FROM sections');
+    const hasSectionSchoolYear = sectionColumns.some((c) => c.Field === 'school_year_id');
+    const hasSectionGradeLevel = sectionColumns.some((c) => c.Field === 'grade_level');
+    if (!hasSectionSchoolYear || !hasSectionGradeLevel) return;
+
+    const sections = await query(
+      `SELECT TRIM(name) AS section_name, TRIM(grade_level) AS grade_level
+       FROM sections
+       WHERE is_archived = FALSE
+         AND school_year_id = ?
+         AND name IS NOT NULL
+         AND TRIM(name) <> ''
+         AND grade_level IS NOT NULL
+         AND TRIM(grade_level) <> ''
+       ORDER BY grade_level, section_name`,
+      [targetSyId]
+    );
+
+    for (const sec of sections) {
+      const sectionName = String(sec.section_name || '').trim();
+      const gradeLevel = String(sec.grade_level || '').trim();
+      if (!sectionName || !gradeLevel) continue;
+
+      const existing = await query(
+        `SELECT id
+         FROM classes
+         WHERE school_year_id = ?
+           AND LOWER(TRIM(CONVERT(section USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+           AND (
+             LOWER(REPLACE(TRIM(CONVERT(grade USING utf8mb4)), 'Grade ', '')) COLLATE utf8mb4_general_ci = LOWER(REPLACE(TRIM(CONVERT(? USING utf8mb4)), 'Grade ', '')) COLLATE utf8mb4_general_ci
+             OR LOWER(TRIM(CONVERT(grade USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+           )
+         LIMIT 1`,
+        [targetSyId, sectionName, gradeLevel, gradeLevel]
+      );
+
+      if (existing.length > 0) continue;
+
+      const classId = uuidv4();
+      try {
+        await query(
+          `INSERT INTO classes (id, grade, section, adviser_id, adviser_name, school_year_id, createdAt, updatedAt)
+           VALUES (?, ?, ?, NULL, NULL, ?, NOW(), NOW())`,
+          [classId, gradeLevel, sectionName, targetSyId]
+        );
+      } catch (insertErr) {
+        if (insertErr?.code === 'ER_DUP_ENTRY') continue;
+
+        await query(
+          `INSERT INTO classes (id, grade, section, adviser_id, adviser_name, school_year_id)
+           VALUES (?, ?, ?, NULL, NULL, ?)`,
+          [classId, gradeLevel, sectionName, targetSyId]
+        );
+      }
+    }
+  } catch (error) {
+    console.log('syncClassesFromSectionsForSchoolYear skipped:', error.message);
+  }
+};
+
 exports.createClass = async (req, res) => {
   try {
     await ensureClassSchoolYearColumn();
@@ -116,6 +181,16 @@ exports.getAllClasses = async (req, res) => {
     await ensureClassSchoolYearColumn();
     await ensureSubjectTeacherSchoolYearColumn();
     const targetSy = await resolveSchoolYear(req);
+
+    try {
+      const activeSy = await getActiveSchoolYear();
+      if (Number(activeSy?.id || 0) === Number(targetSy?.id || 0)) {
+        await syncClassesFromSectionsForSchoolYear(targetSy.id);
+      }
+    } catch (syncErr) {
+      console.log('Active-year class backfill from sections skipped:', syncErr.message);
+    }
+
     const classes = await query('SELECT * FROM classes WHERE school_year_id = ? ORDER BY grade, section', [targetSy.id]);
 
     const classAssignments = await runFirstSuccessfulQuery([
