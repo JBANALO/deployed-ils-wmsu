@@ -21,6 +21,7 @@ import {
   setTeacherActiveSchoolYearId,
   setTeacherViewingSchoolYearId,
 } from "../../utils/teacherSchoolYear";
+import { toast } from 'react-toastify';
 
 export default function EditGrades() {
   const getStudentGradeLevel = (student) => student?.gradeLevel || student?.grade_level || "";
@@ -57,8 +58,6 @@ export default function EditGrades() {
   const [assignedSubjects, setAssignedSubjects] = useState([]);
   const [availableSubjects, setAvailableSubjects] = useState([]);
   const [assignedClasses, setAssignedClasses] = useState([]);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
   const [errorModal, setErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [adviserClassIds, setAdviserClassIds] = useState([]); // Classes where user is adviser
@@ -810,8 +809,7 @@ export default function EditGrades() {
 
     if (changedSubjects.length === 0) {
       setShowGradeModal(false);
-      setSuccessMessage('ℹ️ No grade changes to save.');
-      setShowSuccessModal(true);
+      toast.info('No grade changes to save.');
       await fetchStudents();
       return;
     }
@@ -864,8 +862,7 @@ export default function EditGrades() {
 
     if (Object.keys(quarterGrades).length === 0) {
       setShowGradeModal(false);
-      setSuccessMessage('ℹ️ No grade changes to save.');
-      setShowSuccessModal(true);
+      toast.info('No grade changes to save.');
       await fetchStudents();
       return;
     }
@@ -880,8 +877,7 @@ export default function EditGrades() {
       });
 
       if (response.data?.success) {
-        setSuccessMessage("✅ Grades saved successfully! You have 24 hours to edit them again.");
-        setShowSuccessModal(true);
+        toast.success('Grades saved successfully! You have 24 hours to edit them again.');
         fetchStudents();
         setShowGradeModal(false);
       } else {
@@ -1469,27 +1465,6 @@ export default function EditGrades() {
           schoolYearId={selectedSchoolYearId || activeSchoolYearId || undefined}
           onClose={() => { setShowReportCard(false); setReportCardStudent(null); }}
         />
-      )}
-
-      {/* Success Modal */}
-      {showSuccessModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <div className="flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mx-auto mb-4">
-              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-center text-gray-900 mb-2">Success!</h3>
-            <p className="text-gray-600 text-center mb-6">{successMessage}</p>
-            <button
-              onClick={() => setShowSuccessModal(false)}
-              className="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors font-medium"
-            >
-              OK
-            </button>
-          </div>
-        </div>
       )}
 
       {/* Error Modal */}
