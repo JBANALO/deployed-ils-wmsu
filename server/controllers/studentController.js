@@ -471,8 +471,11 @@ exports.getStudents = async (req, res) => {
       // 2. Check class_assignments table (legacy UUID-based teachers from web)
       try {
         const classAssignments = await query(
-          'SELECT grade_level, section FROM class_assignments WHERE adviser_id = ?',
-          [teacherId]
+          `SELECT grade_level, section
+           FROM class_assignments
+           WHERE adviser_id = ?
+             AND school_year_id = ?`,
+          [teacherId, targetSy.id]
         );
         classAssignments.forEach(row => {
           // Avoid duplicates
