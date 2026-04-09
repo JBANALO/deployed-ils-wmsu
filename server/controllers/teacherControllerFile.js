@@ -382,6 +382,17 @@ const getAllTeachers = async (req, res) => {
         };
       });
 
+      const knownTeacherIds = new Set(
+        dbFormatted
+          .map((teacher) => String(teacher.id || '').trim())
+          .filter(Boolean)
+      );
+      const knownTeacherNames = new Set(
+        dbFormatted
+          .map((teacher) => normalizeName(teacher.fullName || `${teacher.firstName || ''} ${teacher.lastName || ''}`))
+          .filter(Boolean)
+      );
+
       // Include assignment-only teachers (e.g., historical SY data where teacher row is missing in teachers table for that SY)
       const existingKeys = new Set(
         dbFormatted.map((t) => String(t.id || '').trim() || normalizeName(t.fullName))
@@ -391,6 +402,13 @@ const getAllTeachers = async (req, res) => {
       const upsertSupplemental = ({ id, name, role, gradeLevel = '', section = '', subject = '', classSectionLabel = '' }) => {
         const trimmedName = String(name || '').trim();
         if (!trimmedName) return;
+        if (isExplicitSchoolYearScope) {
+          const idKey = String(id || '').trim();
+          const nameKey = normalizeName(trimmedName);
+          const knownById = idKey ? knownTeacherIds.has(idKey) : false;
+          const knownByName = knownTeacherNames.has(nameKey);
+          if (!knownById && !knownByName) return;
+        }
         const key = String(id || '').trim() || normalizeName(trimmedName);
         if (existingKeys.has(key)) return;
 

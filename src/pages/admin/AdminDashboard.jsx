@@ -193,15 +193,37 @@ const loadDashboardStats = async (overrideSyId) => {
     setStudents(studentsList);
 
     // =========================
-    // FETCH TEACHERS
+    // FETCH USERS (for pending/admin activity)
     // =========================
-    console.log('Fetching users...');
-    const usersRes = await axios.get(`/users${querySuffix}`);
-    console.log('Users response:', usersRes.data);
-    const allUsers = usersRes.data?.users || [];
-    const teachers = allUsers.filter(u =>
-      ['teacher', 'subject_teacher', 'adviser'].includes(u.role)
-    );
+    let allUsers = [];
+    try {
+      console.log('Fetching users...');
+      const usersRes = await axios.get(`/users${querySuffix}`);
+      console.log('Users response:', usersRes.data);
+      allUsers = usersRes.data?.users || usersRes.data?.data?.users || [];
+    } catch (usersErr) {
+      console.error('Error fetching users:', usersErr);
+      allUsers = [];
+    }
+
+    // =========================
+    // FETCH TEACHERS (live source)
+    // =========================
+    let teachersList = [];
+    try {
+      const teachersRes = await axios.get(`/teachers${querySuffix}`);
+      const teacherRows =
+        teachersRes.data?.data?.teachers ||
+        teachersRes.data?.teachers ||
+        teachersRes.data?.data ||
+        [];
+      teachersList = Array.isArray(teacherRows) ? teacherRows : [];
+    } catch (teachersErr) {
+      console.error('Error fetching teachers:', teachersErr);
+      teachersList = allUsers.filter((u) =>
+        ['teacher', 'subject_teacher', 'adviser'].includes(String(u.role || '').toLowerCase())
+      );
+    }
 
     // =========================
     // FETCH PENDING APPROVALS
@@ -232,11 +254,24 @@ const loadDashboardStats = async (overrideSyId) => {
     // =========================
     // CALCULATE UNIQUE CLASSES
     // =========================
-    const uniqueClasses = [
+    const uniqueClassesFromStudents = [
       ...new Set(
         studentsList.map(s => `${s.gradeLevel}-${s.section}`)
       )
     ].filter(c => c !== 'undefined-undefined');
+
+    let classesList = [];
+    try {
+      const classesRes = await axios.get(`/classes${querySuffix}`);
+      const classRows =
+        classesRes.data?.data ||
+        classesRes.data?.classes ||
+        (Array.isArray(classesRes.data) ? classesRes.data : []);
+      classesList = Array.isArray(classRows) ? classRows : [];
+    } catch (classesErr) {
+      console.error('Error fetching classes:', classesErr);
+      classesList = [];
+    }
 
     // =========================
     // FETCH ATTENDANCE (non-blocking)
@@ -291,15 +326,9 @@ const loadDashboardStats = async (overrideSyId) => {
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const weeklyGrades =
-      grades.length > 0
-        ? grades.filter(g => new Date(g.createdAt || g.date) > weekAgo)
-        : Array.from({ length: 127 }, (_, i) => ({ id: i + 1 }));
+    const weeklyGrades = grades.filter((g) => new Date(g.createdAt || g.updatedAt || g.date) > weekAgo);
 
-    const pendingGrades =
-      grades.length > 0
-        ? grades.filter(g => g.status === 'pending' || !g.status)
-        : Array.from({ length: 15 }, (_, i) => ({ id: i + 1 }));
+    const pendingGrades = grades.filter((g) => g.status === 'pending' || !g.status);
 
     // =========================
     // ACTIVE USERS
@@ -309,22 +338,34 @@ const loadDashboardStats = async (overrideSyId) => {
       return lastLogin > weekAgo;
     });
 
-    const activeTeachers = activeUsers.filter(u =>
-      ['teacher', 'subject_teacher', 'adviser'].includes(u.role)
-    );
+    const activeTeachers = teachersList.filter((teacher) => {
+      const activityDate = new Date(
+        teacher.lastLogin ||
+        teacher.updated_at ||
+        teacher.updatedAt ||
+        teacher.created_at ||
+        teacher.createdAt
+      );
+      return activityDate > weekAgo;
+    });
 
     const activeStudents = studentsList.filter(s => {
       const lastLogin = new Date(s.lastLogin || s.createdAt);
       return lastLogin > weekAgo;
     });
 
+    const activeIdentitySet = new Set();
+    activeUsers.forEach((u) => activeIdentitySet.add(`user:${u.id || u.email || u.username || ''}`));
+    activeTeachers.forEach((t) => activeIdentitySet.add(`teacher:${t.id || t.email || t.fullName || ''}`));
+    activeStudents.forEach((s) => activeIdentitySet.add(`student:${s.id || s.lrn || s.student_email || ''}`));
+
     // =========================
     // SET DASHBOARD STATS
     // =========================
     setStats({
       totalStudents: studentsList.length,
-      totalTeachers: teachers.length,
-      totalClasses: uniqueClasses.length,
+      totalTeachers: teachersList.length,
+      totalClasses: classesList.length > 0 ? classesList.length : uniqueClassesFromStudents.length,
       totalAttendanceRecords: attendanceList.length
     });
 
@@ -332,7 +373,7 @@ const loadDashboardStats = async (overrideSyId) => {
       todayAttendance: parseFloat(attendanceRate),
       weeklyGrades: weeklyGrades.length,
       pendingGrades: pendingGrades.length,
-      activeUsers: activeUsers.length + activeStudents.length,
+      activeUsers: activeIdentitySet.size,
       activeTeachers: activeTeachers.length,
       activeStudents: activeStudents.length,
       responseTime: 1.2
