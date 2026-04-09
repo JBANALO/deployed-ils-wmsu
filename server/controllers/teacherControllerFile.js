@@ -216,6 +216,17 @@ const assertTeacherEditableInActiveSchoolYear = async (teacherId, fileRecord = n
     recordSchoolYearId = fileRecord.school_year_id ?? fileRecord.schoolYearId ?? null;
   }
 
+  if (recordSchoolYearId === null || recordSchoolYearId === undefined) {
+    try {
+      const userRows = await query('SELECT school_year_id FROM users WHERE id = ? LIMIT 1', [teacherId]);
+      if (userRows.length > 0) {
+        recordSchoolYearId = userRows[0].school_year_id;
+      }
+    } catch (userDbErr) {
+      console.log('Teacher school year edit guard users-table check skipped:', userDbErr.message);
+    }
+  }
+
   if (recordSchoolYearId !== null && recordSchoolYearId !== undefined && Number(recordSchoolYearId) !== Number(activeSy.id)) {
     throw makeTeacherViewOnlyError();
   }
@@ -1455,6 +1466,7 @@ const updateTeacher = async (req, res) => {
     }
 
     let dbUpdatedTeacher = null;
+    let dbUsersUpdatedTeacher = null;
 
     // Prefer DB update first because most teacher rows shown in admin come from DB.
     try {
@@ -1563,12 +1575,128 @@ const updateTeacher = async (req, res) => {
     } catch (dbError) {
       console.log('DB update skipped/fallback to file storage:', dbError.message);
     }
+
+    // Fallback to users table for legacy teacher accounts persisted there.
+    if (!dbUpdatedTeacher) {
+      try {
+        const userRows = await query(
+          `SELECT id, firstName, middleName, lastName, username, email, role,
+                  gradeLevel, section, subjects, bio, status, sex, contactNumber, school_year_id
+           FROM users
+           WHERE id = ?
+           LIMIT 1`,
+          [id]
+        );
+
+        if (userRows.length > 0) {
+          const currentUser = userRows[0];
+          const currentRole = String(currentUser.role || '').trim().toLowerCase();
+          const teacherRoles = new Set(['teacher', 'adviser', 'subject_teacher']);
+
+          if (teacherRoles.has(currentRole)) {
+            if (
+              currentUser.school_year_id !== null &&
+              currentUser.school_year_id !== undefined &&
+              Number(currentUser.school_year_id) !== Number(activeSchoolYear.id)
+            ) {
+              return res.status(403).json({
+                success: false,
+                message: 'Editing past school years is not allowed (view only).'
+              });
+            }
+
+            if (updateData.email) {
+              const duplicateUserEmailRows = await query(
+                'SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id <> ? LIMIT 1',
+                [updateData.email, id]
+              );
+              if (duplicateUserEmailRows.length > 0) {
+                return res.status(400).json({
+                  success: false,
+                  message: 'Email already exists'
+                });
+              }
+            }
+
+            const firstName = updateData.firstName ?? updateData.first_name ?? currentUser.firstName ?? '';
+            const middleName = updateData.middleName ?? updateData.middle_name ?? currentUser.middleName ?? '';
+            const lastName = updateData.lastName ?? updateData.last_name ?? currentUser.lastName ?? '';
+            const username = updateData.username ?? currentUser.username ?? '';
+            const email = updateData.email ?? currentUser.email ?? '';
+            const role = updateData.role ?? currentUser.role ?? 'teacher';
+            const gradeLevel = updateData.gradeLevel ?? updateData.grade_level ?? currentUser.gradeLevel ?? '';
+            const section = updateData.section ?? currentUser.section ?? '';
+            const subjects = updateData.subjects ?? currentUser.subjects ?? '[]';
+            const bio = updateData.bio ?? currentUser.bio ?? '';
+            const sex = updateData.sex ?? currentUser.sex ?? '';
+            const contactNumber = updateData.contactNumber ?? updateData.contact_number ?? currentUser.contactNumber ?? '';
+            const status = updateData.status ?? updateData.verification_status ?? currentUser.status ?? 'approved';
+
+            const serializedSubjects = typeof subjects === 'string' ? subjects : JSON.stringify(subjects || []);
+
+            await query(
+              `UPDATE users
+               SET firstName = ?,
+                   middleName = ?,
+                   lastName = ?,
+                   username = ?,
+                   email = ?,
+                   role = ?,
+                   gradeLevel = ?,
+                   section = ?,
+                   subjects = ?,
+                   bio = ?,
+                   sex = ?,
+                   contactNumber = ?,
+                   status = ?,
+                   updatedAt = NOW()
+               WHERE id = ?`,
+              [
+                firstName,
+                middleName,
+                lastName,
+                username,
+                email,
+                role,
+                gradeLevel,
+                section,
+                serializedSubjects,
+                bio,
+                sex,
+                contactNumber,
+                status,
+                id
+              ]
+            );
+
+            dbUsersUpdatedTeacher = {
+              id: currentUser.id,
+              firstName,
+              middleName,
+              lastName,
+              username,
+              email,
+              role,
+              gradeLevel,
+              section,
+              subjects: parseSubjects(serializedSubjects),
+              bio,
+              sex,
+              contactNumber,
+              status
+            };
+          }
+        }
+      } catch (usersDbError) {
+        console.log('Users-table update skipped/fallback to file storage:', usersDbError.message);
+      }
+    }
     
     const users = readUsers();
 
     const teacherIndex = users.findIndex(u => String(u.id) === String(id));
 
-    if (teacherIndex === -1 && !dbUpdatedTeacher) {
+    if (teacherIndex === -1 && !dbUpdatedTeacher && !dbUsersUpdatedTeacher) {
       return res.status(404).json({
         success: false,
         message: 'Teacher not found'
@@ -1600,13 +1728,13 @@ const updateTeacher = async (req, res) => {
       fileSaved = writeUsers(users);
     }
 
-    if (dbUpdatedTeacher || fileSaved) {
+    if (dbUpdatedTeacher || dbUsersUpdatedTeacher || fileSaved) {
       console.log(`Teacher ${id} updated successfully`);
       res.json({
         success: true,
         message: 'Teacher updated successfully',
         data: {
-          teacher: dbUpdatedTeacher || fileUpdatedTeacher
+          teacher: dbUpdatedTeacher || dbUsersUpdatedTeacher || fileUpdatedTeacher
         }
       });
     } else {
