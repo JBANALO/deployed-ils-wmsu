@@ -1236,33 +1236,33 @@ export default function ReportsPage() {
         <>
           {/* Sub-tabs */}
           <div className="bg-white rounded-2xl shadow-lg p-4 border border-gray-200">
-            <div className="flex gap-2 flex-wrap items-center justify-between">
-              <div className="flex gap-2 flex-wrap">
-                {(isAdviser
-                  ? [
-                      { key: 'overall', label: '🏆 Overall Average Ranking' },
-                      { key: 'per-subject', label: '📚 Per Subject Ranking' },
-                      { key: 'by-quarter', label: '📅 By Quarter' }
-                    ]
-                  : [
-                      { key: 'per-subject', label: '📚 Per Subject Ranking' }
-                    ]
-                ).map(tab => (
-                  <button key={tab.key} onClick={() => setGradesSubTab(tab.key)}
-                    className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                      gradesSubTab === tab.key ? 'bg-red-800 text-white shadow' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}>
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+            <div className="flex gap-2 flex-wrap items-center">
+              {(isAdviser
+                ? [
+                    { key: 'overall', label: '🏆 Overall Average Ranking' },
+                    { key: 'per-subject', label: '📚 Per Subject Ranking' },
+                    { key: 'by-quarter', label: '📅 By Quarter' }
+                  ]
+                : [
+                    { key: 'per-subject', label: '📚 Per Subject Ranking' }
+                  ]
+              ).map(tab => (
+                <button key={tab.key} onClick={() => setGradesSubTab(tab.key)}
+                  className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
+                    gradesSubTab === tab.key ? 'bg-red-800 text-white shadow' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
+            <div className="mt-3 flex justify-end">
               <button
                 onClick={publishCurrentRanking}
                 disabled={publishingRanking}
                 className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {publishingRanking ? 'Posting...' : 'Post Current Ranking'}
+                {publishingRanking ? 'Posting...' : 'Post Ranking to Student Dashboard'}
               </button>
             </div>
 
