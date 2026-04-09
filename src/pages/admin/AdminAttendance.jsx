@@ -4,17 +4,18 @@ import { ClipboardDocumentCheckIcon, MagnifyingGlassIcon } from "@heroicons/reac
 import axios from "../../api/axiosConfig";
 
 export default function AdminAttendance() {
-    const { isViewingLocked } = useSchoolYear();
+  const { isViewingLocked, viewingSchoolYear, activeSchoolYear } = useSchoolYear();
   const [attendance, setAttendance] = useState([]);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [stats, setStats] = useState({ present: 0, absent: 0, late: 0 });
+  const targetSchoolYearId = viewingSchoolYear?.id || activeSchoolYear?.id || null;
 
   useEffect(() => {
     loadAttendanceData();
-  }, [selectedDate]);
+  }, [selectedDate, targetSchoolYearId]);
 
   const loadAttendanceData = async () => {
     try {
@@ -27,14 +28,19 @@ export default function AdminAttendance() {
       setStudents(studentsData);
 
       // Fetch attendance
-      const attendanceRes = await axios.get('/attendance');
+      const attendanceRes = await axios.get('/attendance', {
+        params: {
+          date: selectedDate,
+          ...(targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {})
+        }
+      });
       const allAttendance = Array.isArray(attendanceRes.data.data) ? attendanceRes.data.data : 
                            Array.isArray(attendanceRes.data) ? attendanceRes.data : [];
 
       console.log('All attendance records:', allAttendance);
       console.log('Selected date:', selectedDate);
 
-      // Filter by selected date
+      // Backend already filters by date + school year; keep a safe client-side date guard.
       const dateAttendance = allAttendance.filter(a => a.date === selectedDate);
       
       console.log('Filtered attendance for', selectedDate, ':', dateAttendance);
