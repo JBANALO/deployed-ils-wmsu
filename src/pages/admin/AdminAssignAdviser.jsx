@@ -201,8 +201,6 @@ export default function AdminAssignAdviser() {
         toast.success(`Found ${allTeachers.length} teachers/advisers`);
       }
 
-      const normalizeGrade = (value) => String(value || '').trim().toLowerCase().replace(/^grade\s+/i, '');
-      const normalizeSection = (value) => String(value || '').trim().toLowerCase();
       const parseTeacherSubjects = (teacher) => {
         const raw = teacher.subjectsHandled ?? teacher.subjects ?? [];
         if (Array.isArray(raw)) return raw.filter(Boolean);
@@ -220,26 +218,7 @@ export default function AdminAssignAdviser() {
         return [];
       };
 
-      const classesWithFallbackAdviser = classesArray.map((cls) => {
-        if (cls.adviser_name) return cls;
-
-        const match = allTeachers.find((teacher) => {
-          const teacherGrade = normalizeGrade(teacher.gradeLevel || teacher.grade_level || '');
-          const teacherSection = normalizeSection(teacher.section || '');
-          const classGrade = normalizeGrade(cls.grade || '');
-          const classSection = normalizeSection(cls.section || '');
-          return teacherGrade && teacherSection && teacherGrade === classGrade && teacherSection === classSection;
-        });
-
-        if (!match) return cls;
-        return {
-          ...cls,
-          adviser_id: cls.adviser_id || match.id,
-          adviser_name: `${match.firstName || ''} ${match.lastName || ''}`.trim() || cls.adviser_name
-        };
-      });
-
-      const classesWithTeacherFallback = classesWithFallbackAdviser.map((cls) => {
+      const classesWithTeacherFallback = classesArray.map((cls) => {
         const existingSubjectTeachers = Array.isArray(cls.subject_teachers) ? cls.subject_teachers : [];
         return {
           ...cls,
