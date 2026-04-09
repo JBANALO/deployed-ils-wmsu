@@ -317,29 +317,55 @@ const restoreSubject = async (req, res) => {
 // Permanently delete subject
 const deleteSubject = async (req, res) => {
   try {
+    await ensureSubjectSchoolYearColumn();
     const { id } = req.params;
 
+    const subjectRows = await query(
+      'SELECT id, name, school_year_id FROM subjects WHERE id = ? LIMIT 1',
+      [id]
+    );
+    const subject = subjectRows[0];
+    if (!subject) {
+      return res.status(404).json({ success: false, message: 'Subject not found' });
+    }
+
     const activeSy = await getActiveSchoolYear();
-    const subjSy = await query('SELECT school_year_id FROM subjects WHERE id = ?', [id]);
-    if (subjSy[0]?.school_year_id !== activeSy.id) {
+    if (Number(subject.school_year_id || 0) !== Number(activeSy.id)) {
       return res.status(403).json({ success: false, message: 'Cannot delete subjects from previous school years (view only).' });
     }
 
-    // Check if subject is in use
-    const inUse = await query('SELECT COUNT(*) as count FROM subject_teachers WHERE subject = (SELECT name FROM subjects WHERE id = ?)', [id]);
+    // Check if subject is in use (collation-safe and scoped to active school year when possible)
+    const subjectTeacherCols = await query('SHOW COLUMNS FROM subject_teachers');
+    const hasSubjectTeacherSy = subjectTeacherCols.some((c) => c.Field === 'school_year_id');
+
+    const inUse = hasSubjectTeacherSy
+      ? await query(
+          `SELECT COUNT(*) AS count
+           FROM subject_teachers
+           WHERE school_year_id = ?
+             AND LOWER(TRIM(CONVERT(subject USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci`,
+          [activeSy.id, subject.name]
+        )
+      : await query(
+          `SELECT COUNT(*) AS count
+           FROM subject_teachers
+           WHERE LOWER(TRIM(CONVERT(subject USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci`,
+          [subject.name]
+        );
+
     if (inUse[0]?.count > 0) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Cannot delete subject that is assigned to teachers. Archive it instead.' 
+        message: 'Cannot delete subject that is assigned to teachers. Remove teacher assignments first or keep it archived.' 
       });
     }
 
-    await query('DELETE FROM subjects WHERE id = ?', [id]);
+    await query('DELETE FROM subjects WHERE id = ? AND school_year_id = ?', [id, activeSy.id]);
 
     res.json({ success: true, message: 'Subject deleted permanently' });
   } catch (error) {
     console.error('Error deleting subject:', error);
-    res.status(500).json({ success: false, message: 'Failed to delete subject' });
+    res.status(500).json({ success: false, message: error.message || 'Failed to delete subject' });
   }
 };
 
