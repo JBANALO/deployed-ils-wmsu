@@ -617,9 +617,8 @@ exports.getStudents = async (req, res) => {
              FROM grades
              WHERE school_year_id = ?
                AND student_id IN (${placeholders})
-               AND grade > 0
-               AND (? IS NULL OR (created_at IS NOT NULL AND DATE(created_at) >= DATE(?)))`,
-            [targetSy.id, ...studentIds, targetSy.start_date || null, targetSy.start_date || null]
+               AND grade > 0`,
+            [targetSy.id, ...studentIds]
           );
         }
 
@@ -683,44 +682,39 @@ exports.getStudents = async (req, res) => {
        FROM grades g
        WHERE g.student_id = s.id
          AND g.grade > 0
-         AND g.school_year_id = ?
-         AND (? IS NULL OR (g.created_at IS NOT NULL AND DATE(g.created_at) >= DATE(?)))) AS live_average,
+         AND g.school_year_id = ?) AS live_average,
       (SELECT ROUND(AVG(g.grade), 2)
        FROM grades g
        WHERE g.student_id = s.id
          AND g.quarter = 'Q1'
          AND g.grade > 0
-         AND g.school_year_id = ?
-         AND (? IS NULL OR (g.created_at IS NOT NULL AND DATE(g.created_at) >= DATE(?)))) AS q1_avg,
+         AND g.school_year_id = ?) AS q1_avg,
       (SELECT ROUND(AVG(g.grade), 2)
        FROM grades g
        WHERE g.student_id = s.id
          AND g.quarter = 'Q2'
          AND g.grade > 0
-         AND g.school_year_id = ?
-         AND (? IS NULL OR (g.created_at IS NOT NULL AND DATE(g.created_at) >= DATE(?)))) AS q2_avg,
+         AND g.school_year_id = ?) AS q2_avg,
       (SELECT ROUND(AVG(g.grade), 2)
        FROM grades g
        WHERE g.student_id = s.id
          AND g.quarter = 'Q3'
          AND g.grade > 0
-         AND g.school_year_id = ?
-         AND (? IS NULL OR (g.created_at IS NOT NULL AND DATE(g.created_at) >= DATE(?)))) AS q3_avg,
+         AND g.school_year_id = ?) AS q3_avg,
       (SELECT ROUND(AVG(g.grade), 2)
        FROM grades g
        WHERE g.student_id = s.id
          AND g.quarter = 'Q4'
          AND g.grade > 0
-         AND g.school_year_id = ?
-         AND (? IS NULL OR (g.created_at IS NOT NULL AND DATE(g.created_at) >= DATE(?)))) AS q4_avg
+         AND g.school_year_id = ?) AS q4_avg
      FROM students s`;
 
     const averageParams = [
-       targetSy.id, targetSy.start_date || null, targetSy.start_date || null,
-       targetSy.id, targetSy.start_date || null, targetSy.start_date || null,
-       targetSy.id, targetSy.start_date || null, targetSy.start_date || null,
-       targetSy.id, targetSy.start_date || null, targetSy.start_date || null,
-       targetSy.id, targetSy.start_date || null, targetSy.start_date || null
+       targetSy.id,
+       targetSy.id,
+       targetSy.id,
+       targetSy.id,
+       targetSy.id
      ];
 
     let allDbStudents = await query(
