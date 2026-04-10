@@ -346,7 +346,8 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Student not found' });
     }
     const student = students[0];
-    const targetSyId = student.school_year_id || (await getActiveSchoolYear())?.id;
+    const requestedSyId = req.body?.schoolYearId || req.query?.schoolYearId;
+    const targetSyId = requestedSyId || student.school_year_id || (await getActiveSchoolYear())?.id;
     if (!targetSyId) {
       return res.status(400).json({ success: false, error: 'No active school year found for grading' });
     }
@@ -788,15 +789,12 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
     const { schoolYearId, includeLocks } = req.query;
     const [studentRow] = await query('SELECT id, school_year_id, grade_level, section FROM students WHERE id = ?', [id]);
     const targetSyId = schoolYearId || studentRow?.school_year_id || (await getActiveSchoolYear())?.id;
-    const [targetSyRow] = await query('SELECT id, start_date FROM school_years WHERE id = ? LIMIT 1', [targetSyId]);
-    const targetSyStartDate = targetSyRow?.start_date || null;
     const allGrades = await query(
       `SELECT *
        FROM grades
        WHERE student_id = ?
-         AND school_year_id = ?
-         AND (? IS NULL OR (created_at IS NOT NULL AND DATE(created_at) >= DATE(?)))`,
-      [id, targetSyId, targetSyStartDate, targetSyStartDate]
+         AND school_year_id = ?`,
+      [id, targetSyId]
     );
 
     const user = req.user || {};
