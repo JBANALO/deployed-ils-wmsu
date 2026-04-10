@@ -804,9 +804,8 @@ exports.getStudent = async (req, res) => {
        FROM grades
        WHERE student_id = ?
          AND school_year_id = ?
-         AND (? IS NULL OR (created_at IS NOT NULL AND DATE(created_at) >= DATE(?)))
        ORDER BY subject, quarter`,
-      [studentId, targetSy.id, targetSy.start_date || null, targetSy.start_date || null]
+      [studentId, targetSy.id]
     );
     
     // Group grades by subject with quarters
