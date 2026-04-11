@@ -35,7 +35,7 @@ export default function StudentAccounts() {
   const fetchStudents = async () => {
     try {
       setLoading(true);
-      const response = await api.get("/api/admin/students");
+      const response = await api.get("/admin/students");
       setStudents(response.data.students || []);
     } catch (error) {
       console.error("Error fetching students:", error);
@@ -55,7 +55,7 @@ export default function StudentAccounts() {
   const handleCreateStudent = async (e) => {
     e.preventDefault();
     try {
-      const response = await api.post("/api/admin/create-student", formData);
+      const response = await api.post("/admin/create-student", formData);
       toast.success("Student account created successfully");
       setShowCreateModal(false);
       setFormData({
@@ -80,7 +80,7 @@ export default function StudentAccounts() {
   const handleUpdateStudent = async (e) => {
     e.preventDefault();
     try {
-      await api.put(`/api/admin/students/${selectedStudent.id}`, formData);
+      await api.put(`/admin/students/${selectedStudent.id}`, formData);
       toast.success("Student account updated successfully");
       setShowEditModal(false);
       setSelectedStudent(null);
@@ -105,7 +105,7 @@ export default function StudentAccounts() {
 
   const handleDeleteStudent = async () => {
     try {
-      await api.delete(`/api/admin/students/${selectedStudent.id}`);
+      await api.delete(`/admin/students/${selectedStudent.id}`);
       toast.success("Student account deleted successfully");
       setShowDeleteModal(false);
       setSelectedStudent(null);
@@ -118,7 +118,7 @@ export default function StudentAccounts() {
 
   const handleApproveStudent = async (studentId) => {
     try {
-      await api.post(`/api/admin/students/${studentId}/approve`, { approved: true });
+      await api.post(`/admin/students/${studentId}/approve`, { approved: true });
       toast.success("Student account approved successfully");
       fetchStudents();
     } catch (error) {
@@ -129,7 +129,7 @@ export default function StudentAccounts() {
 
   const handleRejectStudent = async (studentId) => {
     try {
-      await api.post(`/api/admin/students/${studentId}/approve`, { approved: false });
+      await api.post(`/admin/students/${studentId}/approve`, { approved: false });
       toast.success("Student account rejected successfully");
       fetchStudents();
     } catch (error) {
@@ -140,7 +140,7 @@ export default function StudentAccounts() {
 
   const handleViewCredentials = async (student) => {
     try {
-      const response = await api.get(`/api/admin/students/${student.id}/credentials`);
+      const response = await api.get(`/admin/students/${student.id}/credentials`);
       setCredentials(response.data);
       setSelectedStudent(student);
       setShowCredentialsModal(true);
