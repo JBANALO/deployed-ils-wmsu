@@ -23,8 +23,9 @@ export default function StudentAccounts() {
     gradeLevel: "",
     section: "",
     lrn: "",
-    contactNumber: "",
-    parentName: "",
+    parentFirstName: "",
+    parentLastName: "",
+    parentEmail: "",
     parentContact: ""
   });
 
@@ -35,8 +36,8 @@ export default function StudentAccounts() {
   const fetchStudents = async () => {
     try {
       setLoading(true);
-      const response = await api.get("/admin/students");
-      setStudents(response.data.students || []);
+      const response = await api.get("/students");
+      setStudents(response.data.data || response.data || []);
     } catch (error) {
       console.error("Error fetching students:", error);
       toast.error("Failed to fetch student accounts");
@@ -46,7 +47,7 @@ export default function StudentAccounts() {
   };
 
   const filteredStudents = students.filter(student => {
-    const matchesSearch = `${student.firstName} ${student.lastName} ${student.email} ${student.lrn}`.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = `${student.firstName} ${student.lastName} ${student.studentEmail} ${student.lrn}`.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesGrade = gradeFilter === "all" || student.gradeLevel === gradeFilter;
     const matchesStatus = statusFilter === "all" || student.status === statusFilter;
     return matchesSearch && matchesGrade && matchesStatus;
@@ -55,7 +56,12 @@ export default function StudentAccounts() {
   const handleCreateStudent = async (e) => {
     e.preventDefault();
     try {
-      const response = await api.post("/admin/create-student", formData);
+      const dataToSend = {
+        ...formData,
+        studentEmail: formData.email,
+        email: formData.email // Backend accepts both
+      };
+      const response = await api.post("/", dataToSend);
       toast.success("Student account created successfully");
       setShowCreateModal(false);
       setFormData({
@@ -66,8 +72,9 @@ export default function StudentAccounts() {
         gradeLevel: "",
         section: "",
         lrn: "",
-        contactNumber: "",
-        parentName: "",
+        parentFirstName: "",
+        parentLastName: "",
+        parentEmail: "",
         parentContact: ""
       });
       fetchStudents();
@@ -80,7 +87,12 @@ export default function StudentAccounts() {
   const handleUpdateStudent = async (e) => {
     e.preventDefault();
     try {
-      await api.put(`/admin/students/${selectedStudent.id}`, formData);
+      const dataToSend = {
+        ...formData,
+        studentEmail: formData.email,
+        email: formData.email
+      };
+      await api.put(`/${selectedStudent.id}`, dataToSend);
       toast.success("Student account updated successfully");
       setShowEditModal(false);
       setSelectedStudent(null);
@@ -92,8 +104,9 @@ export default function StudentAccounts() {
         gradeLevel: "",
         section: "",
         lrn: "",
-        contactNumber: "",
-        parentName: "",
+        parentFirstName: "",
+        parentLastName: "",
+        parentEmail: "",
         parentContact: ""
       });
       fetchStudents();
@@ -105,7 +118,7 @@ export default function StudentAccounts() {
 
   const handleDeleteStudent = async () => {
     try {
-      await api.delete(`/admin/students/${selectedStudent.id}`);
+      await api.delete(`/${selectedStudent.id}`);
       toast.success("Student account deleted successfully");
       setShowDeleteModal(false);
       setSelectedStudent(null);
@@ -118,7 +131,7 @@ export default function StudentAccounts() {
 
   const handleApproveStudent = async (studentId) => {
     try {
-      await api.post(`/admin/students/${studentId}/approve`, { approved: true });
+      await api.post(`/${studentId}/approve`, { approved: true });
       toast.success("Student account approved successfully");
       fetchStudents();
     } catch (error) {
@@ -129,7 +142,7 @@ export default function StudentAccounts() {
 
   const handleRejectStudent = async (studentId) => {
     try {
-      await api.post(`/admin/students/${studentId}/approve`, { approved: false });
+      await api.post(`/${studentId}/approve`, { approved: false });
       toast.success("Student account rejected successfully");
       fetchStudents();
     } catch (error) {
@@ -140,7 +153,7 @@ export default function StudentAccounts() {
 
   const handleViewCredentials = async (student) => {
     try {
-      const response = await api.get(`/admin/students/${student.id}/credentials`);
+      const response = await api.get(`/${student.id}/credentials`);
       setCredentials(response.data);
       setSelectedStudent(student);
       setShowCredentialsModal(true);
@@ -155,13 +168,14 @@ export default function StudentAccounts() {
     setFormData({
       firstName: student.firstName,
       lastName: student.lastName,
-      email: student.email,
+      email: student.studentEmail || "",
       password: "",
       gradeLevel: student.gradeLevel || "",
       section: student.section || "",
       lrn: student.lrn || "",
-      contactNumber: student.contactNumber || "",
-      parentName: student.parentName || "",
+      parentFirstName: student.parentFirstName || "",
+      parentLastName: student.parentLastName || "",
+      parentEmail: student.parentEmail || "",
       parentContact: student.parentContact || ""
     });
     setShowEditModal(true);
@@ -291,7 +305,7 @@ export default function StudentAccounts() {
                         <div className="text-sm font-medium text-gray-900">
                           {student.firstName} {student.lastName}
                         </div>
-                        <div className="text-sm text-gray-500">{student.email}</div>
+                        <div className="text-sm text-gray-500">{student.studentEmail || "No email"}</div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -302,7 +316,7 @@ export default function StudentAccounts() {
                       <div className="text-sm text-gray-500">{student.section || "No section"}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{student.parentName || "Not specified"}</div>
+                      <div className="text-sm text-gray-900">{`${student.parentFirstName || ''} ${student.parentLastName || ''}`.trim() || "Not specified"}</div>
                       <div className="text-sm text-gray-500">{student.parentContact || "No contact"}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -441,20 +455,29 @@ export default function StudentAccounts() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Contact Number</label>
+                  <label className="block text-sm font-medium text-gray-700">Parent First Name</label>
                   <input
                     type="text"
-                    value={formData.contactNumber}
-                    onChange={(e) => setFormData({...formData, contactNumber: e.target.value})}
+                    value={formData.parentFirstName}
+                    onChange={(e) => setFormData({...formData, parentFirstName: e.target.value})}
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Parent Name</label>
+                  <label className="block text-sm font-medium text-gray-700">Parent Last Name</label>
                   <input
                     type="text"
-                    value={formData.parentName}
-                    onChange={(e) => setFormData({...formData, parentName: e.target.value})}
+                    value={formData.parentLastName}
+                    onChange={(e) => setFormData({...formData, parentLastName: e.target.value})}
+                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Parent Email</label>
+                  <input
+                    type="email"
+                    value={formData.parentEmail}
+                    onChange={(e) => setFormData({...formData, parentEmail: e.target.value})}
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
                   />
                 </div>
@@ -566,20 +589,29 @@ export default function StudentAccounts() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Contact Number</label>
+                  <label className="block text-sm font-medium text-gray-700">Parent First Name</label>
                   <input
                     type="text"
-                    value={formData.contactNumber}
-                    onChange={(e) => setFormData({...formData, contactNumber: e.target.value})}
+                    value={formData.parentFirstName}
+                    onChange={(e) => setFormData({...formData, parentFirstName: e.target.value})}
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Parent Name</label>
+                  <label className="block text-sm font-medium text-gray-700">Parent Last Name</label>
                   <input
                     type="text"
-                    value={formData.parentName}
-                    onChange={(e) => setFormData({...formData, parentName: e.target.value})}
+                    value={formData.parentLastName}
+                    onChange={(e) => setFormData({...formData, parentLastName: e.target.value})}
+                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Parent Email</label>
+                  <input
+                    type="email"
+                    value={formData.parentEmail}
+                    onChange={(e) => setFormData({...formData, parentEmail: e.target.value})}
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
                   />
                 </div>
