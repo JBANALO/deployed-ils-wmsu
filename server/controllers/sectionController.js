@@ -110,6 +110,70 @@ const getPreviousSchoolYear = async (activeStartDate) => {
   return rows[0] || null;
 };
 
+const getNearestSectionSourceSchoolYear = async (targetSy) => {
+  if (!targetSy?.id) return null;
+
+  const baseExistsClause = `(
+      EXISTS (
+        SELECT 1
+        FROM sections s
+        WHERE s.school_year_id = sy.id
+          AND IFNULL(s.is_archived, 0) = 0
+        LIMIT 1
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM classes c
+        WHERE c.school_year_id = sy.id
+          AND c.section IS NOT NULL
+          AND TRIM(c.section) <> ''
+        LIMIT 1
+      )
+    )`;
+
+  if (targetSy.start_date) {
+    const previousRows = await query(
+      `SELECT sy.id, sy.label, sy.start_date
+       FROM school_years sy
+       WHERE sy.is_archived = 0
+         AND sy.id <> ?
+         AND sy.start_date < ?
+         AND ${baseExistsClause}
+       ORDER BY sy.start_date DESC
+       LIMIT 1`,
+      [targetSy.id, targetSy.start_date]
+    );
+
+    if (previousRows.length > 0) return previousRows[0];
+
+    const nearestRows = await query(
+      `SELECT sy.id, sy.label, sy.start_date
+       FROM school_years sy
+       WHERE sy.is_archived = 0
+         AND sy.id <> ?
+         AND ${baseExistsClause}
+       ORDER BY ABS(DATEDIFF(sy.start_date, ?)) ASC, sy.start_date DESC
+       LIMIT 1`,
+      [targetSy.id, targetSy.start_date]
+    );
+
+    return nearestRows[0] || null;
+  }
+
+  const fallbackRows = await query(
+    `SELECT sy.id, sy.label, sy.start_date
+     FROM school_years sy
+     WHERE sy.is_archived = 0
+       AND sy.id <> ?
+       AND ${baseExistsClause}
+     ORDER BY sy.id DESC
+     LIMIT 1`,
+    [targetSy.id]
+  );
+
+  return fallbackRows[0] || null;
+};
+
 const normalizeGradeForCompare = (value = '') =>
   String(value || '').trim().toLowerCase().replace(/^grade\s+/i, '');
 
@@ -553,7 +617,7 @@ const getPreviousYearSections = async (req, res) => {
   try {
     await ensureSectionColumns();
     const targetSy = await resolveSchoolYear(req);
-    const prevSy = await getPreviousSchoolYear(targetSy.start_date);
+    const prevSy = await getNearestSectionSourceSchoolYear(targetSy);
     if (!prevSy) return res.json({ success: true, data: [] });
 
     let sections = await query(
@@ -588,9 +652,9 @@ const fetchSectionsFromPreviousYear = async (req, res) => {
     await ensureSectionColumns();
     const targetSy = await resolveSchoolYear(req);
     await assertActiveTargetSchoolYear(targetSy);
-    const prevSy = await getPreviousSchoolYear(targetSy.start_date);
+    const prevSy = await getNearestSectionSourceSchoolYear(targetSy);
     if (!prevSy) {
-      return res.status(400).json({ success: false, message: 'No previous school year found to fetch from' });
+      return res.status(400).json({ success: false, message: 'No source school year found to fetch from' });
     }
 
     const { ids } = req.body || {};
