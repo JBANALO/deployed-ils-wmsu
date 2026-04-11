@@ -18,6 +18,16 @@ const bcrypt = require('bcryptjs');
 
 const jwt = require('jsonwebtoken');
 
+const multer = require('multer');
+
+// Configure multer for memory storage
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
+});
+
 const passport = require('./config/passport');
 
 const { query } = require('./config/database');
@@ -2146,7 +2156,7 @@ app.get('/api/super-admin/me', async (req, res) => {
   }
 });
 
-app.put('/api/super-admin/update-profile', async (req, res) => {
+app.put('/api/super-admin/update-profile', upload.single('profileImage'), async (req, res) => {
   try {
     const { query } = require('./config/database');
     const jwt = require('jsonwebtoken');
