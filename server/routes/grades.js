@@ -6,6 +6,29 @@ const jwt = require('jsonwebtoken');
 
 const normalizeRole = (value = '') => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 
+const getSchoolYearById = async (schoolYearId) => {
+  if (!schoolYearId) return null;
+  const rows = await query(
+    'SELECT id FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1',
+    [schoolYearId]
+  );
+  return rows[0] || null;
+};
+
+const getActiveSchoolYear = async () => {
+  const rows = await query('SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+  return rows[0] || null;
+};
+
+const resolveTargetSchoolYearId = async (requestedId) => {
+  if (requestedId) {
+    const row = await getSchoolYearById(requestedId);
+    if (row?.id) return Number(row.id);
+  }
+  const active = await getActiveSchoolYear();
+  return active?.id ? Number(active.id) : null;
+};
+
 // Middleware to verify user
 const verifyUser = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -15,7 +38,7 @@ const verifyUser = (req, res, next) => {
     return res.status(401).json({ status: 'error', message: 'Access token required' });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-fallback', (err, user) => {
+  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
     if (err) {
       return res.status(403).json({ status: 'error', message: 'Invalid or expired token' });
     }
@@ -25,7 +48,7 @@ const verifyUser = (req, res, next) => {
 };
 
 // Check if teacher can enter grades for this student and subject
-const canEnterGrade = async (user, student, subject) => {
+const canEnterGrade = async (user, student, subject, schoolYearId) => {
   if (!user || !user.role) return false;
   const normalizedRole = normalizeRole(user.role);
   
@@ -37,8 +60,8 @@ const canEnterGrade = async (user, student, subject) => {
     
     // Check if user is adviser for this class (classes table uses 'grade' not 'grade_level')
     const adviserClasses = await query(
-      'SELECT * FROM classes WHERE adviser_id = ? AND grade = ? AND section = ?',
-      [user.id, studentGrade, studentSection]
+      'SELECT * FROM classes WHERE adviser_id = ? AND grade = ? AND section = ? AND school_year_id = ?',
+      [user.id, studentGrade, studentSection, schoolYearId]
     );
     
     if (adviserClasses.length > 0) return true;
@@ -46,8 +69,8 @@ const canEnterGrade = async (user, student, subject) => {
     // Check if user is subject teacher for this class and subject
     const classId = `${studentGrade.toLowerCase().replace(/\s+/g, '-')}-${studentSection.toLowerCase()}`;
     const subjectTeacherRecords = await query(
-      'SELECT * FROM subject_teachers WHERE teacher_id = ? AND class_id = ?',
-      [user.id, classId]
+      'SELECT * FROM subject_teachers WHERE teacher_id = ? AND class_id = ? AND school_year_id = ?',
+      [user.id, classId, schoolYearId]
     );
     
     if (subjectTeacherRecords.length > 0) {
@@ -79,22 +102,28 @@ router.get('/progress', verifyUser, async (req, res) => {
     const quarter = allowedQuarters.includes((req.query.quarter || '').toLowerCase())
       ? req.query.quarter.toLowerCase()
       : 'q1';
+    const targetSchoolYearId = await resolveTargetSchoolYearId(req.query.schoolYearId);
+    if (!targetSchoolYearId) {
+      return res.status(400).json({ success: false, message: 'No active school year found' });
+    }
 
     // Classes where the user is subject teacher
     const subjectClasses = await query(
       `SELECT st.class_id, st.subject, c.grade, c.section
        FROM subject_teachers st
        JOIN classes c ON c.id = st.class_id
-       WHERE st.teacher_id = ?`,
-      [user.id]
+       WHERE st.teacher_id = ?
+         AND st.school_year_id = ?
+         AND c.school_year_id = ?`,
+      [user.id, targetSchoolYearId, targetSchoolYearId]
     );
 
     // If adviser, also include their advisory classes for all subjects (progress will be aggregated across subjects)
     let adviserClasses = [];
     if (userRole === 'adviser' || userRole === 'admin') {
       adviserClasses = await query(
-        'SELECT id as class_id, grade, section FROM classes WHERE adviser_id = ?',
-        [user.id]
+        'SELECT id as class_id, grade, section FROM classes WHERE adviser_id = ? AND school_year_id = ?',
+        [user.id, targetSchoolYearId]
       );
     }
 
@@ -138,8 +167,8 @@ router.get('/progress', verifyUser, async (req, res) => {
 
       // Total students in the class
       const totalRows = await query(
-        'SELECT COUNT(*) as cnt FROM students WHERE grade_level = ? AND section = ?',
-        [grade, section]
+        'SELECT COUNT(*) as cnt FROM students WHERE grade_level = ? AND section = ? AND school_year_id = ?',
+        [grade, section, targetSchoolYearId]
       );
       const total = totalRows?.[0]?.cnt || 0;
 
@@ -151,20 +180,21 @@ router.get('/progress', verifyUser, async (req, res) => {
            FROM students s
            LEFT JOIN grades g ON g.student_id = s.id
            WHERE s.grade_level = ? AND s.section = ? AND (
+             g.school_year_id = ? AND
              g.${quarter} IS NOT NULL AND g.${quarter} != ''
            )`,
-          [grade, section]
+          [grade, section, targetSchoolYearId]
         );
         graded = gradedRows?.[0]?.cnt || 0;
       } else {
         const gradedRows = await query(
           `SELECT COUNT(DISTINCT s.id) as cnt
            FROM students s
-           LEFT JOIN grades g ON g.student_id = s.id AND g.subject = ?
+           LEFT JOIN grades g ON g.student_id = s.id AND g.subject = ? AND g.school_year_id = ?
            WHERE s.grade_level = ? AND s.section = ? AND (
              g.${quarter} IS NOT NULL AND g.${quarter} != ''
            )`,
-          [subject, grade, section]
+          [subject, targetSchoolYearId, grade, section]
         );
         graded = gradedRows?.[0]?.cnt || 0;
       }
@@ -217,10 +247,14 @@ router.put('/:id/grades', verifyUser, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Student not found' });
     }
     const student = students[0];
+    const targetSchoolYearId = await resolveTargetSchoolYearId(req.body?.schoolYearId || req.query?.schoolYearId || student.school_year_id);
+    if (!targetSchoolYearId) {
+      return res.status(400).json({ success: false, message: 'No active school year found' });
+    }
 
     // Check authorization for each subject
     for (const subject of Object.keys(grades)) {
-      const canEdit = await canEnterGrade(user, student, subject);
+      const canEdit = await canEnterGrade(user, student, subject, targetSchoolYearId);
       if (!canEdit) {
         return res.status(403).json({ 
           success: false,
@@ -235,8 +269,8 @@ router.put('/:id/grades', verifyUser, async (req, res) => {
       const quarterCol = quarter || 'q1';
       
       const existingGrades = await query(
-        'SELECT id FROM grades WHERE student_id = ? AND subject = ?',
-        [id, subject]
+        'SELECT id FROM grades WHERE student_id = ? AND subject = ? AND school_year_id = ?',
+        [id, subject, targetSchoolYearId]
       );
 
       if (existingGrades.length > 0) {
@@ -249,9 +283,13 @@ router.put('/:id/grades', verifyUser, async (req, res) => {
             values.push(val || 0);
           }
           values.push(id, subject);
-          await query(`UPDATE grades SET ${updates.join(', ')} WHERE student_id = ? AND subject = ?`, values);
+          values.push(targetSchoolYearId);
+          await query(`UPDATE grades SET ${updates.join(', ')} WHERE student_id = ? AND subject = ? AND school_year_id = ?`, values);
         } else {
-          await query(`UPDATE grades SET ${quarterCol} = ? WHERE student_id = ? AND subject = ?`, [gradeValue, id, subject]);
+          await query(
+            `UPDATE grades SET ${quarterCol} = ? WHERE student_id = ? AND subject = ? AND school_year_id = ?`,
+            [gradeValue, id, subject, targetSchoolYearId]
+          );
         }
       } else {
         const newGrade = { q1: 0, q2: 0, q3: 0, q4: 0 };
@@ -261,8 +299,8 @@ router.put('/:id/grades', verifyUser, async (req, res) => {
           newGrade[quarterCol] = gradeValue;
         }
         await query(
-          'INSERT INTO grades (student_id, subject, q1, q2, q3, q4) VALUES (?, ?, ?, ?, ?, ?)',
-          [id, subject, newGrade.q1, newGrade.q2, newGrade.q3, newGrade.q4]
+          'INSERT INTO grades (student_id, subject, q1, q2, q3, q4, school_year_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [id, subject, newGrade.q1, newGrade.q2, newGrade.q3, newGrade.q4, targetSchoolYearId]
         );
       }
     }
@@ -280,7 +318,12 @@ router.put('/:id/grades', verifyUser, async (req, res) => {
 router.get('/:id/grades', verifyUser, async (req, res) => {
   try {
     const { id } = req.params;
-    const grades = await query('SELECT * FROM grades WHERE student_id = ?', [id]);
+    const targetSchoolYearId = await resolveTargetSchoolYearId(req.query.schoolYearId);
+    if (!targetSchoolYearId) {
+      return res.status(400).json({ error: 'No active school year found' });
+    }
+
+    const grades = await query('SELECT * FROM grades WHERE student_id = ? AND school_year_id = ?', [id, targetSchoolYearId]);
 
     const result = {};
     grades.forEach(r => {

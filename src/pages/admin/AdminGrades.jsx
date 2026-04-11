@@ -5,6 +5,14 @@ import { toast } from 'react-toastify';
 import { useSchoolYear } from "../../context/SchoolYearContext";
 import AdminForm137Print from "../../components/admin/AdminForm137Print";
 
+const QUARTER_KEYS = ['q1', 'q2', 'q3', 'q4'];
+const QUARTER_LABELS = {
+  q1: 'Q1',
+  q2: 'Q2',
+  q3: 'Q3',
+  q4: 'Q4'
+};
+
 // DepEd K-12 Subjects
 const DEPED_SUBJECTS = {
   "Kindergarten": ["Filipino", "English", "Mathematics", "Values Education", "Music", "Arts", "Physical Education"],
@@ -32,6 +40,7 @@ export default function AdminGrades() {
   const [selectedGradeLevel, setSelectedGradeLevel] = useState('All');
   const [gradeLevels, setGradeLevels] = useState([]);
   const [recentUpdates, setRecentUpdates] = useState([]);
+  const [rankingBasis, setRankingBasis] = useState('final');
   
   // Modal states
   const [showViewModal, setShowViewModal] = useState(false);
@@ -47,12 +56,19 @@ export default function AdminGrades() {
   const [form137Records, setForm137Records] = useState([]);
   const [preparingPrint, setPreparingPrint] = useState(false);
   const targetSchoolYearId = viewingSchoolYear?.id || activeSchoolYear?.id || '';
+  const rankingLabelMap = {
+    final: 'Final Average',
+    q1: 'Q1 Average',
+    q2: 'Q2 Average',
+    q3: 'Q3 Average',
+    q4: 'Q4 Average'
+  };
 
 
 
   useEffect(() => {
     loadGradesData();
-  }, [targetSchoolYearId]);
+  }, [targetSchoolYearId, rankingBasis]);
 
   const loadGradesData = async () => {
     try {
@@ -65,18 +81,39 @@ export default function AdminGrades() {
       const studentsData = Array.isArray(studentsRes.data.data) ? studentsRes.data.data : 
                            Array.isArray(studentsRes.data) ? studentsRes.data : [];
 
-      // Sort by average (highest first) and calculate rank - with grades first
-      const sortedStudents = studentsData
-        .filter(s => s.average && s.average > 0)
-        .sort((a, b) => (b.average || 0) - (a.average || 0))
+      const getRankingValue = (student) => {
+        switch (rankingBasis) {
+          case 'q1':
+            return Number(student?.q1_avg || 0);
+          case 'q2':
+            return Number(student?.q2_avg || 0);
+          case 'q3':
+            return Number(student?.q3_avg || 0);
+          case 'q4':
+            return Number(student?.q4_avg || 0);
+          case 'final':
+          default:
+            return Number(student?.average || student?.live_average || 0);
+        }
+      };
+
+      const studentsWithRankingValue = studentsData.map((student) => ({
+        ...student,
+        rankingValue: getRankingValue(student)
+      }));
+
+      // Rank by selected basis (Final/Q1/Q2/Q3/Q4). Students without grades in selected basis stay unranked.
+      const sortedStudents = studentsWithRankingValue
+        .filter(s => s.rankingValue > 0)
+        .sort((a, b) => (b.rankingValue || 0) - (a.rankingValue || 0))
         .map((student, index) => ({
           ...student,
           rank: index + 1
         }));
 
-      // Include students without grades at the end (ALL of them)
-      const studentsWithoutGrades = studentsData
-        .filter(s => !s.average || s.average === 0)
+      // Include students without grades for the selected ranking basis at the end
+      const studentsWithoutGrades = studentsWithRankingValue
+        .filter(s => !(s.rankingValue > 0))
         .map(student => ({ ...student, rank: '-' }));
 
       // Combine: students with grades first, then students without
@@ -111,8 +148,8 @@ export default function AdminGrades() {
       // Generate recent updates from students with grades
       const updates = sortedStudents.slice(0, 5).map(s => ({
         name: s.fullName || `${s.firstName} ${s.lastName}`,
-        subject: 'General Average',
-        grade: s.average
+        subject: rankingLabelMap[rankingBasis] || 'Final Average',
+        grade: s.rankingValue
       }));
       setRecentUpdates(updates);
 
@@ -204,11 +241,12 @@ export default function AdminGrades() {
     const initialGrades = {};
     subjects.forEach(subject => {
       const matchedGrade = getMatchedGrade(grades, subject);
-      if (Object.keys(matchedGrade).length > 0) {
-        initialGrades[subject] = matchedGrade.q1 || matchedGrade.q2 || matchedGrade.q3 || matchedGrade.q4 || 0;
-      } else {
-        initialGrades[subject] = 0;
-      }
+      initialGrades[subject] = {
+        q1: Number(matchedGrade.q1 || 0),
+        q2: Number(matchedGrade.q2 || 0),
+        q3: Number(matchedGrade.q3 || 0),
+        q4: Number(matchedGrade.q4 || 0)
+      };
     });
     
     setStudentGrades(grades);
@@ -226,20 +264,37 @@ export default function AdminGrades() {
     
     setSaving(true);
     try {
-      // Calculate average
-      const gradeValues = Object.values(editGrades).filter(g => g > 0);
+      // Build payload depending on selected quarter.
+      const payloadGrades = {};
+      Object.entries(editGrades).forEach(([subject, values]) => {
+        if (selectedQuarter === 'all') {
+          payloadGrades[subject] = {
+            q1: Number(values?.q1 || 0),
+            q2: Number(values?.q2 || 0),
+            q3: Number(values?.q3 || 0),
+            q4: Number(values?.q4 || 0)
+          };
+        } else {
+          payloadGrades[subject] = Number(values?.[selectedQuarter] || 0);
+        }
+      });
+
+      // Calculate average from currently edited scope.
+      const gradeValues = selectedQuarter === 'all'
+        ? Object.values(editGrades).flatMap((values) => QUARTER_KEYS.map((q) => Number(values?.[q] || 0))).filter((g) => g > 0)
+        : Object.values(editGrades).map((values) => Number(values?.[selectedQuarter] || 0)).filter((g) => g > 0);
       const average = gradeValues.length > 0 
         ? gradeValues.reduce((a, b) => a + parseFloat(b), 0) / gradeValues.length 
         : 0;
 
       const response = await axios.put(`/students/${selectedStudent.id}/grades`, {
-        grades: editGrades,
+        grades: payloadGrades,
         quarter: selectedQuarter,
         average: average.toFixed(2)
       });
 
       if (response.data.success) {
-        toast.success(`Grades saved for ${selectedQuarter.toUpperCase()}`);
+        toast.success(selectedQuarter === 'all' ? 'Grades saved for ALL QUARTERS' : `Grades saved for ${selectedQuarter.toUpperCase()}`);
         setShowEditModal(false);
         loadGradesData(); // Refresh data
       } else {
@@ -254,9 +309,15 @@ export default function AdminGrades() {
   };
 
   // Handle grade input change
-  const handleGradeChange = (subject, value) => {
+  const handleGradeChange = (subject, quarter, value) => {
     const numValue = Math.min(100, Math.max(0, parseFloat(value) || 0));
-    setEditGrades(prev => ({ ...prev, [subject]: numValue }));
+    setEditGrades(prev => ({
+      ...prev,
+      [subject]: {
+        ...prev[subject],
+        [quarter]: numValue
+      }
+    }));
   };
 
   // Filter students
@@ -423,6 +484,24 @@ export default function AdminGrades() {
 
             <select
 
+              value={rankingBasis}
+
+              onChange={(e) => setRankingBasis(e.target.value)}
+
+              className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-red-800"
+
+            >
+
+              <option value="final">Rank: Final Average</option>
+              <option value="q1">Rank: Q1 Average</option>
+              <option value="q2">Rank: Q2 Average</option>
+              <option value="q3">Rank: Q3 Average</option>
+              <option value="q4">Rank: Q4 Average</option>
+
+            </select>
+
+            <select
+
               value={selectedGradeLevel}
 
               onChange={(e) => setSelectedGradeLevel(e.target.value)}
@@ -492,7 +571,7 @@ export default function AdminGrades() {
 
                 <th className="p-4">Final Average</th>
 
-                <th className="p-4">Rank</th>
+                <th className="p-4">Rank ({rankingLabelMap[rankingBasis] || 'Final Average'})</th>
 
                 <th className="p-4 text-center">Actions</th>
 
@@ -608,7 +687,7 @@ export default function AdminGrades() {
 
       {/* View Grades Modal */}
       {showViewModal && selectedStudent && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto m-4">
             <div className="flex justify-between items-center p-4 border-b bg-red-800 text-white rounded-t-lg">
               <h3 className="text-xl font-bold">View Grades</h3>
@@ -675,7 +754,7 @@ export default function AdminGrades() {
 
       {/* Edit Grades Modal */}
       {showEditModal && selectedStudent && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto m-4">
             <div className="flex justify-between items-center p-4 border-b bg-green-700 text-white rounded-t-lg">
               <h3 className="text-xl font-bold">Edit Grades</h3>
@@ -699,6 +778,7 @@ export default function AdminGrades() {
                   <option value="q2">2nd Quarter</option>
                   <option value="q3">3rd Quarter</option>
                   <option value="q4">4th Quarter</option>
+                  <option value="all">All Quarters</option>
                 </select>
               </div>
 
@@ -706,28 +786,63 @@ export default function AdminGrades() {
                 <thead>
                   <tr className="bg-gray-100">
                     <th className="border p-2 text-left">Subject</th>
-                    <th className="border p-2 text-center">Current Grade</th>
-                    <th className="border p-2 text-center">New Grade ({selectedQuarter.toUpperCase()})</th>
+                    {selectedQuarter === 'all' ? (
+                      <>
+                        <th className="border p-2 text-center">Q1 (Current / New)</th>
+                        <th className="border p-2 text-center">Q2 (Current / New)</th>
+                        <th className="border p-2 text-center">Q3 (Current / New)</th>
+                        <th className="border p-2 text-center">Q4 (Current / New)</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="border p-2 text-center">Current Grade</th>
+                        <th className="border p-2 text-center">New Grade ({selectedQuarter.toUpperCase()})</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
                   {getSubjectsForStudent(selectedStudent).map(subject => {
-                    const currentGrade = getMatchedGrade(studentGrades, subject)?.[selectedQuarter] || '-';
+                    const matched = getMatchedGrade(studentGrades, subject);
                     return (
                       <tr key={subject}>
                         <td className="border p-2">{subject}</td>
-                        <td className="border p-2 text-center">{currentGrade}</td>
-                        <td className="border p-2 text-center">
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={editGrades[subject] || ''}
-                            onChange={(e) => handleGradeChange(subject, e.target.value)}
-                            className="border rounded px-2 py-1 w-20 text-center"
-                            placeholder="0-100"
-                          />
-                        </td>
+                        {selectedQuarter === 'all' ? (
+                          QUARTER_KEYS.map((qKey) => {
+                            const currentGrade = matched?.[qKey] || '-';
+                            return (
+                              <td key={`${subject}-${qKey}`} className="border p-2 text-center">
+                                <div className="flex items-center justify-center gap-2">
+                                  <span className="text-xs text-gray-500 w-8 text-right">{currentGrade}</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={editGrades?.[subject]?.[qKey] || ''}
+                                    onChange={(e) => handleGradeChange(subject, qKey, e.target.value)}
+                                    className="border rounded px-2 py-1 w-20 text-center"
+                                    placeholder={QUARTER_LABELS[qKey]}
+                                  />
+                                </div>
+                              </td>
+                            );
+                          })
+                        ) : (
+                          <>
+                            <td className="border p-2 text-center">{matched?.[selectedQuarter] || '-'}</td>
+                            <td className="border p-2 text-center">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={editGrades?.[subject]?.[selectedQuarter] || ''}
+                                onChange={(e) => handleGradeChange(subject, selectedQuarter, e.target.value)}
+                                className="border rounded px-2 py-1 w-20 text-center"
+                                placeholder="0-100"
+                              />
+                            </td>
+                          </>
+                        )}
                       </tr>
                     );
                   })}

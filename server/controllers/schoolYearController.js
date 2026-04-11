@@ -126,6 +126,207 @@ exports.fetchLeadershipFromPrevious = async (req, res) => {
   }
 };
 
+// Copy core data from a selected school year into the active school year.
+// This is used when admins need to bring an entire school's setup/data into the current active year.
+exports.copyAllDataFromSchoolYear = async (req, res) => {
+  let connection;
+  try {
+    const sourceSchoolYearId = Number(req.body?.sourceSchoolYearId);
+    if (!Number.isInteger(sourceSchoolYearId) || sourceSchoolYearId <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid sourceSchoolYearId is required.' });
+    }
+
+    connection = await pool.getConnection();
+    const active = await getActiveSchoolYearMeta(connection);
+    if (!active) {
+      return res.status(400).json({ success: false, message: 'No active school year found.' });
+    }
+
+    const source = await getSchoolYearMetaById(connection, sourceSchoolYearId);
+    if (!source) {
+      return res.status(404).json({ success: false, message: 'Source school year not found.' });
+    }
+
+    if (Number(source.id) === Number(active.id)) {
+      return res.status(400).json({ success: false, message: 'Source and target school years are the same.' });
+    }
+
+    const sourceStartDate = source.start_date ? String(source.start_date).slice(0, 10) : null;
+    const sourceEndDate = source.end_date ? String(source.end_date).slice(0, 10) : null;
+
+    const warnings = [];
+    const copied = {
+      subjects: 0,
+      sections: 0,
+      teachers: 0,
+      classes: 0,
+      students: 0,
+      grades: 0
+    };
+
+    const runStep = async (stepName, sql, params, key) => {
+      try {
+        const [result] = await connection.query(sql, params);
+        copied[key] = Number(result?.affectedRows || 0);
+      } catch (stepErr) {
+        warnings.push(`${stepName}: ${stepErr.message}`);
+      }
+    };
+
+    await runStep(
+      'leadership',
+      `UPDATE school_years dst
+       JOIN school_years src ON src.id = ?
+       SET dst.principal_name = src.principal_name,
+           dst.assistant_principal_name = src.assistant_principal_name
+       WHERE dst.id = ?`,
+      [source.id, active.id],
+      '_leadership'
+    );
+
+    await runStep(
+      'subjects',
+      `INSERT INTO subjects (name, description, grade_levels, school_year_id, is_archived)
+       SELECT s.name, s.description, s.grade_levels, ?, 0
+       FROM subjects s
+       WHERE (
+            s.school_year_id = ?
+            OR (
+              s.school_year_id IS NULL
+              AND ? IS NOT NULL
+              AND ? IS NOT NULL
+              AND DATE(COALESCE(s.created_at, NOW())) BETWEEN ? AND ?
+            )
+       )
+         AND IFNULL(s.is_archived, 0) = 0
+         AND NOT EXISTS (
+           SELECT 1
+           FROM subjects d
+           WHERE d.school_year_id = ?
+             AND d.name = s.name
+             AND IFNULL(d.grade_levels, '') = IFNULL(s.grade_levels, '')
+         )`,
+      [active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate, active.id],
+      'subjects'
+    );
+
+    await runStep(
+      'sections',
+      `INSERT INTO sections (name, description, grade_level, school_year_id, is_archived)
+       SELECT s.name, s.description, s.grade_level, ?, 0
+       FROM sections s
+       WHERE (
+            s.school_year_id = ?
+            OR (
+              s.school_year_id IS NULL
+              AND ? IS NOT NULL
+              AND ? IS NOT NULL
+              AND DATE(COALESCE(s.created_at, NOW())) BETWEEN ? AND ?
+            )
+       )
+         AND IFNULL(s.is_archived, 0) = 0
+         AND NOT EXISTS (
+           SELECT 1
+           FROM sections d
+           WHERE d.school_year_id = ?
+             AND d.name = s.name
+         )`,
+      [active.id, source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate, active.id],
+      'sections'
+    );
+
+    try {
+      const [teacherCountRows] = await connection.query(
+        `SELECT COUNT(*) AS total
+         FROM teachers t
+         WHERE (
+              t.school_year_id = ?
+              OR (
+                t.school_year_id IS NULL
+                AND ? IS NOT NULL
+                AND ? IS NOT NULL
+                AND DATE(COALESCE(t.created_at, NOW())) BETWEEN ? AND ?
+              )
+         )`,
+        [source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate]
+      );
+      const sourceTeacherCount = Number(teacherCountRows?.[0]?.total || 0);
+      copied.teachers = 0;
+      if (sourceTeacherCount > 0) {
+        warnings.push(`teachers: preserved ${sourceTeacherCount} source record(s); not moved to keep past-year data intact.`);
+      }
+    } catch (stepErr) {
+      warnings.push(`teachers: ${stepErr.message}`);
+    }
+
+    try {
+      const [classCountRows] = await connection.query(
+        `SELECT COUNT(*) AS total
+         FROM classes c
+         WHERE (
+              c.school_year_id = ?
+              OR (
+                c.school_year_id IS NULL
+                AND ? IS NOT NULL
+                AND ? IS NOT NULL
+                AND DATE(COALESCE(c.createdAt, NOW())) BETWEEN ? AND ?
+              )
+         )`,
+        [source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate]
+      );
+      const sourceClassCount = Number(classCountRows?.[0]?.total || 0);
+      copied.classes = 0;
+      if (sourceClassCount > 0) {
+        warnings.push(`classes: preserved ${sourceClassCount} source record(s); not moved to keep past-year data intact.`);
+      }
+    } catch (stepErr) {
+      warnings.push(`classes: ${stepErr.message}`);
+    }
+
+    try {
+      const [studentCountRows] = await connection.query(
+        `SELECT COUNT(*) AS total
+         FROM students s
+         WHERE (
+              s.school_year_id = ?
+              OR (
+                s.school_year_id IS NULL
+                AND ? IS NOT NULL
+                AND ? IS NOT NULL
+                AND DATE(COALESCE(s.created_at, NOW())) BETWEEN ? AND ?
+              )
+         )`,
+        [source.id, sourceStartDate, sourceEndDate, sourceStartDate, sourceEndDate]
+      );
+      const sourceStudentCount = Number(studentCountRows?.[0]?.total || 0);
+      copied.students = 0;
+      if (sourceStudentCount > 0) {
+        warnings.push(`students: preserved ${sourceStudentCount} source record(s); not moved to keep past-year data intact.`);
+      }
+    } catch (stepErr) {
+      warnings.push(`students: ${stepErr.message}`);
+    }
+
+    copied.grades = 0;
+
+    res.json({
+      success: true,
+      message: warnings.length ? 'School year data copied with warnings.' : 'School year data copied successfully.',
+      data: {
+        sourceSchoolYearId: source.id,
+        targetSchoolYearId: active.id,
+        copied,
+        warnings
+      }
+    });
+  } catch (error) {
+    console.error('Error copying school year data:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to copy school year data' });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
 // Get active school year
 exports.getActiveSchoolYear = async (req, res) => {
   try {
@@ -306,7 +507,7 @@ exports.setActiveSchoolYear = async (req, res) => {
     const { id } = req.params;
 
     // Allow activating any non-archived school year; older ones become locked automatically
-    const [targetRows] = await query('SELECT id, is_archived FROM school_years WHERE id = ? LIMIT 1', [id]);
+    const targetRows = await query('SELECT id, is_archived FROM school_years WHERE id = ? LIMIT 1', [id]);
     const target = targetRows[0];
     if (!target || target.is_archived) {
       return res.status(404).json({ success: false, message: 'School year not found or archived' });
@@ -390,6 +591,17 @@ exports.restoreSchoolYear = async (req, res) => {
 // Get student count by grade level (for chart)
 exports.getStudentsByGrade = async (req, res) => {
   try {
+    const requestedSchoolYearId = Number(req.query?.schoolYearId || 0);
+    const activeSchoolYear = await query('SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+    const activeSchoolYearId = Number(activeSchoolYear?.[0]?.id || 0);
+    const targetSchoolYearId = Number.isInteger(requestedSchoolYearId) && requestedSchoolYearId > 0
+      ? requestedSchoolYearId
+      : activeSchoolYearId;
+
+    if (!targetSchoolYearId) {
+      return res.json({ success: true, data: [] });
+    }
+
     const rows = await query(`
       SELECT 
         CASE
@@ -404,9 +616,10 @@ exports.getStudentsByGrade = async (req, res) => {
         END AS grade,
         COUNT(*) as count
       FROM students
+      WHERE school_year_id = ?
       GROUP BY grade
       ORDER BY grade
-    `);
+    `, [targetSchoolYearId]);
     res.json({ success: true, data: rows });
   } catch (error) {
     console.error('Error fetching students by grade:', error);
@@ -429,13 +642,69 @@ const REQUIRED_QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'];
 const KINDERGARTEN_ATTENDANCE_THRESHOLD = 75;
 const KINDERGARTEN_COUNTED_STATUSES = ['present', 'late', 'excused'];
 
+let attendanceColumnsCache = null;
+
+async function resolveAttendanceColumns(conn) {
+  if (attendanceColumnsCache) return attendanceColumnsCache;
+
+  const [columns] = await conn.query('SHOW COLUMNS FROM attendance');
+  const fields = new Set((columns || []).map((col) => String(col.Field || '').trim()));
+
+  const studentColumn = fields.has('student_id')
+    ? 'student_id'
+    : (fields.has('studentId') ? 'studentId' : null);
+
+  const dateColumn = fields.has('date')
+    ? 'date'
+    : (fields.has('created_at')
+      ? 'created_at'
+      : (fields.has('createdAt')
+        ? 'createdAt'
+        : (fields.has('timestamp') ? 'timestamp' : null)));
+
+  attendanceColumnsCache = { studentColumn, dateColumn };
+  return attendanceColumnsCache;
+}
+
 function toGradeKey(gradeLevel = '') {
   return String(gradeLevel).replace(/^Grade\s+/i, '').trim();
 }
 
-async function getRequiredSubjectsForGrade(conn, gradeLevel) {
+async function getRequiredSubjectsForGrade(conn, gradeLevel, schoolYearId = null) {
   const gradeKey = toGradeKey(gradeLevel);
   if (!gradeKey) return [];
+
+  const targetSchoolYearId = Number(schoolYearId || 0);
+
+  if (Number.isInteger(targetSchoolYearId) && targetSchoolYearId > 0) {
+    const [scopedRows] = await conn.query(
+      `SELECT name
+       FROM subjects
+       WHERE is_archived = 0
+         AND school_year_id = ?
+         AND FIND_IN_SET(?, grade_levels)
+       ORDER BY name`,
+      [targetSchoolYearId, gradeKey]
+    );
+
+    if (scopedRows.length > 0) {
+      return scopedRows.map((r) => r.name).filter(Boolean);
+    }
+
+    const [legacyRows] = await conn.query(
+      `SELECT name
+       FROM subjects
+       WHERE is_archived = 0
+         AND (school_year_id IS NULL OR school_year_id = 0)
+         AND FIND_IN_SET(?, grade_levels)
+       ORDER BY name`,
+      [gradeKey]
+    );
+
+    if (legacyRows.length > 0) {
+      return legacyRows.map((r) => r.name).filter(Boolean);
+    }
+  }
 
   const [rows] = await conn.query(
     'SELECT name FROM subjects WHERE is_archived = 0 AND FIND_IN_SET(?, grade_levels) ORDER BY name',
@@ -460,12 +729,28 @@ function normalizeGradeLevel(value = '') {
 async function evaluateKindergartenEligibility(conn, student) {
   // For Kindergarten: attendance-based promotion
   // Formula: (Present + Late + Excused) / Total days × 100
+
+  const { studentColumn, dateColumn } = await resolveAttendanceColumns(conn);
+  if (!studentColumn || !dateColumn) {
+    return {
+      eligible: false,
+      average: 0,
+      attendancePercentage: 0,
+      totalDays: 0,
+      countedDays: 0,
+      hasCompleteGrades: false,
+      hasFailingGrade: false,
+      reason: 'Attendance table is missing required columns for Kindergarten promotion check',
+      attendanceStatus: 'schema-mismatch'
+    };
+  }
   
   const [attendanceRows] = await conn.query(
-    `SELECT DATE(date) as date, status
+    `SELECT DATE(${dateColumn}) as attendance_date, LOWER(status) as status
      FROM attendance
-     WHERE student_id = ? AND status IN ('present', 'late', 'absent', 'excused')
-     ORDER BY date`,
+     WHERE ${studentColumn} = ?
+       AND LOWER(status) IN ('present', 'late', 'absent', 'excused')
+     ORDER BY attendance_date`,
     [student.id]
   );
 
@@ -484,14 +769,14 @@ async function evaluateKindergartenEligibility(conn, student) {
   }
 
   // Group by date to count unique days
-  const uniqueDates = new Set(attendanceRows.map(r => r.date));
+  const uniqueDates = new Set(attendanceRows.map(r => r.attendance_date));
   const totalDays = uniqueDates.size;
   
   // Count days with attendance status (present, late, excused)
   const countedRecords = attendanceRows.filter(r => 
     KINDERGARTEN_COUNTED_STATUSES.includes(String(r.status || '').toLowerCase())
   );
-  const countedDays = new Set(countedRecords.map(r => r.date)).size;
+  const countedDays = new Set(countedRecords.map(r => r.attendance_date)).size;
   
   const attendancePercentage = totalDays > 0 
     ? Math.round((countedDays / totalDays) * 100)
@@ -514,14 +799,15 @@ async function evaluateKindergartenEligibility(conn, student) {
   };
 }
 
-async function evaluatePromotionEligibility(conn, student) {
+async function evaluatePromotionEligibility(conn, student, schoolYearId = null) {
   // Special handling for Kindergarten: attendance-based promotion
   if (normalizeGradeLevel(student.grade_level) === 'kindergarten') {
     return await evaluateKindergartenEligibility(conn, student);
   }
 
   // Grade 1-6: Subject-based grading promotion
-  const requiredSubjects = await getRequiredSubjectsForGrade(conn, student.grade_level);
+  const targetSchoolYearId = Number(schoolYearId || student.school_year_id || 0);
+  const requiredSubjects = await getRequiredSubjectsForGrade(conn, student.grade_level, targetSchoolYearId);
   if (requiredSubjects.length === 0) {
     return {
       eligible: false,
@@ -532,12 +818,19 @@ async function evaluatePromotionEligibility(conn, student) {
     };
   }
 
-  const [gradeRows] = await conn.query(
+  const gradeParams = [student.id];
+  let gradesSql =
     `SELECT subject, quarter, grade
      FROM grades
-     WHERE student_id = ? AND quarter IN ('Q1','Q2','Q3','Q4')`,
-    [student.id]
-  );
+     WHERE student_id = ?
+       AND quarter IN ('Q1','Q2','Q3','Q4')`;
+
+  if (Number.isInteger(targetSchoolYearId) && targetSchoolYearId > 0) {
+    gradesSql += ' AND school_year_id = ?';
+    gradeParams.push(targetSchoolYearId);
+  }
+
+  const [gradeRows] = await conn.query(gradesSql, gradeParams);
 
   const gradeMap = new Map();
   for (const row of gradeRows) {
@@ -647,7 +940,7 @@ async function getSchoolYearMetaById(conn, schoolYearId) {
   const id = Number(schoolYearId);
   if (!Number.isInteger(id) || id <= 0) return null;
   const [rows] = await conn.query(
-    'SELECT id, label FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1',
+    'SELECT id, label, start_date, end_date FROM school_years WHERE id = ? AND is_archived = 0 LIMIT 1',
     [id]
   );
   return rows[0] || null;
@@ -676,26 +969,41 @@ async function logPromotionHistory(conn, payload) {
   );
 }
 
-async function getStudentsForPromotion(conn, studentIds = null) {
+async function getStudentsForPromotion(conn, studentIds = null, schoolYearId = null) {
+  let targetSchoolYearId = Number(schoolYearId || 0);
+  if (!Number.isInteger(targetSchoolYearId) || targetSchoolYearId <= 0) {
+    const activeSy = await getActiveSchoolYearMeta(conn);
+    targetSchoolYearId = Number(activeSy?.id || 0);
+  }
+
+  if (!targetSchoolYearId) {
+    return [];
+  }
+
   if (Array.isArray(studentIds) && studentIds.length > 0) {
     const placeholders = studentIds.map(() => '?').join(',');
     const [rows] = await conn.query(
-      `SELECT id, lrn, first_name, last_name, grade_level, section
+      `SELECT id, lrn, first_name, last_name, grade_level, section, school_year_id
        FROM students
        WHERE id IN (${placeholders})
+         AND school_year_id = ?
        ORDER BY grade_level, section, last_name, first_name`,
-      studentIds
+      [...studentIds, targetSchoolYearId]
     );
     return rows;
   }
 
   const [rows] = await conn.query(
-    'SELECT id, lrn, first_name, last_name, grade_level, section FROM students ORDER BY grade_level, section, last_name, first_name'
+    `SELECT id, lrn, first_name, last_name, grade_level, section, school_year_id
+     FROM students
+     WHERE school_year_id = ?
+     ORDER BY grade_level, section, last_name, first_name`,
+    [targetSchoolYearId]
   );
   return rows;
 }
 
-async function buildPromotionCandidate(conn, student) {
+async function buildPromotionCandidate(conn, student, schoolYearId = null) {
   const currentGrade = student.grade_level || '';
   const nextGrade = GRADE_PROGRESSION[currentGrade];
   const studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim();
@@ -717,7 +1025,7 @@ async function buildPromotionCandidate(conn, student) {
     };
   }
 
-  const eligibility = await evaluatePromotionEligibility(conn, student);
+  const eligibility = await evaluatePromotionEligibility(conn, student, schoolYearId);
   return {
     id: student.id,
     lrn: student.lrn || null,
@@ -741,8 +1049,13 @@ function buildClassIdFromGradeSection(gradeLevel = '', section = '') {
   return `${grade}-${sec}`;
 }
 
-async function getScheduleSnapshotForClass(conn, gradeLevel, section) {
+async function getScheduleSnapshotForClass(conn, gradeLevel, section, schoolYearId = null) {
   if (!gradeLevel || !section) return [];
+
+  const targetSchoolYearId = Number(schoolYearId || 0);
+  const hasTargetSchoolYear = Number.isInteger(targetSchoolYearId) && targetSchoolYearId > 0;
+  const classScopeSql = hasTargetSchoolYear ? ' AND school_year_id = ?' : '';
+  const classScopeParams = hasTargetSchoolYear ? [targetSchoolYearId] : [];
 
   const classIdCandidates = new Set();
   const slugId = buildClassIdFromGradeSection(gradeLevel, section);
@@ -752,8 +1065,8 @@ async function getScheduleSnapshotForClass(conn, gradeLevel, section) {
     `SELECT id
      FROM classes
      WHERE (grade = ? OR grade = ? OR REPLACE(LOWER(grade), 'grade ', '') = LOWER(?))
-       AND section = ?`,
-    [gradeLevel, toGradeKey(gradeLevel), toGradeKey(gradeLevel), section]
+       AND section = ?${classScopeSql}`,
+    [gradeLevel, toGradeKey(gradeLevel), toGradeKey(gradeLevel), section, ...classScopeParams]
   );
 
   classRows.forEach((row) => {
@@ -783,17 +1096,24 @@ async function getScheduleSnapshotForClass(conn, gradeLevel, section) {
 
 // Pick destination class for promoted student in the target grade.
 // Strategy: choose class with lowest current student count to balance sections.
-async function pickDestinationClass(conn, targetGrade) {
+async function pickDestinationClass(conn, targetGrade, schoolYearId = null) {
+  const targetSchoolYearId = Number(schoolYearId || 0);
+  const hasTargetSchoolYear = Number.isInteger(targetSchoolYearId) && targetSchoolYearId > 0;
+  const classScopeSql = hasTargetSchoolYear ? ' AND c.school_year_id = ?' : '';
+  const classScopeParams = hasTargetSchoolYear ? [targetSchoolYearId] : [];
+  const studentScopeSql = hasTargetSchoolYear ? ' AND s.school_year_id = c.school_year_id' : '';
+
   const [rows] = await conn.query(
     `SELECT c.id, c.grade, c.section, c.adviser_id, c.adviser_name,
             COUNT(s.id) AS student_count
      FROM classes c
      LEFT JOIN students s
-       ON s.grade_level = c.grade AND s.section = c.section
-     WHERE c.grade = ?
+       ON LOWER(TRIM(CONVERT(s.grade_level USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(c.grade USING utf8mb4))) COLLATE utf8mb4_general_ci
+      AND LOWER(TRIM(CONVERT(s.section USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(c.section USING utf8mb4))) COLLATE utf8mb4_general_ci${studentScopeSql}
+     WHERE c.grade = ?${classScopeSql}
      GROUP BY c.id, c.grade, c.section, c.adviser_id, c.adviser_name
      ORDER BY student_count ASC, c.section ASC`,
-    [targetGrade]
+    [targetGrade, ...classScopeParams]
   );
 
   return rows[0] || null;
@@ -831,7 +1151,11 @@ exports.promoteStudents = async (req, res) => {
     const selectedSY = await getSchoolYearMetaById(connection, requestedSchoolYearId);
     const activeSY = selectedSY || await getActiveSchoolYearMeta(connection);
 
-    const students = await getStudentsForPromotion(connection, requestedStudentIds.length > 0 ? requestedStudentIds : null);
+    const students = await getStudentsForPromotion(
+      connection,
+      requestedStudentIds.length > 0 ? requestedStudentIds : null,
+      activeSY?.id || null
+    );
 
     if (requestedStudentIds.length > 0 && students.length === 0) {
       await connection.rollback();
@@ -846,134 +1170,195 @@ exports.promoteStudents = async (req, res) => {
 
       if (!nextGrade) continue; // unknown grade level — skip
 
-      const eligibility = await evaluatePromotionEligibility(connection, student);
-      const avg = Number(eligibility.average || 0);
-      const passed = eligibility.eligible;
-      const previousSchedule = passed ? await getScheduleSnapshotForClass(connection, currentGrade, currentSection) : [];
+      try {
+        const eligibility = await evaluatePromotionEligibility(connection, student, activeSY?.id || null);
+        const avg = Number(eligibility.average || 0);
+        const passed = eligibility.eligible;
+        const previousSchedule = passed
+          ? await getScheduleSnapshotForClass(connection, currentGrade, currentSection, activeSY?.id || null)
+          : [];
 
-      if (!passed) {
-        // Retain student
-        const retainedRow = {
+        if (!passed) {
+          // Retain student
+          const retainedRow = {
+            id: student.id,
+            name: studentName,
+            grade: currentGrade,
+            avg: avg.toFixed(2),
+            reason: eligibility.reason
+          };
+          retained.push(retainedRow);
+
+          await logPromotionHistory(connection, {
+            schoolYearId: activeSY?.id,
+            schoolYearLabel: activeSY?.label,
+            studentId: student.id,
+            lrn: student.lrn,
+            studentName,
+            fromGrade: currentGrade,
+            fromSection: currentSection,
+            toGrade: currentGrade,
+            toSection: currentSection,
+            average: avg,
+            status: 'retained',
+            reason: eligibility.reason,
+            details: { hasCompleteGrades: eligibility.hasCompleteGrades, hasFailingGrade: eligibility.hasFailingGrade }
+          });
+          continue;
+        }
+
+        if (nextGrade === 'Graduate') {
+          // Mark as graduated
+          await connection.query(
+            "UPDATE students SET grade_level = 'Graduate', status = 'graduated' WHERE id = ?",
+            [student.id]
+          );
+          const row = { id: student.id, name: studentName, fromGrade: currentGrade, avg: avg.toFixed(2) };
+          graduates.push(row);
+
+          await logPromotionHistory(connection, {
+            schoolYearId: activeSY?.id,
+            schoolYearLabel: activeSY?.label,
+            studentId: student.id,
+            lrn: student.lrn,
+            studentName,
+            fromGrade: currentGrade,
+            fromSection: currentSection,
+            toGrade: 'Graduate',
+            toSection: currentSection,
+            average: avg,
+            status: 'graduated',
+            reason: 'Completed all subjects and passed all quarters',
+            details: {
+              hasCompleteGrades: true,
+              hasFailingGrade: false,
+              previousSchedule
+            }
+          });
+        } else {
+          let destinationClass = null;
+          const requestedClassId = assignmentByStudentId.get(String(student.id));
+          if (requestedClassId) {
+            const [rows] = await connection.query(
+              `SELECT id, grade, section, adviser_id, adviser_name
+               FROM classes
+               WHERE id = ? AND grade = ? AND school_year_id = ?
+               LIMIT 1`,
+              [requestedClassId, nextGrade, activeSY?.id || null]
+            );
+            destinationClass = rows[0] || null;
+          }
+
+          if (!destinationClass) {
+            if (requestedStudentIds.length > 0) {
+              await connection.rollback();
+              return res.status(400).json({
+                success: false,
+                message: `Missing or invalid destination class assignment for ${studentName} (${nextGrade})`
+              });
+            }
+            destinationClass = await pickDestinationClass(connection, nextGrade, activeSY?.id || null);
+          }
+
+          const nextSection = destinationClass?.section || currentSection || null;
+          if (!nextSection) {
+            const reason = `No destination section available for ${nextGrade}`;
+            retained.push({
+              id: student.id,
+              name: studentName,
+              grade: currentGrade,
+              avg: avg.toFixed(2),
+              reason
+            });
+
+            await logPromotionHistory(connection, {
+              schoolYearId: activeSY?.id,
+              schoolYearLabel: activeSY?.label,
+              studentId: student.id,
+              lrn: student.lrn,
+              studentName,
+              fromGrade: currentGrade,
+              fromSection: currentSection,
+              toGrade: currentGrade,
+              toSection: currentSection,
+              average: avg,
+              status: 'retained',
+              reason,
+              details: { hasCompleteGrades: true, hasFailingGrade: false }
+            });
+            continue;
+          }
+
+          await connection.query(
+            'UPDATE students SET grade_level = ?, section = ? WHERE id = ?',
+            [nextGrade, nextSection, student.id]
+          );
+
+          const row = {
+            id: student.id,
+            name: studentName,
+            fromGrade: currentGrade,
+            fromSection: currentSection,
+            toGrade: nextGrade,
+            toSection: nextSection,
+            adviser: destinationClass?.adviser_name || null,
+            avg: avg.toFixed(2)
+          };
+          promotions.push(row);
+
+          await logPromotionHistory(connection, {
+            schoolYearId: activeSY?.id,
+            schoolYearLabel: activeSY?.label,
+            studentId: student.id,
+            lrn: student.lrn,
+            studentName,
+            fromGrade: currentGrade,
+            fromSection: currentSection,
+            toGrade: nextGrade,
+            toSection: nextSection,
+            average: avg,
+            status: 'promoted',
+            reason: 'Completed all subjects and passed all quarters',
+            details: {
+              hasCompleteGrades: true,
+              hasFailingGrade: false,
+              destinationClassId: destinationClass?.id || null,
+              destinationAdviserId: destinationClass?.adviser_id || null,
+              destinationAdviserName: destinationClass?.adviser_name || null,
+              previousSchedule
+            }
+          });
+        }
+      } catch (studentError) {
+        console.error(`Promotion processing failed for student ${student.id}:`, studentError.message);
+        const reason = `Promotion processing error: ${studentError.message}`;
+        retained.push({
           id: student.id,
           name: studentName,
           grade: currentGrade,
-          avg: avg.toFixed(2),
-          reason: eligibility.reason
-        };
-        retained.push(retainedRow);
-
-        await logPromotionHistory(connection, {
-          schoolYearId: activeSY?.id,
-          schoolYearLabel: activeSY?.label,
-          studentId: student.id,
-          lrn: student.lrn,
-          studentName,
-          fromGrade: currentGrade,
-          fromSection: currentSection,
-          toGrade: currentGrade,
-          toSection: currentSection,
-          average: avg,
-          status: 'retained',
-          reason: eligibility.reason,
-          details: { hasCompleteGrades: eligibility.hasCompleteGrades, hasFailingGrade: eligibility.hasFailingGrade }
+          avg: '0.00',
+          reason
         });
-        continue;
-      }
 
-      if (nextGrade === 'Graduate') {
-        // Mark as graduated
-        await connection.query(
-          "UPDATE students SET grade_level = 'Graduate', status = 'graduated' WHERE id = ?",
-          [student.id]
-        );
-        const row = { id: student.id, name: studentName, fromGrade: currentGrade, avg: avg.toFixed(2) };
-        graduates.push(row);
-
-        await logPromotionHistory(connection, {
-          schoolYearId: activeSY?.id,
-          schoolYearLabel: activeSY?.label,
-          studentId: student.id,
-          lrn: student.lrn,
-          studentName,
-          fromGrade: currentGrade,
-          fromSection: currentSection,
-          toGrade: 'Graduate',
-          toSection: currentSection,
-          average: avg,
-          status: 'graduated',
-          reason: 'Completed all subjects and passed all quarters',
-          details: {
-            hasCompleteGrades: true,
-            hasFailingGrade: false,
-            previousSchedule
-          }
-        });
-      } else {
-        let destinationClass = null;
-        const requestedClassId = assignmentByStudentId.get(String(student.id));
-        if (requestedClassId) {
-          const [rows] = await connection.query(
-            `SELECT id, grade, section, adviser_id, adviser_name
-             FROM classes
-             WHERE id = ? AND grade = ?
-             LIMIT 1`,
-            [requestedClassId, nextGrade]
-          );
-          destinationClass = rows[0] || null;
+        try {
+          await logPromotionHistory(connection, {
+            schoolYearId: activeSY?.id,
+            schoolYearLabel: activeSY?.label,
+            studentId: student.id,
+            lrn: student.lrn,
+            studentName,
+            fromGrade: currentGrade,
+            fromSection: currentSection,
+            toGrade: currentGrade,
+            toSection: currentSection,
+            average: 0,
+            status: 'retained',
+            reason,
+            details: { processingError: true }
+          });
+        } catch (historyError) {
+          console.error(`Failed to log promotion error for student ${student.id}:`, historyError.message);
         }
-
-        if (!destinationClass) {
-          if (requestedStudentIds.length > 0) {
-            await connection.rollback();
-            return res.status(400).json({
-              success: false,
-              message: `Missing or invalid destination class assignment for ${studentName} (${nextGrade})`
-            });
-          }
-          destinationClass = await pickDestinationClass(connection, nextGrade);
-        }
-
-        const nextSection = destinationClass?.section || currentSection;
-
-        await connection.query(
-          'UPDATE students SET grade_level = ?, section = ? WHERE id = ?',
-          [nextGrade, nextSection, student.id]
-        );
-
-        const row = {
-          id: student.id,
-          name: studentName,
-          fromGrade: currentGrade,
-          fromSection: currentSection,
-          toGrade: nextGrade,
-          toSection: nextSection,
-          adviser: destinationClass?.adviser_name || null,
-          avg: avg.toFixed(2)
-        };
-        promotions.push(row);
-
-        await logPromotionHistory(connection, {
-          schoolYearId: activeSY?.id,
-          schoolYearLabel: activeSY?.label,
-          studentId: student.id,
-          lrn: student.lrn,
-          studentName,
-          fromGrade: currentGrade,
-          fromSection: currentSection,
-          toGrade: nextGrade,
-          toSection: nextSection,
-          average: avg,
-          status: 'promoted',
-          reason: 'Completed all subjects and passed all quarters',
-          details: {
-            hasCompleteGrades: true,
-            hasFailingGrade: false,
-            destinationClassId: destinationClass?.id || null,
-            destinationAdviserId: destinationClass?.adviser_id || null,
-            destinationAdviserName: destinationClass?.adviser_name || null,
-            previousSchedule
-          }
-        });
       }
     }
 
@@ -991,7 +1376,7 @@ exports.promoteStudents = async (req, res) => {
   } catch (error) {
     if (connection) await connection.rollback();
     console.error('Error promoting students:', error);
-    res.status(500).json({ success: false, message: 'Failed to promote students' });
+    res.status(500).json({ success: false, message: error.message || 'Failed to promote students' });
   } finally {
     if (connection) connection.release();
   }
@@ -1002,11 +1387,14 @@ exports.getPromotionCandidates = async (req, res) => {
   let connection;
   try {
     connection = await pool.getConnection();
-    const students = await getStudentsForPromotion(connection, null);
+    const requestedSchoolYearId = Number(req.query?.schoolYearId || 0);
+    const selectedSY = await getSchoolYearMetaById(connection, requestedSchoolYearId);
+    const activeSY = selectedSY || await getActiveSchoolYearMeta(connection);
+    const students = await getStudentsForPromotion(connection, null, activeSY?.id || null);
 
     const candidates = [];
     for (const student of students) {
-      const candidate = await buildPromotionCandidate(connection, student);
+      const candidate = await buildPromotionCandidate(connection, student, activeSY?.id || student.school_year_id || null);
       if (candidate.toGrade) {
         candidates.push(candidate);
       }
@@ -1026,6 +1414,13 @@ exports.getPromotionPreview = async (req, res) => {
   let connection;
   try {
     connection = await pool.getConnection();
+    const requestedSchoolYearId = Number(req.query?.schoolYearId || 0);
+    const selectedSY = await getSchoolYearMetaById(connection, requestedSchoolYearId);
+    const activeSY = selectedSY || await getActiveSchoolYearMeta(connection);
+
+    if (!activeSY?.id) {
+      return res.json({ success: true, data: [] });
+    }
 
     // For each grade level, count how many students will pass (avg >= 75) vs be retained
     const gradeOrder = ['Kindergarten','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6'];
@@ -1036,13 +1431,19 @@ exports.getPromotionPreview = async (req, res) => {
       const isGraduating = nextGrade === 'Graduate';
 
       // Students in this grade
-      const totalRows = await query('SELECT COUNT(*) as cnt FROM students WHERE grade_level = ?', [grade]);
+      const totalRows = await query(
+        'SELECT COUNT(*) as cnt FROM students WHERE grade_level = ? AND school_year_id = ?',
+        [grade, activeSY.id]
+      );
       const totalCount = Number(totalRows?.[0]?.cnt || 0);
       if (totalCount === 0) continue;
 
       const [students] = await connection.query(
-        'SELECT id, first_name, last_name, grade_level, section FROM students WHERE grade_level = ? ORDER BY last_name, first_name',
-        [grade]
+        `SELECT id, first_name, last_name, grade_level, section
+         FROM students
+         WHERE grade_level = ? AND school_year_id = ?
+         ORDER BY last_name, first_name`,
+        [grade, activeSY.id]
       );
 
       let willPromote = 0;
@@ -1052,7 +1453,7 @@ exports.getPromotionPreview = async (req, res) => {
       let failingCount = 0;
 
       for (const student of students) {
-        const eligibility = await evaluatePromotionEligibility(connection, student);
+        const eligibility = await evaluatePromotionEligibility(connection, student, activeSY.id);
         if (eligibility.hasCompleteGrades) completeCount += 1;
         else incompleteCount += 1;
         if (eligibility.hasFailingGrade) failingCount += 1;

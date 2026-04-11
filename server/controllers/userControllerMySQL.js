@@ -174,26 +174,42 @@ exports.getAllUsers = async (req, res) => {
 
     let users;
     
-    // If schoolYearId provided, try filtering teachers by school year assignments.
-    // Fall back to unfiltered users when schema differs between environments.
+    // If schoolYearId provided, only return teachers tied to that specific school year.
     if (schoolYearId) {
       try {
         const allUsers = await query(
           `SELECT DISTINCT u.id, u.${firstNameCol}, u.${lastNameCol}, u.username, u.email, u.role, u.${createdAtCol}
            FROM users u
-           LEFT JOIN subject_teachers st ON u.id = st.teacher_id AND st.school_year_id = ?
-           LEFT JOIN class_assignments ca ON u.id = ca.adviser_id AND ca.school_year_id = ?
+           LEFT JOIN teachers t ON (
+             CONVERT(t.id USING utf8mb4) COLLATE utf8mb4_general_ci = CONVERT(u.id USING utf8mb4) COLLATE utf8mb4_general_ci
+             OR LOWER(TRIM(CONVERT(t.email USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(u.email USING utf8mb4))) COLLATE utf8mb4_general_ci
+           ) AND t.school_year_id = ?
+           LEFT JOIN subject_teachers st ON (
+             CONVERT(st.teacher_id USING utf8mb4) COLLATE utf8mb4_general_ci = CONVERT(u.id USING utf8mb4) COLLATE utf8mb4_general_ci
+             OR LOWER(TRIM(CONVERT(st.teacher_name USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(CONCAT(u.${firstNameCol}, ' ', u.${lastNameCol}) USING utf8mb4))) COLLATE utf8mb4_general_ci
+           ) AND st.school_year_id = ?
+           LEFT JOIN class_assignments ca ON CONVERT(ca.adviser_id USING utf8mb4) COLLATE utf8mb4_general_ci = CONVERT(u.id USING utf8mb4) COLLATE utf8mb4_general_ci AND ca.school_year_id = ?
            WHERE u.role IN ('teacher', 'subject_teacher', 'adviser')
-           AND (st.id IS NOT NULL OR ca.id IS NOT NULL OR u.role = 'teacher')
+           AND (t.id IS NOT NULL OR st.id IS NOT NULL OR ca.id IS NOT NULL)
            ORDER BY u.${createdAtCol} DESC`,
-          [schoolYearId, schoolYearId]
+          [schoolYearId, schoolYearId, schoolYearId]
         );
         users = allUsers;
       } catch (schoolYearFilterError) {
-        console.warn('[getAllUsers] school-year filter failed; falling back to unfiltered users:', schoolYearFilterError.message);
-        users = await query(
-          `SELECT id, ${firstNameCol}, ${lastNameCol}, username, email, role, ${createdAtCol} FROM users ORDER BY ${createdAtCol} DESC`
+        console.warn('[getAllUsers] school-year filter failed; falling back to teachers-table scoped users:', schoolYearFilterError.message);
+        const fallbackUsers = await query(
+          `SELECT DISTINCT u.id, u.${firstNameCol}, u.${lastNameCol}, u.username, u.email, u.role, u.${createdAtCol}
+           FROM users u
+           JOIN teachers t ON (
+             CONVERT(t.id USING utf8mb4) COLLATE utf8mb4_general_ci = CONVERT(u.id USING utf8mb4) COLLATE utf8mb4_general_ci
+             OR LOWER(TRIM(CONVERT(t.email USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(u.email USING utf8mb4))) COLLATE utf8mb4_general_ci
+           )
+           WHERE t.school_year_id = ?
+             AND u.role IN ('teacher', 'subject_teacher', 'adviser')
+           ORDER BY u.${createdAtCol} DESC`,
+          [schoolYearId]
         );
+        users = fallbackUsers;
       }
     } else {
       // Get all users without school year filtering

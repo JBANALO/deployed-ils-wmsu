@@ -72,6 +72,31 @@ export default function AdminProfile() {
     fetchCompleteUserData();
   }, [adminUser?.id]); // Only run when user ID changes (login/logout)
 
+  // Also fetch fresh data when page becomes visible (return from other tab)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && adminUser) {
+        console.log('AdminProfile - page became visible, fetching fresh data...');
+        const fetchCompleteUserData = async () => {
+          try {
+            const response = await axios.get('/auth/me');
+            if (response.data?.data?.user) {
+              const freshUser = response.data.data.user;
+              console.log('AdminProfile - fetched fresh user on visibility change:', freshUser);
+              updateUser(freshUser);
+            }
+          } catch (error) {
+            console.error('AdminProfile - Error fetching fresh user data on visibility change:', error);
+          }
+        };
+        fetchCompleteUserData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [adminUser]);
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));

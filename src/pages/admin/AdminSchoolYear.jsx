@@ -55,13 +55,16 @@ export default function AdminSchoolYear() {
   const [promotionAssignments, setPromotionAssignments] = useState({});
   const [historyGradeFilter, setHistoryGradeFilter] = useState('All Grades');
   const [historySectionFilter, setHistorySectionFilter] = useState('All Sections');
+  const [showPromotionHistory, setShowPromotionHistory] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showPromoteModal, setShowPromoteModal] = useState(false);
+  const [showCopyConfirmModal, setShowCopyConfirmModal] = useState(false);
   const [showArchivedList, setShowArchivedList] = useState(false);
   const [leadershipFetching, setLeadershipFetching] = useState(false);
+  const [copyingAllData, setCopyingAllData] = useState(false);
   const [selectedSchoolYear, setSelectedSchoolYear] = useState(null);
   const [formData, setFormData] = useState({
     label: '',
@@ -91,20 +94,25 @@ export default function AdminSchoolYear() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [viewingSchoolYear?.id]);
 
   const loadData = async () => {
     setLoading(true);
     try {
+      const scopedSchoolYearId = Number(viewingSchoolYear?.id || activeSchoolYear?.id || 0);
+      const scopedRequestConfig = Number.isInteger(scopedSchoolYearId) && scopedSchoolYearId > 0
+        ? { params: { schoolYearId: scopedSchoolYearId } }
+        : undefined;
+
       const [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes, candidatesRes, classesRes] = await Promise.allSettled([
         axios.get('/school-years'),
         axios.get('/school-years/active'),
-        axios.get('/school-years/students-by-grade'),
-        axios.get('/school-years/promotion-preview'),
+        axios.get('/school-years/students-by-grade', scopedRequestConfig),
+        axios.get('/school-years/promotion-preview', scopedRequestConfig),
         axios.get('/school-years/archived'),
-        axios.get('/school-years/promotion-history'),
-        axios.get('/school-years/promotion-candidates'),
-        axios.get('/classes')
+        axios.get('/school-years/promotion-history', scopedRequestConfig),
+        axios.get('/school-years/promotion-candidates', scopedRequestConfig),
+        axios.get('/classes', scopedRequestConfig)
       ]);
 
       if (syRes.status === 'fulfilled') {
@@ -112,20 +120,6 @@ export default function AdminSchoolYear() {
         // Sort newest to oldest by start_date
         const sorted = [...list].sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
         setSchoolYears(sorted.map((sy) => ({ ...sy, label: formatSchoolYearLabel(sy.label) })));
-        // Auto-set newest as active if current active is older
-        const newest = sorted[0] || null;
-        const activeRaw = activeRes.status === 'fulfilled' ? (activeRes.value.data?.data || null) : null;
-        if (newest && (!activeRaw || activeRaw.id !== newest.id)) {
-          try {
-            await axios.put(`/school-years/${newest.id}/activate`);
-            toast.success(`${formatSchoolYearLabel(newest.label)} set as active (older years locked).`);
-            // Reload after activation to refresh badges/state
-            await loadData();
-            return;
-          } catch (e) {
-            console.error('Auto-activate newest failed:', e.message);
-          }
-        }
       }
 
       if (activeRes.status === 'fulfilled') {
@@ -423,6 +417,56 @@ export default function AdminSchoolYear() {
     setShowArchiveModal(true);
   };
 
+  const handleCopyAllData = async () => {
+    if (!activeSchoolYear || !viewingSchoolYear) {
+      toast.error('Active and viewing school years are required.');
+      return;
+    }
+
+    if (Number(activeSchoolYear.id) === Number(viewingSchoolYear.id)) {
+      toast.info('Select a different school year to copy from.');
+      return;
+    }
+
+    setCopyingAllData(true);
+    try {
+      const res = await axios.post('/school-years/copy-all-from-school-year', {
+        sourceSchoolYearId: viewingSchoolYear.id
+      });
+
+      const copied = res?.data?.data?.copied || {};
+      const warnings = Array.isArray(res?.data?.data?.warnings) ? res.data.data.warnings : [];
+      const totalCopied =
+        (copied.subjects || 0) +
+        (copied.sections || 0) +
+        (copied.teachers || 0) +
+        (copied.classes || 0) +
+        (copied.students || 0) +
+        (copied.grades || 0);
+
+      toast.success(
+        `Copied from ${viewingSchoolYear.label}: ` +
+        `${copied.subjects || 0} subjects, ${copied.sections || 0} sections, ` +
+        `${copied.teachers || 0} teachers, ${copied.classes || 0} classes, ` +
+        `${copied.students || 0} students, ${copied.grades || 0} grades.`
+      );
+
+      if (totalCopied === 0) {
+        toast.info('No matching rows found for the selected school year filter.');
+      }
+
+      if (warnings.length > 0) {
+        toast.warn(`Copy warnings: ${warnings[0]}`);
+      }
+
+      await loadData();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Failed to copy school year data');
+    } finally {
+      setCopyingAllData(false);
+    }
+  };
+
   // Format chart data
   const chartData = studentsByGrade.map(item => ({
     name: item.grade,
@@ -430,19 +474,25 @@ export default function AdminSchoolYear() {
     fill: GRADE_COLORS[item.grade] || '#6b7280'
   }));
 
+  const scopedPromotionHistory = promotionHistory.filter((row) => {
+    const scopedSchoolYearId = Number(viewingSchoolYear?.id || activeSchoolYear?.id || 0);
+    if (!scopedSchoolYearId) return true;
+    return Number(row.school_year_id || 0) === scopedSchoolYearId;
+  });
+
   const historyGrades = ['All Grades', ...new Set(
-    promotionHistory
+    scopedPromotionHistory
       .map(h => h.from_grade)
       .filter(Boolean)
   )];
 
   const historySections = ['All Sections', ...new Set(
-    promotionHistory
+    scopedPromotionHistory
       .map(h => h.from_section)
       .filter(Boolean)
   )];
 
-  const filteredPromotionHistory = promotionHistory.filter((row) => {
+  const filteredPromotionHistory = scopedPromotionHistory.filter((row) => {
     const gradeOk = historyGradeFilter === 'All Grades' || row.from_grade === historyGradeFilter;
     const sectionOk = historySectionFilter === 'All Sections' || row.from_section === historySectionFilter;
     return gradeOk && sectionOk;
@@ -511,6 +561,26 @@ export default function AdminSchoolYear() {
             <ArrowPathIcon className={`w-5 h-5 ${leadershipFetching ? 'animate-spin' : ''}`} />
             Fetch Principal (Prev SY)
           </button>
+          <button
+            onClick={async () => {
+              if (!activeSchoolYear || !viewingSchoolYear) {
+                toast.error('Active and viewing school years are required.');
+                return;
+              }
+
+              if (Number(activeSchoolYear.id) === Number(viewingSchoolYear.id)) {
+                toast.info('Select a different school year to copy from.');
+                return;
+              }
+              setShowCopyConfirmModal(true);
+            }}
+            disabled={copyingAllData || !activeSchoolYear || !viewingSchoolYear || Number(activeSchoolYear.id) === Number(viewingSchoolYear.id)}
+            className="flex items-center gap-2 bg-yellow-500/90 text-white px-4 py-2 rounded-lg font-semibold hover:bg-yellow-500 transition disabled:opacity-60"
+            title="Copy all core data from selected viewing school year to active school year"
+          >
+            <ArrowPathIcon className={`w-5 h-5 ${copyingAllData ? 'animate-spin' : ''}`} />
+            {copyingAllData ? 'Copying Data...' : 'Copy Viewing SY -> Active'}
+          </button>
         </div>
       </div>
 
@@ -538,9 +608,7 @@ export default function AdminSchoolYear() {
               schoolYears.map((sy, idx) => {
                 const isActive = sy.is_active === 1;
                 const isViewing = viewingSchoolYear && viewingSchoolYear.id === sy.id;
-                const newestStart = schoolYears[0]?.start_date;
-                const isNewest = newestStart && new Date(sy.start_date).getTime() === new Date(newestStart).getTime();
-                const canActivate = !isActive && isNewest; // Only newest (latest) non-active year can be activated
+                const canActivate = !isActive;
 
                 return (
                   <button
@@ -584,7 +652,7 @@ export default function AdminSchoolYear() {
                             handleSetActive(sy.id);
                           }}
                           className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition"
-                          title="Set as Active (locks previous year)"
+                          title="Set as Active"
                         >
                           <CheckCircleIcon className="w-5 h-5" />
                         </button>
@@ -613,6 +681,19 @@ export default function AdminSchoolYear() {
                           title={activeSchoolYear && sy.id !== activeSchoolYear.id ? 'View only — activate to archive' : 'Archive'}
                         >
                           <ArchiveBoxIcon className="w-5 h-5" />
+                        </button>
+                      )}
+                      {!sy.is_active && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(sy.id);
+                          }}
+                          className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition"
+                          title="Delete permanently"
+                        >
+                          <TrashIcon className="w-5 h-5" />
                         </button>
                       )}
                     </div>
@@ -765,96 +846,111 @@ export default function AdminSchoolYear() {
             <ArchiveBoxIcon className="w-5 h-5 text-red-800" />
             Promotion History Logs
           </h3>
-          <span className="text-xs text-gray-500">Showing {filteredPromotionHistory.length} of {promotionHistory.length} records</span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Filter by Grade</label>
-            <select
-              value={historyGradeFilter}
-              onChange={(e) => setHistoryGradeFilter(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowPromotionHistory((prev) => !prev)}
+              className="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
             >
-              {historyGrades.map((g) => (
-                <option key={g} value={g}>{g}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Filter by Section</label>
-            <select
-              value={historySectionFilter}
-              onChange={(e) => setHistorySectionFilter(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            >
-              {historySections.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+              {showPromotionHistory ? 'Hide Logs' : 'Show Logs'}
+            </button>
+            <span className="text-xs text-gray-500">Showing {filteredPromotionHistory.length} of {scopedPromotionHistory.length} records</span>
           </div>
         </div>
 
-        {filteredPromotionHistory.length === 0 ? (
-          <p className="text-gray-400 text-center py-6">No promotion history yet</p>
+        {!showPromotionHistory ? (
+          <p className="text-gray-400 text-center py-6">Promotion history is hidden for now.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Date</th>
-                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Student</th>
-                  <th className="text-left py-2 px-3 text-gray-500 font-medium">LRN</th>
-                  <th className="text-left py-2 px-3 text-gray-500 font-medium">From</th>
-                  <th className="text-left py-2 px-3 text-gray-500 font-medium">To</th>
-                  <th className="text-center py-2 px-3 text-gray-500 font-medium">Average</th>
-                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Status</th>
-                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredPromotionHistory.map((row) => (
-                  <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-2 px-3 text-gray-600">{new Date(row.created_at).toLocaleString()}</td>
-                    <td className="py-2 px-3 font-medium text-gray-800">
-                      {row.student_id ? (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenStudentReportCard(row)}
-                          className="text-blue-700 hover:text-blue-900 hover:underline"
-                          title="View report card"
-                        >
-                          {row.student_name}
-                        </button>
-                      ) : (
-                        row.student_name
-                      )}
-                    </td>
-                    <td className="py-2 px-3 text-gray-700">{row.lrn || '-'}</td>
-                    <td className="py-2 px-3 text-gray-700">{row.from_grade}{row.from_section ? ` - ${row.from_section}` : ''}</td>
-                    <td className="py-2 px-3 text-gray-700">{row.to_grade || '-'}{row.to_section ? ` - ${row.to_section}` : ''}</td>
-                    <td className="py-2 px-3 text-center text-gray-700">{row.average ?? '-'}</td>
-                    <td className="py-2 px-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                        row.status === 'promoted' ? 'bg-green-100 text-green-700' :
-                        row.status === 'graduated' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-orange-100 text-orange-700'
-                      }`}>
-                        {row.status}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-gray-600">{row.reason || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Filter by Grade</label>
+                <select
+                  value={historyGradeFilter}
+                  onChange={(e) => setHistoryGradeFilter(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                >
+                  {historyGrades.map((g) => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Filter by Section</label>
+                <select
+                  value={historySectionFilter}
+                  onChange={(e) => setHistorySectionFilter(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                >
+                  {historySections.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {filteredPromotionHistory.length === 0 ? (
+              <p className="text-gray-400 text-center py-6">No promotion history yet</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left py-2 px-3 text-gray-500 font-medium">Date</th>
+                      <th className="text-left py-2 px-3 text-gray-500 font-medium">Student</th>
+                      <th className="text-left py-2 px-3 text-gray-500 font-medium">LRN</th>
+                      <th className="text-left py-2 px-3 text-gray-500 font-medium">From</th>
+                      <th className="text-left py-2 px-3 text-gray-500 font-medium">To</th>
+                      <th className="text-center py-2 px-3 text-gray-500 font-medium">Average</th>
+                      <th className="text-left py-2 px-3 text-gray-500 font-medium">Status</th>
+                      <th className="text-left py-2 px-3 text-gray-500 font-medium">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPromotionHistory.map((row) => (
+                      <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-2 px-3 text-gray-600">{new Date(row.created_at).toLocaleString()}</td>
+                        <td className="py-2 px-3 font-medium text-gray-800">
+                          {row.student_id ? (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenStudentReportCard(row)}
+                              className="text-blue-700 hover:text-blue-900 hover:underline"
+                              title="View report card"
+                            >
+                              {row.student_name}
+                            </button>
+                          ) : (
+                            row.student_name
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-gray-700">{row.lrn || '-'}</td>
+                        <td className="py-2 px-3 text-gray-700">{row.from_grade}{row.from_section ? ` - ${row.from_section}` : ''}</td>
+                        <td className="py-2 px-3 text-gray-700">{row.to_grade || '-'}{row.to_section ? ` - ${row.to_section}` : ''}</td>
+                        <td className="py-2 px-3 text-center text-gray-700">{row.average ?? '-'}</td>
+                        <td className="py-2 px-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                            row.status === 'promoted' ? 'bg-green-100 text-green-700' :
+                            row.status === 'graduated' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-orange-100 text-orange-700'
+                          }`}>
+                            {row.status}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-gray-600">{row.reason || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
       </div>
 
       {/* Add School Year Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Add School Year</h3>
@@ -985,7 +1081,7 @@ export default function AdminSchoolYear() {
 
       {/* Edit School Year Modal */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Edit School Year</h3>
@@ -1115,7 +1211,7 @@ export default function AdminSchoolYear() {
 
       {/* Archive Confirmation Modal */}
       {showArchiveModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
             <div className="flex items-center gap-3 mb-4">
               <div className="bg-orange-100 p-3 rounded-full">
@@ -1149,9 +1245,54 @@ export default function AdminSchoolYear() {
         </div>
       )}
 
+      {/* Copy Data Confirmation Modal */}
+      {showCopyConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-yellow-100 p-3 rounded-full">
+                <ExclamationTriangleIcon className="w-6 h-6 text-yellow-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold">Confirm Data Copy</h3>
+                <p className="text-sm text-gray-500">Copy selected school year data into active school year</p>
+              </div>
+            </div>
+
+            <p className="text-gray-700 mb-2">
+              Copy all core data from <strong>{viewingSchoolYear?.label}</strong> to active <strong>{activeSchoolYear?.label}</strong>?
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              Existing duplicates are skipped automatically.
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCopyConfirmModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowCopyConfirmModal(false);
+                  await handleCopyAllData();
+                }}
+                disabled={copyingAllData}
+                className="flex-1 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition disabled:opacity-50"
+              >
+                {copyingAllData ? 'Copying...' : 'Confirm Copy'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Promote Students Confirmation Modal */}
       {showPromoteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl p-4 md:p-6 w-full max-w-6xl shadow-xl max-h-[94vh] overflow-y-auto">
             <div className="sticky top-0 z-10 bg-white pb-3 mb-4 border-b border-gray-100">
               <div className="flex items-center justify-between">

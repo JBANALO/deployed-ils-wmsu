@@ -5,11 +5,13 @@ import {
   AcademicCapIcon, 
   PencilSquareIcon, 
   TrashIcon, 
+  ArchiveBoxIcon,
   CheckIcon, 
   XMarkIcon, 
   QrCodeIcon, 
   EyeIcon,
   ArrowUpTrayIcon,
+  ArrowPathIcon,
   KeyIcon
 } from "@heroicons/react/24/solid";
 import BulkImportModal from "../../components/modals/BulkImportModal";
@@ -66,6 +68,12 @@ export default function AdminStudents() {
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [studentToDelete, setStudentToDelete] = useState(null);
+  const [showArchivedModal, setShowArchivedModal] = useState(false);
+  const [archivedStudents, setArchivedStudents] = useState([]);
+  const [archivedSearchQuery, setArchivedSearchQuery] = useState('');
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  const [archiveSubmittingId, setArchiveSubmittingId] = useState(null);
+  const [restoreSubmittingId, setRestoreSubmittingId] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [studentCredentials, setStudentCredentials] = useState(null);
   const [loadingCredentials, setLoadingCredentials] = useState(false);
@@ -76,6 +84,12 @@ export default function AdminStudents() {
   const [selectAll, setSelectAll] = useState(false);
   const [selectAllK3, setSelectAllK3] = useState(false);
   const [selectAllG4to6, setSelectAllG4to6] = useState(false);
+  const [fetchPrevLoading, setFetchPrevLoading] = useState(false);
+  const [showFetchPrevModal, setShowFetchPrevModal] = useState(false);
+  const [prevCandidatesLoading, setPrevCandidatesLoading] = useState(false);
+  const [prevCandidates, setPrevCandidates] = useState([]);
+  const [selectedPrevIds, setSelectedPrevIds] = useState(new Set());
+  const [prevMeta, setPrevMeta] = useState(null);
 
   const isViewOnly = isViewingLocked;
   const targetSchoolYearId = viewingSchoolYear?.id || activeSchoolYear?.id || '';
@@ -132,6 +146,227 @@ export default function AdminStudents() {
         setStudents([]);
       }
       setLoading(false);
+    }
+  };
+
+  const getStatusBadgeClass = (status) => {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (normalized === 'inactive') return 'bg-red-100 text-red-800';
+    return 'bg-green-100 text-green-800';
+  };
+
+  const loadArchivedStudents = async () => {
+    try {
+      setArchivedLoading(true);
+      const response = await fetch(`${API_BASE_URL}/students/archived`);
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Failed to fetch archived students');
+      }
+
+      const archivedList = Array.isArray(payload?.data) ? payload.data : [];
+      setArchivedStudents(archivedList);
+      setShowArchivedModal(true);
+    } catch (error) {
+      toast.error(error.message || 'Failed to load archived students');
+    } finally {
+      setArchivedLoading(false);
+    }
+  };
+
+  const handleArchiveStudent = async (student) => {
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to archive.');
+      return;
+    }
+
+    const normalizedStatus = String(student?.status || '').trim().toLowerCase();
+    if (normalizedStatus !== 'inactive') {
+      toast.error('Set student status to Inactive first before archiving.');
+      return;
+    }
+
+    const reason = window.prompt('Stop reason (Dropped / LOA / Repeater):', 'Dropped');
+    if (reason === null) return;
+
+    try {
+      setArchiveSubmittingId(student.id);
+      const response = await fetch(`${API_BASE_URL}/students/${student.id}/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: String(reason || '').trim() || 'Stopped' })
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Failed to archive student');
+      }
+
+      toast.success('Student archived successfully.');
+      await fetchStudents();
+      if (showArchivedModal) await loadArchivedStudents();
+    } catch (error) {
+      toast.error(error.message || 'Failed to archive student');
+    } finally {
+      setArchiveSubmittingId(null);
+    }
+  };
+
+  const handleRestoreArchivedStudent = async (student) => {
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to restore.');
+      return;
+    }
+
+    const gradeLevel = window.prompt('Re-enroll grade level:', student.gradeLevel || 'Grade 1');
+    if (gradeLevel === null) return;
+
+    const section = window.prompt('Re-enroll section:', student.section || '');
+    if (section === null) return;
+
+    try {
+      setRestoreSubmittingId(student.id);
+      const response = await fetch(`${API_BASE_URL}/students/${student.id}/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gradeLevel: String(gradeLevel || '').trim(),
+          section: String(section || '').trim(),
+          schoolYearId: targetSchoolYearId || undefined
+        })
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Failed to restore student');
+      }
+
+      toast.success('Archived student restored successfully.');
+      await fetchStudents();
+      await loadArchivedStudents();
+    } catch (error) {
+      toast.error(error.message || 'Failed to restore student');
+    } finally {
+      setRestoreSubmittingId(null);
+    }
+  };
+
+  const filteredArchivedStudents = archivedStudents.filter((student) => {
+    const term = archivedSearchQuery.trim().toLowerCase();
+    if (!term) return true;
+    return (
+      String(student.fullName || '').toLowerCase().includes(term) ||
+      String(student.lrn || '').toLowerCase().includes(term) ||
+      String(student.stopReason || '').toLowerCase().includes(term) ||
+      String(student.stoppedYear || '').toLowerCase().includes(term)
+    );
+  });
+
+  const loadPrevPromotionCandidates = async () => {
+    if (!targetSchoolYearId) {
+      toast.error('No target school year selected.');
+      return;
+    }
+
+    try {
+      setPrevCandidatesLoading(true);
+
+      const sectionsResponse = await fetch(
+        `${API_BASE_URL}/sections?schoolYearId=${encodeURIComponent(String(targetSchoolYearId))}`
+      );
+      const sectionsPayload = await sectionsResponse.json().catch(() => ({}));
+      const activeSections = Array.isArray(sectionsPayload?.data) ? sectionsPayload.data : [];
+      if (!sectionsResponse.ok || activeSections.length === 0) {
+        throw new Error('Set up active-year sections first before fetching students from previous year.');
+      }
+
+      const response = await fetch(
+        `${API_BASE_URL}/students/previous-year-promotion-candidates?schoolYearId=${encodeURIComponent(String(targetSchoolYearId))}`
+      );
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Failed to load previous year students');
+      }
+
+      const list = Array.isArray(payload?.data) ? payload.data : [];
+      setPrevCandidates(list);
+      setPrevMeta(payload?.meta || null);
+      setSelectedPrevIds(new Set());
+      setShowFetchPrevModal(true);
+    } catch (error) {
+      toast.error(error.message || 'Failed to load previous year students');
+    } finally {
+      setPrevCandidatesLoading(false);
+    }
+  };
+
+  const togglePrevSelection = (studentId) => {
+    setSelectedPrevIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllPrev = () => {
+    const selectableIds = prevCandidates
+      .filter((student) => !student.alreadyFetched && !student.needsSectionSetup)
+      .map((student) => student.id);
+
+    const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedPrevIds.has(id));
+    setSelectedPrevIds(allSelected ? new Set() : new Set(selectableIds));
+  };
+
+  const handleFetchFromPreviousYear = async () => {
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to fetch students.');
+      return;
+    }
+
+    if (!targetSchoolYearId) {
+      toast.error('No target school year selected.');
+      return;
+    }
+
+    const ids = Array.from(selectedPrevIds);
+    if (ids.length === 0) {
+      toast.error('Select at least one student to fetch.');
+      return;
+    }
+
+    try {
+      setFetchPrevLoading(true);
+      const response = await fetch(
+        `${API_BASE_URL}/students/fetch-from-previous?schoolYearId=${encodeURIComponent(String(targetSchoolYearId))}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids })
+        }
+      );
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Failed to fetch students from previous year');
+      }
+
+      const inserted = Number(payload?.data?.inserted || 0);
+      const updated = Number(payload?.data?.updated || 0);
+      const skipped = Number(payload?.data?.skipped || 0);
+      const promoted = Number(payload?.data?.promotedInserted || 0);
+      const retained = Number(payload?.data?.retainedInserted || 0);
+
+      toast.success(`Fetch complete: ${inserted} added, ${updated} updated (${promoted} promoted, ${retained} retained), ${skipped} skipped.`);
+      setShowFetchPrevModal(false);
+      setSelectedPrevIds(new Set());
+      await fetchStudents();
+    } catch (error) {
+      toast.error(error.message || 'Failed to fetch students from previous year');
+    } finally {
+      setFetchPrevLoading(false);
     }
   };
 
@@ -248,13 +483,22 @@ export default function AdminStudents() {
           toast.error('Previous school years are view-only. Switch to the active year to edit.');
           return;
         }
+    const normalizedStatus = String(student.status || '').trim().toLowerCase();
+    const statusForEdit = normalizedStatus === 'inactive' ? 'inactive' : 'Active';
     setSelectedStudent(student);
-    setEditFormData({ ...student });
+    setEditFormData({ ...student, status: statusForEdit });
     setShowEditModal(true);
   };
 
   const handleUpdateStudent = async () => {
     try {
+      const actor = JSON.parse(localStorage.getItem('user') || '{}');
+      const actorRole = String(actor?.role || 'admin').toLowerCase();
+      const actorId = actor?.id ? String(actor.id) : null;
+      const statusPayload = String(editFormData.status || 'Active').trim().toLowerCase() === 'inactive'
+        ? 'inactive'
+        : 'Active';
+
       // Create the update data object with all fields
       const updateData = {
         lrn: editFormData.lrn,
@@ -272,7 +516,9 @@ export default function AdminStudents() {
         // Include other existing fields that might be needed
         email: editFormData.email,
         username: editFormData.username,
-        status: editFormData.status
+        status: statusPayload,
+        actorRole,
+        actorId
       };
 
       const response = await fetch(`${API_BASE_URL}/students/${selectedStudent.id}`, {
@@ -627,6 +873,14 @@ export default function AdminStudents() {
 
       <div className="flex justify-end gap-3 mt-6">
         <button
+          onClick={loadPrevPromotionCandidates}
+          disabled={isViewOnly || prevCandidatesLoading}
+          className={`px-5 py-2 rounded-lg transition flex items-center gap-2 ${isViewOnly || prevCandidatesLoading ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+        >
+          <ArrowPathIcon className={`w-5 h-5 ${prevCandidatesLoading ? 'animate-spin' : ''}`} />
+          {prevCandidatesLoading ? 'Loading...' : 'Fetch from Prev Year'}
+        </button>
+        <button
           onClick={() => setShowBulkImportModal(true)}
           disabled={isViewOnly}
           className={`px-5 py-2 rounded-lg transition flex items-center gap-2 ${isViewOnly ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
@@ -640,6 +894,14 @@ export default function AdminStudents() {
           className={`px-5 py-2 rounded-lg transition ${isViewOnly ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-red-800 text-white hover:bg-red-700'}`}
         >
           + Create Individual Account
+        </button>
+        <button
+          onClick={loadArchivedStudents}
+          disabled={archivedLoading}
+          className={`px-5 py-2 rounded-lg transition flex items-center gap-2 ${archivedLoading ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-amber-600 text-white hover:bg-amber-700'}`}
+        >
+          <ArchiveBoxIcon className={`w-5 h-5 ${archivedLoading ? 'animate-spin' : ''}`} />
+          {archivedLoading ? 'Loading...' : 'Archived Students'}
         </button>
       </div>
 
@@ -798,7 +1060,7 @@ export default function AdminStudents() {
                           </td>
                           <td className="p-3 border">{student.sex || 'N/A'}</td>
                           <td className="p-3 border">
-                            <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(student.status)}`}>
                               {student.status}
                             </span>
                           </td>
@@ -828,6 +1090,15 @@ export default function AdminStudents() {
                                 title="Delete Student"
                               >
                                 <TrashIcon className="w-5 h-5" />
+                              </button>
+
+                              <button
+                                onClick={() => handleArchiveStudent(student)}
+                                disabled={archiveSubmittingId === student.id}
+                                className="p-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Archive Student"
+                              >
+                                <ArchiveBoxIcon className="w-5 h-5" />
                               </button>
 
                               <button 
@@ -927,7 +1198,7 @@ export default function AdminStudents() {
                             </td>
                             <td className="p-3 border">{student.sex || 'N/A'}</td>
                             <td className="p-3 border">
-                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(student.status)}`}>
                                 {student.status}
                               </span>
                             </td>
@@ -959,6 +1230,15 @@ export default function AdminStudents() {
                                   <TrashIcon className="w-5 h-5" />
                                 </button>
 
+                                <button
+                                  onClick={() => handleArchiveStudent(student)}
+                                  disabled={archiveSubmittingId === student.id}
+                                  className="p-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title="Archive Student"
+                                >
+                                  <ArchiveBoxIcon className="w-5 h-5" />
+                                </button>
+
                                 <button 
                                   onClick={() => handleView(student)}
                                   className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
@@ -987,6 +1267,196 @@ export default function AdminStudents() {
           </div>
         </div>
       </div>
+
+      {/* Fetch From Previous Year Modal */}
+      {showFetchPrevModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[85vh] overflow-hidden">
+            <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Fetch Promoted/Retained Students</h3>
+                <p className="text-sm text-gray-600">
+                  Source: {prevMeta?.sourceSchoolYearLabel || 'Previous School Year'}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowFetchPrevModal(false)}
+                className="p-2 rounded-md text-gray-500 hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto max-h-[58vh]">
+              {prevCandidatesLoading ? (
+                <div className="py-10 text-center text-gray-500">Loading candidates...</div>
+              ) : prevCandidates.length === 0 ? (
+                <div className="py-10 text-center text-gray-500">No promoted/retained students found from previous school year.</div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      {selectedPrevIds.size} selected / {prevCandidates.filter((student) => !student.alreadyFetched && !student.needsSectionSetup).length} available
+                    </div>
+                    <button
+                      onClick={toggleSelectAllPrev}
+                      className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                      Select All Available
+                    </button>
+                  </div>
+
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-gray-50 text-gray-700">
+                        <tr>
+                          <th className="p-3 border text-center w-16">Pick</th>
+                          <th className="p-3 border">LRN</th>
+                          <th className="p-3 border">Name</th>
+                          <th className="p-3 border">Movement</th>
+                          <th className="p-3 border">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {prevCandidates.map((student) => (
+                          <tr key={student.id} className="hover:bg-gray-50">
+                            <td className="p-3 border text-center">
+                              <input
+                                type="checkbox"
+                                disabled={student.alreadyFetched || student.needsSectionSetup}
+                                checked={selectedPrevIds.has(student.id)}
+                                onChange={() => togglePrevSelection(student.id)}
+                                className="w-4 h-4"
+                              />
+                            </td>
+                            <td className="p-3 border">{student.lrn}</td>
+                            <td className="p-3 border font-medium">{student.fullName}</td>
+                            <td className="p-3 border">
+                              {student.fromGrade} {student.fromSection ? `- ${student.fromSection}` : ''} {' -> '}
+                              {student.toGrade || '-'} {student.toSection ? `- ${student.toSection}` : ''}
+                            </td>
+                            <td className="p-3 border">
+                              {student.alreadyFetched ? (
+                                <span className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-200 text-gray-700">Already Fetched</span>
+                              ) : student.needsSectionSetup ? (
+                                <span className="px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">Needs Section Setup</span>
+                              ) : (
+                                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${student.status === 'promoted' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                  {student.status}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-5 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setShowFetchPrevModal(false)}
+                className="px-4 py-2 rounded-lg bg-gray-500 text-white hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFetchFromPreviousYear}
+                disabled={fetchPrevLoading || selectedPrevIds.size === 0}
+                className={`px-4 py-2 rounded-lg text-white ${fetchPrevLoading || selectedPrevIds.size === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+              >
+                {fetchPrevLoading ? 'Fetching...' : `Fetch Selected (${selectedPrevIds.size})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ARCHIVED STUDENTS MODAL */}
+      {showArchivedModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-5xl max-h-[88vh] overflow-hidden">
+            <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Archived Students</h3>
+                <p className="text-sm text-gray-600">Inactive students can be restored anytime, even after multiple school years.</p>
+              </div>
+              <button
+                onClick={() => setShowArchivedModal(false)}
+                className="p-2 rounded-md text-gray-500 hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 border-b border-gray-200">
+              <input
+                type="text"
+                placeholder="Search archived by name, LRN, reason, or stopped year..."
+                value={archivedSearchQuery}
+                onChange={(e) => setArchivedSearchQuery(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600"
+              />
+            </div>
+
+            <div className="p-5 overflow-y-auto max-h-[56vh]">
+              {archivedLoading ? (
+                <div className="py-10 text-center text-gray-500">Loading archived students...</div>
+              ) : filteredArchivedStudents.length === 0 ? (
+                <div className="py-10 text-center text-gray-500">No archived students found.</div>
+              ) : (
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-gray-50 text-gray-700">
+                      <tr>
+                        <th className="p-3 border">LRN</th>
+                        <th className="p-3 border">Name</th>
+                        <th className="p-3 border">Last Grade/Section</th>
+                        <th className="p-3 border">Stopped Year</th>
+                        <th className="p-3 border">Reason</th>
+                        <th className="p-3 border text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredArchivedStudents.map((student) => (
+                        <tr key={student.id} className="hover:bg-gray-50">
+                          <td className="p-3 border">{student.lrn}</td>
+                          <td className="p-3 border font-medium">{student.fullName || `${student.firstName} ${student.lastName}`}</td>
+                          <td className="p-3 border">{student.gradeLevel || '-'} {student.section ? `- ${student.section}` : ''}</td>
+                          <td className="p-3 border">{student.stoppedYear || student.schoolYearLabel || '-'}</td>
+                          <td className="p-3 border">{student.stopReason || '-'}</td>
+                          <td className="p-3 border text-center">
+                            <button
+                              onClick={() => handleRestoreArchivedStudent(student)}
+                              disabled={restoreSubmittingId === student.id}
+                              className="px-3 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {restoreSubmittingId === student.id ? 'Restoring...' : 'Restore'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="p-5 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setShowArchivedModal(false)}
+                className="px-4 py-2 rounded-lg bg-gray-500 text-white hover:bg-gray-600"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
                 
       {/* QR CODE MODAL */}
       {showQRModal && selectedStudent && (
@@ -1144,6 +1614,18 @@ export default function AdminStudents() {
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
                 </select>
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Account Status</label>
+                <select
+                  value={editFormData.status || 'Active'}
+                  onChange={(e) => setEditFormData({...editFormData, status: e.target.value})}
+                  className="w-full border p-2 rounded-lg"
+                >
+                  <option value="Active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Inactive students cannot login. Admin can set them back to Active when they return.</p>
               </div>
               <div className="border-t pt-4 mt-4">
                 <h4 className="font-bold text-red-800 mb-3">📧 Parent/Guardian Contact Info</h4>

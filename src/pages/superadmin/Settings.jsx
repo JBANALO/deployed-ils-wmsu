@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { EyeIcon, EyeSlashIcon } from "@heroicons/react/24/solid";
 import { Cog6ToothIcon, UserIcon, BellIcon, GlobeAltIcon, DocumentTextIcon } from "@heroicons/react/24/outline";
 import { toast } from 'react-toastify';
 import api from "../../api/axiosConfig";
@@ -7,10 +8,16 @@ export default function SuperAdminSettings() {
   const [activeTab, setActiveTab] = useState("system");
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState(null);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
     email: ""
+  });
+  const [passwordData, setPasswordData] = useState({
+    newPassword: "",
+    confirmPassword: ""
   });
   const [systemSettings, setSystemSettings] = useState({
     schoolName: "WMSU Integrated Learning System",
@@ -55,7 +62,7 @@ export default function SuperAdminSettings() {
     e.preventDefault();
     setLoading(true);
     try {
-      await api.put("/api/admin/update-profile", {
+      await api.put("/super-admin/update-profile", {
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email
@@ -84,6 +91,44 @@ export default function SuperAdminSettings() {
     } catch (error) {
       console.error("Error updating system settings:", error);
       toast.error(error.response?.data?.message || "Failed to update system settings");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasswordChange = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    
+    // Validate passwords
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      toast.error("New passwords do not match");
+      setLoading(false);
+      return;
+    }
+    
+    if (passwordData.newPassword.length < 6) {
+      toast.error("New password must be at least 6 characters long");
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      await api.put("/super-admin/change-password", {
+        newPassword: passwordData.newPassword
+      });
+      
+      toast.success("Password changed successfully");
+      
+      // Clear password form
+      setPasswordData({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: ""
+      });
+    } catch (error) {
+      console.error("Error changing password:", error);
+      toast.error(error.response?.data?.message || "Failed to change password");
     } finally {
       setLoading(false);
     }
@@ -134,6 +179,7 @@ export default function SuperAdminSettings() {
 
   const tabs = [
     { id: "system", name: "System", icon: Cog6ToothIcon },
+    { id: "profile", name: "Profile", icon: UserIcon },
     { id: "notifications", name: "Notifications", icon: BellIcon },
     { id: "backup", name: "Backup", icon: DocumentTextIcon }
   ];
@@ -340,6 +386,121 @@ export default function SuperAdminSettings() {
                       className="bg-red-800 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors disabled:opacity-50"
                     >
                       {loading ? "Updating..." : "Update Settings"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Profile Tab */}
+          {activeTab === "profile" && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Profile Information</h2>
+                <form onSubmit={handleProfileUpdate} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">First Name</label>
+                      <input
+                        type="text"
+                        value={formData.firstName}
+                        onChange={(e) => setFormData({...formData, firstName: e.target.value})}
+                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Last Name</label>
+                      <input
+                        type="text"
+                        value={formData.lastName}
+                        onChange={(e) => setFormData({...formData, lastName: e.target.value})}
+                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Email Address</label>
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({...formData, email: e.target.value})}
+                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                      required
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {loading ? "Updating..." : "Update Profile"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <div className="border-t pt-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Change Password</h2>
+                <form onSubmit={handlePasswordChange} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">New Password</label>
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? "text" : "password"}
+                        value={passwordData.newPassword}
+                        onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
+                        className="mt-1 block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                        required
+                        minLength="6"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute inset-y-0 right-0 flex items-center pr-3"
+                      >
+                        {showNewPassword ? (
+                          <EyeSlashIcon className="h-5 w-5 text-gray-400" />
+                        ) : (
+                          <EyeIcon className="h-5 w-5 text-gray-400" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Confirm New Password</label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? "text" : "password"}
+                        value={passwordData.confirmPassword}
+                        onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
+                        className="mt-1 block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                        required
+                        minLength="6"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute inset-y-0 right-0 flex items-center pr-3"
+                      >
+                        {showConfirmPassword ? (
+                          <EyeSlashIcon className="h-5 w-5 text-gray-400" />
+                        ) : (
+                          <EyeIcon className="h-5 w-5 text-gray-400" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {loading ? "Changing..." : "Change Password"}
                     </button>
                   </div>
                 </form>

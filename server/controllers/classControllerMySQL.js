@@ -13,6 +13,52 @@ const ensureClassSchoolYearColumn = async () => {
     await query('ALTER TABLE classes ADD COLUMN school_year_id INT NULL');
     await query('CREATE INDEX idx_classes_school_year ON classes (school_year_id)');
   }
+
+  try {
+    const indexRows = await query('SHOW INDEX FROM classes');
+    const uniqueByName = new Map();
+    indexRows
+      .filter((idx) => Number(idx.Non_unique) === 0)
+      .forEach((idx) => {
+        const key = idx.Key_name;
+        if (!uniqueByName.has(key)) uniqueByName.set(key, []);
+        uniqueByName.get(key).push({ seq: Number(idx.Seq_in_index), col: idx.Column_name });
+      });
+
+    const getCols = (name) => (uniqueByName.get(name) || [])
+      .sort((a, b) => a.seq - b.seq)
+      .map((entry) => entry.col);
+
+    let globalGradeSectionUnique = null;
+    let hasSchoolYearScopedUnique = false;
+
+    for (const key of uniqueByName.keys()) {
+      const cols = getCols(key);
+      if (cols.length === 2 && cols[0] === 'grade' && cols[1] === 'section') {
+        globalGradeSectionUnique = key;
+      }
+      if (cols.length === 3 && cols[0] === 'grade' && cols[1] === 'section' && cols[2] === 'school_year_id') {
+        hasSchoolYearScopedUnique = true;
+      }
+    }
+
+    if (globalGradeSectionUnique && !hasSchoolYearScopedUnique) {
+      try {
+        await query(`ALTER TABLE classes DROP INDEX \`${globalGradeSectionUnique}\``);
+      } catch (dropErr) {
+        console.log('ensureClassSchoolYearColumn drop global unique skipped:', dropErr.message);
+      }
+
+      try {
+        await query('CREATE UNIQUE INDEX idx_classes_grade_section_sy ON classes (grade, section, school_year_id)');
+      } catch (createErr) {
+        console.log('ensureClassSchoolYearColumn create scoped unique skipped:', createErr.message);
+      }
+    }
+  } catch (indexErr) {
+    console.log('ensureClassSchoolYearColumn index check skipped:', indexErr.message);
+  }
+
   classSyEnsured = true;
 };
 
@@ -92,6 +138,71 @@ const assertActiveTargetSchoolYear = async (targetSy) => {
   return active;
 };
 
+const syncClassesFromSectionsForSchoolYear = async (schoolYearId) => {
+  const targetSyId = Number(schoolYearId || 0);
+  if (!Number.isInteger(targetSyId) || targetSyId <= 0) return;
+
+  try {
+    const sectionColumns = await query('SHOW COLUMNS FROM sections');
+    const hasSectionSchoolYear = sectionColumns.some((c) => c.Field === 'school_year_id');
+    const hasSectionGradeLevel = sectionColumns.some((c) => c.Field === 'grade_level');
+    if (!hasSectionSchoolYear || !hasSectionGradeLevel) return;
+
+    const sections = await query(
+      `SELECT TRIM(name) AS section_name, TRIM(grade_level) AS grade_level
+       FROM sections
+       WHERE is_archived = FALSE
+         AND school_year_id = ?
+         AND name IS NOT NULL
+         AND TRIM(name) <> ''
+         AND grade_level IS NOT NULL
+         AND TRIM(grade_level) <> ''
+       ORDER BY grade_level, section_name`,
+      [targetSyId]
+    );
+
+    for (const sec of sections) {
+      const sectionName = String(sec.section_name || '').trim();
+      const gradeLevel = String(sec.grade_level || '').trim();
+      if (!sectionName || !gradeLevel) continue;
+
+      const existing = await query(
+        `SELECT id
+         FROM classes
+         WHERE school_year_id = ?
+           AND LOWER(TRIM(CONVERT(section USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+           AND (
+             LOWER(REPLACE(TRIM(CONVERT(grade USING utf8mb4)), 'Grade ', '')) COLLATE utf8mb4_general_ci = LOWER(REPLACE(TRIM(CONVERT(? USING utf8mb4)), 'Grade ', '')) COLLATE utf8mb4_general_ci
+             OR LOWER(TRIM(CONVERT(grade USING utf8mb4))) COLLATE utf8mb4_general_ci = LOWER(TRIM(CONVERT(? USING utf8mb4))) COLLATE utf8mb4_general_ci
+           )
+         LIMIT 1`,
+        [targetSyId, sectionName, gradeLevel, gradeLevel]
+      );
+
+      if (existing.length > 0) continue;
+
+      const classId = uuidv4();
+      try {
+        await query(
+          `INSERT INTO classes (id, grade, section, adviser_id, adviser_name, school_year_id, createdAt, updatedAt)
+           VALUES (?, ?, ?, NULL, NULL, ?, NOW(), NOW())`,
+          [classId, gradeLevel, sectionName, targetSyId]
+        );
+      } catch (insertErr) {
+        if (insertErr?.code === 'ER_DUP_ENTRY') continue;
+
+        await query(
+          `INSERT INTO classes (id, grade, section, adviser_id, adviser_name, school_year_id)
+           VALUES (?, ?, ?, NULL, NULL, ?)`,
+          [classId, gradeLevel, sectionName, targetSyId]
+        );
+      }
+    }
+  } catch (error) {
+    console.log('syncClassesFromSectionsForSchoolYear skipped:', error.message);
+  }
+};
+
 exports.createClass = async (req, res) => {
   try {
     await ensureClassSchoolYearColumn();
@@ -116,30 +227,30 @@ exports.getAllClasses = async (req, res) => {
     await ensureClassSchoolYearColumn();
     await ensureSubjectTeacherSchoolYearColumn();
     const targetSy = await resolveSchoolYear(req);
+
+    try {
+      const activeSy = await getActiveSchoolYear();
+      if (Number(activeSy?.id || 0) === Number(targetSy?.id || 0)) {
+        await syncClassesFromSectionsForSchoolYear(targetSy.id);
+      }
+    } catch (syncErr) {
+      console.log('Active-year class backfill from sections skipped:', syncErr.message);
+    }
+
     const classes = await query('SELECT * FROM classes WHERE school_year_id = ? ORDER BY grade, section', [targetSy.id]);
 
     const classAssignments = await runFirstSuccessfulQuery([
       {
         sql: `SELECT class_id, grade_level, section, adviser_id, adviser_name
               FROM class_assignments
-              WHERE school_year_id = ? OR school_year_id IS NULL`,
+              WHERE school_year_id = ?`,
         params: [targetSy.id]
       },
       {
         sql: `SELECT NULL AS class_id, grade_level, section, adviser_id, adviser_name
               FROM class_assignments
-              WHERE school_year_id = ? OR school_year_id IS NULL`,
+              WHERE school_year_id = ?`,
         params: [targetSy.id]
-      },
-      {
-        sql: `SELECT class_id, grade_level, section, adviser_id, adviser_name
-              FROM class_assignments`,
-        params: []
-      },
-      {
-        sql: `SELECT NULL AS class_id, grade_level, section, adviser_id, adviser_name
-              FROM class_assignments`,
-        params: []
       }
     ]);
 
@@ -172,7 +283,7 @@ exports.getAllClasses = async (req, res) => {
                   LEFT JOIN users u ON st.teacher_id = u.id COLLATE utf8mb4_unicode_ci
                   LEFT JOIN teachers t ON st.teacher_id = t.id
                   WHERE (st.class_id = ? OR st.class_id = ?)
-                    AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
+                    AND st.school_year_id = ?`,
             params: [cls.id, legacyClassId, targetSy.id]
           },
           {
@@ -182,14 +293,14 @@ exports.getAllClasses = async (req, res) => {
                   LEFT JOIN users u ON st.teacher_id = u.id COLLATE utf8mb4_unicode_ci
                   LEFT JOIN teachers t ON st.teacher_id = t.id
                   WHERE (st.class_id = ? OR st.class_id = ?)
-                    AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
+                    AND st.school_year_id = ?`,
             params: [cls.id, legacyClassId, targetSy.id]
           },
           {
             sql: `SELECT st.*
                   FROM subject_teachers st
                   WHERE (st.class_id = ? OR st.class_id = ?)
-                    AND (st.school_year_id = ? OR st.school_year_id IS NULL)`,
+                    AND st.school_year_id = ?`,
             params: [cls.id, legacyClassId, targetSy.id]
           }
         ]);
@@ -232,7 +343,7 @@ exports.getAllClasses = async (req, res) => {
                 sql: `SELECT id, first_name, last_name
                       FROM teachers
                       WHERE id = ? AND role IN ('adviser', 'teacher', 'subject_teacher')
-                      AND (school_year_id = ? OR school_year_id IS NULL)
+                      AND school_year_id = ?
                       ORDER BY school_year_id DESC
                       LIMIT 1`,
                 params: [adviserId, targetSy.id]
@@ -289,7 +400,7 @@ exports.getAllClasses = async (req, res) => {
                WHERE role IN ('adviser', 'teacher', 'subject_teacher')
                AND LOWER(REPLACE(TRIM(grade_level), 'grade ', '')) = ?
                AND LOWER(TRIM(section)) = ?
-               AND (school_year_id = ? OR school_year_id IS NULL)
+               AND school_year_id = ?
                ORDER BY school_year_id DESC`,
               [normalizedGrade, normalizedSection, targetSy.id]
             );

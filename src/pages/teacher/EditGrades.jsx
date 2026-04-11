@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import api from "../../api/axiosConfig";
 import { API_BASE_URL } from "../../api/config";
 import GradesReportCard from "../../components/GradesReportCard";
+import { toast } from 'react-toastify';
 import {
   BookOpenIcon,
   UserGroupIcon,
@@ -57,8 +58,6 @@ export default function EditGrades() {
   const [assignedSubjects, setAssignedSubjects] = useState([]);
   const [availableSubjects, setAvailableSubjects] = useState([]);
   const [assignedClasses, setAssignedClasses] = useState([]);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
   const [errorModal, setErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [adviserClassIds, setAdviserClassIds] = useState([]); // Classes where user is adviser
@@ -75,11 +74,13 @@ export default function EditGrades() {
   const [isGradeLocked, setIsGradeLocked] = useState(false);
   const [lockReason, setLockReason] = useState("");
   const [quarterEndDates, setQuarterEndDates] = useState({ q1: null, q2: null, q3: null, q4: null });
+  const [gradeEditLocks, setGradeEditLocks] = useState({});
   const [showReportCard, setShowReportCard] = useState(false);
   const [reportCardStudent, setReportCardStudent] = useState(null); // null = all students, array = selected students
   const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
   const [activeSchoolYearId, setActiveSchoolYearId] = useState(() => getTeacherActiveSchoolYearId());
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
+  const lastKnownActiveSchoolYearIdRef = useRef(null);
   const isViewOnlyMode = isTeacherViewOnlyMode(selectedSchoolYearId, activeSchoolYearId);
 
   const toggleStudentSelection = (id) => {
@@ -110,28 +111,43 @@ export default function EditGrades() {
     "Grade 6": ["Filipino", "English", "Mathematics", "Science", "Araling Panlipunan", "Edukasyon sa Pagpapakatao (EsP)", "EPP", "Music", "Arts", "Physical Education", "Health"],
   });
 
-  useEffect(() => {
-    const fetchActiveSchoolYear = async () => {
-      try {
-        const res = await api.get('/school-years/active');
-        const activeSy = res.data?.data || res.data;
-        if (activeSy?.id) {
-          const nextActiveId = String(activeSy.id);
-          setActiveSchoolYearId(nextActiveId);
-          setTeacherActiveSchoolYearId(nextActiveId);
-          // Keep edit flow pinned to active school year to avoid stale localStorage scope.
-          if (String(selectedSchoolYearId || '') !== nextActiveId) {
-            setSelectedSchoolYearId(nextActiveId);
-            setTeacherViewingSchoolYearId(nextActiveId);
-          }
-        }
-      } catch (error) {
-        console.warn('Could not load active school year:', error.message);
-      }
-    };
+  const fetchActiveSchoolYear = async () => {
+    try {
+      const res = await api.get('/school-years/active');
+      const activeSy = res.data?.data || res.data;
+      if (!activeSy?.id) return;
 
+      const nextActiveId = String(activeSy.id);
+      const previousActiveId = lastKnownActiveSchoolYearIdRef.current;
+
+      setActiveSchoolYearId(nextActiveId);
+      setTeacherActiveSchoolYearId(nextActiveId);
+
+      const shouldAutoFollow =
+        !selectedSchoolYearId ||
+        !previousActiveId ||
+        String(selectedSchoolYearId) === String(previousActiveId);
+
+      if (shouldAutoFollow && String(selectedSchoolYearId || '') !== nextActiveId) {
+        setSelectedSchoolYearId(nextActiveId);
+        setTeacherViewingSchoolYearId(nextActiveId);
+      }
+
+      lastKnownActiveSchoolYearIdRef.current = nextActiveId;
+    } catch (error) {
+      console.warn('Could not load active school year:', error.message);
+    }
+  };
+
+  useEffect(() => {
     fetchActiveSchoolYear();
-  }, []);
+
+    const interval = setInterval(() => {
+      fetchActiveSchoolYear();
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [selectedSchoolYearId]);
 
   useEffect(() => {
     if (selectedSchoolYearId) {
@@ -194,31 +210,62 @@ export default function EditGrades() {
     return map[qKey] || qKey?.toUpperCase() || '';
   };
 
+  const isEditWindowLocked = (subject, qKey) => {
+    return Boolean(gradeEditLocks?.[subject]?.[qKey]?.expired);
+  };
+
   useEffect(() => {
     if (!showGradeModal || !selectedStudent) return;
 
     const quarterOrder = ['q1', 'q2', 'q3', 'q4'];
     const relevantQuarters = selectedQuarter === 'all'
       ? quarterOrder
-      : quarterOrder.slice(0, quarterOrder.indexOf(selectedQuarter) + 1);
+      : [selectedQuarter];
     const closedQuarters = relevantQuarters.filter((q) => isQuarterClosed(q));
+    const modalSubjects = Object.keys(gradeData || {}).filter((subject) => subject !== 'Total Q1');
+    const quarterFullyLockedByWindow = (qKey) => {
+      if (modalSubjects.length === 0) return false;
+      let hasLocked = false;
+      let hasEditable = false;
+      modalSubjects.forEach((subject) => {
+        if (isEditWindowLocked(subject, qKey)) {
+          hasLocked = true;
+        } else {
+          hasEditable = true;
+        }
+      });
+      return hasLocked && !hasEditable;
+    };
+    const windowLockedQuarters = relevantQuarters.filter((q) => quarterFullyLockedByWindow(q));
 
     if (selectedQuarter === 'all') {
-      const allClosed = relevantQuarters.length > 0 && closedQuarters.length === relevantQuarters.length;
-      setIsGradeLocked(allClosed);
-      if (allClosed) {
-        setLockReason('All quarters are already closed for editing.');
-      } else if (closedQuarters.length > 0) {
-        setLockReason(`${closedQuarters.map(quarterLabel).join(', ')} are closed. You can still edit open quarters.`);
+      const lockedQuarterSet = new Set([...closedQuarters, ...windowLockedQuarters]);
+      const allLocked = relevantQuarters.length > 0 && relevantQuarters.every((q) => lockedQuarterSet.has(q));
+      setIsGradeLocked(allLocked);
+
+      if (allLocked) {
+        setLockReason('All quarters are closed or beyond the 24-hour edit window.');
+      } else if (lockedQuarterSet.size > 0) {
+        const labels = [...lockedQuarterSet].map(quarterLabel).join(', ');
+        setLockReason(`${labels} are locked. You can still edit open quarters within 24 hours.`);
       } else {
         setLockReason('');
       }
     } else {
       const quarterClosed = isQuarterClosed(selectedQuarter);
-      setIsGradeLocked(quarterClosed);
-      setLockReason(quarterClosed ? `${quarterLabel(selectedQuarter)} is already closed for editing.` : '');
+      const quarterWindowLocked = quarterFullyLockedByWindow(selectedQuarter);
+      const fullyLocked = quarterClosed || quarterWindowLocked;
+      setIsGradeLocked(fullyLocked);
+
+      if (quarterClosed) {
+        setLockReason(`${quarterLabel(selectedQuarter)} is already closed for editing.`);
+      } else if (quarterWindowLocked) {
+        setLockReason(`${quarterLabel(selectedQuarter)} can only be edited within 24 hours after last save.`);
+      } else {
+        setLockReason('');
+      }
     }
-  }, [showGradeModal, selectedStudent, selectedQuarter, quarterEndDates, userRole]);
+  }, [showGradeModal, selectedStudent, selectedQuarter, quarterEndDates, userRole, gradeEditLocks, gradeData]);
 
   // Update available sections when grade level changes
   useEffect(() => {
@@ -388,21 +435,32 @@ export default function EditGrades() {
       // Fetch grading progress for this teacher
       fetchProgress(selectedQuarter);
 
-      // Fetch all students
-      const response = await api.get('/students', { params: schoolYearForRequests ? { schoolYearId: schoolYearForRequests } : {} });
-      const allStudents = response.data.data || response.data;
-      
-      // Filter students to only show those in assigned classes
-      const normalize = str => (str || '').toString().trim().toLowerCase();
-      const filteredStudents = (Array.isArray(allStudents) ? allStudents : []).filter(student => {
-        return uniqueClasses.some(c => 
-          normalize(c.grade) === normalize(getStudentGradeLevel(student)) && 
-          normalize(c.section) === normalize(getStudentSection(student))
-        );
-      });
-      
-      console.log('EditGrades - Total students:', allStudents.length, '→ Filtered:', filteredStudents.length);
-      setStudents(filteredStudents);
+      // Fetch students in teacher scope so averages/remarks reflect only allowed subject/class scope.
+      // Fallback to class-filtered all-students if teacherId endpoint is unavailable.
+      let scopedStudents = [];
+      try {
+        const scopedResponse = await api.get('/students', {
+          params: {
+            teacherId: userId,
+            ...(schoolYearForRequests ? { schoolYearId: schoolYearForRequests } : {})
+          }
+        });
+        scopedStudents = scopedResponse.data?.data || scopedResponse.data || [];
+      } catch (scopedErr) {
+        console.warn('EditGrades - teacher scoped students failed, using fallback:', scopedErr.message || scopedErr);
+        const response = await api.get('/students', { params: schoolYearForRequests ? { schoolYearId: schoolYearForRequests } : {} });
+        const allStudents = response.data.data || response.data;
+        const normalize = str => (str || '').toString().trim().toLowerCase();
+        scopedStudents = (Array.isArray(allStudents) ? allStudents : []).filter(student => {
+          return uniqueClasses.some(c =>
+            normalize(c.grade) === normalize(getStudentGradeLevel(student)) &&
+            normalize(c.section) === normalize(getStudentSection(student))
+          );
+        });
+      }
+
+      console.log('EditGrades - scoped students:', Array.isArray(scopedStudents) ? scopedStudents.length : 0);
+      setStudents(Array.isArray(scopedStudents) ? scopedStudents : []);
 
       // Fetch subjects for each assigned grade level from DB (replaces hard-coded list)
       const uniqueGrades = [...new Set(uniqueClasses.map(c => c.grade).filter(Boolean))];
@@ -453,6 +511,7 @@ export default function EditGrades() {
   // Open grade modal for a student
   const openGradeModal = async (student) => {
     setSelectedStudent(student);
+    setGradeEditLocks({});
 
     const quarterOrder = ['q1', 'q2', 'q3', 'q4'];
     const relevantQuarters = selectedQuarter === 'all'
@@ -574,8 +633,16 @@ export default function EditGrades() {
     // Fetch grades from API
     let studentGrades = {};
     try {
-      const gradesResponse = await api.get(`/students/${student.id}/grades`, { params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {} });
-      studentGrades = gradesResponse.data || {};
+      const gradeParams = {
+        ...(selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}),
+        includeLocks: 1
+      };
+      const gradesResponse = await api.get(`/students/${student.id}/grades`, { params: gradeParams });
+      const payload = gradesResponse.data || {};
+      setGradeEditLocks(payload.__meta?.editWindowLocks || {});
+      studentGrades = Object.fromEntries(
+        Object.entries(payload).filter(([key]) => key !== '__meta')
+      );
       console.log('Fetched grades from API:', studentGrades);
     } catch (error) {
       console.error('Error fetching grades:', error);
@@ -712,18 +779,18 @@ export default function EditGrades() {
     // Check if token exists
     const token = localStorage.getItem('token');
     if (!token) {
-      alert("❌ Session expired. Please login again.");
+      toast.error("❌ Session expired. Please login again.");
       window.location.href = '/login';
       return;
     }
 
     if (isGradeLocked) {
-      alert("❌ These grades are locked and cannot be edited.");
+      toast.error("❌ These grades are locked and cannot be edited.");
       return;
     }
 
     if (isViewOnlyMode) {
-      alert("❌ Past school years are view-only. Grade editing is disabled.");
+      toast.error("❌ Past school years are view-only. Grade editing is disabled.");
       return;
     }
 
@@ -741,8 +808,9 @@ export default function EditGrades() {
     });
 
     if (changedSubjects.length === 0) {
-      setSuccessMessage('ℹ️ No grade changes to save.');
-      setShowSuccessModal(true);
+      setShowGradeModal(false);
+      toast.info('No grade changes to save.');
+      await fetchStudents();
       return;
     }
 
@@ -751,7 +819,7 @@ export default function EditGrades() {
     if (isSubjectTeacherMode) {
       const unauthorizedSubjects = changedSubjects.filter(s => !availableSubjects.includes(s));
       if (unauthorizedSubjects.length > 0) {
-        alert(`❌ You don't have permission to edit: ${unauthorizedSubjects.join(', ')}`);
+        toast.error(`❌ You don't have permission to edit: ${unauthorizedSubjects.join(', ')}`);
         return;
       }
     }
@@ -793,8 +861,9 @@ export default function EditGrades() {
     });
 
     if (Object.keys(quarterGrades).length === 0) {
-      setSuccessMessage('ℹ️ No grade changes to save.');
-      setShowSuccessModal(true);
+      setShowGradeModal(false);
+      toast.info('No grade changes to save.');
+      await fetchStudents();
       return;
     }
 
@@ -808,8 +877,7 @@ export default function EditGrades() {
       });
 
       if (response.data?.success) {
-        setSuccessMessage("✅ Grades saved successfully! You have 24 hours to edit them again.");
-        setShowSuccessModal(true);
+        toast.success('Grades saved successfully! You have 24 hours to edit them again.');
         fetchStudents();
         setShowGradeModal(false);
       } else {
@@ -846,6 +914,12 @@ export default function EditGrades() {
   const highestGrade = students.length > 0
     ? Math.max(...students.map(s => s.average || 0))
     : 0;
+
+  const isSubjectTeacherOnlyMode =
+    userRole === 'subject_teacher' ||
+    (userRole === 'teacher' && assignedSubjects.length > 0 && adviserClassIds.length === 0);
+  const averageColumnLabel = isSubjectTeacherOnlyMode ? 'My Subject Average' : 'Final Average';
+  const remarksColumnLabel = isSubjectTeacherOnlyMode ? 'My Remarks' : 'Remarks';
 
   return (
     <div className="space-y-6">
@@ -1070,8 +1144,10 @@ export default function EditGrades() {
                 <th className="px-6 py-4">LRN</th>
                 <th className="px-6 py-4">Student Name</th>
                 <th className="px-6 py-4">Grade & Section</th>
-                <th className="px-6 py-4 text-center">Final Average</th>
-                <th className="px-6 py-4">Remarks</th>                <th className="px-6 py-4 text-center">Report Card</th>              </tr>
+                <th className="px-6 py-4 text-center">{averageColumnLabel}</th>
+                <th className="px-6 py-4">{remarksColumnLabel}</th>
+                <th className="px-6 py-4 text-center">Report Card</th>
+              </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {loading ? (
@@ -1174,7 +1250,7 @@ export default function EditGrades() {
 
       {/* Grade Edit Modal */}
       {showGradeModal && selectedStudent && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="sticky top-0 bg-red-600 text-white px-8 py-6 flex justify-between items-center rounded-t-2xl">
@@ -1212,9 +1288,8 @@ export default function EditGrades() {
               <div className="overflow-x-auto scrollbar-hide">
                 {(() => {
                   const quarterOrder = ['q1', 'q2', 'q3', 'q4'];
-                  const quartersToShow = selectedQuarter === 'all'
-                    ? quarterOrder
-                    : quarterOrder.slice(0, quarterOrder.indexOf(selectedQuarter) + 1);
+                  // Render only the chosen quarter. Show all columns only in All Quarters mode.
+                  const quartersToShow = selectedQuarter === 'all' ? quarterOrder : [selectedQuarter];
                   const isEditableQ = (q) => selectedQuarter === 'all' || q === selectedQuarter;
                   const getQLabel = (q) => q.toUpperCase();
                   const subjects = Object.keys(gradeData).filter(s => s !== 'Total Q1');
@@ -1264,7 +1339,9 @@ export default function EditGrades() {
                               </td>
                               {quartersToShow.map(q => {
                                 const quarterClosed = isQuarterClosed(q);
-                                const editable = canEdit && isEditableQ(q) && !isGradeLocked && !isViewOnlyMode && !quarterClosed;
+                                const lockedByQuarterSelection = !isEditableQ(q);
+                                const editWindowLocked = isEditWindowLocked(subject, q);
+                                const editable = canEdit && !lockedByQuarterSelection && !editWindowLocked && !isGradeLocked && !isViewOnlyMode && !quarterClosed;
                                 const val = gradeData[subject]?.[q];
                                 const hasVal = val && val !== 0 && val !== '';
                                 return (
@@ -1287,8 +1364,8 @@ export default function EditGrades() {
                                           )}
                                         </>
                                       ) : (
-                                        <span className={`text-base font-semibold ${quarterClosed ? 'text-red-500' : (hasVal ? 'text-gray-700' : 'text-gray-300')}`}>
-                                          {hasVal ? val : (quarterClosed ? 'Closed' : '—')}
+                                        <span className={`text-base font-semibold ${(quarterClosed || lockedByQuarterSelection || editWindowLocked) ? 'text-red-500' : (hasVal ? 'text-gray-700' : 'text-gray-300')}`}>
+                                          {hasVal ? val : (editWindowLocked ? '24h lock' : ((quarterClosed || lockedByQuarterSelection) ? 'Closed' : '—'))}
                                         </span>
                                       )}
                                     </div>
@@ -1390,30 +1467,9 @@ export default function EditGrades() {
         />
       )}
 
-      {/* Success Modal */}
-      {showSuccessModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <div className="flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mx-auto mb-4">
-              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-center text-gray-900 mb-2">Success!</h3>
-            <p className="text-gray-600 text-center mb-6">{successMessage}</p>
-            <button
-              onClick={() => setShowSuccessModal(false)}
-              className="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors font-medium"
-            >
-              OK
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Error Modal */}
       {errorModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
             <div className="flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mx-auto mb-4">
               <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

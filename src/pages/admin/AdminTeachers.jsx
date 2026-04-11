@@ -46,6 +46,7 @@ export default function AdminTeachers() {
   const [loading, setLoading] = useState(true);
   const [refreshLoading, setRefreshLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('active');
   const [selectedTeachers, setSelectedTeachers] = useState(new Set());
   const [selectedAdvisers, setSelectedAdvisers] = useState(new Set());
   const [selectedSubjectTeachers, setSelectedSubjectTeachers] = useState(new Set());
@@ -80,8 +81,24 @@ export default function AdminTeachers() {
   const normalizeTeacherRole = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, '_');
 
   const normalizeTeacherStatus = (teacher) => {
-    const rawStatus = teacher?.status ?? teacher?.approval_status ?? 'approved';
+    const rawStatus = teacher?.status ?? teacher?.verification_status ?? teacher?.approval_status ?? 'approved';
     return String(rawStatus).trim().toLowerCase();
+  };
+
+  const isAssignmentOnlyTeacher = (teacher) => String(teacher?.id || '').trim().startsWith('assignment-');
+
+  const isVisibleTeacherStatus = (status) => {
+    const normalized = String(status || '').trim().toLowerCase();
+    return normalized !== 'declined' && normalized !== 'rejected';
+  };
+
+  const matchesStatusFilter = (status, filter) => {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (filter === 'all') return true;
+    if (filter === 'inactive') return normalized === 'inactive';
+    if (filter === 'pending') return normalized === 'pending';
+    if (filter === 'active') return normalized === 'approved' || normalized === 'active' || normalized === 'pending';
+    return true;
   };
 
   const normalizeTeacherRecord = (teacher) => ({
@@ -89,6 +106,8 @@ export default function AdminTeachers() {
     firstName: teacher.firstName || teacher.first_name || '',
     lastName: teacher.lastName || teacher.last_name || '',
     email: teacher.email || '',
+    sex: teacher.sex || '',
+    contactNumber: teacher.contactNumber || teacher.contact_number || '',
     role: normalizeTeacherRole(teacher.role || teacher.position || teacher.role_in_class),
     status: normalizeTeacherStatus(teacher),
     classSections: Array.isArray(teacher.classSections)
@@ -388,6 +407,13 @@ export default function AdminTeachers() {
 
   const isViewOnly = isViewingLocked;
 
+  const switchToActiveSchoolYear = () => {
+    if (!activeSchoolYear?.id) return;
+    const activeId = String(activeSchoolYear.id);
+    setSelectedSchoolYearId(activeId);
+    setViewingSchoolYear(activeSchoolYear);
+  };
+
   const fetchTeachers = async (isRefresh = false) => {
     try {
       if (!selectedSchoolYearId) {
@@ -408,10 +434,12 @@ export default function AdminTeachers() {
       
       // Fetch teachers using the same pattern as assignadviser page
       let allTeachers = [];
+      let primaryTeachersLoaded = false;
       try {
         const response = await api.get('/teachers', {
           params: { schoolYearId: selectedSchoolYearId }
         });
+        primaryTeachersLoaded = true;
         const teachersData = response.data?.data?.teachers || response.data?.teachers || [];
         console.log('Teachers fetched from /teachers:', teachersData);
         console.log('Teachers data type:', typeof teachersData);
@@ -428,7 +456,7 @@ export default function AdminTeachers() {
               const role = teacher.role;
               console.log('Checking teacher:', teacher.firstName, role, status);
               const isRoleMatch = role === 'adviser' || role === 'subject_teacher' || role === 'teacher';
-              const isVisibleStatus = status === 'approved' || status === 'pending';
+              const isVisibleStatus = isVisibleTeacherStatus(status);
               return isRoleMatch && isVisibleStatus;
             })
           : [];
@@ -437,7 +465,7 @@ export default function AdminTeachers() {
       }
       
       // If /teachers didn't work, try the fallback pattern from assignadviser
-      if (allTeachers.length === 0) {
+      if (!primaryTeachersLoaded) {
         try {
           const usersResponse = await api.get('/users', {
             params: { schoolYearId: selectedSchoolYearId }
@@ -453,7 +481,7 @@ export default function AdminTeachers() {
                 const role = u.role;
                 console.log('Checking user from fallback:', u.firstName, role, status);
                 const isRoleMatch = role === 'adviser' || role === 'subject_teacher' || role === 'teacher';
-                const isVisibleStatus = status === 'approved' || status === 'pending';
+                const isVisibleStatus = isVisibleTeacherStatus(status);
                 return isRoleMatch && isVisibleStatus;
               })
             : [];
@@ -533,9 +561,11 @@ export default function AdminTeachers() {
       const ids = Array.from(selectedPrevTeacherIds);
       const res = await api.post(`/teachers/fetch-from-previous?schoolYearId=${selectedSchoolYearId}`, { ids });
       const inserted = res.data?.data?.inserted ?? 0;
+      const updated = res.data?.data?.updated ?? 0;
       const skipped = res.data?.data?.skipped ?? 0;
-      toast.success(`Fetched ${inserted} teacher(s), skipped ${skipped}`);
-      await fetchTeachers(true);
+      toast.success(`Fetched ${inserted} teacher(s), updated ${updated}, skipped ${skipped}`);
+      switchToActiveSchoolYear();
+      toast.info(`Showing teachers in active school year ${activeSchoolYear?.label || ''}`.trim());
       setShowFetchModal(false);
     } catch (error) {
       console.error('Error fetching teachers from previous year:', error);
@@ -565,12 +595,33 @@ export default function AdminTeachers() {
 
   // Filter teachers by search
   const filteredTeachers = teachers.filter(teacher => {
+    const normalizedStatus = normalizeTeacherStatus(teacher);
     const matchesSearch = searchQuery === '' ||
       (teacher.firstName && teacher.firstName.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (teacher.lastName && teacher.lastName.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (teacher.email && teacher.email.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesSearch;
+    const matchesStatus = matchesStatusFilter(normalizedStatus, statusFilter);
+    return matchesSearch && matchesStatus;
   });
+
+  const statusFilterOptions = [
+    { key: 'all', label: 'All', count: teachers.length },
+    {
+      key: 'active',
+      label: 'Active',
+      count: teachers.filter((teacher) => matchesStatusFilter(normalizeTeacherStatus(teacher), 'active')).length
+    },
+    {
+      key: 'inactive',
+      label: 'Inactive',
+      count: teachers.filter((teacher) => matchesStatusFilter(normalizeTeacherStatus(teacher), 'inactive')).length
+    },
+    {
+      key: 'pending',
+      label: 'Pending',
+      count: teachers.filter((teacher) => matchesStatusFilter(normalizeTeacherStatus(teacher), 'pending')).length
+    }
+  ];
 
   // Selection handlers for different teacher types
   const handleSelectAdviser = (teacherId) => {
@@ -927,7 +978,14 @@ export default function AdminTeachers() {
   };
 
   const handleEditTeacher = (teacher) => {
+    if (isAssignmentOnlyTeacher(teacher)) {
+      toast.error('This row is assignment-only. Fetch or create the teacher account first.');
+      return;
+    }
+
     setSelectedTeacher(teacher);
+    const normalizedStatus = normalizeTeacherStatus(teacher);
+    const statusForForm = normalizedStatus === 'inactive' ? 'inactive' : 'active';
     // Handle subjects field - it can be string or array
     let subjectsArray = [];
     if (teacher.subjects) {
@@ -943,7 +1001,10 @@ export default function AdminTeachers() {
       middleName: teacher.middleName || teacher.middle_name || '',
       lastName: teacher.lastName || teacher.last_name,
       email: teacher.email,
+      sex: teacher.sex || '',
+      contactNumber: teacher.contactNumber || teacher.contact_number || '',
       role: teacher.role || 'adviser',
+      status: statusForForm,
       subjects: subjectsArray,
       kindergartenSubjects: teacher.kindergartenSubjects || '',
       gradeLevel: teacher.gradeLevel || teacher.grade_level || '',
@@ -955,6 +1016,11 @@ export default function AdminTeachers() {
   const handleSaveEdit = async () => {
     if (isViewOnly) {
       toast.error('Previous school years are view-only. Switch to the active year to edit.');
+      setShowEditModal(false);
+      return;
+    }
+    if (isAssignmentOnlyTeacher(selectedTeacher)) {
+      toast.error('Cannot update assignment-only row. Fetch/create teacher account first.');
       setShowEditModal(false);
       return;
     }
@@ -970,6 +1036,9 @@ export default function AdminTeachers() {
         toast.error('Email must use @wmsu.edu.ph');
         return;
       }
+
+      const normalizedEditStatus = String(editFormData.status || 'active').trim().toLowerCase();
+      const statusPayload = normalizedEditStatus === 'inactive' ? 'inactive' : 'approved';
       
       // Prepare the data for API call - handle kindergarten subjects properly
       let updateData;
@@ -982,7 +1051,10 @@ export default function AdminTeachers() {
           lastName: String(editFormData.lastName || ''),
           username: String(selectedTeacher.username || ''),
           email: normalizedEmail,
+          sex: String(editFormData.sex || ''),
+          contactNumber: String(editFormData.contactNumber || ''),
           role: String(editFormData.role || ''),
+          status: statusPayload,
           gradeLevel: String(editFormData.gradeLevel || ''),
           section: String(editFormData.section || ''),
           subjects: null, // No fixed subjects for kindergarten
@@ -996,7 +1068,10 @@ export default function AdminTeachers() {
           lastName: String(editFormData.lastName || ''),
           username: String(selectedTeacher.username || ''),
           email: normalizedEmail,
+          sex: String(editFormData.sex || ''),
+          contactNumber: String(editFormData.contactNumber || ''),
           role: String(editFormData.role || ''),
+          status: statusPayload,
           gradeLevel: String(editFormData.gradeLevel || ''),
           section: String(editFormData.section || ''),
           subjects: JSON.stringify(editFormData.subjects || []),
@@ -1013,6 +1088,24 @@ export default function AdminTeachers() {
       
       // Refresh the teachers list to show updated data
       await fetchTeachers();
+      
+      // Dispatch custom event to notify other pages of teacher role change
+      window.dispatchEvent(new CustomEvent('teacherUpdated', {
+        detail: {
+          teacherId: selectedTeacher.id,
+          oldRole: selectedTeacher.role,
+          newRole: editFormData.role,
+          teacherData: {
+            id: selectedTeacher.id,
+            firstName: editFormData.firstName,
+            lastName: editFormData.lastName,
+            email: editFormData.email,
+            role: editFormData.role,
+            gradeLevel: editFormData.gradeLevel,
+            section: editFormData.section
+          }
+        }
+      }));
       
       // Close the modal
       setShowEditModal(false);
@@ -1062,9 +1155,23 @@ export default function AdminTeachers() {
             ))}
           </select>
           {isViewOnly && (
-            <span className="text-xs text-orange-700 bg-orange-100 px-2 py-1 rounded">View-only for previous year</span>
+            <>
+              <span className="text-xs text-orange-700 bg-orange-100 px-2 py-1 rounded">View-only for previous year</span>
+              <button
+                type="button"
+                onClick={switchToActiveSchoolYear}
+                className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+              >
+                Switch to Active Year
+              </button>
+            </>
           )}
         </div>
+        {isViewOnly && (
+          <p className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded px-3 py-2">
+            Teachers fetched from previous year are copied into the active school year. Switch to active year to view and edit fetched teachers.
+          </p>
+        )}
         {!selectedSchoolYearId && (
           <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded px-3 py-2">Select a school year to load teachers.</p>
         )}
@@ -1217,6 +1324,21 @@ export default function AdminTeachers() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
             />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-sm text-gray-600">Status:</span>
+            {statusFilterOptions.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => setStatusFilter(option.key)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition ${statusFilter === option.key
+                  ? 'bg-red-700 text-white border-red-700'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'}`}
+              >
+                {option.label} ({option.count})
+              </button>
+            ))}
           </div>
           {searchQuery && (
             <div className="text-sm text-gray-600 mt-2">
@@ -1578,12 +1700,12 @@ export default function AdminTeachers() {
 
       {/* Fetch from Previous Year Modal */}
       {showFetchModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 sm:p-6">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 sm:p-6">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div>
-                <h3 className="text-xl font-bold text-gray-900">Fetch Teachers from Previous School Year</h3>
-                <p className="text-sm text-gray-600">Selected teachers are copied into the active school year. Existing email/username in the active year are skipped.</p>
+                <h3 className="text-xl font-bold text-gray-900">Fetch Teachers from Previous School Years</h3>
+                <p className="text-sm text-gray-600">Selected teachers are copied into the active school year. Existing records are updated and reactivated automatically.</p>
               </div>
               <button
                 onClick={() => setShowFetchModal(false)}
@@ -1595,7 +1717,7 @@ export default function AdminTeachers() {
 
             <div className="flex items-center justify-between px-6 py-3">
               <div className="text-sm text-gray-700">
-                {fetchPrevLoading ? 'Loading previous year teachers...' : `${prevTeachers.length} teacher(s) available from previous year`}
+                {fetchPrevLoading ? 'Loading previous year teachers...' : `${prevTeachers.length} teacher(s) available from previous years`}
               </div>
               <button
                 onClick={toggleSelectAllPrevTeachers}
@@ -1620,6 +1742,7 @@ export default function AdminTeachers() {
                         <th className="p-3 text-left">Name</th>
                         <th className="p-3 text-left">Email</th>
                         <th className="p-3 text-left">Role</th>
+                        <th className="p-3 text-left">Status</th>
                         <th className="p-3 text-left">Class/Section</th>
                         <th className="p-3 text-left">Subjects</th>
                       </tr>
@@ -1632,6 +1755,7 @@ export default function AdminTeachers() {
                           firstName: teacher.first_name,
                           lastName: teacher.last_name,
                         });
+                        const prevStatus = normalizeTeacherStatus(teacher);
                         return (
                           <tr key={teacher.id} className="border-t hover:bg-gray-50">
                             <td className="p-3">
@@ -1648,6 +1772,17 @@ export default function AdminTeachers() {
                             <td className="p-3 text-gray-700">{teacher.email}</td>
                             <td className="p-3">
                               <span className="text-xs font-semibold px-2 py-1 rounded bg-gray-100 text-gray-700 capitalize">{teacher.role?.replace('_', ' ') || 'teacher'}</span>
+                            </td>
+                            <td className="p-3">
+                              <span className={`text-xs font-semibold px-2 py-1 rounded capitalize ${prevStatus === 'inactive'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : prevStatus === 'approved' || prevStatus === 'active'
+                                  ? 'bg-green-100 text-green-700'
+                                  : prevStatus === 'pending'
+                                    ? 'bg-blue-100 text-blue-700'
+                                    : 'bg-gray-100 text-gray-700'}`}>
+                                {prevStatus || 'approved'}
+                              </span>
                             </td>
                             <td className="p-3 text-gray-700">{fixed.actualGradeLevel && fixed.actualSection ? `${fixed.actualGradeLevel} - ${fixed.actualSection}` : '-'}</td>
                             <td className="p-3 text-gray-700">{fixed.actualSubjects?.length ? fixed.actualSubjects.join(', ') : '-'}</td>
@@ -1759,6 +1894,18 @@ export default function AdminTeachers() {
                   <p className="text-sm text-gray-600">Email</p>
                   <p className="font-semibold">{selectedTeacher.email}</p>
                 </div>
+
+                {/* Contact Number */}
+                <div>
+                  <p className="text-sm text-gray-600">Contact Number</p>
+                  <p className="font-semibold">{selectedTeacher.contactNumber || selectedTeacher.contact_number || '-'}</p>
+                </div>
+
+                {/* Sex */}
+                <div>
+                  <p className="text-sm text-gray-600">Sex</p>
+                  <p className="font-semibold">{selectedTeacher.sex || '-'}</p>
+                </div>
                 
                 {/* Class/Section Assigned */}
                 <div>
@@ -1864,6 +2011,28 @@ export default function AdminTeachers() {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
+                <input
+                  type="text"
+                  value={editFormData.contactNumber || ''}
+                  onChange={(e) => setEditFormData({...editFormData, contactNumber: e.target.value})}
+                  placeholder="e.g. 09123456789"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Sex</label>
+                <select
+                  value={editFormData.sex || ''}
+                  onChange={(e) => setEditFormData({...editFormData, sex: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
+                >
+                  <option value="">Select Sex</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                </select>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                 <select 
                   value={editFormData.role || ''} 
@@ -1874,6 +2043,17 @@ export default function AdminTeachers() {
                   <option value="teacher">Unassigned</option>
                   <option value="adviser">Adviser</option>
                   <option value="subject_teacher">Subject Teacher</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Account Status</label>
+                <select
+                  value={editFormData.status || 'active'}
+                  onChange={(e) => setEditFormData({...editFormData, status: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-800"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
                 </select>
               </div>
               <div>
@@ -2227,7 +2407,7 @@ export default function AdminTeachers() {
 
       {/* DELETE CONFIRMATION MODAL */}
       {showDeleteModal && teacherToDelete && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 m-4 max-w-md w-full">
             <div className="flex items-center mb-4">
               <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center mr-4">

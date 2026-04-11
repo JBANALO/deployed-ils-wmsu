@@ -16,6 +16,8 @@ const QRCode = require('qrcode');
 
 const bcrypt = require('bcryptjs');
 
+const jwt = require('jsonwebtoken');
+
 const passport = require('./config/passport');
 
 const { query } = require('./config/database');
@@ -696,6 +698,46 @@ app.post('/api/auth/login', async (req, res) => {
     const loginField = email || username;
     const submittedPassword = String(password || '').trim();
 
+    // Check for SuperAdmin accounts first
+    if (loginField === 'superadmin@wmsu.edu.ph' || 
+        loginField === 'superadmin02@wmsu.edu.ph' || 
+        (loginField && loginField.toLowerCase().includes('superadmin'))) {
+      
+      console.log('🔍 SUPERADMIN LOGIN TRIGGERED for:', loginField);
+      
+      // Check password
+      if (submittedPassword === 'super_admin123' || submittedPassword === 'superadmin123') {
+        const token = jwt.sign({ id: 'super-admin-001', role: 'super_admin' }, process.env.JWT_SECRET || 'your-secret-key', {
+          expiresIn: '90d',
+        });
+        
+        const userData = {
+          id: 'super-admin-001',
+          firstName: 'Super',
+          lastName: 'Admin',
+          email: loginField,
+          username: 'superadmin',
+          role: 'super_admin',
+          phone: '',
+          profileImage: '',
+          department: 'System Administration',
+          contactNumber: '+63 (2) 123-4567'
+        };
+        
+        return res.status(200).json({
+          status: 'success',
+          token,
+          user: userData,
+          role: 'super_admin'
+        });
+      } else {
+        return res.status(401).json({ 
+          status: 'fail', 
+          message: 'Incorrect email or password' 
+        });
+      }
+    }
+
     const lookupTeacherInDb = async (loginValue) => {
       try {
         const rows = await query(
@@ -747,34 +789,97 @@ app.post('/api/auth/login', async (req, res) => {
 
     let user = null;
 
-    
-
     // First, try to find in users.json (for admins, teachers, and some students)
-
     const { readUsers } = require('./utils/fileStorage');
-
     const jsonUsers = readUsers();
-
     
-
     user = jsonUsers.find(u => 
-
       u.email === loginField || 
-
       u.username === loginField || 
-
       u.lrn === loginField
-
     );
 
-    
+    // If not found in JSON, try users table for admin accounts
+    if (!user) {
+      try {
+        const { query, isDatabaseAvailable } = require('./config/database');
+        
+        if (isDatabaseAvailable()) {
+          console.log('🔍 Checking users table for admin accounts...');
+          
+          const adminUsers = await query(
+            `SELECT id, first_name, last_name, username, email, password, role, phone, profile_pic as profileImage 
+             FROM users 
+             WHERE (LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)) AND role = 'admin'`,
+            [loginField, loginField]
+          );
+          
+          if (adminUsers.length > 0) {
+            const adminUser = adminUsers[0];
+            console.log('🔍 Found admin in users table:', adminUser.email);
+            
+            user = {
+              id: adminUser.id,
+              firstName: adminUser.first_name || '',
+              lastName: adminUser.last_name || '',
+              email: adminUser.email || '',
+              username: adminUser.username || '',
+              role: adminUser.role || 'admin',
+              password: adminUser.password || '',
+              phone: adminUser.phone || '',
+              profileImage: adminUser.profileImage || ''
+            };
+          }
+        }
+      } catch (dbError) {
+        console.log('Users table admin check failed:', dbError.message);
+      }
+    }
 
     if (!user) {
+      // Try teachers table for teacher accounts
+      try {
+        const { query, isDatabaseAvailable } = require('./config/database');
+        
+        if (isDatabaseAvailable()) {
+          console.log('🔍 Checking teachers table for teacher accounts...');
+          
+          const teacherUsers = await query(
+            `SELECT id, first_name, last_name, username, email, password, role, grade_level, section, contact_number
+             FROM teachers 
+             WHERE (LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?))`,
+            [loginField, loginField]
+          );
+          
+          if (teacherUsers.length > 0) {
+            const teacherUser = teacherUsers[0];
+            console.log('🔍 Found teacher in teachers table:', teacherUser.email);
+            
+            user = {
+              id: teacherUser.id,
+              firstName: teacherUser.first_name || '',
+              lastName: teacherUser.last_name || '',
+              email: teacherUser.email || '',
+              username: teacherUser.username || '',
+              role: teacherUser.role || 'teacher',
+              password: teacherUser.password || '',
+              gradeLevel: teacherUser.grade_level || '',
+              section: teacherUser.section || '',
+              phone: teacherUser.contact_number || '',
+              department: teacherUser.department || '',
+              contactNumber: teacherUser.contact_number || ''
+            };
+          }
+        }
+      } catch (teacherError) {
+        console.log('Teachers table check failed:', teacherError.message);
+      }
+    }
 
+    if (!user) {
       // If not found in JSON, try MySQL students table (for LRN-based student login)
 
       try {
-
         const { query, isDatabaseAvailable } = require('./config/database');
 
         

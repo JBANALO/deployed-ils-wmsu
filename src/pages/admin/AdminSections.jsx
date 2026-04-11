@@ -94,6 +94,14 @@ export default function AdminSections() {
       setShowAddModal(false);
       setFormData({ name: '', description: '', gradeLevel: '' });
       loadData();
+      
+      // Dispatch custom event to notify AdminCreateK6 to refresh sections
+      window.dispatchEvent(new CustomEvent('sectionAdded', {
+        detail: {
+          gradeLevel: formData.gradeLevel,
+          sectionName: formData.name
+        }
+      }));
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to create section');
     } finally {
@@ -420,7 +428,7 @@ export default function AdminSections() {
 
       {/* Fetch from Previous Year Modal */}
       {showFetchModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-3xl mx-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-bold text-gray-800">Fetch Sections from Previous School Year</h3>

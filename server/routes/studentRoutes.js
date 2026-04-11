@@ -11,6 +11,7 @@ let gradesSyEnsured = false;
 let studentSyEnsured = false;
 let notificationsEnsured = false;
 let schoolYearQuarterColumnsEnsured = false;
+let rankingPublicationsEnsured = false;
 
 const normalizeRole = (value = '') => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 
@@ -72,9 +73,76 @@ const ensureSchoolYearQuarterColumns = async () => {
   schoolYearQuarterColumnsEnsured = true;
 };
 
+const ensureRankingPublicationsTable = async () => {
+  if (rankingPublicationsEnsured) return;
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS ranking_publications (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      school_year_id INT NOT NULL,
+      grade_level VARCHAR(60) NOT NULL,
+      section VARCHAR(120) NOT NULL,
+      ranking_type ENUM('overall', 'quarter', 'subject') NOT NULL,
+      quarter_key VARCHAR(16) NOT NULL DEFAULT '',
+      subject_name VARCHAR(255) NOT NULL DEFAULT '',
+      student_id VARCHAR(100) NOT NULL,
+      student_name VARCHAR(255) NULL,
+      rank_position INT NOT NULL,
+      score DECIMAL(7,2) NULL,
+      total_students INT NOT NULL,
+      published_by VARCHAR(100) NULL,
+      published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_ranking_publication_entry (
+        school_year_id,
+        grade_level,
+        section,
+        ranking_type,
+        quarter_key,
+        subject_name,
+        student_id
+      ),
+      INDEX idx_ranking_publication_lookup (
+        school_year_id,
+        grade_level,
+        section,
+        ranking_type,
+        quarter_key,
+        subject_name
+      ),
+      INDEX idx_ranking_publication_student (student_id, school_year_id)
+    )
+  `);
+
+  rankingPublicationsEnsured = true;
+};
+
 const quarterLabel = (qKey = '') => {
   const map = { q1: 'Quarter 1', q2: 'Quarter 2', q3: 'Quarter 3', q4: 'Quarter 4' };
   return map[String(qKey || '').toLowerCase()] || String(qKey || '').toUpperCase();
+};
+
+const normalizeQuarterKey = (value = '') => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'q1' || normalized === 'q2' || normalized === 'q3' || normalized === 'q4') return normalized;
+  return '';
+};
+
+const EDIT_WINDOW_HOURS = 24;
+const EDIT_WINDOW_MS = EDIT_WINDOW_HOURS * 60 * 60 * 1000;
+
+const getEditWindowExpiry = (gradeRow) => {
+  const baseRaw = gradeRow?.updated_at || gradeRow?.created_at;
+  if (!baseRaw) return null;
+  const baseDate = new Date(baseRaw);
+  if (Number.isNaN(baseDate.getTime())) return null;
+  return new Date(baseDate.getTime() + EDIT_WINDOW_MS);
+};
+
+const isEditWindowExpired = (gradeRow, now = new Date()) => {
+  const expiry = getEditWindowExpiry(gradeRow);
+  if (!expiry) return false;
+  return now > expiry;
 };
 
 const sanitizeEmail = (value = '') => {
@@ -102,7 +170,7 @@ const verifyUserForGrades = async (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-fallback');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     
     // JWT token has id field
     const userId = decoded.userId || decoded.id;
@@ -278,7 +346,8 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Student not found' });
     }
     const student = students[0];
-    const targetSyId = student.school_year_id || (await getActiveSchoolYear())?.id;
+    const requestedSyId = req.body?.schoolYearId || req.query?.schoolYearId;
+    const targetSyId = requestedSyId || student.school_year_id || (await getActiveSchoolYear())?.id;
     if (!targetSyId) {
       return res.status(400).json({ success: false, error: 'No active school year found for grading' });
     }
@@ -327,6 +396,64 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
               });
             }
           }
+        }
+      }
+    }
+
+    const attemptedGradeEntries = [];
+    for (const [subject, gradeValue] of Object.entries(grades || {})) {
+      if (typeof gradeValue === 'object' && gradeValue !== null) {
+        Object.entries(gradeValue).forEach(([qKey, gValue]) => {
+          if (gValue && Number(gValue) > 0) {
+            attemptedGradeEntries.push({
+              subject: String(subject || '').trim(),
+              quarter: String(qKey || '').toUpperCase()
+            });
+          }
+        });
+      } else if (gradeValue && Number(gradeValue) > 0) {
+        attemptedGradeEntries.push({
+          subject: String(subject || '').trim(),
+          quarter: String(quarter || 'q1').toUpperCase()
+        });
+      }
+    }
+
+    // Enforce 24-hour edit window for non-admin users when editing an existing grade row.
+    if (normalizedRoleForDeadline !== 'admin' && attemptedGradeEntries.length > 0) {
+      const uniqueSubjects = [...new Set(attemptedGradeEntries.map((entry) => entry.subject).filter(Boolean))];
+      if (uniqueSubjects.length > 0) {
+        const subjectPlaceholders = uniqueSubjects.map(() => '?').join(', ');
+        const existingRows = await query(
+          `SELECT subject, quarter, created_at, updated_at
+           FROM grades
+           WHERE student_id = ?
+             AND school_year_id = ?
+             AND subject IN (${subjectPlaceholders})`,
+          [id, targetSyId, ...uniqueSubjects]
+        );
+
+        const normalizeSubjectKey = (value = '') => String(value || '').trim().toLowerCase();
+        const rowByKey = new Map(
+          (existingRows || []).map((row) => [
+            `${normalizeSubjectKey(row.subject)}||${String(row.quarter || '').toUpperCase()}`,
+            row
+          ])
+        );
+
+        const now = new Date();
+        const expiredEntry = attemptedGradeEntries.find((entry) => {
+          const key = `${normalizeSubjectKey(entry.subject)}||${String(entry.quarter || '').toUpperCase()}`;
+          const existing = rowByKey.get(key);
+          return existing && isEditWindowExpired(existing, now);
+        });
+
+        if (expiredEntry) {
+          return res.status(403).json({
+            success: false,
+            error: 'Edit window expired',
+            message: `${expiredEntry.subject} (${quarterLabel(String(expiredEntry.quarter || '').toLowerCase())}) can only be edited within ${EDIT_WINDOW_HOURS} hours after last save.`
+          });
         }
       }
     }
@@ -659,10 +786,16 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
     await ensureStudentSchoolYearColumn();
     await ensureGradesSchoolYearColumn();
     const { id } = req.params;
-    const { schoolYearId } = req.query;
+    const { schoolYearId, includeLocks } = req.query;
     const [studentRow] = await query('SELECT id, school_year_id, grade_level, section FROM students WHERE id = ?', [id]);
     const targetSyId = schoolYearId || studentRow?.school_year_id || (await getActiveSchoolYear())?.id;
-    const allGrades = await query('SELECT * FROM grades WHERE student_id = ? AND (school_year_id = ? OR school_year_id IS NULL)', [id, targetSyId]);
+    const allGrades = await query(
+      `SELECT *
+       FROM grades
+       WHERE student_id = ?
+         AND school_year_id = ?`,
+      [id, targetSyId]
+    );
 
     const user = req.user || {};
     const normalizedRole = normalizeRole(user.role || '');
@@ -682,7 +815,9 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
 
     // grades table: each row is one subject + quarter combo
     // Need to restructure: { "Filipino": { q1: 90, q2: 85, ... }, "English": { q1: 88, ... } }
+    const includeEditWindowLocks = String(includeLocks || '').toLowerCase() === '1' || String(includeLocks || '').toLowerCase() === 'true';
     const result = {};
+    const editWindowLocks = {};
     if (grades) {
       grades.forEach(r => {
         if (!result[r.subject]) {
@@ -691,6 +826,18 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
         // Map quarter name to key (Q1 -> q1, etc.)
         const quarterKey = r.quarter.toLowerCase();
         result[r.subject][quarterKey] = parseFloat(r.grade) || 0;
+
+        if (includeEditWindowLocks) {
+          if (!editWindowLocks[r.subject]) editWindowLocks[r.subject] = {};
+          const expiry = getEditWindowExpiry(r);
+          const expired = isEditWindowExpired(r);
+          editWindowLocks[r.subject][quarterKey] = {
+            expired,
+            editable: !expired,
+            expiresAt: expiry ? expiry.toISOString() : null,
+            reason: expired ? `This grade can only be edited within ${EDIT_WINDOW_HOURS} hours after last save.` : ''
+          };
+        }
       });
       // Calculate averages
       for (const subject of Object.keys(result)) {
@@ -698,6 +845,16 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
         const vals = [g.q1, g.q2, g.q3, g.q4].filter(v => v > 0);
         g.average = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
       }
+    }
+
+    if (includeEditWindowLocks) {
+      return res.json({
+        ...result,
+        __meta: {
+          editWindowHours: EDIT_WINDOW_HOURS,
+          editWindowLocks
+        }
+      });
     }
 
     res.json(result);
@@ -751,11 +908,179 @@ router.post('/:id/send-grade-report', verifyUserForGrades, async (req, res) => {
   }
 });
 
+// POST /ranking-publications - Publish a ranking snapshot to student dashboard
+router.post('/ranking-publications', verifyUserForGrades, async (req, res) => {
+  try {
+    await ensureRankingPublicationsTable();
+
+    const allowedRoles = new Set(['admin', 'teacher', 'adviser', 'subject_teacher']);
+    const userRole = normalizeRole(req.user?.role || '');
+    if (!allowedRoles.has(userRole)) {
+      return res.status(403).json({ success: false, error: 'Only teachers, advisers, and admins can publish rankings.' });
+    }
+
+    const {
+      schoolYearId,
+      gradeLevel,
+      section,
+      rankingType,
+      quarter,
+      subject,
+      rankings
+    } = req.body || {};
+
+    const normalizedRankingType = String(rankingType || '').trim().toLowerCase();
+    const normalizedQuarter = normalizeQuarterKey(quarter);
+    const normalizedSubject = String(subject || '').trim();
+    const cleanGradeLevel = String(gradeLevel || '').trim();
+    const cleanSection = String(section || '').trim();
+
+    if (!cleanGradeLevel || !cleanSection) {
+      return res.status(400).json({ success: false, error: 'gradeLevel and section are required.' });
+    }
+
+    if (!['overall', 'quarter', 'subject'].includes(normalizedRankingType)) {
+      return res.status(400).json({ success: false, error: 'rankingType must be overall, quarter, or subject.' });
+    }
+
+    if (userRole === 'subject_teacher' && normalizedRankingType !== 'subject') {
+      return res.status(403).json({ success: false, error: 'Subject teachers can only publish subject rankings.' });
+    }
+
+    if (normalizedRankingType === 'quarter' && !normalizedQuarter) {
+      return res.status(400).json({ success: false, error: 'quarter ranking requires quarter key (q1, q2, q3, q4).' });
+    }
+
+    if (normalizedRankingType === 'subject' && !normalizedSubject) {
+      return res.status(400).json({ success: false, error: 'subject ranking requires subject name.' });
+    }
+
+    if (!Array.isArray(rankings) || rankings.length === 0) {
+      return res.status(400).json({ success: false, error: 'rankings payload is required.' });
+    }
+
+    const activeSy = await getActiveSchoolYear();
+    const targetSchoolYearId = Number(schoolYearId) || activeSy?.id;
+    if (!targetSchoolYearId) {
+      return res.status(400).json({ success: false, error: 'No active school year found for publishing.' });
+    }
+
+    const normalizedRankings = rankings
+      .map((row) => {
+        const rankPosition = Number(row?.rank);
+        const parsedScore = Number(row?.score);
+        const totalStudents = Number(row?.totalStudents);
+        const studentId = String(row?.studentId || '').trim();
+        const studentName = String(row?.studentName || '').trim();
+
+        return {
+          studentId,
+          studentName,
+          rankPosition: Number.isFinite(rankPosition) ? Math.max(1, Math.floor(rankPosition)) : 0,
+          score: Number.isFinite(parsedScore) ? parsedScore : null,
+          totalStudents: Number.isFinite(totalStudents) && totalStudents > 0 ? Math.floor(totalStudents) : 0
+        };
+      })
+      .filter((row) => row.studentId && row.rankPosition > 0);
+
+    if (normalizedRankings.length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid ranking rows to publish.' });
+    }
+
+    const fallbackTotalStudents = normalizedRankings.length;
+
+    await query(
+      `DELETE FROM ranking_publications
+       WHERE school_year_id = ?
+         AND grade_level = ?
+         AND section = ?
+         AND ranking_type = ?
+         AND quarter_key = ?
+         AND subject_name = ?`,
+      [
+        targetSchoolYearId,
+        cleanGradeLevel,
+        cleanSection,
+        normalizedRankingType,
+        normalizedRankingType === 'quarter' || normalizedRankingType === 'subject' ? normalizedQuarter : '',
+        normalizedRankingType === 'subject' ? normalizedSubject : ''
+      ]
+    );
+
+    for (const row of normalizedRankings) {
+      await query(
+        `INSERT INTO ranking_publications (
+          school_year_id,
+          grade_level,
+          section,
+          ranking_type,
+          quarter_key,
+          subject_name,
+          student_id,
+          student_name,
+          rank_position,
+          score,
+          total_students,
+          published_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          student_name = VALUES(student_name),
+          rank_position = VALUES(rank_position),
+          score = VALUES(score),
+          total_students = VALUES(total_students),
+          published_by = VALUES(published_by),
+          published_at = CURRENT_TIMESTAMP`,
+        [
+          targetSchoolYearId,
+          cleanGradeLevel,
+          cleanSection,
+          normalizedRankingType,
+          normalizedRankingType === 'quarter' || normalizedRankingType === 'subject' ? normalizedQuarter : '',
+          normalizedRankingType === 'subject' ? normalizedSubject : '',
+          row.studentId,
+          row.studentName || null,
+          row.rankPosition,
+          row.score,
+          row.totalStudents > 0 ? row.totalStudents : fallbackTotalStudents,
+          req.user?.id ? String(req.user.id) : null
+        ]
+      );
+    }
+
+    const summary =
+      normalizedRankingType === 'overall'
+        ? 'Overall ranking'
+        : normalizedRankingType === 'quarter'
+          ? `${quarterLabel(normalizedQuarter)} ranking`
+          : `${normalizedSubject} ${normalizedQuarter ? `(${quarterLabel(normalizedQuarter)})` : ''} ranking`.trim();
+
+    return res.status(200).json({
+      success: true,
+      message: `${summary} published to student dashboard.`,
+      data: {
+        schoolYearId: targetSchoolYearId,
+        gradeLevel: cleanGradeLevel,
+        section: cleanSection,
+        rankingType: normalizedRankingType,
+        quarter: normalizedQuarter,
+        subject: normalizedSubject,
+        totalPublished: normalizedRankings.length
+      }
+    });
+  } catch (err) {
+    console.error('Error publishing rankings:', err);
+    return res.status(500).json({ success: false, error: 'Failed to publish rankings', details: err.message });
+  }
+});
+
 // Public routes
 router.post('/', studentController.createStudent);
 router.get('/', studentController.getStudents);
 router.get('/pending', studentController.getPendingStudents);
 router.get('/declined', studentController.getDeclinedStudents);
+router.get('/archived', studentController.getArchivedStudents);
+router.get('/previous-year-promotion-candidates', studentController.getPreviousYearPromotionCandidates);
+router.post('/fetch-from-previous', studentController.fetchStudentsFromPreviousYear);
 router.post('/regenerate-qr', studentController.regenerateQRCodes); // fix all QR codes to JSON format
 router.get('/portal', studentController.getStudent); // Alias for student portal dashboard
 router.get('/:id', studentController.getStudent);
@@ -832,6 +1157,7 @@ router.get('/:id/credentials', async (req, res) => {
 // Protected routes (require authentication)
 router.post('/:id/approve', studentController.approveStudent);
 router.post('/:id/decline', studentController.declineStudent);
+router.post('/:id/archive', studentController.archiveStudent);
 router.post('/:id/restore', studentController.restoreStudent);
 
 module.exports = router;

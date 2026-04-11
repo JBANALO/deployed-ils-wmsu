@@ -989,7 +989,7 @@ router.get('/', async (req, res) => {
     await maybeRunAutoAbsentForToday({ schoolYearId, date });
 
     let targetSy;
-    if (schoolYearId && canFilterBySchoolYear) {
+    if (canFilterBySchoolYear) {
       try {
         targetSy = await resolveTargetSchoolYear(schoolYearId);
       } catch (syErr) {

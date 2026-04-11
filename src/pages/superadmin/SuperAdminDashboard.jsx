@@ -109,7 +109,10 @@ export default function SuperAdminDashboard() {
       const studentRows = studentsRes.data?.data || studentsRes.data || [];
 
       const admins = Array.isArray(users)
-        ? users.filter((u) => ['admin', 'super_admin'].includes((u.role || '').toLowerCase()))
+        ? users.filter((u) => {
+            const role = (u.role || '').toLowerCase();
+            return ['admin'].includes(role) && role !== 'super_admin';
+          })
         : [];
 
       const teachers = Array.isArray(teacherRows)
@@ -252,13 +255,17 @@ export default function SuperAdminDashboard() {
           firstName: selectedAccount.firstName,
           lastName: selectedAccount.lastName,
           username: selectedAccount.username,
-          email: selectedAccount.email
+          email: selectedAccount.email,
+          department: selectedAccount.department,
+          contactNumber: selectedAccount.contactNumber
         });
       } else if (selectedAccount.type === 'teacher') {
         await axios.put(`/teachers/${selectedAccount.id}`, {
           firstName: selectedAccount.firstName,
           lastName: selectedAccount.lastName,
-          email: selectedAccount.email
+          email: selectedAccount.email,
+          department: selectedAccount.department,
+          contactNumber: selectedAccount.contactNumber
         });
       } else {
         await axios.put(`/students/${selectedAccount.id}`, {
@@ -389,6 +396,48 @@ export default function SuperAdminDashboard() {
                 </div>
               </div>
 
+              {/* SuperAdmin Profile Card */}
+              {superAdminUser && (
+                <div className="bg-gradient-to-r from-red-50 to-red-100 border border-red-200 rounded-lg p-4 mb-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-semibold text-red-800">Current SuperAdmin</h3>
+                    <span className="px-2 py-1 bg-red-800 text-white text-xs rounded-full">Super Admin</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-600">Name</p>
+                      <p className="font-medium text-gray-900">
+                        {superAdminUser.firstName} {superAdminUser.lastName}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600">Email</p>
+                      <p className="font-medium text-gray-900">{superAdminUser.email}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600">Username</p>
+                      <p className="font-medium text-gray-900">{superAdminUser.username || 'superadmin'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600">Department</p>
+                      <p className="font-medium text-gray-900">
+                        {superAdminUser.department || 'System Administration'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600">Contact</p>
+                      <p className="font-medium text-gray-900">
+                        {superAdminUser.contactNumber || superAdminUser.phone || 'Not specified'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600">Role</p>
+                      <p className="font-medium text-red-800 capitalize">{superAdminUser.role?.replace('_', ' ')}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Accounts Table */}
               <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
@@ -404,6 +453,8 @@ export default function SuperAdminDashboard() {
                       <tr>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email/Username</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -412,7 +463,7 @@ export default function SuperAdminDashboard() {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {loading ? (
                         <tr>
-                          <td colSpan="5" className="px-4 py-8 text-center">
+                          <td colSpan="7" className="px-4 py-8 text-center">
                             <div className="text-gray-500">Loading accounts...</div>
                           </td>
                         </tr>
@@ -442,6 +493,16 @@ export default function SuperAdminDashboard() {
                             <td className="px-4 py-4">
                               <div className="text-sm text-gray-900">{account.email}</div>
                               <div className="text-sm text-gray-500">@{account.username}</div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="text-sm text-gray-900">
+                                {account.department || 'Not specified'}
+                              </div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="text-sm text-gray-900">
+                                {account.contactNumber || account.phone || 'Not specified'}
+                              </div>
                             </td>
                             <td className="px-4 py-4">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleColor(account.type)}`}>
@@ -482,7 +543,7 @@ export default function SuperAdminDashboard() {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan="5" className="px-4 py-8 text-center">
+                          <td colSpan="7" className="px-4 py-8 text-center">
                             <div className="text-gray-500">No accounts found</div>
                           </td>
                         </tr>
@@ -498,9 +559,9 @@ export default function SuperAdminDashboard() {
 
       {/* Edit Account Modal */}
       {showEditModal && selectedAccount && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-lg bg-white">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Edit {selectedAccount.type} Account</h3>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm overflow-y-auto h-full w-full z-50">
+          <div className="relative top-10 mx-auto p-5 border w-96 shadow-lg rounded-lg bg-white">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Edit {selectedAccount.type} account</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">First Name</label>
@@ -529,19 +590,46 @@ export default function SuperAdminDashboard() {
                   className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Username</label>
+                <input
+                  type="text"
+                  value={selectedAccount.username || ''}
+                  onChange={(e) => setSelectedAccount({...selectedAccount, username: e.target.value})}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Department</label>
+                <input
+                  type="text"
+                  value={selectedAccount.department || ''}
+                  onChange={(e) => setSelectedAccount({...selectedAccount, department: e.target.value})}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Contact Number</label>
+                <input
+                  type="text"
+                  value={selectedAccount.contactNumber || selectedAccount.phone || ''}
+                  onChange={(e) => setSelectedAccount({...selectedAccount, contactNumber: e.target.value})}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500"
+                />
+              </div>
             </div>
             <div className="mt-6 flex justify-end space-x-3">
-              <button
-                onClick={() => setShowEditModal(false)}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
-              >
-                Cancel
-              </button>
               <button
                 onClick={saveAccountChanges}
                 className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
               >
                 Save Changes
+              </button>
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+              >
+                Cancel
               </button>
             </div>
           </div>
@@ -550,8 +638,8 @@ export default function SuperAdminDashboard() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && selectedAccount && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-lg bg-white">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm overflow-y-auto h-full w-full z-50">
+          <div className="relative top-50 mx-auto p-5 border w-96 shadow-lg rounded-lg bg-white">
             <div className="mt-3 text-center">
               <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
                 <TrashIcon className="h-6 w-6 text-red-600" />
@@ -565,16 +653,16 @@ export default function SuperAdminDashboard() {
               </div>
               <div className="mt-4 flex justify-center space-x-3">
                 <button
-                  onClick={() => setShowDeleteModal(false)}
-                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
-                >
-                  Cancel
-                </button>
-                <button
                   onClick={confirmDelete}
                   className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
                 >
                   Delete Account
+                </button>
+                <button
+                  onClick={() => setShowDeleteModal(false)}
+                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+                >
+                  Cancel
                 </button>
               </div>
             </div>

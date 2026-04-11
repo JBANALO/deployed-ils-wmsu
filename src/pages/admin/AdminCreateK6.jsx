@@ -1,9 +1,10 @@
- import React, { useState } from "react";
+ import React, { useState, useEffect } from "react";
 import { UserCircleIcon } from "@heroicons/react/24/outline";
 import QRCode from 'qrcode';
 import { API_BASE_URL } from "../../api/config";
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
+import axios from "../../api/axiosConfig";
 
 export default function AdminCreateK6() {
   const navigate = useNavigate();
@@ -11,6 +12,7 @@ export default function AdminCreateK6() {
   const [createdStudentEmail, setCreatedStudentEmail] = useState('');
   const [createdStudentPassword, setCreatedStudentPassword] = useState('');
   const [redirectTimer, setRedirectTimer] = useState(null);
+  const [sections, setSections] = useState([]);
   const [formData, setFormData] = useState({
     lrn: '',
     firstName: '',
@@ -47,6 +49,38 @@ export default function AdminCreateK6() {
     });
   };
   
+  // Fetch sections on component mount and when grade level changes
+  useEffect(() => {
+    fetchSections();
+  }, []);
+
+  useEffect(() => {
+    if (formData.gradeLevel) {
+      fetchSections();
+    }
+  }, [formData.gradeLevel]);
+
+  // Listen for section updates from AdminSections
+  useEffect(() => {
+    const handleSectionUpdate = () => {
+      fetchSections();
+    };
+
+    window.addEventListener('sectionAdded', handleSectionUpdate);
+    return () => {
+      window.removeEventListener('sectionAdded', handleSectionUpdate);
+    };
+  }, []);
+
+  const fetchSections = async () => {
+    try {
+      const response = await axios.get('/sections');
+      setSections(response.data?.data || []);
+    } catch (error) {
+      console.error('Error fetching sections:', error);
+    }
+  };
+
   // Update WMSU email and username when first or last name changes
   React.useEffect(() => {
     if (formData.firstName && formData.lastName) {
@@ -286,14 +320,35 @@ const handleSubmit = async (e) => {
           <div><label className="block font-semibold mb-1">Section</label>
             <select name="section" value={formData.section} onChange={handleChange} className="w-full border p-3 rounded-lg" required>
               <option value="">Select Section</option>
-              {formData.gradeLevel === "Kindergarten" && <option value="Love">Love</option>}
-              {formData.gradeLevel === "Grade 1" && <option value="Humility">Humility</option>}
-              {formData.gradeLevel === "Grade 2" && <option value="Kindness">Kindness</option>}
-              {formData.gradeLevel === "Grade 3" && <> <option value="Diligence">Diligence</option> <option value="Wisdom">Wisdom</option> </>}
-              {formData.gradeLevel === "Grade 4" && <> <option value="Prudence">Prudence</option> <option value="Generosity">Generosity</option> </>}
-              {formData.gradeLevel === "Grade 5" && <> <option value="Courage">Courage</option> <option value="Justice">Justice</option> </>}
-              {formData.gradeLevel === "Grade 6" && <> <option value="Honesty">Honesty</option> <option value="Loyalty">Loyalty</option> <option value="Industry">Industry</option></>}
-              {formData.gradeLevel === "MG" && <option value="Responsibility">Responsibility</option>}
+              {/* Show dynamically fetched sections that match the selected grade level */}
+              {sections
+                .filter(section => {
+                  if (!formData.gradeLevel) return false;
+                  const sectionGrade = section.grade_level || section.grade || '';
+                  return sectionGrade === formData.gradeLevel;
+                })
+                .map(section => (
+                  <option key={section.id} value={section.name}>
+                    {section.name}
+                  </option>
+                ))
+              }
+              {/* Fallback to hardcoded sections if no dynamic sections found */}
+              {sections.filter(section => {
+                const sectionGrade = section.grade_level || section.grade || '';
+                return sectionGrade === formData.gradeLevel;
+              }).length === 0 && formData.gradeLevel && (
+                <>
+                  {formData.gradeLevel === "Kindergarten" && <option value="Love">Love</option>}
+                  {formData.gradeLevel === "Grade 1" && <option value="Humility">Humility</option>}
+                  {formData.gradeLevel === "Grade 2" && <option value="Kindness">Kindness</option>}
+                  {formData.gradeLevel === "Grade 3" && <> <option value="Diligence">Diligence</option> <option value="Wisdom">Wisdom</option> </>}
+                  {formData.gradeLevel === "Grade 4" && <> <option value="Prudence">Prudence</option> <option value="Generosity">Generosity</option> </>}
+                  {formData.gradeLevel === "Grade 5" && <> <option value="Courage">Courage</option> <option value="Justice">Justice</option> </>}
+                  {formData.gradeLevel === "Grade 6" && <> <option value="Honesty">Honesty</option> <option value="Loyalty">Loyalty</option> <option value="Industry">Industry</option></>}
+                  {formData.gradeLevel === "NG" && <option value="Responsibility">Responsibility</option>}
+                </>
+              )}
             </select>
           </div>
         </div>

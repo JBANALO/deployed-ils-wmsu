@@ -35,6 +35,12 @@ export default function ForgotPasswordPage() {
           className="mx-auto mb-3 w-25 h-25"
         />
 
+        <h2 className="text-sm text-red-800 font-bold mb-4 leading-snug">
+          WMSU ILS-Elementary Department:
+          <br />
+          Automated Grades Portal and Students Attendance using QR Code
+        </h2>
+
         {!submitted ? (
           <>
             <div className="flex flex-col mb-6 leading-snug">

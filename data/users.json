@@ -2219,6 +2219,20 @@
     "restoredAt": "2026-03-02T11:43:26.596Z"
   },
   {
+    "id": "test-student-001",
+    "firstName": "Test",
+    "lastName": "Student",
+    "username": "test.student",
+    "role": "student",
+    "gradeLevel": "Grade 1",
+    "section": "Test",
+    "email": "test.student@wmsu.edu.ph",
+    "password": "student123",
+    "status": "approved",
+    "createdAt": "2026-04-06T00:00:00.000Z",
+    "updatedAt": "2026-04-06T00:00:00.000Z"
+  },
+  {
     "id": "61ce7439-82f3-4e86-9e6b-7b08cc9b634a",
     "firstName": "testtttt",
     "lastName": "creditalsssdsdadasda",

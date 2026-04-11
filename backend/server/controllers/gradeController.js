@@ -127,6 +127,20 @@ const canEnterGrade = async (user, student, subject, _pool, schoolYearId) => {
   return false;
 };
 
+const isUserAdviserForStudentClass = async (userId, student, schoolYearId) => {
+  if (!userId) return false;
+
+  const studentGrade = student.grade_level || student.gradeLevel;
+  const studentSection = student.section;
+
+  const [adviserClasses] = await pool.query(
+    'SELECT id FROM classes WHERE adviser_id = ? AND grade = ? AND section = ? AND school_year_id = ? LIMIT 1',
+    [userId, studentGrade, studentSection, schoolYearId]
+  );
+
+  return adviserClasses.length > 0;
+};
+
 const updateGrades = async (req, res) => {
   try {
     const { id } = req.params;
@@ -260,12 +274,16 @@ const getStudentGrades = async (req, res) => {
     let visibleRows = rows;
     const role = normalizeRole(user.role || '');
     if ((role === 'teacher' || role === 'subject_teacher') && userId) {
-      const assignedSubjects = await getAssignedSubjectsForTeacher(userId, student, targetSchoolYearId);
-      if (assignedSubjects.length > 0) {
-        const allowed = new Set(assignedSubjects.map((item) => normalizeSubject(item)));
-        visibleRows = rows.filter((row) => allowed.has(normalizeSubject(row.subject)));
-      } else {
-        visibleRows = [];
+      const isAdviserForClass = await isUserAdviserForStudentClass(userId, student, targetSchoolYearId);
+
+      if (!isAdviserForClass) {
+        const assignedSubjects = await getAssignedSubjectsForTeacher(userId, student, targetSchoolYearId);
+        if (assignedSubjects.length > 0) {
+          const allowed = new Set(assignedSubjects.map((item) => normalizeSubject(item)));
+          visibleRows = rows.filter((row) => allowed.has(normalizeSubject(row.subject)));
+        } else {
+          visibleRows = [];
+        }
       }
     }
 

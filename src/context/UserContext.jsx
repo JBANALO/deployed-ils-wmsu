@@ -12,72 +12,17 @@ export const useAuth = () => {
 };
 
 export const UserProvider = ({ children }) => {
-  const [adminUser, setAdminUser] = useState(null);
-  const [profileImageFile, setProfileImageFile] = useState(null); // 
-
-  // Initialize from localStorage and handle updates
-  useEffect(() => {
-    const storedUser = localStorage.getItem("user");
-    console.log('UserContext - storedUser from localStorage:', storedUser);
-    
-    if (storedUser) {
-      try {
-        const parsedUser = JSON.parse(storedUser);
-        console.log('UserContext - parsedUser:', parsedUser);
-        console.log('UserContext - parsedUser.profileImage:', parsedUser.profileImage);
-        setAdminUser(parsedUser);
-      } catch (error) {
-        console.error('UserContext - Error parsing stored user:', error);
-        localStorage.removeItem("user");
-      }
+  const [adminUser, setAdminUser] = useState(() => {
+    // Initialize from localStorage on app load
+    try {
+      const storedUser = localStorage.getItem("user");
+      return storedUser ? JSON.parse(storedUser) : null;
+    } catch (error) {
+      console.error("Error parsing stored user:", error);
+      return null;
     }
-
-    const handleStorage = (e) => {
-      console.log('UserContext - storage event:', e.key, e.newValue);
-      if (e.key === "user") {
-        if (e.newValue) {
-          try {
-            const parsedUser = JSON.parse(e.newValue);
-            console.log('UserContext - updating from storage event:', parsedUser);
-            setAdminUser(parsedUser);
-          } catch (error) {
-            console.error('UserContext - Error parsing storage event user:', error);
-          }
-        } else {
-          // User was cleared, set to null
-          setAdminUser(null);
-        }
-      }
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
-
-  // Also check for user changes when window gains focus (tab switching)
-  useEffect(() => {
-    const handleFocus = () => {
-      const currentUser = localStorage.getItem("user");
-      if (currentUser) {
-        try {
-          const parsedUser = JSON.parse(currentUser);
-          console.log('UserContext - refreshing user data on focus:', parsedUser);
-          
-          // Only update if current user is null or has different email
-          // This prevents overriding fresh data with stale localStorage data
-          if (!adminUser || adminUser.email !== parsedUser.email) {
-            setAdminUser(parsedUser);
-          }
-        } catch (error) {
-          console.error('UserContext - Error parsing user on focus:', error);
-        }
-      } else {
-        setAdminUser(null);
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [adminUser]);
+  });
+  const [profileImageFile, setProfileImageFile] = useState(null); // 
 
   // Update user helper
   const updateUser = (user) => {
@@ -93,8 +38,72 @@ export const UserProvider = ({ children }) => {
     }));
   };
 
+  // Login update function that preserves localStorage changes
+  const loginUpdate = (serverUser) => {
+    console.log('UserContext - loginUpdate called with server data:', serverUser);
+    
+    // Get current localStorage data
+    const storedUser = localStorage.getItem("user");
+    let finalUser = serverUser;
+    
+    if (storedUser) {
+      try {
+        const parsedStoredUser = JSON.parse(storedUser);
+        
+        // Preserve updated fields from localStorage that might be newer than server data
+        finalUser = {
+          ...serverUser,
+          firstName: parsedStoredUser.firstName || serverUser.firstName,
+          lastName: parsedStoredUser.lastName || serverUser.lastName,
+          phone: parsedStoredUser.phone || serverUser.phone,
+          profileImage: parsedStoredUser.profileImage || serverUser.profileImage,
+        };
+        
+        console.log('UserContext - merged user data:', finalUser);
+      } catch (error) {
+        console.error('Error parsing stored user during login:', error);
+      }
+    }
+    
+    setAdminUser(finalUser);
+    localStorage.setItem("user", JSON.stringify(finalUser));
+    
+    // Force refresh other tabs
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'user',
+      newValue: JSON.stringify(finalUser)
+    }));
+  };
+
+  // Logout function to clear user data but preserve profile updates
+  const logout = () => {
+    console.log('UserContext - logout called, clearing user data');
+    
+    // Before clearing, save profile updates to a temporary location
+    if (adminUser) {
+      const profileUpdates = {
+        firstName: adminUser.firstName,
+        lastName: adminUser.lastName,
+        phone: adminUser.phone,
+        profileImage: adminUser.profileImage,
+      };
+      localStorage.setItem("profileUpdates", JSON.stringify(profileUpdates));
+      console.log('UserContext - saved profile updates before logout');
+    }
+    
+    setAdminUser(null);
+    setProfileImageFile(null);
+    localStorage.removeItem("user"); // Only remove user, not profileUpdates
+    
+    // Force refresh other tabs to clear stale data
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'user',
+      newValue: null
+    }));
+  };
+
   return (
-    <UserContext.Provider value={{ adminUser, updateUser, profileImageFile, setProfileImageFile }}>
+    <UserContext.Provider value={{ adminUser, updateUser, logout, profileImageFile, setProfileImageFile }}>
       {children}
     </UserContext.Provider>
   );

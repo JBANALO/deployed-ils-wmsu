@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   UserCircleIcon,
   UsersIcon,
@@ -29,6 +29,7 @@ export default function TeacherDashboard() {
   const [promotionHistory, setPromotionHistory] = useState([]);
   const [assignedClassKeys, setAssignedClassKeys] = useState([]);
   const [showPromotionHistory, setShowPromotionHistory] = useState(false);
+  const lastKnownActiveSchoolYearIdRef = useRef(null);
 
   useEffect(() => {
     loadDashboardData();
@@ -37,6 +38,7 @@ export default function TeacherDashboard() {
     
     // Auto-refresh every 15 seconds to reflect admin changes immediately
     const interval = setInterval(() => {
+      fetchActiveSchoolYear();
       loadDashboardData();
     }, 15000);
     
@@ -77,12 +79,22 @@ export default function TeacherDashboard() {
       
       setActiveSchoolYear(schoolYear);
       if (schoolYear?.id) {
-        setTeacherActiveSchoolYearId(String(schoolYear.id));
-      }
-      if (schoolYear?.id && !selectedSchoolYearId) {
-        const defaultId = String(schoolYear.id);
-        setSelectedSchoolYearId(defaultId);
-        setTeacherViewingSchoolYearId(defaultId);
+        const activeId = String(schoolYear.id);
+        const previousActiveId = lastKnownActiveSchoolYearIdRef.current;
+        setTeacherActiveSchoolYearId(activeId);
+
+        // Auto-follow active SY when admin switches years, unless teacher is explicitly viewing another past SY.
+        const shouldAutoFollow =
+          !selectedSchoolYearId ||
+          !previousActiveId ||
+          String(selectedSchoolYearId) === String(previousActiveId);
+
+        if (shouldAutoFollow && String(selectedSchoolYearId || '') !== activeId) {
+          setSelectedSchoolYearId(activeId);
+          setTeacherViewingSchoolYearId(activeId);
+        }
+
+        lastKnownActiveSchoolYearIdRef.current = activeId;
       }
     } catch (e) {
       // non-critical

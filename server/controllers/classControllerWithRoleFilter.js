@@ -34,6 +34,105 @@ const resolveSchoolYear = async (req) => {
   return getActiveSchoolYear();
 };
 
+const normalizeGradeLevel = (value = '') => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const compact = raw.replace(/\s+/g, ' ');
+  if (/^kindergarten$/i.test(compact)) return 'Kindergarten';
+
+  const gradeMatch = compact.match(/^grade\s*(\d+)$/i);
+  if (gradeMatch) return `Grade ${gradeMatch[1]}`;
+
+  return compact;
+};
+
+const normalizeSectionLabel = (value = '') => String(value || '').trim().replace(/\s+/g, ' ');
+
+const syncClassesFromSectionsForSchoolYear = async (schoolYearId) => {
+  if (!schoolYearId) return { inserted: 0, skipped: 0 };
+
+  const [sectionColumns] = await pool.query('SHOW COLUMNS FROM sections');
+  const sectionFieldSet = new Set(sectionColumns.map((column) => column.Field));
+  const sectionNameField = sectionFieldSet.has('name') ? 'name' : (sectionFieldSet.has('section_name') ? 'section_name' : null);
+  const gradeField = sectionFieldSet.has('grade_level') ? 'grade_level' : (sectionFieldSet.has('grade') ? 'grade' : null);
+  const hasSchoolYear = sectionFieldSet.has('school_year_id');
+  const hasIsArchived = sectionFieldSet.has('is_archived');
+
+  if (!sectionNameField || !gradeField) {
+    return { inserted: 0, skipped: 0 };
+  }
+
+  const whereParts = [];
+  const params = [];
+
+  if (hasSchoolYear) {
+    whereParts.push('school_year_id = ?');
+    params.push(schoolYearId);
+  }
+
+  if (hasIsArchived) {
+    whereParts.push('(is_archived IS NULL OR is_archived = 0)');
+  }
+
+  const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
+  const [sections] = await pool.query(
+    `SELECT ${gradeField} AS grade_level, ${sectionNameField} AS section_name
+     FROM sections
+     ${whereClause}`,
+    params
+  );
+
+  if (!sections.length) return { inserted: 0, skipped: 0 };
+
+  const [classes] = await pool.query(
+    `SELECT grade, section
+     FROM classes
+     WHERE school_year_id = ?`,
+    [schoolYearId]
+  );
+
+  const classKey = (grade, section) => `${normalizeGradeLevel(grade).toLowerCase()}::${normalizeSectionLabel(section).toLowerCase()}`;
+  const existingKeys = new Set(classes.map((row) => classKey(row.grade, row.section)));
+
+  let inserted = 0;
+  let skipped = 0;
+
+  for (const row of sections) {
+    const grade = normalizeGradeLevel(row.grade_level);
+    const section = normalizeSectionLabel(row.section_name);
+    if (!grade || !section) {
+      skipped += 1;
+      continue;
+    }
+
+    const key = classKey(grade, section);
+    if (existingKeys.has(key)) {
+      skipped += 1;
+      continue;
+    }
+
+    try {
+      await pool.query(
+        `INSERT INTO classes (id, grade, section, adviser_id, adviser_name, createdAt, updatedAt, school_year_id)
+         VALUES (?, ?, ?, NULL, '', NOW(), NOW(), ?)`,
+        [uuidv4(), grade, section, schoolYearId]
+      );
+      existingKeys.add(key);
+      inserted += 1;
+    } catch (error) {
+      if (error?.code === 'ER_DUP_ENTRY') {
+        existingKeys.add(key);
+        skipped += 1;
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  return { inserted, skipped };
+};
+
 const ensureClassAssignmentsTable = async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS class_assignments (
@@ -74,6 +173,51 @@ const ensureClassesSchoolYearColumn = async () => {
       } catch (alterError) {
         console.log('ensureClassesSchoolYearColumn alter skipped:', alterError.message);
       }
+    }
+
+    try {
+      const [indexRows] = await pool.query('SHOW INDEX FROM classes');
+      const uniqueByName = new Map();
+      indexRows
+        .filter((idx) => Number(idx.Non_unique) === 0)
+        .forEach((idx) => {
+          const key = idx.Key_name;
+          if (!uniqueByName.has(key)) uniqueByName.set(key, []);
+          uniqueByName.get(key).push({ seq: Number(idx.Seq_in_index), col: idx.Column_name });
+        });
+
+      const getCols = (name) => (uniqueByName.get(name) || [])
+        .sort((a, b) => a.seq - b.seq)
+        .map((entry) => entry.col);
+
+      let globalGradeSectionUnique = null;
+      let hasSchoolYearScopedUnique = false;
+
+      for (const key of uniqueByName.keys()) {
+        const cols = getCols(key);
+        if (cols.length === 2 && cols[0] === 'grade' && cols[1] === 'section') {
+          globalGradeSectionUnique = key;
+        }
+        if (cols.length === 3 && cols[0] === 'grade' && cols[1] === 'section' && cols[2] === 'school_year_id') {
+          hasSchoolYearScopedUnique = true;
+        }
+      }
+
+      if (globalGradeSectionUnique && !hasSchoolYearScopedUnique) {
+        try {
+          await pool.query(`ALTER TABLE classes DROP INDEX \`${globalGradeSectionUnique}\``);
+        } catch (dropErr) {
+          console.log('ensureClassesSchoolYearColumn drop global unique skipped:', dropErr.message);
+        }
+
+        try {
+          await pool.query('CREATE UNIQUE INDEX idx_classes_grade_section_sy ON classes (grade, section, school_year_id)');
+        } catch (createErr) {
+          console.log('ensureClassesSchoolYearColumn create scoped unique skipped:', createErr.message);
+        }
+      }
+    } catch (indexErr) {
+      console.log('ensureClassesSchoolYearColumn index check skipped:', indexErr.message);
     }
   } catch (error) {
     console.log('ensureClassesSchoolYearColumn check skipped:', error.message);
@@ -249,6 +393,15 @@ const getAllClasses = async (req, res) => {
 
     try {
       const targetSy = await resolveSchoolYear(req);
+      try {
+        const syncResult = await syncClassesFromSectionsForSchoolYear(targetSy.id);
+        if (syncResult.inserted > 0) {
+          console.log(`getAllClasses: synced ${syncResult.inserted} section(s) into classes for SY ${targetSy.id}`);
+        }
+      } catch (syncError) {
+        console.log('getAllClasses section sync skipped:', syncError.message);
+      }
+
       // Try database first - query classes table with subject_teachers
       const [rows] = await pool.query(
         `SELECT c.* FROM classes c WHERE c.school_year_id = ? ORDER BY c.grade, c.section`,

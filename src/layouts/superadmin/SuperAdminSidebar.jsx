@@ -43,7 +43,7 @@ export default function SuperAdminSidebar({ sidebarOpen, setSidebarOpen }) {
         sidebarOpen ? "w-64" : "w-20"
       }`}
     >
-      <div className="px-4 py-5 border-b border-red-700/50 flex items-center">
+      <div className="px-5 py-5 border-b border-red-700/50 flex items-center">
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
           className="text-white transition-transform duration-300 hover:scale-110"
@@ -87,7 +87,6 @@ export default function SuperAdminSidebar({ sidebarOpen, setSidebarOpen }) {
           </div>
         ))}
       </nav>
-
       </aside>
   );
 }

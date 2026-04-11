@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   BookOpenIcon,
   UsersIcon,
@@ -8,6 +8,7 @@ import {
   UserCircleIcon,
   InformationCircleIcon,
 } from "@heroicons/react/24/solid";
+import { toast } from 'react-toastify';
 import QRCode from "qrcode";
 import ViewStudentModal from '@/components/modals/ViewStudentModal'
 import EditStudentModal from '@/components/modals/EditStudentModal'
@@ -37,6 +38,7 @@ export default function GradeLevel() {
   const [viewingClass, setViewingClass] = useState(null);
   const [activeSchoolYearId, setActiveSchoolYearId] = useState(() => getTeacherActiveSchoolYearId());
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
+  const lastKnownActiveSchoolYearIdRef = useRef(null);
   const isViewOnlyMode = isTeacherViewOnlyMode(selectedSchoolYearId, activeSchoolYearId);
 
   useEffect(() => {
@@ -50,30 +52,45 @@ export default function GradeLevel() {
     return () => clearInterval(interval);
   }, [selectedSchoolYearId]);
 
-  useEffect(() => {
-    const fetchActiveSchoolYear = async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/school-years/active`);
-        if (!res.ok) return;
-        const payload = await res.json();
-        const activeSy = payload?.data || payload;
-        if (activeSy?.id) {
-          const nextActiveId = String(activeSy.id);
-          setActiveSchoolYearId(nextActiveId);
-          setTeacherActiveSchoolYearId(nextActiveId);
-          // Always align GradeLevel view to active school year to prevent stale localStorage scope.
-          if (String(selectedSchoolYearId || '') !== nextActiveId) {
-            setSelectedSchoolYearId(nextActiveId);
-            setTeacherViewingSchoolYearId(nextActiveId);
-          }
-        }
-      } catch (error) {
-        console.warn('Could not load active school year:', error.message);
-      }
-    };
+  const fetchActiveSchoolYear = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/school-years/active`);
+      if (!res.ok) return;
+      const payload = await res.json();
+      const activeSy = payload?.data || payload;
+      if (!activeSy?.id) return;
 
+      const nextActiveId = String(activeSy.id);
+      const previousActiveId = lastKnownActiveSchoolYearIdRef.current;
+
+      setActiveSchoolYearId(nextActiveId);
+      setTeacherActiveSchoolYearId(nextActiveId);
+
+      const shouldAutoFollow =
+        !selectedSchoolYearId ||
+        !previousActiveId ||
+        String(selectedSchoolYearId) === String(previousActiveId);
+
+      if (shouldAutoFollow && String(selectedSchoolYearId || '') !== nextActiveId) {
+        setSelectedSchoolYearId(nextActiveId);
+        setTeacherViewingSchoolYearId(nextActiveId);
+      }
+
+      lastKnownActiveSchoolYearIdRef.current = nextActiveId;
+    } catch (error) {
+      console.warn('Could not load active school year:', error.message);
+    }
+  };
+
+  useEffect(() => {
     fetchActiveSchoolYear();
-  }, []);
+
+    const interval = setInterval(() => {
+      fetchActiveSchoolYear();
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [selectedSchoolYearId]);
 
   useEffect(() => {
     if (selectedSchoolYearId) {
@@ -338,11 +355,11 @@ export default function GradeLevel() {
   const handleView = (student) => { setSelectedStudent(student); setShowViewModal(true); };
   const handleEdit = (student) => {
     if (isViewOnlyMode) {
-      alert('Past school years are view-only. Student editing is disabled.');
+      toast.error('Past school years are view-only. Student editing is disabled.');
       return;
     }
     if (!canEditStudentInfo(student)) {
-      alert('Only the adviser of this class (or admin) can edit student information.');
+      toast.error('Only the adviser of this class (or admin) can edit student information.');
       return;
     }
     setSelectedStudent(student);
@@ -351,7 +368,7 @@ export default function GradeLevel() {
   };
   const handleDeleteRequest = (student) => {
     if (isViewOnlyMode) {
-      alert('Past school years are view-only. Delete requests are disabled.');
+      toast.error('Past school years are view-only. Delete requests are disabled.');
       return;
     }
     setSelectedStudent(student);
@@ -366,14 +383,14 @@ export default function GradeLevel() {
       const actorRole = String(actor?.role || '').toLowerCase();
       const actorId = actor?.id;
       if (!canEditStudentInfo(selectedStudent)) {
-        alert('Only the adviser of this class (or admin) can edit student information.');
+        toast.error('Only the adviser of this class (or admin) can edit student information.');
         return;
       }
       const previousStatus = String(selectedStudent?.status || '').trim().toLowerCase();
       const nextStatus = String(editFormData?.status || '').trim().toLowerCase();
 
       if (previousStatus === 'inactive' && nextStatus && nextStatus !== 'inactive') {
-        alert('Only admin can reactivate an inactive student account.');
+        toast.error('Only admin can reactivate an inactive student account.');
         return;
       }
 
@@ -399,17 +416,17 @@ export default function GradeLevel() {
       });
 
       if (res.ok) {
-        alert("Student updated successfully!");
+        toast.success("Student updated successfully!");
         fetchData();
         setShowEditModal(false);
       }
     } catch (err) {
-      alert("Failed to update");
+      toast.error("Failed to update");
     }
   };
 
   const submitDeleteRequest = async () => {
-    if (!deleteReason.trim()) return alert("Reason required");
+    if (!deleteReason.trim()) return toast.error("Reason required");
     try {
       await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/delete-requests`, {
         method: "POST",
@@ -422,10 +439,10 @@ export default function GradeLevel() {
           reason: deleteReason,
         }),
       });
-      alert("Delete request sent!");
+      toast.success("Delete request sent!");
       setShowDeleteRequestModal(false);
     } catch (err) {
-      alert("Failed");
+      toast.error("Failed");
     }
   };
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { Download, Calendar, BookOpen, X, Printer } from 'lucide-react';
+import { Download, Calendar, BookOpen, X, Printer, Trophy } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import StudentTopbar from '@/layouts/student/StudentTopbar'; // ← Use @/ if you have alias, or correct path
 import { UserContext } from '@/context/UserContext'; // Import UserContext
@@ -11,6 +11,8 @@ const StudentPortal = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showReportCardModal, setShowReportCardModal] = useState(false);
+  const [showRankingModal, setShowRankingModal] = useState(false);
+  const [currentSchoolYearId, setCurrentSchoolYearId] = useState(null);
   const { user } = useContext(UserContext); // Get logged-in user from context
 
   // Get studentId from localStorage user data (stored during login)
@@ -18,14 +20,16 @@ const StudentPortal = () => {
   const studentId = user?.id || storedUser.id || localStorage.getItem('studentId');
 
   useEffect(() => {
-    const fetchPortalData = async () => {
+    const fetchPortalData = async (silent = false) => {
       if (!studentId || studentId === 'null') {
         setLoading(false);
         return;
       }
 
       try {
-        toast.loading('Loading student data...', { id: 'studentData' });
+        if (!silent) {
+          toast.loading('Loading student data...', { id: 'studentData' });
+        }
         const baseURL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 
                  (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
         const [res, activeSchoolYearRes] = await Promise.all([
@@ -39,6 +43,14 @@ const StudentPortal = () => {
         if (activeSchoolYearRes.ok) {
           const activeResult = await activeSchoolYearRes.json();
           activeSchoolYear = activeResult?.data || null;
+          const nextSchoolYearId = activeSchoolYear?.id ? String(activeSchoolYear.id) : null;
+          if (nextSchoolYearId && currentSchoolYearId && currentSchoolYearId !== nextSchoolYearId) {
+            toast('School year has been updated. Showing current year records.', {
+              icon: 'ℹ️',
+              id: 'schoolYearSwitch'
+            });
+          }
+          setCurrentSchoolYearId(nextSchoolYearId);
         }
           
           // Map API response structure to frontend expectations
@@ -63,15 +75,20 @@ const StudentPortal = () => {
               attendance: studentData.attendance || [],
               attendanceSummary: studentData.attendanceSummary || {},
               schedule: studentData.schedule || [],
-              previousScheduleHistory: studentData.previousScheduleHistory || []
+              previousScheduleHistory: studentData.previousScheduleHistory || [],
+              publishedRankings: studentData.publishedRankings || []
             };
             setData(mappedData);
-            toast.success('Student data loaded successfully!', { id: 'studentData' });
+            if (!silent) {
+              toast.success('Student data loaded successfully!', { id: 'studentData' });
+            }
           } else {
-            toast('No student data found, but you are logged in correctly', { 
-              icon: 'ℹ️',
-              id: 'studentData' 
-            });
+            if (!silent) {
+              toast('No student data found, but you are logged in correctly', { 
+                icon: 'ℹ️',
+                id: 'studentData' 
+              });
+            }
             // Don't throw error, just set empty data to prevent login redirect
             setData({
               profile: {
@@ -89,18 +106,29 @@ const StudentPortal = () => {
               attendance: [],
               attendanceSummary: {},
               schedule: [],
-              previousScheduleHistory: []
+              previousScheduleHistory: [],
+              publishedRankings: []
             });
           }
       } catch (err) {
-        toast.error('No student data found. Please make sure you are logged in correctly.', { id: 'studentData' });
+        if (!silent) {
+          toast.error('No student data found. Please make sure you are logged in correctly.', { id: 'studentData' });
+        }
       } finally {
-        setLoading(false);
+        if (!silent) {
+          setLoading(false);
+        }
       }
     };
 
     fetchPortalData();
-  }, [studentId]);
+
+    const interval = setInterval(() => {
+      fetchPortalData(true);
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [studentId, currentSchoolYearId]);
 
   // ← SHOW THIS WHILE LOADING
   if (loading) {
@@ -131,6 +159,20 @@ const StudentPortal = () => {
   }
 
   const { profile, grades = [], gradeHistory = [] } = data;
+
+  const publishedRankings = Array.isArray(data?.publishedRankings) ? data.publishedRankings : [];
+
+  const formatRankingScore = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed.toFixed(2) : 'N/A';
+  };
+
+  const getRankingBadgeClass = (rank) => {
+    if (rank === 1) return 'bg-yellow-100 text-yellow-800';
+    if (rank === 2) return 'bg-gray-200 text-gray-800';
+    if (rank === 3) return 'bg-orange-100 text-orange-800';
+    return 'bg-blue-100 text-blue-800';
+  };
 
   // Report card preview function
   const previewReportCard = () => {
@@ -989,10 +1031,24 @@ const StudentPortal = () => {
                       Final Average: <strong className="text-2xl text-green-600">{profile.finalAverage || 'N/A'}</strong>
                     </p>
                   </div>
-                  <button onClick={() => previewReportCard()} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2">
-                    <Download className="w-5 h-5" /> Preview Report Card
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowRankingModal(true)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2"
+                    >
+                      <Trophy className="w-5 h-5" /> View Ranking
+                    </button>
+                    <button onClick={() => previewReportCard()} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2">
+                      <Download className="w-5 h-5" /> Preview Report Card
+                    </button>
+                  </div>
                 </div>
+
+                <p className="text-sm text-gray-600 mb-6">
+                  {publishedRankings.length > 0
+                    ? `${publishedRankings.length} ranking update(s) posted by your teacher.`
+                    : 'No ranking has been posted yet. Tap View Ranking to check updates.'}
+                </p>
 
                 {grades.length === 0 ? (
                   <div className="text-center py-16 text-gray-500">
@@ -1048,6 +1104,7 @@ const StudentPortal = () => {
                             <p className="font-semibold text-gray-800">
                               {record.gradeLevel || 'Previous Grade'}
                               {record.section ? ` - ${record.section}` : ''}
+                              {record.schoolYearLabel ? ` (${record.schoolYearLabel})` : ''}
                             </p>
                             {record.promotedAt && (
                               <p className="text-xs text-gray-500">
@@ -1265,6 +1322,7 @@ const StudentPortal = () => {
                               {record.fromSection ? ` - ${record.fromSection}` : ''}
                               {' '}→ {record.toGrade || 'Next Grade'}
                               {record.toSection ? ` - ${record.toSection}` : ''}
+                              {record.schoolYearLabel ? ` (${record.schoolYearLabel})` : ''}
                             </p>
                             {record.promotedAt && (
                               <p className="text-xs text-gray-500">
@@ -1275,7 +1333,15 @@ const StudentPortal = () => {
 
                           {Array.isArray(record.schedule) && record.schedule.length > 0 ? (
                             <div className="grid gap-3">
-                              {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => {
+                              {(() => {
+                                const preferredOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                                const rawDays = [...new Set((record.schedule || []).map((s) => s.day || 'N/A'))];
+                                const orderedDays = [
+                                  ...preferredOrder.filter((day) => rawDays.includes(day)),
+                                  ...rawDays.filter((day) => !preferredOrder.includes(day))
+                                ];
+
+                                return orderedDays.map(day => {
                                 const daySchedule = record.schedule.filter(s => s.day === day);
                                 if (daySchedule.length === 0) return null;
                                 return (
@@ -1294,7 +1360,8 @@ const StudentPortal = () => {
                                     </div>
                                   </div>
                                 );
-                              })}
+                                });
+                              })()}
                             </div>
                           ) : (
                             <p className="text-sm text-gray-500">No saved schedule snapshot for this promotion record.</p>
@@ -1309,6 +1376,56 @@ const StudentPortal = () => {
           </div>
         </div>
       </div>
+
+      {/* Ranking Modal */}
+      {showRankingModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-3xl w-full max-h-[85vh] overflow-auto">
+            <div className="bg-blue-700 text-white px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+              <h1 className="text-lg font-semibold tracking-wide">Posted Ranking</h1>
+              <button
+                onClick={() => setShowRankingModal(false)}
+                className="flex items-center gap-2 text-white font-semibold px-4 py-2 hover:bg-blue-800 transition rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {publishedRankings.length === 0 ? (
+                <div className="text-center py-10 text-gray-600">
+                  <p className="text-lg font-semibold text-gray-700">No ranking posted yet</p>
+                  <p className="text-sm mt-2">Your adviser/teacher has not posted ranking for your class yet.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {publishedRankings.map((ranking, idx) => (
+                    <div key={`${ranking.rankingType || 'ranking'}-${ranking.quarter || 'all'}-${ranking.subject || 'general'}-${idx}`} className="rounded-lg bg-white border border-blue-100 p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-semibold text-gray-800">{ranking.title || 'Published Ranking'}</p>
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${getRankingBadgeClass(Number(ranking.rank))}`}>
+                          Rank #{ranking.rank || '-'}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700 mt-2">
+                        Score: <strong>{formatRankingScore(ranking.score)}</strong>
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Population: {ranking.totalStudents || 0} students
+                      </p>
+                      {ranking.publishedAt && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Posted on {new Date(ranking.publishedAt).toLocaleString('en-US')}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Report Card Preview Modal */}
       {showReportCardModal && (
