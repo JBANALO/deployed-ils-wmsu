@@ -23,6 +23,61 @@ const ensureTeacherSchoolYearColumn = async () => {
     if (!hasContactNumber) {
       await query('ALTER TABLE teachers ADD COLUMN contact_number VARCHAR(50) NULL');
     }
+
+    // Preserve teacher history per school year: allow same email/username across different school years.
+    try {
+      const indexes = await query('SHOW INDEX FROM teachers');
+      const uniqueByName = new Map();
+
+      indexes
+        .filter((idx) => Number(idx.Non_unique) === 0)
+        .forEach((idx) => {
+          if (!uniqueByName.has(idx.Key_name)) uniqueByName.set(idx.Key_name, []);
+          uniqueByName.get(idx.Key_name).push({ seq: Number(idx.Seq_in_index), col: idx.Column_name });
+        });
+
+      const getIndexCols = (name) => (uniqueByName.get(name) || [])
+        .sort((a, b) => a.seq - b.seq)
+        .map((entry) => entry.col);
+
+      let hasScopedUsernameUnique = false;
+      let hasScopedEmailUnique = false;
+      let globalUsernameUniqueName = null;
+      let globalEmailUniqueName = null;
+
+      for (const keyName of uniqueByName.keys()) {
+        const cols = getIndexCols(keyName);
+        if (cols.length === 2 && cols[0] === 'school_year_id' && cols[1] === 'username') {
+          hasScopedUsernameUnique = true;
+        }
+        if (cols.length === 2 && cols[0] === 'school_year_id' && cols[1] === 'email') {
+          hasScopedEmailUnique = true;
+        }
+        if (cols.length === 1 && cols[0] === 'username' && keyName !== 'PRIMARY') {
+          globalUsernameUniqueName = keyName;
+        }
+        if (cols.length === 1 && cols[0] === 'email' && keyName !== 'PRIMARY') {
+          globalEmailUniqueName = keyName;
+        }
+      }
+
+      if (!hasScopedUsernameUnique) {
+        await query('CREATE UNIQUE INDEX idx_teachers_sy_username_unique ON teachers (school_year_id, username)');
+      }
+      if (!hasScopedEmailUnique) {
+        await query('CREATE UNIQUE INDEX idx_teachers_sy_email_unique ON teachers (school_year_id, email)');
+      }
+
+      if (globalUsernameUniqueName) {
+        await query(`ALTER TABLE teachers DROP INDEX \`${globalUsernameUniqueName}\``);
+      }
+      if (globalEmailUniqueName) {
+        await query(`ALTER TABLE teachers DROP INDEX \`${globalEmailUniqueName}\``);
+      }
+    } catch (indexErr) {
+      console.log('ensureTeacherSchoolYearColumn index scope update skipped:', indexErr.message);
+    }
+
     teacherSyEnsured = true;
   } catch (err) {
     console.log('ensureTeacherSchoolYearColumn skipped:', err.message);
@@ -1160,7 +1215,7 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
     let skipped = 0;
 
     for (const t of prevTeachers) {
-      // Skip duplicates globally by email/username to satisfy unique constraints.
+      // Only dedupe against target school year; preserve source-year teacher records.
       const dedupeConditions = [];
       const dedupeParams = [];
       if (t.email) {
@@ -1177,9 +1232,10 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
         dup = await query(
           `SELECT id, school_year_id
            FROM teachers
-           WHERE ${dedupeConditions.join(' OR ')}
+           WHERE school_year_id = ?
+             AND (${dedupeConditions.join(' OR ')})
            LIMIT 1`,
-          dedupeParams
+          [targetSy.id, ...dedupeParams]
         );
       }
 
@@ -1203,7 +1259,6 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
                verification_status = ?,
                sex = ?,
                contact_number = ?,
-               school_year_id = ?,
                updated_at = NOW()
            WHERE id = ?`,
           [
@@ -1222,7 +1277,6 @@ const fetchTeachersFromPreviousYear = async (req, res) => {
             'approved',
             t.sex || null,
             t.contact_number || null,
-            targetSy.id,
             existing.id
           ]
         );
