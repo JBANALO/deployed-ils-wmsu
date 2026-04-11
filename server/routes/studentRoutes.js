@@ -1078,6 +1078,7 @@ router.post('/', studentController.createStudent);
 router.get('/', studentController.getStudents);
 router.get('/pending', studentController.getPendingStudents);
 router.get('/declined', studentController.getDeclinedStudents);
+router.get('/archived', studentController.getArchivedStudents);
 router.get('/previous-year-promotion-candidates', studentController.getPreviousYearPromotionCandidates);
 router.post('/fetch-from-previous', studentController.fetchStudentsFromPreviousYear);
 router.post('/regenerate-qr', studentController.regenerateQRCodes); // fix all QR codes to JSON format
@@ -1156,6 +1157,7 @@ router.get('/:id/credentials', async (req, res) => {
 // Protected routes (require authentication)
 router.post('/:id/approve', studentController.approveStudent);
 router.post('/:id/decline', studentController.declineStudent);
+router.post('/:id/archive', studentController.archiveStudent);
 router.post('/:id/restore', studentController.restoreStudent);
 
 module.exports = router;

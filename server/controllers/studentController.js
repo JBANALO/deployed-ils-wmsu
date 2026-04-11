@@ -9,6 +9,7 @@ const bcrypt = require('bcryptjs');
 let studentSyEnsured = false;
 let gradesSyEnsured = false;
 let studentBirthDateEnsured = false;
+let studentArchiveColumnsEnsured = false;
 
 async function getActiveSchoolYear() {
   const rows = await query('SELECT id, label, start_date FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
@@ -235,6 +236,23 @@ async function ensureStudentBirthDateColumn() {
   studentBirthDateEnsured = true;
 }
 
+async function ensureStudentArchiveColumns() {
+  if (studentArchiveColumnsEnsured) return;
+  const cols = await query('SHOW COLUMNS FROM students');
+  const hasStoppedYear = cols.some((c) => c.Field === 'stopped_year');
+  const hasStopReason = cols.some((c) => c.Field === 'stop_reason');
+
+  if (!hasStoppedYear) {
+    await query('ALTER TABLE students ADD COLUMN stopped_year VARCHAR(32) NULL AFTER status');
+  }
+
+  if (!hasStopReason) {
+    await query('ALTER TABLE students ADD COLUMN stop_reason VARCHAR(255) NULL AFTER stopped_year');
+  }
+
+  studentArchiveColumnsEnsured = true;
+}
+
 // -----------------------------
 // HELPER: Format student object
 // -----------------------------
@@ -271,6 +289,8 @@ function formatStudent(s) {
     profilePic: s.profile_pic,
     qrCode: qrCodeUrl,
     status: s.status,
+    stoppedYear: s.stopped_year || null,
+    stopReason: s.stop_reason || null,
     // Always report live average scoped from grades query results.
     // This prevents stale cached student.average from leaking into a new school year.
     average: s.live_average != null ? Number(s.live_average) : null,
@@ -479,6 +499,7 @@ exports.getStudents = async (req, res) => {
   try {
     await ensureStudentSchoolYearColumn();
     await ensureGradesSchoolYearColumn();
+    await ensureStudentArchiveColumns();
 
     const { teacherId, gradeLevel, section, schoolYearId } = req.query;
     let targetSy;
@@ -576,6 +597,7 @@ exports.getStudents = async (req, res) => {
           `SELECT s.*
            FROM students s
            WHERE (${conditions}) AND s.school_year_id = ?
+             AND (s.stopped_year IS NULL OR TRIM(s.stopped_year) = '')
            ORDER BY s.grade_level, s.section, s.last_name ASC`,
           [...params, targetSy.id]
         );
@@ -720,6 +742,7 @@ exports.getStudents = async (req, res) => {
     let allDbStudents = await query(
       `${averageSelectSql}
        WHERE s.school_year_id = ?
+         AND (s.stopped_year IS NULL OR TRIM(s.stopped_year) = '')
        ORDER BY s.created_at DESC`,
       [...averageParams, targetSy.id]
     );
@@ -736,6 +759,7 @@ exports.getStudent = async (req, res) => {
   try {
     await ensureStudentSchoolYearColumn();
     await ensureGradesSchoolYearColumn();
+    await ensureStudentArchiveColumns();
 
     let targetSy;
     try {
@@ -1625,41 +1649,170 @@ exports.declineStudent = async (req, res) => {
 };
 
 // -----------------------------
+// ARCHIVED STUDENTS
+// -----------------------------
+exports.getArchivedStudents = async (req, res) => {
+  try {
+    await ensureStudentSchoolYearColumn();
+    await ensureStudentArchiveColumns();
+
+    const { schoolYearId } = req.query || {};
+    const params = [];
+    let whereClause = "LOWER(TRIM(COALESCE(s.status, ''))) = 'inactive' AND s.stopped_year IS NOT NULL AND TRIM(s.stopped_year) <> ''";
+
+    if (schoolYearId) {
+      whereClause += ' AND s.school_year_id = ?';
+      params.push(Number(schoolYearId));
+    }
+
+    const rows = await query(
+      `SELECT s.*,
+              sy.label AS school_year_label
+       FROM students s
+       LEFT JOIN school_years sy ON sy.id = s.school_year_id
+       WHERE ${whereClause}
+       ORDER BY s.updated_at DESC, s.created_at DESC`,
+      params
+    );
+
+    const formatted = rows.map((row) => ({
+      ...formatStudent(row),
+      schoolYearLabel: row.school_year_label || null,
+    }));
+
+    res.json({ status: 'success', data: formatted });
+  } catch (error) {
+    console.error('Error fetching archived students:', error);
+    res.status(500).json({ status: 'fail', message: error.message || 'Failed to fetch archived students' });
+  }
+};
+
+exports.archiveStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+
+    await ensureStudentSchoolYearColumn();
+    await ensureStudentArchiveColumns();
+
+    const existing = await query('SELECT * FROM students WHERE id = ?', [id]);
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({ status: 'fail', message: 'Student not found' });
+    }
+
+    const activeSy = await getActiveSchoolYear();
+    if (!activeSy || Number(existing[0].school_year_id) !== Number(activeSy.id)) {
+      return res.status(403).json({ status: 'fail', message: 'Archiving students from past school years is not allowed (view only).' });
+    }
+
+    const stopReason = String(reason || '').trim() || 'Stopped';
+
+    const result = await query(
+      `UPDATE students
+       SET status = 'inactive',
+           stopped_year = ?,
+           stop_reason = ?,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [activeSy.label, stopReason, id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ status: 'fail', message: 'Student not found' });
+    }
+
+    const updatedRows = await query('SELECT * FROM students WHERE id = ?', [id]);
+    res.json({
+      status: 'success',
+      message: 'Student archived successfully',
+      data: { student: formatStudent(updatedRows[0]) }
+    });
+  } catch (error) {
+    console.error('Error archiving student:', error);
+    res.status(500).json({ status: 'fail', message: error.message || 'Failed to archive student' });
+  }
+};
+
+// -----------------------------
 // RESTORE STUDENT
 // -----------------------------
 exports.restoreStudent = async (req, res) => {
   try {
     const { id } = req.params;
+    const { gradeLevel, section, schoolYearId } = req.body || {};
 
     await ensureStudentSchoolYearColumn();
+    await ensureStudentArchiveColumns();
+
     const existing = await query('SELECT * FROM students WHERE id = ?', [id]);
     if (!existing || existing.length === 0) {
-      return res.status(404).json({ message: 'Student not found' });
+      return res.status(404).json({ status: 'fail', message: 'Student not found' });
     }
 
-    const activeSy = await getActiveSchoolYear();
-    if (!activeSy || existing[0].school_year_id !== activeSy.id) {
-      return res.status(403).json({ message: 'Restoring students from past school years is not allowed (view only).' });
+    const current = existing[0];
+    const currentStatus = String(current.status || '').trim().toLowerCase();
+
+    // Backward compatibility for old pending/declined restore flow
+    if (currentStatus !== 'inactive') {
+      const activeSy = await getActiveSchoolYear();
+      if (!activeSy || Number(current.school_year_id) !== Number(activeSy.id)) {
+        return res.status(403).json({ status: 'fail', message: 'Restoring students from past school years is not allowed (view only).' });
+      }
+
+      const result = await query(
+        'UPDATE students SET status = "pending", decline_reason = NULL, stopped_year = NULL, stop_reason = NULL, updated_at = NOW() WHERE id = ?',
+        [id]
+      );
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ status: 'fail', message: 'Student not found' });
+      }
+
+      const updatedRows = await query('SELECT * FROM students WHERE id = ?', [id]);
+      return res.json({
+        status: 'success',
+        message: 'Student restored successfully',
+        data: { student: formatStudent(updatedRows[0]) }
+      });
+    }
+
+    const targetSy = await resolveTargetSchoolYear(schoolYearId);
+    const nextGradeLevel = String(gradeLevel || current.grade_level || '').trim();
+    const nextSection = String(section || current.section || '').trim();
+
+    if (!nextGradeLevel || !nextSection) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'Grade level and section are required when restoring an archived student.'
+      });
     }
 
     const result = await query(
-      'UPDATE students SET status = "pending", decline_reason = NULL, updated_at = NOW() WHERE id = ?',
-      [id]
+      `UPDATE students
+       SET status = 'Active',
+           grade_level = ?,
+           section = ?,
+           stopped_year = NULL,
+           stop_reason = NULL,
+           school_year_id = ?,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [nextGradeLevel, nextSection, targetSy.id, id]
     );
 
-    if (result.affectedRows === 0) 
-      return res.status(404).json({ message: 'Student not found' });
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ status: 'fail', message: 'Student not found' });
+    }
 
-    const [updatedStudent] = await query('SELECT * FROM students WHERE id = ?', [id]);
-
+    const updatedRows = await query('SELECT * FROM students WHERE id = ?', [id]);
     res.json({
       status: 'success',
-      message: 'Student restored successfully',
-      data: { student: formatStudent(updatedStudent) }
+      message: 'Archived student restored successfully',
+      data: { student: formatStudent(updatedRows[0]) }
     });
   } catch (error) {
     console.error('Error restoring student:', error);
-    res.status(500).json({ message: 'Error restoring student', error: error.message });
+    res.status(500).json({ status: 'fail', message: error.message || 'Failed to restore student' });
   }
 };
 
@@ -1722,6 +1875,7 @@ exports.updateStudent = async (req, res) => {
 
     await ensureStudentSchoolYearColumn();
     await ensureStudentBirthDateColumn();
+    await ensureStudentArchiveColumns();
 
     // Check if student exists
     const existingStudents = await query('SELECT * FROM students WHERE id = ?', [id]);
@@ -1798,7 +1952,15 @@ exports.updateStudent = async (req, res) => {
     if (parentEmail !== undefined) { updates.push('parent_email = ?'); params.push(parentEmail); }
     if (parentContact !== undefined) { updates.push('parent_contact = ?'); params.push(parentContact); }
     if (studentEmail !== undefined) { updates.push('student_email = ?'); params.push(studentEmail); }
-    if (normalizedStatusValue !== undefined) { updates.push('status = ?'); params.push(normalizedStatusValue); }
+    if (normalizedStatusValue !== undefined) {
+      updates.push('status = ?');
+      params.push(normalizedStatusValue);
+
+      if (String(normalizedStatusValue).toLowerCase() === 'active') {
+        updates.push('stopped_year = NULL');
+        updates.push('stop_reason = NULL');
+      }
+    }
 
     // Always update the updated_at timestamp
     updates.push('updated_at = NOW()');

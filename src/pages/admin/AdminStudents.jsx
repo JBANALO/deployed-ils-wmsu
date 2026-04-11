@@ -5,6 +5,7 @@ import {
   AcademicCapIcon, 
   PencilSquareIcon, 
   TrashIcon, 
+  ArchiveBoxIcon,
   CheckIcon, 
   XMarkIcon, 
   QrCodeIcon, 
@@ -67,6 +68,12 @@ export default function AdminStudents() {
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [studentToDelete, setStudentToDelete] = useState(null);
+  const [showArchivedModal, setShowArchivedModal] = useState(false);
+  const [archivedStudents, setArchivedStudents] = useState([]);
+  const [archivedSearchQuery, setArchivedSearchQuery] = useState('');
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  const [archiveSubmittingId, setArchiveSubmittingId] = useState(null);
+  const [restoreSubmittingId, setRestoreSubmittingId] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [studentCredentials, setStudentCredentials] = useState(null);
   const [loadingCredentials, setLoadingCredentials] = useState(false);
@@ -141,6 +148,120 @@ export default function AdminStudents() {
       setLoading(false);
     }
   };
+
+  const getStatusBadgeClass = (status) => {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (normalized === 'inactive') return 'bg-red-100 text-red-800';
+    return 'bg-green-100 text-green-800';
+  };
+
+  const loadArchivedStudents = async () => {
+    try {
+      setArchivedLoading(true);
+      const response = await fetch(`${API_BASE_URL}/students/archived`);
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Failed to fetch archived students');
+      }
+
+      const archivedList = Array.isArray(payload?.data) ? payload.data : [];
+      setArchivedStudents(archivedList);
+      setShowArchivedModal(true);
+    } catch (error) {
+      toast.error(error.message || 'Failed to load archived students');
+    } finally {
+      setArchivedLoading(false);
+    }
+  };
+
+  const handleArchiveStudent = async (student) => {
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to archive.');
+      return;
+    }
+
+    const normalizedStatus = String(student?.status || '').trim().toLowerCase();
+    if (normalizedStatus !== 'inactive') {
+      toast.error('Set student status to Inactive first before archiving.');
+      return;
+    }
+
+    const reason = window.prompt('Stop reason (Dropped / LOA / Repeater):', 'Dropped');
+    if (reason === null) return;
+
+    try {
+      setArchiveSubmittingId(student.id);
+      const response = await fetch(`${API_BASE_URL}/students/${student.id}/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: String(reason || '').trim() || 'Stopped' })
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Failed to archive student');
+      }
+
+      toast.success('Student archived successfully.');
+      await fetchStudents();
+      if (showArchivedModal) await loadArchivedStudents();
+    } catch (error) {
+      toast.error(error.message || 'Failed to archive student');
+    } finally {
+      setArchiveSubmittingId(null);
+    }
+  };
+
+  const handleRestoreArchivedStudent = async (student) => {
+    if (isViewOnly) {
+      toast.error('Previous school years are view-only. Switch to the active year to restore.');
+      return;
+    }
+
+    const gradeLevel = window.prompt('Re-enroll grade level:', student.gradeLevel || 'Grade 1');
+    if (gradeLevel === null) return;
+
+    const section = window.prompt('Re-enroll section:', student.section || '');
+    if (section === null) return;
+
+    try {
+      setRestoreSubmittingId(student.id);
+      const response = await fetch(`${API_BASE_URL}/students/${student.id}/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gradeLevel: String(gradeLevel || '').trim(),
+          section: String(section || '').trim(),
+          schoolYearId: targetSchoolYearId || undefined
+        })
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Failed to restore student');
+      }
+
+      toast.success('Archived student restored successfully.');
+      await fetchStudents();
+      await loadArchivedStudents();
+    } catch (error) {
+      toast.error(error.message || 'Failed to restore student');
+    } finally {
+      setRestoreSubmittingId(null);
+    }
+  };
+
+  const filteredArchivedStudents = archivedStudents.filter((student) => {
+    const term = archivedSearchQuery.trim().toLowerCase();
+    if (!term) return true;
+    return (
+      String(student.fullName || '').toLowerCase().includes(term) ||
+      String(student.lrn || '').toLowerCase().includes(term) ||
+      String(student.stopReason || '').toLowerCase().includes(term) ||
+      String(student.stoppedYear || '').toLowerCase().includes(term)
+    );
+  });
 
   const loadPrevPromotionCandidates = async () => {
     if (!targetSchoolYearId) {
@@ -774,6 +895,14 @@ export default function AdminStudents() {
         >
           + Create Individual Account
         </button>
+        <button
+          onClick={loadArchivedStudents}
+          disabled={archivedLoading}
+          className={`px-5 py-2 rounded-lg transition flex items-center gap-2 ${archivedLoading ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-amber-600 text-white hover:bg-amber-700'}`}
+        >
+          <ArchiveBoxIcon className={`w-5 h-5 ${archivedLoading ? 'animate-spin' : ''}`} />
+          {archivedLoading ? 'Loading...' : 'Archived Students'}
+        </button>
       </div>
 
       {/* KINDER TO GRADE 3 STUDENTS TABLE */}
@@ -931,7 +1060,7 @@ export default function AdminStudents() {
                           </td>
                           <td className="p-3 border">{student.sex || 'N/A'}</td>
                           <td className="p-3 border">
-                            <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(student.status)}`}>
                               {student.status}
                             </span>
                           </td>
@@ -961,6 +1090,15 @@ export default function AdminStudents() {
                                 title="Delete Student"
                               >
                                 <TrashIcon className="w-5 h-5" />
+                              </button>
+
+                              <button
+                                onClick={() => handleArchiveStudent(student)}
+                                disabled={archiveSubmittingId === student.id}
+                                className="p-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Archive Student"
+                              >
+                                <ArchiveBoxIcon className="w-5 h-5" />
                               </button>
 
                               <button 
@@ -1060,7 +1198,7 @@ export default function AdminStudents() {
                             </td>
                             <td className="p-3 border">{student.sex || 'N/A'}</td>
                             <td className="p-3 border">
-                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(student.status)}`}>
                                 {student.status}
                               </span>
                             </td>
@@ -1090,6 +1228,15 @@ export default function AdminStudents() {
                                   title="Delete Student"
                                 >
                                   <TrashIcon className="w-5 h-5" />
+                                </button>
+
+                                <button
+                                  onClick={() => handleArchiveStudent(student)}
+                                  disabled={archiveSubmittingId === student.id}
+                                  className="p-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title="Archive Student"
+                                >
+                                  <ArchiveBoxIcon className="w-5 h-5" />
                                 </button>
 
                                 <button 
@@ -1222,6 +1369,89 @@ export default function AdminStudents() {
                 className={`px-4 py-2 rounded-lg text-white ${fetchPrevLoading || selectedPrevIds.size === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'}`}
               >
                 {fetchPrevLoading ? 'Fetching...' : `Fetch Selected (${selectedPrevIds.size})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ARCHIVED STUDENTS MODAL */}
+      {showArchivedModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-5xl max-h-[88vh] overflow-hidden">
+            <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Archived Students</h3>
+                <p className="text-sm text-gray-600">Inactive students can be restored anytime, even after multiple school years.</p>
+              </div>
+              <button
+                onClick={() => setShowArchivedModal(false)}
+                className="p-2 rounded-md text-gray-500 hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 border-b border-gray-200">
+              <input
+                type="text"
+                placeholder="Search archived by name, LRN, reason, or stopped year..."
+                value={archivedSearchQuery}
+                onChange={(e) => setArchivedSearchQuery(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600"
+              />
+            </div>
+
+            <div className="p-5 overflow-y-auto max-h-[56vh]">
+              {archivedLoading ? (
+                <div className="py-10 text-center text-gray-500">Loading archived students...</div>
+              ) : filteredArchivedStudents.length === 0 ? (
+                <div className="py-10 text-center text-gray-500">No archived students found.</div>
+              ) : (
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-gray-50 text-gray-700">
+                      <tr>
+                        <th className="p-3 border">LRN</th>
+                        <th className="p-3 border">Name</th>
+                        <th className="p-3 border">Last Grade/Section</th>
+                        <th className="p-3 border">Stopped Year</th>
+                        <th className="p-3 border">Reason</th>
+                        <th className="p-3 border text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredArchivedStudents.map((student) => (
+                        <tr key={student.id} className="hover:bg-gray-50">
+                          <td className="p-3 border">{student.lrn}</td>
+                          <td className="p-3 border font-medium">{student.fullName || `${student.firstName} ${student.lastName}`}</td>
+                          <td className="p-3 border">{student.gradeLevel || '-'} {student.section ? `- ${student.section}` : ''}</td>
+                          <td className="p-3 border">{student.stoppedYear || student.schoolYearLabel || '-'}</td>
+                          <td className="p-3 border">{student.stopReason || '-'}</td>
+                          <td className="p-3 border text-center">
+                            <button
+                              onClick={() => handleRestoreArchivedStudent(student)}
+                              disabled={restoreSubmittingId === student.id}
+                              className="px-3 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {restoreSubmittingId === student.id ? 'Restoring...' : 'Restore'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="p-5 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setShowArchivedModal(false)}
+                className="px-4 py-2 rounded-lg bg-gray-500 text-white hover:bg-gray-600"
+              >
+                Close
               </button>
             </div>
           </div>
