@@ -407,6 +407,13 @@ export default function AdminTeachers() {
 
   const isViewOnly = isViewingLocked;
 
+  const switchToActiveSchoolYear = () => {
+    if (!activeSchoolYear?.id) return;
+    const activeId = String(activeSchoolYear.id);
+    setSelectedSchoolYearId(activeId);
+    setViewingSchoolYear(activeSchoolYear);
+  };
+
   const fetchTeachers = async (isRefresh = false) => {
     try {
       if (!selectedSchoolYearId) {
@@ -557,7 +564,8 @@ export default function AdminTeachers() {
       const updated = res.data?.data?.updated ?? 0;
       const skipped = res.data?.data?.skipped ?? 0;
       toast.success(`Fetched ${inserted} teacher(s), updated ${updated}, skipped ${skipped}`);
-      await fetchTeachers(true);
+      switchToActiveSchoolYear();
+      toast.info(`Showing teachers in active school year ${activeSchoolYear?.label || ''}`.trim());
       setShowFetchModal(false);
     } catch (error) {
       console.error('Error fetching teachers from previous year:', error);
@@ -1147,9 +1155,23 @@ export default function AdminTeachers() {
             ))}
           </select>
           {isViewOnly && (
-            <span className="text-xs text-orange-700 bg-orange-100 px-2 py-1 rounded">View-only for previous year</span>
+            <>
+              <span className="text-xs text-orange-700 bg-orange-100 px-2 py-1 rounded">View-only for previous year</span>
+              <button
+                type="button"
+                onClick={switchToActiveSchoolYear}
+                className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+              >
+                Switch to Active Year
+              </button>
+            </>
           )}
         </div>
+        {isViewOnly && (
+          <p className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded px-3 py-2">
+            Teachers fetched from previous year are copied into the active school year. Switch to active year to view and edit fetched teachers.
+          </p>
+        )}
         {!selectedSchoolYearId && (
           <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded px-3 py-2">Select a school year to load teachers.</p>
         )}
