@@ -412,7 +412,7 @@ export default function SuperAdminProfile() {
                     name="email"
                     value={formData.email}
                     onChange={handleInputChange}
-                    disabled={!editMode}
+                    disabled={true}
                     className={`w-full px-3 py-2 border rounded-md focus:ring-red-500 focus:border-red-500 ${
                       editMode 
                         ? 'border-gray-300 bg-white' 
