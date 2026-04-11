@@ -176,11 +176,6 @@ export default function AdminStudents() {
   };
 
   const handleArchiveStudent = async (student) => {
-    if (isViewOnly) {
-      toast.error('Previous school years are view-only. Switch to the active year to archive.');
-      return;
-    }
-
     const normalizedStatus = String(student?.status || '').trim().toLowerCase();
     if (normalizedStatus !== 'inactive') {
       toast.error('Set student status to Inactive first before archiving.');
@@ -214,11 +209,6 @@ export default function AdminStudents() {
   };
 
   const handleRestoreArchivedStudent = async (student) => {
-    if (isViewOnly) {
-      toast.error('Previous school years are view-only. Switch to the active year to restore.');
-      return;
-    }
-
     const gradeLevel = window.prompt('Re-enroll grade level:', student.gradeLevel || 'Grade 1');
     if (gradeLevel === null) return;
 
@@ -233,7 +223,7 @@ export default function AdminStudents() {
         body: JSON.stringify({
           gradeLevel: String(gradeLevel || '').trim(),
           section: String(section || '').trim(),
-          schoolYearId: targetSchoolYearId || undefined
+          schoolYearId: activeSchoolYear?.id || targetSchoolYearId || undefined
         })
       });
 

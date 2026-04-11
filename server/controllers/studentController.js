@@ -10,6 +10,7 @@ let studentSyEnsured = false;
 let gradesSyEnsured = false;
 let studentBirthDateEnsured = false;
 let studentArchiveColumnsEnsured = false;
+let studentLrnScopeEnsured = false;
 
 async function getActiveSchoolYear() {
   const rows = await query('SELECT id, label, start_date FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
@@ -253,6 +254,54 @@ async function ensureStudentArchiveColumns() {
   studentArchiveColumnsEnsured = true;
 }
 
+async function ensureStudentLrnScopedUniqueness() {
+  if (studentLrnScopeEnsured) return;
+
+  await ensureStudentSchoolYearColumn();
+
+  const indexes = await query('SHOW INDEX FROM students');
+  const indexesByName = new Map();
+  for (const idx of indexes) {
+    const key = String(idx.Key_name || '');
+    if (!indexesByName.has(key)) indexesByName.set(key, []);
+    indexesByName.get(key).push(idx);
+  }
+
+  const getColumns = (rows) => rows
+    .slice()
+    .sort((a, b) => Number(a.Seq_in_index || 0) - Number(b.Seq_in_index || 0))
+    .map((r) => String(r.Column_name || '').toLowerCase());
+
+  const legacyUniqueLrnIndexes = [];
+  let hasScopedUnique = false;
+
+  for (const [indexName, rows] of indexesByName.entries()) {
+    if (!rows || rows.length === 0) continue;
+    const isUnique = Number(rows[0].Non_unique) === 0;
+    if (!isUnique) continue;
+
+    const cols = getColumns(rows);
+    if (cols.length === 1 && cols[0] === 'lrn') {
+      legacyUniqueLrnIndexes.push(indexName);
+      continue;
+    }
+
+    if (cols.length === 2 && cols[0] === 'school_year_id' && cols[1] === 'lrn') {
+      hasScopedUnique = true;
+    }
+  }
+
+  for (const indexName of legacyUniqueLrnIndexes) {
+    await query(`ALTER TABLE students DROP INDEX \`${indexName}\``);
+  }
+
+  if (!hasScopedUnique) {
+    await query('ALTER TABLE students ADD UNIQUE INDEX uniq_students_school_year_lrn (school_year_id, lrn)');
+  }
+
+  studentLrnScopeEnsured = true;
+}
+
 // -----------------------------
 // HELPER: Format student object
 // -----------------------------
@@ -336,6 +385,7 @@ exports.createStudent = async (req, res) => {
   try {
     await ensureStudentSchoolYearColumn();
     await ensureGradesSchoolYearColumn();
+    await ensureStudentLrnScopedUniqueness();
     let targetSy;
     try {
       targetSy = await resolveTargetSchoolYear(req.body.schoolYearId);
@@ -388,11 +438,14 @@ exports.createStudent = async (req, res) => {
       return res.status(400).json({ status: 'fail', message: `Missing required fields: ${missing.join(', ')}` });
     }
 
-    // Check for duplicate LRN
-    const existingStudent = await query('SELECT id FROM students WHERE lrn = ?', [lrn]);
+    // Check for duplicate LRN in the target school year only
+    const existingStudent = await query(
+      'SELECT id FROM students WHERE lrn = ? AND school_year_id = ? LIMIT 1',
+      [lrn, targetSy.id]
+    );
     if (existingStudent.length > 0) {
       // Return existing student data instead of error for bulk import tolerance
-      const existing = await query('SELECT * FROM students WHERE lrn = ?', [lrn]);
+      const existing = await query('SELECT * FROM students WHERE id = ? LIMIT 1', [existingStudent[0].id]);
       return res.status(200).json({ message: 'Student already exists', student: formatStudent(existing[0]) });
     }
 
@@ -1700,10 +1753,9 @@ exports.archiveStudent = async (req, res) => {
       return res.status(404).json({ status: 'fail', message: 'Student not found' });
     }
 
+    const rowSchoolYear = await getSchoolYearById(existing[0].school_year_id);
     const activeSy = await getActiveSchoolYear();
-    if (!activeSy || Number(existing[0].school_year_id) !== Number(activeSy.id)) {
-      return res.status(403).json({ status: 'fail', message: 'Archiving students from past school years is not allowed (view only).' });
-    }
+    const stopYearLabel = rowSchoolYear?.label || activeSy?.label || String(existing[0].stopped_year || '').trim() || null;
 
     const stopReason = String(reason || '').trim() || 'Stopped';
 
@@ -1714,7 +1766,7 @@ exports.archiveStudent = async (req, res) => {
            stop_reason = ?,
            updated_at = NOW()
        WHERE id = ?`,
-      [activeSy.label, stopReason, id]
+      [stopYearLabel, stopReason, id]
     );
 
     if (result.affectedRows === 0) {
@@ -2272,6 +2324,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
   try {
     await ensureStudentSchoolYearColumn();
     await ensureStudentBirthDateColumn();
+    await ensureStudentLrnScopedUniqueness();
 
     let targetSy;
     try {
@@ -2478,6 +2531,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     let updated = 0;
     let promotedInserted = 0;
     let retainedInserted = 0;
+    let duplicateConflicts = 0;
     const sourceLrns = new Set();
 
     for (const promo of normalizedPromotionRows) {
@@ -2531,76 +2585,40 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
 
       const nextStatus = 'Active';
 
-      const duplicate = await query(
-        'SELECT id, school_year_id FROM students WHERE lrn = ? LIMIT 1',
-        [sourceStudent.lrn]
+      const duplicateInTarget = await query(
+        'SELECT id FROM students WHERE lrn = ? AND school_year_id = ? LIMIT 1',
+        [sourceStudent.lrn, targetSy.id]
       );
 
-      if (duplicate.length > 0) {
-        const existing = duplicate[0];
-        const existingSy = Number(existing.school_year_id || 0);
-
-        if (existingSy === Number(targetSy.id)) {
-          await query(
-            `UPDATE students
-             SET first_name = ?, middle_name = ?, last_name = ?, age = ?, birth_date = ?, sex = ?,
-                 grade_level = ?, section = ?, parent_first_name = ?, parent_last_name = ?,
-                 parent_email = ?, parent_contact = ?, student_email = ?,
-                 profile_pic = ?, qr_code = ?, status = ?, created_by = ?, updated_at = NOW()
-             WHERE id = ?`,
-            [
-              sourceStudent.first_name || '',
-              sourceStudent.middle_name || null,
-              sourceStudent.last_name || '',
-              sourceStudent.age || 0,
-              sourceStudent.birth_date || null,
-              sourceStudent.sex || 'N/A',
-              nextGradeLevel,
-              nextSection,
-              sourceStudent.parent_first_name || null,
-              sourceStudent.parent_last_name || null,
-              sourceStudent.parent_email || null,
-              sourceStudent.parent_contact || null,
-              sourceStudent.student_email || null,
-              sourceStudent.profile_pic || null,
-              sourceStudent.qr_code || null,
-              nextStatus,
-              'system-fetch',
-              existing.id
-            ]
-          );
-        } else {
-          await query(
-            `UPDATE students
-             SET first_name = ?, middle_name = ?, last_name = ?, age = ?, birth_date = ?, sex = ?,
-                 grade_level = ?, section = ?, parent_first_name = ?, parent_last_name = ?,
-                 parent_email = ?, parent_contact = ?, student_email = ?, password = ?,
-                 profile_pic = ?, qr_code = ?, status = ?, created_by = ?, school_year_id = ?, updated_at = NOW()
-             WHERE id = ?`,
-            [
-              sourceStudent.first_name || '',
-              sourceStudent.middle_name || null,
-              sourceStudent.last_name || '',
-              sourceStudent.age || 0,
-              sourceStudent.birth_date || null,
-              sourceStudent.sex || 'N/A',
-              nextGradeLevel,
-              nextSection,
-              sourceStudent.parent_first_name || null,
-              sourceStudent.parent_last_name || null,
-              sourceStudent.parent_email || null,
-              sourceStudent.parent_contact || null,
-              sourceStudent.student_email || null,
-              sourceStudent.password || null,
-              sourceStudent.profile_pic || null,
-              sourceStudent.qr_code || null,
-              nextStatus,
-              'system-fetch',
-              targetSy.id,
-              existing.id
-            ]
-          );
-        }
+      if (duplicateInTarget.length > 0) {
+        await query(
+          `UPDATE students
+           SET first_name = ?, middle_name = ?, last_name = ?, age = ?, birth_date = ?, sex = ?,
+               grade_level = ?, section = ?, parent_first_name = ?, parent_last_name = ?,
+               parent_email = ?, parent_contact = ?, student_email = ?,
+               profile_pic = ?, qr_code = ?, status = ?, created_by = ?, updated_at = NOW()
+           WHERE id = ?`,
+          [
+            sourceStudent.first_name || '',
+            sourceStudent.middle_name || null,
+            sourceStudent.last_name || '',
+            sourceStudent.age || 0,
+            sourceStudent.birth_date || null,
+            sourceStudent.sex || 'N/A',
+            nextGradeLevel,
+            nextSection,
+            sourceStudent.parent_first_name || null,
+            sourceStudent.parent_last_name || null,
+            sourceStudent.parent_email || null,
+            sourceStudent.parent_contact || null,
+            sourceStudent.student_email || null,
+            sourceStudent.profile_pic || null,
+            sourceStudent.qr_code || null,
+            nextStatus,
+            'system-fetch',
+            duplicateInTarget[0].id
+          ]
+        );
 
         updated += 1;
         if (String(promo.status).toLowerCase() === 'promoted') promotedInserted += 1;
@@ -2608,36 +2626,45 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
         continue;
       }
 
-      await query(
-        `INSERT INTO students (
-          lrn, first_name, middle_name, last_name, age, birth_date, sex,
-          grade_level, section, parent_first_name, parent_last_name,
-          parent_email, parent_contact, student_email, password,
-          profile_pic, qr_code, status, created_by, school_year_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-        [
-          sourceStudent.lrn,
-          sourceStudent.first_name || '',
-          sourceStudent.middle_name || null,
-          sourceStudent.last_name || '',
-          sourceStudent.age || 0,
-          sourceStudent.birth_date || null,
-          sourceStudent.sex || 'N/A',
-          nextGradeLevel,
-          nextSection,
-          sourceStudent.parent_first_name || null,
-          sourceStudent.parent_last_name || null,
-          sourceStudent.parent_email || null,
-          sourceStudent.parent_contact || null,
-          sourceStudent.student_email || null,
-          sourceStudent.password || null,
-          sourceStudent.profile_pic || null,
-          sourceStudent.qr_code || null,
-          nextStatus,
-          'system-fetch',
-          targetSy.id
-        ]
-      );
+      try {
+        await query(
+          `INSERT INTO students (
+            lrn, first_name, middle_name, last_name, age, birth_date, sex,
+            grade_level, section, parent_first_name, parent_last_name,
+            parent_email, parent_contact, student_email, password,
+            profile_pic, qr_code, status, created_by, school_year_id, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          [
+            sourceStudent.lrn,
+            sourceStudent.first_name || '',
+            sourceStudent.middle_name || null,
+            sourceStudent.last_name || '',
+            sourceStudent.age || 0,
+            sourceStudent.birth_date || null,
+            sourceStudent.sex || 'N/A',
+            nextGradeLevel,
+            nextSection,
+            sourceStudent.parent_first_name || null,
+            sourceStudent.parent_last_name || null,
+            sourceStudent.parent_email || null,
+            sourceStudent.parent_contact || null,
+            sourceStudent.student_email || null,
+            sourceStudent.password || null,
+            sourceStudent.profile_pic || null,
+            sourceStudent.qr_code || null,
+            nextStatus,
+            'system-fetch',
+            targetSy.id
+          ]
+        );
+      } catch (insertErr) {
+        if (insertErr?.code === 'ER_DUP_ENTRY') {
+          duplicateConflicts += 1;
+          skipped += 1;
+          continue;
+        }
+        throw insertErr;
+      }
 
       inserted += 1;
       if (String(promo.status).toLowerCase() === 'promoted') promotedInserted += 1;
@@ -2670,6 +2697,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
         skipped,
         promotedInserted,
         retainedInserted,
+        duplicateConflicts,
         sourceSchoolYearId: sourceSy.id,
         sourceSchoolYearIds,
         targetSchoolYearId: targetSy.id
