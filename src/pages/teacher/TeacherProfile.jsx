@@ -303,13 +303,18 @@ export default function TeacherProfile() {
       }
 
       const user = JSON.parse(userStr);
-      
-      // Update user profile via API
-      const response = await api.put(`/users/${user.id}`, {
-        firstName: profileData.firstName,
-        lastName: profileData.lastName,
-        email: profileData.email,
-        // Add other fields if needed
+
+      // Update user profile via API using /auth/update-profile
+      const formDataToSend = new FormData();
+      formDataToSend.append('firstName', profileData.firstName);
+      formDataToSend.append('lastName', profileData.lastName);
+      formDataToSend.append('username', user.username || user.email);
+      formDataToSend.append('email', profileData.email);
+
+      const response = await api.put('/auth/update-profile', formDataToSend, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
       });
 
       if (response.data.status === 'success' || response.status === 200) {
@@ -321,10 +326,10 @@ export default function TeacherProfile() {
           email: profileData.email,
         };
         localStorage.setItem('user', JSON.stringify(updatedUser));
-        
+
         toast.success("Profile updated successfully!");
         setIsEditing(false);
-        
+
         // Refresh data
         window.location.reload();
       } else {
