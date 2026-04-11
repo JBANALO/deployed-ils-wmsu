@@ -1,8 +1,12 @@
 import axios from 'axios';
 
-// Get API URL from environment variable with fallbacks
-const apiURL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 
-               (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://deployed-ils-wmsu-production.up.railway.app/api');
+const host = window.location.hostname;
+const isLocalHost = host === 'localhost' || host === '127.0.0.1';
+
+// In production, always use same-origin API to prevent stale/mismatched backend targets.
+const apiURL = isLocalHost
+  ? (import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://localhost:5000/api')
+  : `${window.location.origin}/api`;
 
 if (import.meta.env.MODE === 'development') {
   console.log('API URL:', apiURL, 'Environment:', import.meta.env.MODE);
