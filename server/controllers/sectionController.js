@@ -556,12 +556,26 @@ const getPreviousYearSections = async (req, res) => {
     const prevSy = await getPreviousSchoolYear(targetSy.start_date);
     if (!prevSy) return res.json({ success: true, data: [] });
 
-    const sections = await query(
+    let sections = await query(
       'SELECT * FROM sections WHERE is_archived = FALSE AND school_year_id = ? ORDER BY name',
       [prevSy.id]
     );
 
-    res.json({ success: true, data: sections, meta: { sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id } });
+    let usedClassesFallback = false;
+    if (sections.length === 0) {
+      sections = await getSectionFallbackFromClasses(prevSy.id);
+      usedClassesFallback = sections.length > 0;
+    }
+
+    res.json({
+      success: true,
+      data: sections,
+      meta: {
+        sourceSchoolYearId: prevSy.id,
+        targetSchoolYearId: targetSy.id,
+        usedClassesFallback
+      }
+    });
   } catch (error) {
     console.error('Error fetching previous year sections:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch previous year sections' });
@@ -580,27 +594,33 @@ const fetchSectionsFromPreviousYear = async (req, res) => {
     }
 
     const { ids } = req.body || {};
-    const idList = Array.isArray(ids)
-      ? ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+    const selectedIds = Array.isArray(ids)
+      ? ids.map((id) => String(id).trim()).filter(Boolean)
       : [];
+    const selectedIdSet = new Set(selectedIds);
 
     let prevSections = [];
-    if (idList.length > 0) {
-      const placeholders = idList.map(() => '?').join(',');
-      prevSections = await query(
-        `SELECT * FROM sections
-         WHERE is_archived = FALSE AND school_year_id = ? AND id IN (${placeholders})`,
-        [prevSy.id, ...idList]
-      );
-    } else {
-      prevSections = await query(
-        'SELECT * FROM sections WHERE is_archived = FALSE AND school_year_id = ?',
-        [prevSy.id]
-      );
+    prevSections = await query(
+      'SELECT * FROM sections WHERE is_archived = FALSE AND school_year_id = ?',
+      [prevSy.id]
+    );
+
+    let usedClassesFallback = false;
+    if (!prevSections.length) {
+      prevSections = await getSectionFallbackFromClasses(prevSy.id);
+      usedClassesFallback = prevSections.length > 0;
+    }
+
+    if (selectedIdSet.size > 0) {
+      prevSections = prevSections.filter((sec) => selectedIdSet.has(String(sec.id || '').trim()));
     }
 
     if (!prevSections.length) {
-      return res.json({ success: true, message: 'Nothing to fetch', data: { inserted: 0, skipped: 0 } });
+      return res.json({
+        success: true,
+        message: 'Nothing to fetch',
+        data: { inserted: 0, skipped: 0, usedClassesFallback }
+      });
     }
 
     let inserted = 0;
@@ -633,7 +653,17 @@ const fetchSectionsFromPreviousYear = async (req, res) => {
       inserted += 1;
     }
 
-    res.json({ success: true, message: 'Fetch complete', data: { inserted, skipped, sourceSchoolYearId: prevSy.id, targetSchoolYearId: targetSy.id } });
+    res.json({
+      success: true,
+      message: 'Fetch complete',
+      data: {
+        inserted,
+        skipped,
+        sourceSchoolYearId: prevSy.id,
+        targetSchoolYearId: targetSy.id,
+        usedClassesFallback
+      }
+    });
   } catch (error) {
     console.error('Error fetching sections from previous year:', error);
     const status = error.statusCode || 500;
