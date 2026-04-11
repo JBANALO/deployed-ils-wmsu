@@ -49,6 +49,13 @@ export default function ResetPasswordPage() {
     >
       <div className="bg-white/95 p-10 rounded-2xl shadow-xl w-[420px] text-center border border-gray-200">
         <img src="/wmsu-logo.jpg" alt="WMSU Logo" className="mx-auto mb-3 w-25 h-25" />
+
+        <h2 className="text-sm text-red-800 font-bold mb-4 leading-snug">
+          WMSU ILS-Elementary Department:
+          <br />
+          Automated Grades Portal and Students Attendance using QR Code
+        </h2>
+
         <div className="flex flex-col mb-6 leading-snug">
           <h2 className="text-gray-800 font-semibold pb-2">Reset Password</h2>
           <p className="text-red-800 font-medium">Enter your new password below</p>

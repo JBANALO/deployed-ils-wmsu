@@ -687,7 +687,7 @@ export default function AdminGrades() {
 
       {/* View Grades Modal */}
       {showViewModal && selectedStudent && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto m-4">
             <div className="flex justify-between items-center p-4 border-b bg-red-800 text-white rounded-t-lg">
               <h3 className="text-xl font-bold">View Grades</h3>
@@ -754,7 +754,7 @@ export default function AdminGrades() {
 
       {/* Edit Grades Modal */}
       {showEditModal && selectedStudent && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto m-4">
             <div className="flex justify-between items-center p-4 border-b bg-green-700 text-white rounded-t-lg">
               <h3 className="text-xl font-bold">Edit Grades</h3>

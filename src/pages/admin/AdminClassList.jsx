@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { UsersIcon, MagnifyingGlassIcon } from "@heroicons/react/24/solid";
+import { UsersIcon, MagnifyingGlassIcon, PrinterIcon } from "@heroicons/react/24/solid";
 import { API_BASE_URL } from "../../api/config";
 
 export default function AdminClassList() {
@@ -12,6 +12,131 @@ export default function AdminClassList() {
   const [allClasses, setAllClasses] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [teacher, setTeacher] = useState(null);
+
+  // Print class list function
+  const handlePrintClassList = () => {
+    const filteredStudents = students.filter((student) => {
+      const fullName = (student.fullName || `${student.firstName} ${student.lastName}`).toLowerCase();
+      const lrn = (student.lrn || "").toLowerCase();
+      const query = searchQuery.toLowerCase();
+      return fullName.includes(query) || lrn.includes(query);
+    });
+
+    const printContent = `
+      <html>
+        <head>
+          <title>Class List - ${classInfo.grade} ${classInfo.section}</title>
+          <style>
+            body {
+              font-family: 'Montserrat', Arial, sans-serif;
+              margin: 0;
+              padding: 20px;
+              color: #333;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 30px;
+            }
+            .logo {
+              width: 80px;
+              height: 80px;
+              margin-bottom: 15px;
+            }
+            .school-name {
+              font-size: 18px;
+              font-weight: bold;
+              color: #7f1d1d;
+              margin-bottom: 5px;
+            }
+            .system-name {
+              font-size: 14px;
+              color: #666;
+              margin-bottom: 20px;
+            }
+            .class-info {
+              font-size: 24px;
+              font-weight: bold;
+              margin-bottom: 10px;
+            }
+            .teacher-info {
+              font-size: 16px;
+              color: #666;
+              margin-bottom: 30px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 20px;
+            }
+            th, td {
+              padding: 12px;
+              border: 1px solid #ddd;
+              text-align: left;
+            }
+            th {
+              background-color: #f5f5f5;
+              font-weight: bold;
+              color: #333;
+            }
+            tr:nth-child(even) {
+              background-color: #f9f9f9;
+            }
+            .no-students {
+              text-align: center;
+              padding: 40px;
+              color: #666;
+              font-style: italic;
+            }
+            @media print {
+              body { margin: 0; }
+              .header { margin-bottom: 20px; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <img src="${window.location.origin}/wmsu-logo.jpg" alt="WMSU Logo" class="logo" />
+            <div class="school-name">WMSU ILS-Elementary Department</div>
+            <div class="system-name">Automated Grades Portal and Students Attendance using QR Code</div>
+            <div class="class-info">${classInfo.grade} - ${classInfo.section} Class List</div>
+            ${teacher ? `<div class="teacher-info">Adviser: ${teacher.firstName} ${teacher.lastName}</div>` : ''}
+          </div>
+          
+          ${filteredStudents.length > 0 ? `
+            <table>
+              <thead>
+                <tr>
+                  <th>Student Name</th>
+                  <th>LRN</th>
+                  <th>Sex</th>
+                  <th>Grade Level</th>
+                  <th>Section</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredStudents.map((student) => `
+                  <tr>
+                    <td>${student.fullName || `${student.firstName || ''} ${student.lastName || ''}`}</td>
+                    <td>${student.lrn || 'N/A'}</td>
+                    <td>${student.sex || 'N/A'}</td>
+                    <td>${student.gradeLevel || classInfo.grade}</td>
+                    <td>${student.section || classInfo.section}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : '<div class="no-students">No students in this class yet.</div>'}
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(printContent);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
+  };
 
   // Fetch all students and teachers
   useEffect(() => {
@@ -118,16 +243,25 @@ export default function AdminClassList() {
   return (
     <div className="space-y-8">
       <div className="bg-white rounded-lg shadow p-5 border border-gray-300 border-b-red-800 border-b-4">
-        <div className="flex items-center gap-4 mb-4">
-          <UsersIcon className="w-16 h-16 text-red-800" />
-          <div>
-            <h2 className="text-4xl font-bold text-gray-900">
-              {classInfo.grade} – {classInfo.section} Class List
-            </h2>
-            {teacher && (
-              <p className="text-gray-600 mt-2">Adviser: <span className="font-semibold">{teacher.firstName} {teacher.lastName}</span></p>
-            )}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <UsersIcon className="w-16 h-16 text-red-800" />
+            <div>
+              <h2 className="text-4xl font-bold text-gray-900">
+                {classInfo.grade} - {classInfo.section} Class List
+              </h2>
+              {teacher && (
+                <p className="text-gray-600 mt-2">Adviser: <span className="font-semibold">{teacher.firstName} {teacher.lastName}</span></p>
+              )}
+            </div>
           </div>
+          <button
+            onClick={handlePrintClassList}
+            className="flex items-center gap-2 bg-red-800 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+          >
+            <PrinterIcon className="w-5 h-5" />
+            Print Class List
+          </button>
         </div>
         <p className="text-gray-600">Showing all students enrolled in this class.</p>
       </div>
@@ -160,7 +294,6 @@ export default function AdminClassList() {
                 <th className="p-3 border-b">Sex</th>
                 <th className="p-3 border-b">Grade Level</th>
                 <th className="p-3 border-b">Section</th>
-                <th className="p-3 border-b text-center">Actions</th>
               </tr>
             </thead>
 
@@ -179,29 +312,11 @@ export default function AdminClassList() {
                   <td className="p-3 border-b">{student.sex || 'N/A'}</td>
                   <td className="p-3 border-b">{student.gradeLevel}</td>
                   <td className="p-3 border-b">{student.section}</td>
-
-                  <td className="p-3 border-b text-center space-x-2">
-                    <button className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-500">
-                      View
-                    </button>
-                    <button className="px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-400">
-                      Edit
-                    </button>
-                    <button className="px-3 py-1 bg-red-700 text-white rounded hover:bg-red-600">
-                      Remove
-                    </button>
-                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-      </div>
-
-      <div className="text-right">
-        <button className="bg-red-800 text-white px-5 py-2 rounded-lg hover:bg-red-700">
-          + Add Student
-        </button>
       </div>
     </div>
   );

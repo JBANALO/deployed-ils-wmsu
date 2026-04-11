@@ -559,11 +559,6 @@ export default function ClassList() {
                 {student.sex}
               </td>
 
-              {/* WMSU Email */}
-              <td className="px-3 py-2 text-sm text-blue-600 font-mono truncate max-w-xs">
-                {student.wmsuEmail}
-              </td>
-
               {/* Status */}
               <td className="px-3 py-2">
                 <span className={`inline-flex px-3 py-1 text-xs font-bold rounded-full ${

@@ -3,6 +3,7 @@ import { UserCircleIcon, PencilIcon, PlusIcon, TrashIcon } from "@heroicons/reac
 import { authService } from "../../api/userService";
 import api from "../../api/axiosConfig";
 import { appendSchoolYearId, getTeacherViewingSchoolYearId } from "../../utils/teacherSchoolYear";
+import { toast } from 'react-toastify';
 
 export default function TeacherProfile() {
   const [isEditing, setIsEditing] = useState(false);
@@ -297,7 +298,7 @@ export default function TeacherProfile() {
       // Get user ID from localStorage
       const userStr = localStorage.getItem("user");
       if (!userStr) {
-        alert("User not found. Please log in again.");
+        toast.error("User not found. Please log in again.");
         return;
       }
 
@@ -321,17 +322,17 @@ export default function TeacherProfile() {
         };
         localStorage.setItem('user', JSON.stringify(updatedUser));
         
-        alert("Profile updated successfully!");
+        toast.success("Profile updated successfully!");
         setIsEditing(false);
         
         // Refresh data
         window.location.reload();
       } else {
-        alert("Failed to update profile. Please try again.");
+        toast.error("Failed to update profile. Please try again.");
       }
     } catch (error) {
       console.error("Error saving profile:", error);
-      alert("Error updating profile: " + (error.response?.data?.message || error.message));
+      toast.error("Error updating profile: " + (error.response?.data?.message || error.message));
     }
   };
 

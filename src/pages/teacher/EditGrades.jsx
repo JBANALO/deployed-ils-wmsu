@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import api from "../../api/axiosConfig";
 import { API_BASE_URL } from "../../api/config";
 import GradesReportCard from "../../components/GradesReportCard";
+import { toast } from 'react-toastify';
 import {
   BookOpenIcon,
   UserGroupIcon,
@@ -21,7 +22,6 @@ import {
   setTeacherActiveSchoolYearId,
   setTeacherViewingSchoolYearId,
 } from "../../utils/teacherSchoolYear";
-import { toast } from 'react-toastify';
 
 export default function EditGrades() {
   const getStudentGradeLevel = (student) => student?.gradeLevel || student?.grade_level || "";
@@ -779,18 +779,18 @@ export default function EditGrades() {
     // Check if token exists
     const token = localStorage.getItem('token');
     if (!token) {
-      alert("❌ Session expired. Please login again.");
+      toast.error("❌ Session expired. Please login again.");
       window.location.href = '/login';
       return;
     }
 
     if (isGradeLocked) {
-      alert("❌ These grades are locked and cannot be edited.");
+      toast.error("❌ These grades are locked and cannot be edited.");
       return;
     }
 
     if (isViewOnlyMode) {
-      alert("❌ Past school years are view-only. Grade editing is disabled.");
+      toast.error("❌ Past school years are view-only. Grade editing is disabled.");
       return;
     }
 
@@ -819,7 +819,7 @@ export default function EditGrades() {
     if (isSubjectTeacherMode) {
       const unauthorizedSubjects = changedSubjects.filter(s => !availableSubjects.includes(s));
       if (unauthorizedSubjects.length > 0) {
-        alert(`❌ You don't have permission to edit: ${unauthorizedSubjects.join(', ')}`);
+        toast.error(`❌ You don't have permission to edit: ${unauthorizedSubjects.join(', ')}`);
         return;
       }
     }
@@ -1250,7 +1250,7 @@ export default function EditGrades() {
 
       {/* Grade Edit Modal */}
       {showGradeModal && selectedStudent && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="sticky top-0 bg-red-600 text-white px-8 py-6 flex justify-between items-center rounded-t-2xl">
@@ -1469,7 +1469,7 @@ export default function EditGrades() {
 
       {/* Error Modal */}
       {errorModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
             <div className="flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mx-auto mb-4">
               <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

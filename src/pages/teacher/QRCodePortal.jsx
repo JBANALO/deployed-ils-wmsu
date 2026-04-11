@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import html2canvas from "html2canvas";
 import axios from "../../api/axiosConfig";
+import { toast } from 'react-toastify';
 import {
   QrCodeIcon,
   CameraIcon,
@@ -366,7 +367,7 @@ export default function QRCodePortal() {
   const handleBarCodeScanned = async (qrText) => {
     try {
       if (isViewOnlyMode) {
-        alert('Past school years are view-only. QR attendance scanning is disabled.');
+        toast.error('Past school years are view-only. QR attendance scanning is disabled.');
         return;
       }
 
@@ -383,7 +384,7 @@ export default function QRCodePortal() {
       }
 
       if (!studentId) {
-        alert('Invalid QR code: No student ID found');
+        toast.error('Invalid QR code: No student ID found');
         return;
       }
 
@@ -395,7 +396,7 @@ export default function QRCodePortal() {
       );
 
       if (!scannedStudent) {
-        alert('Student not found in system');
+        toast.error('Student not found in system');
         return;
       }
 
@@ -464,17 +465,17 @@ export default function QRCodePortal() {
           // Reload attendance data from database
           await loadAttendanceForDate(selectedDate);
 
-          alert(`✓ ${scannedStudent.fullName}\nStatus: ${status}\nTime: ${timeStr}\nRecorded in database!`);
+          toast.success(`✓ ${scannedStudent.fullName} - Status: ${status} - Time: ${timeStr} - Recorded in database!`);
         } else {
-          alert(`Failed: ${response.data.message || 'Unknown error'}`);
+          toast.error(`Failed: ${response.data.message || 'Unknown error'}`);
         }
       } catch (error) {
         console.error('Error recording attendance:', error);
-        alert(`Error: ${error.response?.data?.message || error.message}`);
+        toast.error(`Error: ${error.response?.data?.message || error.message}`);
       }
     } catch (error) {
       console.error('Error processing QR code:', error);
-      alert('Invalid QR code format');
+      toast.error('Invalid QR code format');
     }
   };
 
@@ -522,12 +523,12 @@ export default function QRCodePortal() {
 
   const captureIdCard = async () => {
     if (!selectedStudent) {
-      alert("Select a student first.");
+      toast.error("Select a student first.");
       return null;
     }
 
     if (!selectedStudent.qrCode) {
-      alert("No QR code available for this student.");
+      toast.error("No QR code available for this student.");
       return null;
     }
 
@@ -568,7 +569,7 @@ export default function QRCodePortal() {
       return canvas.toDataURL("image/png");
     } catch (error) {
       console.error("Failed to capture ID:", error);
-      alert(`Failed to capture ID. ${error?.message || "Please try again."}`);
+      toast.error(`Failed to capture ID. ${error?.message || "Please try again."}`);
       return null;
     } finally {
       if (iframe && iframe.parentNode) {
@@ -595,7 +596,7 @@ export default function QRCodePortal() {
       const printWindow = window.open("", "_blank");
 
       if (!printWindow) {
-        alert("Please allow popups to print the ID.");
+        toast.error("Please allow popups to print the ID.");
         return;
       }
 
@@ -616,7 +617,7 @@ export default function QRCodePortal() {
       printWindow.document.close();
     } catch (error) {
       console.error("Failed to print ID:", error);
-      alert(`Failed to print ID. ${error?.message || "Please try again."}`);
+      toast.error(`Failed to print ID. ${error?.message || "Please try again."}`);
     }
   };
 
