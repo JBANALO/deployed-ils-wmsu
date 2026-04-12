@@ -273,7 +273,9 @@ async function ensureStudentLrnScopedUniqueness() {
     .map((r) => String(r.Column_name || '').toLowerCase());
 
   const legacyUniqueLrnIndexes = [];
+  const legacyUniqueStudentEmailIndexes = [];
   let hasScopedUnique = false;
+  let hasScopedEmailUnique = false;
 
   for (const [indexName, rows] of indexesByName.entries()) {
     if (!rows || rows.length === 0) continue;
@@ -286,8 +288,17 @@ async function ensureStudentLrnScopedUniqueness() {
       continue;
     }
 
+    if (cols.length === 1 && cols[0] === 'student_email') {
+      legacyUniqueStudentEmailIndexes.push(indexName);
+      continue;
+    }
+
     if (cols.length === 2 && cols[0] === 'school_year_id' && cols[1] === 'lrn') {
       hasScopedUnique = true;
+    }
+
+    if (cols.length === 2 && cols[0] === 'school_year_id' && cols[1] === 'student_email') {
+      hasScopedEmailUnique = true;
     }
   }
 
@@ -295,8 +306,16 @@ async function ensureStudentLrnScopedUniqueness() {
     await query(`ALTER TABLE students DROP INDEX \`${indexName}\``);
   }
 
+  for (const indexName of legacyUniqueStudentEmailIndexes) {
+    await query(`ALTER TABLE students DROP INDEX \`${indexName}\``);
+  }
+
   if (!hasScopedUnique) {
     await query('ALTER TABLE students ADD UNIQUE INDEX uniq_students_school_year_lrn (school_year_id, lrn)');
+  }
+
+  if (!hasScopedEmailUnique) {
+    await query('ALTER TABLE students ADD UNIQUE INDEX uniq_students_school_year_email (school_year_id, student_email)');
   }
 
   studentLrnScopeEnsured = true;
@@ -650,7 +669,11 @@ exports.getStudents = async (req, res) => {
           `SELECT s.*
            FROM students s
            WHERE (${conditions}) AND s.school_year_id = ?
-             AND (s.stopped_year IS NULL OR TRIM(s.stopped_year) = '')
+             AND NOT (
+               LOWER(TRIM(COALESCE(s.status, ''))) = 'inactive'
+               AND s.stopped_year IS NOT NULL
+               AND TRIM(s.stopped_year) <> ''
+             )
            ORDER BY s.grade_level, s.section, s.last_name ASC`,
           [...params, targetSy.id]
         );
@@ -795,7 +818,11 @@ exports.getStudents = async (req, res) => {
     let allDbStudents = await query(
       `${averageSelectSql}
        WHERE s.school_year_id = ?
-         AND (s.stopped_year IS NULL OR TRIM(s.stopped_year) = '')
+         AND NOT (
+           LOWER(TRIM(COALESCE(s.status, ''))) = 'inactive'
+           AND s.stopped_year IS NOT NULL
+           AND TRIM(s.stopped_year) <> ''
+         )
        ORDER BY s.created_at DESC`,
       [...averageParams, targetSy.id]
     );
