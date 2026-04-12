@@ -2398,6 +2398,21 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     };
 
     const sourcePlaceholders = sourceSchoolYearIds.map(() => '?').join(',');
+    const archivedLrnRows = await query(
+      `SELECT DISTINCT lrn
+       FROM students
+       WHERE lrn IS NOT NULL
+         AND TRIM(lrn) <> ''
+         AND LOWER(TRIM(COALESCE(status, ''))) = 'inactive'
+         AND stopped_year IS NOT NULL
+         AND TRIM(stopped_year) <> ''`
+    );
+    const globallyArchivedLrns = new Set(
+      archivedLrnRows
+        .map((row) => String(row?.lrn || '').trim())
+        .filter(Boolean)
+    );
+
     let promotionRows = await query(
       `SELECT ph.student_id, ph.lrn, ph.to_grade, ph.to_section, ph.status, ph.reason, ph.created_at, ph.school_year_id
        FROM promotion_history ph
@@ -2432,7 +2447,14 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       );
     }
 
-    const sourceRows = await query(
+    if (globallyArchivedLrns.size > 0) {
+      promotionRows = promotionRows.filter((row) => {
+        const lrn = String(row?.lrn || '').trim();
+        return !lrn || !globallyArchivedLrns.has(lrn);
+      });
+    }
+
+    let sourceRows = await query(
       `SELECT *
        FROM students
        WHERE school_year_id IN (${sourcePlaceholders})
@@ -2446,6 +2468,13 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
        ORDER BY school_year_id DESC, created_at DESC`,
       sourceSchoolYearIds
     );
+
+    if (globallyArchivedLrns.size > 0) {
+      sourceRows = sourceRows.filter((row) => {
+        const lrn = String(row?.lrn || '').trim();
+        return !lrn || !globallyArchivedLrns.has(lrn);
+      });
+    }
 
     const sourceById = new Map();
     const sourceByLrn = new Map();
@@ -2576,6 +2605,11 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     for (const promo of normalizedPromotionRows) {
       const sourceStudent = promo.sourceStudent || sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
       if (!sourceStudent || !sourceStudent.lrn) {
+        skipped += 1;
+        continue;
+      }
+      if (globallyArchivedLrns.has(String(sourceStudent.lrn || '').trim())) {
+        archivedSkipped += 1;
         skipped += 1;
         continue;
       }
@@ -2791,8 +2825,22 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
     }
 
     const sourcePlaceholders = sourceSchoolYearIds.map(() => '?').join(',');
+    const archivedLrnRows = await query(
+      `SELECT DISTINCT lrn
+       FROM students
+       WHERE lrn IS NOT NULL
+         AND TRIM(lrn) <> ''
+         AND LOWER(TRIM(COALESCE(status, ''))) = 'inactive'
+         AND stopped_year IS NOT NULL
+         AND TRIM(stopped_year) <> ''`
+    );
+    const globallyArchivedLrns = new Set(
+      archivedLrnRows
+        .map((row) => String(row?.lrn || '').trim())
+        .filter(Boolean)
+    );
 
-    const sourceRows = await query(
+    let sourceRows = await query(
       `SELECT id, lrn, first_name, middle_name, last_name, grade_level, section, school_year_id, created_at
        FROM students
        WHERE school_year_id IN (${sourcePlaceholders})
@@ -2806,6 +2854,13 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
        ORDER BY school_year_id DESC, created_at DESC`,
       sourceSchoolYearIds
     );
+
+    if (globallyArchivedLrns.size > 0) {
+      sourceRows = sourceRows.filter((row) => {
+        const lrn = String(row?.lrn || '').trim();
+        return !lrn || !globallyArchivedLrns.has(lrn);
+      });
+    }
 
     const statusPriority = (status = '') => {
       const normalized = String(status || '').toLowerCase();
@@ -2831,6 +2886,13 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
        ORDER BY ph.created_at DESC`,
       sourceSchoolYearIds
     );
+
+    if (globallyArchivedLrns.size > 0) {
+      promotionRows = promotionRows.filter((row) => {
+        const lrn = String(row?.lrn || '').trim();
+        return !lrn || !globallyArchivedLrns.has(lrn);
+      });
+    }
 
     const sourceById = new Map();
     const sourceByLrn = new Map();
