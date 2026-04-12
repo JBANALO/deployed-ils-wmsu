@@ -10,7 +10,7 @@ export default function ViewStudentModal({ student, onClose }) {
     : '';
 
   return (
-    <div className="fixed inset-0 bg-black/30 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full my-8">
         <div className="p-6">
           {/* Header */}
@@ -47,8 +47,8 @@ export default function ViewStudentModal({ student, onClose }) {
                 { label: "LRN", value: student.lrn, mono: true },
                 { label: "Grade Level", value: student.gradeLevel },
                 { label: "Section", value: student.section },
-                { label: "WMSU Email", value: student.wmsuEmail, email: true },
-                { label: "Parents/Guardian Contact", value: student.contact || "N/A" },
+                { label: "Student Email", value: student.email || "N/A", email: true },
+                { label: "Parent Email", value: student.parentEmail || "N/A", email: true },
                 { label: "Status", value: student.status, badge: true },
               ].map((item) => (
                 <div key={item.label} className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0">

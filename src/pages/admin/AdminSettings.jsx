@@ -9,6 +9,7 @@ import {
   GlobeAltIcon,
   LockClosedIcon,
   EyeIcon,
+  EyeSlashIcon,
   PencilIcon,
 } from "@heroicons/react/24/solid";
 import { toast } from 'react-toastify';
@@ -42,6 +43,21 @@ export default function AdminSettings() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [backupHistory, setBackupHistory] = useState([]);
+
+  // Profile related state
+  const [formData, setFormData] = useState({
+    firstName: adminUser?.firstName || "",
+    lastName: adminUser?.lastName || "",
+    email: adminUser?.email || "",
+  });
+
+  const [passwordData, setPasswordData] = useState({
+    newPassword: "",
+    confirmPassword: "",
+  });
+
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // ✅ FIXED INPUT HANDLER
   const handleInputChange = (key, value, nestedKey = null) => {
@@ -195,6 +211,50 @@ export default function AdminSettings() {
     return JSON.stringify(settings) !== JSON.stringify(initialSettings);
   };
 
+  // Profile handlers
+  const handleProfileUpdate = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await api.put('/admin/profile', formData);
+      toast.success('Profile updated successfully!');
+      // Update adminUser in context if needed
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      toast.error(error.response?.data?.message || 'Failed to update profile');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasswordChange = async (e) => {
+    e.preventDefault();
+    
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+
+    if (passwordData.newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters long');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await api.put('/admin/password', { 
+        newPassword: passwordData.newPassword 
+      });
+      toast.success('Password changed successfully!');
+      setPasswordData({ newPassword: '', confirmPassword: '' });
+    } catch (error) {
+      console.error('Error changing password:', error);
+      toast.error(error.response?.data?.message || 'Failed to change password');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const notificationOptions = [
     {
       key: "email",
@@ -227,6 +287,7 @@ export default function AdminSettings() {
           <nav className="flex space-x-8 px-6">
             {[
               { id: "general", label: "General", icon: Cog6ToothIcon },
+              { id: "profile", label: "Profile", icon: UserIcon },
               { id: "security", label: "Security", icon: LockClosedIcon },
               { id: "notifications", label: "Notifications", icon: BellIcon },
               { id: "backup", label: "Backup", icon: DocumentTextIcon },
@@ -429,6 +490,121 @@ export default function AdminSettings() {
             </div>
           )}
 
+          {/* Profile Tab */}
+          {activeTab === "profile" && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Profile Information</h2>
+                <form onSubmit={handleProfileUpdate} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">First Name</label>
+                      <input
+                        type="text"
+                        value={formData.firstName}
+                        onChange={(e) => setFormData({...formData, firstName: e.target.value})}
+                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Last Name</label>
+                      <input
+                        type="text"
+                        value={formData.lastName}
+                        onChange={(e) => setFormData({...formData, lastName: e.target.value})}
+                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Email Address</label>
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({...formData, email: e.target.value})}
+                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                      required
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {loading ? "Updating..." : "Update Profile"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <div className="border-t pt-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Change Password</h2>
+                <form onSubmit={handlePasswordChange} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">New Password</label>
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? "text" : "password"}
+                        value={passwordData.newPassword}
+                        onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
+                        className="mt-1 block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                        required
+                        minLength="6"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute inset-y-0 right-0 flex items-center pr-3"
+                      >
+                        {showNewPassword ? (
+                          <EyeSlashIcon className="h-5 w-5 text-gray-400" />
+                        ) : (
+                          <EyeIcon className="h-5 w-5 text-gray-400" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Confirm New Password</label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? "text" : "password"}
+                        value={passwordData.confirmPassword}
+                        onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
+                        className="mt-1 block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                        required
+                        minLength="6"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute inset-y-0 right-0 flex items-center pr-3"
+                      >
+                        {showConfirmPassword ? (
+                          <EyeSlashIcon className="h-5 w-5 text-gray-400" />
+                        ) : (
+                          <EyeIcon className="h-5 w-5 text-gray-400" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {loading ? "Changing..." : "Change Password"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
           {/* BACKUP */}
           {activeTab === "backup" && (
             <div className="space-y-6">
@@ -545,35 +721,6 @@ export default function AdminSettings() {
               </div>
             </div>
           )}
-        </div>
-      </div>
-
-      {/* ACTION BUTTONS */}
-      <div className="bg-white rounded-lg shadow p-6 flex justify-between items-center">
-        <div className="text-sm text-gray-500">
-          {hasChanges() && (
-            <span className="text-orange-600 font-medium">⚠ You have unsaved changes</span>
-          )}
-        </div>
-        <div className="flex gap-4">
-          <button
-            onClick={() => {
-              setSettings(initialSettings);
-              toast.info('Changes discarded');
-            }}
-            className="px-6 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-          >
-            Cancel
-          </button>
-
-          <button
-            onClick={handleSave}
-            disabled={isSaving || !hasChanges()}
-            className="px-6 py-2 bg-red-800 text-white rounded-md flex items-center gap-2 hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSaving ? "Saving..." : "Save Changes"}
-            {!isSaving && <PencilIcon className="w-4 h-4" />}
-          </button>
         </div>
       </div>
     </div>

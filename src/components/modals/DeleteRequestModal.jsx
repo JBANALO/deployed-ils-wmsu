@@ -1,6 +1,6 @@
 export default function DeleteRequestModal({ student, reason, setReason, onSubmit, onClose }) {
   return (
-    <div className="fixed inset-0 bg-black/30 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
         <h3 className="text-2xl font-bold text-red-800 mb-4">Request Student Deletion</h3>
         <div className="bg-gray-100 p-5 rounded-xl mb-6">

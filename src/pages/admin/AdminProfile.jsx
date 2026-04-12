@@ -345,7 +345,7 @@ const handleImageChange = (e) => {
                     name="email"
                     value={formData.email}
                     onChange={handleInputChange}
-                    disabled={!editMode}
+                    disabled={true}
                     className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100 disabled:text-gray-500"
                   />
                 </div>

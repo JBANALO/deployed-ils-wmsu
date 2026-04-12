@@ -508,7 +508,7 @@ export default function GradeLevel() {
                     <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 tracking-wider w-37">Grade & Section</th>
                     <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 tracking-wider w-16">Age</th>
                     <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 tracking-wider w-16">Sex</th>
-                    <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 tracking-wider">WMSU Email</th>
+                    <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 tracking-wider">Parent's Email</th>
                     <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 tracking-wider w-20">Status</th>
                     <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 tracking-wider w-32">Actions</th>
                   </tr>
@@ -530,7 +530,7 @@ export default function GradeLevel() {
                         <td className="px-3 py-2 text-sm">{student.gradeLevel} - {student.section}</td>
                         <td className="px-3 py-2 text-sm text-center">{student.age}</td>
                         <td className="px-3 py-2 text-sm text-center">{student.sex}</td>
-                        <td className="px-3 py-2 text-sm text-blue-600 font-mono truncate max-w-xs">{student.wmsuEmail}</td>
+                        <td className="px-3 py-2 text-sm text-blue-600 font-mono truncate max-w-xs">{student.parentEmail || 'N/A'}</td>
                         <td className="px-3 py-2 text-center">
                           <span className={`inline-flex px-3 py-1 text-xs font-bold rounded-full ${student.status === "Active" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
                             {student.status}
