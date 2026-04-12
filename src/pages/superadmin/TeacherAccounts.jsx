@@ -161,14 +161,18 @@ export default function TeacherAccounts() {
 
   const handleDeleteTeacher = async () => {
     try {
-      await api.delete(`/teachers/${selectedTeacher.id}`);
+      console.log('🔍 Selected teacher object:', selectedTeacher);
+      console.log('🔍 Deleting teacher with ID:', selectedTeacher.id);
+      const response = await api.delete(`/teachers/${selectedTeacher.id}`);
+      console.log('🔍 Delete response:', response.data);
       toast.success("Teacher account deleted successfully");
       setShowDeleteModal(false);
       setSelectedTeacher(null);
       fetchTeachers(true);
     } catch (error) {
       console.error("Error deleting teacher:", error);
-      toast.error(error.response?.data?.message || "Failed to delete teacher account");
+      console.error("Error response:", error.response?.data);
+      toast.error(error.response?.data?.message || error.response?.data?.error || "Failed to delete teacher account");
     }
   };
 

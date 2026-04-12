@@ -351,14 +351,46 @@ exports.deleteTeacher = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check if teacher exists
+    console.log('🔍 Delete teacher request for ID:', id, 'Type:', typeof id);
+
+    // Check if teacher exists in database
     const existingTeacher = await query('SELECT * FROM teachers WHERE id = ?', [id]);
-    if (existingTeacher.length === 0) {
+    console.log('🔍 Teacher in database:', existingTeacher.length > 0);
+    if (existingTeacher.length > 0) {
+      console.log('🔍 Found teacher in DB with ID:', existingTeacher[0].id, 'Type:', typeof existingTeacher[0].id);
+    }
+
+    // Also check users.json
+    const { readUsers, writeUsers } = require('../utils/fileStorage');
+    const allUsers = readUsers();
+    console.log('🔍 Total users in users.json:', allUsers.length);
+    
+    // Log all teacher IDs for debugging
+    const teacherIds = allUsers
+      .filter(u => u.role === 'teacher' || u.role === 'adviser' || u.role === 'subject_teacher')
+      .map(u => ({ id: u.id, type: typeof u.id, email: u.email }));
+    console.log('🔍 Teacher IDs in users.json:', teacherIds);
+
+    const userIndex = allUsers.findIndex(u => u.id === id && (u.role === 'teacher' || u.role === 'adviser' || u.role === 'subject_teacher'));
+    console.log('🔍 Teacher in users.json:', userIndex !== -1, 'Index:', userIndex);
+
+    if (existingTeacher.length === 0 && userIndex === -1) {
+      console.log('❌ Teacher not found in either database or users.json');
       return res.status(404).json({ message: 'Teacher not found' });
     }
 
-    // Delete teacher
-    await query('DELETE FROM teachers WHERE id = ?', [id]);
+    // Delete from database if exists
+    if (existingTeacher.length > 0) {
+      await query('DELETE FROM teachers WHERE id = ?', [id]);
+      console.log('✅ Deleted teacher from database');
+    }
+
+    // Delete from users.json if exists
+    if (userIndex !== -1) {
+      allUsers.splice(userIndex, 1);
+      writeUsers(allUsers);
+      console.log('✅ Deleted teacher from users.json');
+    }
 
     res.status(200).json({
       status: 'success',

@@ -18,6 +18,17 @@ export default function TeacherTopbar({ sidebarOpen }) {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailData, setEmailData] = useState({
+    newEmail: "",
+    confirmEmail: "",
+    verificationCode: "",
+  });
+  const [isChangingEmail, setIsChangingEmail] = useState(false);
+  const [isSendingVerification, setIsSendingVerification] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const { logout } = useContext(UserContext);
   const navigate = useNavigate();
   const dropdownRef = useRef(null);
@@ -128,16 +139,23 @@ export default function TeacherTopbar({ sidebarOpen }) {
     setShowPasswordModal(true);
   };
 
+  const handleChangeEmail = () => {
+    setShowDropdown(false);
+    setShowEmailModal(true);
+  };
+
   const handlePasswordChange = async (e) => {
     e.preventDefault();
-    
+
     if (passwordData.newPassword !== passwordData.confirmPassword) {
-      alert('Passwords do not match');
+      setErrorMessage('Passwords do not match');
+      setShowErrorModal(true);
       return;
     }
 
     if (passwordData.newPassword.length < 6) {
-      alert('Password must be at least 6 characters long');
+      setErrorMessage('Password must be at least 6 characters long');
+      setShowErrorModal(true);
       return;
     }
 
@@ -146,14 +164,127 @@ export default function TeacherTopbar({ sidebarOpen }) {
       await api.put('/teacher/password', { 
         newPassword: passwordData.newPassword 
       });
-      alert('Password changed successfully!');
+      setErrorMessage('Password changed successfully!');
+      setShowErrorModal(true);
       setShowPasswordModal(false);
       setPasswordData({ newPassword: '', confirmPassword: '' });
     } catch (error) {
       console.error('Error changing password:', error);
-      alert(error.response?.data?.message || 'Failed to change password');
+      setErrorMessage(error.response?.data?.message || 'Failed to change password');
+      setShowErrorModal(true);
     } finally {
       setIsChangingPassword(false);
+    }
+  };
+
+  const handleEmailChange = async (e) => {
+    e.preventDefault();
+
+    if (!verificationSent) {
+      setErrorMessage('Please send verification first');
+      setShowErrorModal(true);
+      return;
+    }
+
+    if (emailData.newEmail !== emailData.confirmEmail) {
+      setErrorMessage('Emails do not match');
+      setShowErrorModal(true);
+      return;
+    }
+
+    if (!emailData.newEmail || !emailData.newEmail.endsWith('@wmsu.edu.ph')) {
+      setErrorMessage('Invalid email');
+      setShowErrorModal(true);
+      return;
+    }
+
+    if (!emailData.verificationCode) {
+      console.log('🔍 Verification code:', emailData.verificationCode);
+      setErrorMessage('Please enter the verification code');
+      setShowErrorModal(true);
+      return;
+    }
+
+    // Verify the code first
+    try {
+      console.log('🔍 Verifying code:', { email: emailData.newEmail, code: emailData.verificationCode });
+      const verifyResponse = await api.post('/auth/verify-code', {
+        email: emailData.newEmail,
+        code: emailData.verificationCode
+      });
+
+      console.log('🔍 Verification response:', verifyResponse.data);
+
+      if (verifyResponse.data.message !== 'Verification successful') {
+        setErrorMessage(verifyResponse.data.message || 'Invalid or expired verification code');
+        setShowErrorModal(true);
+        return;
+      }
+    } catch (error) {
+      console.error('Error verifying code:', error);
+      console.error('Error response:', error.response?.data);
+      setErrorMessage(error.response?.data?.message || 'Invalid or expired verification code');
+      setShowErrorModal(true);
+      return;
+    }
+
+    setIsChangingEmail(true);
+    try {
+      // Get current user data from localStorage
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        
+        // Send all required fields along with new email
+        await api.put('/auth/update-profile', {
+          firstName: user.firstName || user.first_name || '',
+          lastName: user.lastName || user.last_name || '',
+          username: user.username || '',
+          email: emailData.newEmail
+        });
+
+        // Update localStorage with new email
+        user.email = emailData.newEmail;
+        localStorage.setItem('user', JSON.stringify(user));
+      } else {
+        throw new Error('User not found in localStorage');
+      }
+
+      setErrorMessage('Email changed successfully!');
+      setShowErrorModal(true);
+      setShowEmailModal(false);
+      setEmailData({ newEmail: '', confirmEmail: '', verificationCode: '' });
+      setVerificationSent(false);
+    } catch (error) {
+      console.error('Error changing email:', error);
+      setErrorMessage(error.response?.data?.message || 'Failed to change email');
+      setShowErrorModal(true);
+    } finally {
+      setIsChangingEmail(false);
+    }
+  };
+
+  const handleSendVerification = async () => {
+    if (!emailData.newEmail || !emailData.newEmail.endsWith('@wmsu.edu.ph')) {
+      setErrorMessage('Invalid email');
+      setShowErrorModal(true);
+      return;
+    }
+
+    setIsSendingVerification(true);
+    try {
+      await api.post('/auth/send-verification', {
+        email: emailData.newEmail
+      });
+      setErrorMessage('Verification email sent successfully!');
+      setShowErrorModal(true);
+      setVerificationSent(true);
+    } catch (error) {
+      console.error('Error sending verification:', error);
+      setErrorMessage(error.response?.data?.message || 'Failed to send verification email');
+      setShowErrorModal(true);
+    } finally {
+      setIsSendingVerification(false);
     }
   };
 
@@ -234,31 +365,37 @@ export default function TeacherTopbar({ sidebarOpen }) {
                   {userName || "Loading..."}
                 </div>
                 <ul>
-                  <li 
+                  <li
                     onClick={handleMainDashboard}
                     className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
                   >
                     Dashboard
                   </li>
-                  <li 
+                  <li
                     onClick={handleProfile}
                     className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
                   >
                     Profile
                   </li>
-                  <li 
+                  <li
                     onClick={handleChangePassword}
                     className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
                   >
                     Change Account Password
                   </li>
-                  <li 
+                  <li
+                    onClick={handleChangeEmail}
+                    className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                  >
+                    Change Email
+                  </li>
+                  <li
                     onClick={handleGradesPortal}
                     className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
                   >
                     Edit Grades
                   </li>
-                  <li 
+                  <li
                     onClick={handleAttendancePage}
                     className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
                   >
@@ -356,6 +493,120 @@ export default function TeacherTopbar({ sidebarOpen }) {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Change Modal */}
+      {showEmailModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div className="p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Change Email</h2>
+
+              <form onSubmit={handleEmailChange} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">New Email</label>
+                  <input
+                    type="email"
+                    value={emailData.newEmail}
+                    onChange={(e) => {
+                      setEmailData({...emailData, newEmail: e.target.value});
+                      setVerificationSent(false);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                    required
+                    placeholder="Enter new email"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Email</label>
+                  <input
+                    type="email"
+                    value={emailData.confirmEmail}
+                    onChange={(e) => setEmailData({...emailData, confirmEmail: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                    required
+                    placeholder="Confirm new email"
+                  />
+                </div>
+
+                {verificationSent && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Verification Code</label>
+                    <input
+                      type="text"
+                      value={emailData.verificationCode}
+                      onChange={(e) => setEmailData({...emailData, verificationCode: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                      required
+                      placeholder="Enter 6-digit code"
+                      maxLength="6"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Enter the 6-digit code sent to your email</p>
+                  </div>
+                )}
+
+                {verificationSent && (
+                  <div className="bg-green-50 border border-green-200 rounded-md p-3">
+                    <p className="text-sm text-green-800">✓ Verification email sent. Please check your inbox and enter the code above.</p>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={handleSendVerification}
+                    disabled={isSendingVerification || verificationSent}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  >
+                    {isSendingVerification ? "Sending..." : verificationSent ? "Verification Sent" : "Send Verification"}
+                  </button>
+
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowEmailModal(false);
+                        setEmailData({ newEmail: '', confirmEmail: '' });
+                        setVerificationSent(false);
+                      }}
+                      className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isChangingEmail || !verificationSent}
+                      className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 disabled:opacity-50 transition-colors"
+                    >
+                      {isChangingEmail ? "Changing..." : "Save"}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error Modal */}
+      {showErrorModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4">
+            <div className="p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-2">Message</h2>
+              <p className="text-gray-700 mb-6">{errorMessage}</p>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setShowErrorModal(false)}
+                  className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 transition-colors"
+                >
+                  OK
+                </button>
+              </div>
             </div>
           </div>
         </div>

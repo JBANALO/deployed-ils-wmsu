@@ -691,7 +691,198 @@ app.get('/api', (req, res) => {
 
 });
 
+// Verification code storage (in-memory)
 
+const verificationCodes = new Map();
+
+// Send verification email endpoint
+
+app.post('/api/auth/send-verification', async (req, res) => {
+
+  try {
+
+    const { email } = req.body;
+
+    if (!email) {
+
+      return res.status(400).json({ message: 'Email is required' });
+
+    }
+
+    // Generate 6-digit verification code
+
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Store the verification code with expiration (10 minutes)
+
+    verificationCodes.set(email, {
+
+      code: verificationCode,
+
+      expiresAt: Date.now() + 10 * 60 * 1000 // 10 minutes
+
+    });
+
+    console.log(`📧 Verification code for ${email}: ${verificationCode}`);
+
+    // Send email using SendGrid
+
+    if (process.env.SENDGRID_API_KEY) {
+
+      const msg = {
+
+        to: email,
+
+        from: process.env.SENDGRID_EMAIL_FROM || 'noreply@wmsu.edu.ph',
+
+        subject: 'WMSU ILS - Email Verification Code',
+
+        html: `
+
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+
+            <div style="background: linear-gradient(135deg, #8B0000, #DC143C); color: white; padding: 20px; text-align: center;">
+
+              <h1 style="margin: 0;">WMSU Integrated Learning System</h1>
+
+              <p style="margin: 5px 0 0 0;">Email Verification</p>
+
+            </div>
+
+            <div style="padding: 30px; background-color: #f9f9f9;">
+
+              <h2 style="color: #333;">Your Verification Code</h2>
+
+              <p style="color: #666; font-size: 16px;">You requested to change your email address. Please use the following verification code to complete the process:</p>
+
+              <div style="background-color: #fff; border: 2px solid #8B0000; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
+
+                <span style="font-size: 32px; font-weight: bold; color: #8B0000; letter-spacing: 5px;">${verificationCode}</span>
+
+              </div>
+
+              <p style="color: #666; font-size: 14px;">This code will expire in 10 minutes.</p>
+
+              <p style="color: #666; font-size: 14px;">If you did not request this change, please ignore this email.</p>
+
+            </div>
+
+            <div style="background-color: #8B0000; color: white; padding: 15px; text-align: center; font-size: 12px;">
+
+              <p style="margin: 0;">&copy; 2026 WMSU Integrated Learning System. All rights reserved.</p>
+
+            </div>
+
+          </div>
+
+        `
+
+      };
+
+      try {
+
+        await sgMail.send(msg);
+
+        console.log('✅ Verification email sent to:', email);
+
+      } catch (emailError) {
+
+        console.error('❌ SendGrid error:', emailError);
+
+        console.error('❌ SendGrid error details:', emailError.response?.body);
+
+        // Still return success to prevent email enumeration
+
+      }
+
+    } else {
+
+      console.warn('⚠️ SendGrid API key not configured, email not sent');
+
+      // For development, log the code to console
+
+      console.log(`🔧 DEV MODE - Verification code for ${email}: ${verificationCode}`);
+
+    }
+
+    res.json({ message: 'Verification email sent successfully' });
+
+  } catch (error) {
+
+    console.error('Error sending verification email:', error);
+
+    res.status(500).json({ message: 'Failed to send verification email' });
+
+  }
+
+});
+
+// Verify code endpoint (optional, for future use)
+
+app.post('/api/auth/verify-code', async (req, res) => {
+
+  try {
+
+    const { email, code } = req.body;
+
+    console.log('🔍 Verify code request:', { email, code });
+
+    if (!email || !code) {
+
+      return res.status(400).json({ message: 'Email and code are required' });
+
+    }
+
+    const storedData = verificationCodes.get(email);
+
+    console.log('🔍 Stored data for email:', storedData);
+
+    if (!storedData) {
+
+      return res.status(400).json({ message: 'Invalid or expired verification code' });
+
+    }
+
+    // Check if code has expired
+
+    if (Date.now() > storedData.expiresAt) {
+
+      verificationCodes.delete(email);
+
+      return res.status(400).json({ message: 'Verification code has expired' });
+
+    }
+
+    // Check if code matches (trim and convert to string for comparison)
+
+    const inputCode = String(code).trim();
+    const storedCode = String(storedData.code).trim();
+
+    console.log('🔍 Code comparison:', { inputCode, storedCode, match: inputCode === storedCode });
+
+    if (storedCode !== inputCode) {
+
+      return res.status(400).json({ message: 'Invalid verification code' });
+
+    }
+
+    // Code is valid, delete it after successful verification
+
+    verificationCodes.delete(email);
+
+    console.log('✅ Verification successful for:', email);
+
+    res.json({ message: 'Verification successful' });
+
+  } catch (error) {
+
+    console.error('Error verifying code:', error);
+
+    res.status(500).json({ message: 'Failed to verify code' });
+
+  }
+
+});
 
 // Login route - uses JSON file and MySQL database
 
@@ -700,8 +891,6 @@ app.post('/api/auth/login', async (req, res) => {
   try {
 
     console.log('Login route called with body:', req.body);
-
-    
 
     const { email, username, password } = req.body;
 
@@ -4454,11 +4643,9 @@ const startServer = async () => {
 
 
 
-    // 🔧 FORCE FIX: Drop all wrong camelCase columns from Railway database
+    // 🔧 FORCE FIX: Drop all wrong camelCase columns from Railway database - TEMPORARILY DISABLED
 
-    console.log('🔧 FORCE FIXING Railway database schema...');
-
-    
+    /*
 
     // Drop wrong camelCase columns from users table
 
@@ -4468,9 +4655,15 @@ const startServer = async () => {
 
       try {
 
-        await query(`ALTER TABLE users DROP COLUMN IF EXISTS ${col}`);
+        const exists = await query(`SHOW COLUMNS FROM users LIKE '${col}'`);
 
-        console.log(`✅ Dropped wrong users column: ${col}`);
+        if (exists.length > 0) {
+
+          await query(`ALTER TABLE users DROP COLUMN ${col}`);
+
+          console.log(`✅ Dropped wrong users column: ${col}`);
+
+        }
 
       } catch (err) {
 
@@ -4479,12 +4672,6 @@ const startServer = async () => {
       }
 
     }
-
-
-
-    // Drop wrong columns from other tables if they exist
-
-    const wrongStudentColumns = ['middleName', 'parentFirstName', 'parentLastName', 'parentContact', 'parentEmail', 'contact', 'qrCode', 'full_name', 'wmsu_email', 'adviser_id', 'adviser_name'];
 
     for (const col of wrongStudentColumns) {
 
@@ -4526,161 +4713,9 @@ const startServer = async () => {
 
     console.log('✅ Railway database schema cleanup completed!');
 
+    */
 
-
-    // Then add correct underscore columns
-
-    const userColumns = [
-
-      { name: 'id', sql: 'ALTER TABLE users ADD COLUMN id VARCHAR(36) PRIMARY KEY' },
-
-      { name: 'googleId', sql: 'ALTER TABLE users ADD COLUMN googleId VARCHAR(255)' },
-
-      { name: 'first_name', sql: 'ALTER TABLE users ADD COLUMN first_name VARCHAR(100)' },
-
-      { name: 'last_name', sql: 'ALTER TABLE users ADD COLUMN last_name VARCHAR(100)' },
-
-      { name: 'username', sql: 'ALTER TABLE users ADD COLUMN username VARCHAR(100) UNIQUE' },
-
-      { name: 'email', sql: 'ALTER TABLE users ADD COLUMN email VARCHAR(100) UNIQUE NOT NULL' },
-
-      { name: 'password', sql: 'ALTER TABLE users ADD COLUMN password VARCHAR(255) NOT NULL' },
-
-      { name: 'role', sql: 'ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT "admin"' },
-
-      { name: 'created_at', sql: 'ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP' },
-
-      { name: 'phone', sql: 'ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT ""' },
-
-      { name: 'profile_pic', sql: 'ALTER TABLE users ADD COLUMN profile_pic LONGTEXT' },
-
-      { name: 'avatar', sql: 'ALTER TABLE users ADD COLUMN avatar LONGTEXT' },
-
-      { name: 'name', sql: 'ALTER TABLE users ADD COLUMN name VARCHAR(255)' },
-
-      { name: 'status', sql: 'ALTER TABLE users ADD COLUMN status VARCHAR(20) DEFAULT "approved"' },
-
-      { name: 'updated_at', sql: 'ALTER TABLE users ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP' }
-
-    ];
-
-
-
-    for (const col of userColumns) {
-
-      try {
-
-        const exists = await query(`SHOW COLUMNS FROM users LIKE '${col.name}'`);
-
-        if (exists.length === 0) {
-
-          await query(col.sql);
-
-          console.log(`✅ ${col.name} column added to users`);
-
-        } else {
-
-          console.log(`✅ ${col.name} column already exists in users`);
-
-        }
-
-      } catch (err) {
-
-        console.warn(`⚠️ Skipping users.${col.name} check:`, err.message);
-
-      }
-
-    }
-
-
-
-    // Students table columns - Match local database structure exactly (underscore-only)
-
-    const studentColumns = [
-
-      { name: 'id', sql: 'ALTER TABLE students ADD COLUMN id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY' },
-
-      { name: 'lrn', sql: 'ALTER TABLE students ADD COLUMN lrn VARCHAR(12) NOT NULL UNIQUE' },
-
-      { name: 'first_name', sql: 'ALTER TABLE students ADD COLUMN first_name VARCHAR(100) NOT NULL' },
-
-      { name: 'middle_name', sql: 'ALTER TABLE students ADD COLUMN middle_name VARCHAR(100)' },
-
-      { name: 'last_name', sql: 'ALTER TABLE students ADD COLUMN last_name VARCHAR(100) NOT NULL' },
-
-      { name: 'age', sql: 'ALTER TABLE students ADD COLUMN age INT(11) NOT NULL' },
-
-      { name: 'sex', sql: 'ALTER TABLE students ADD COLUMN sex VARCHAR(10) NOT NULL' },
-
-      { name: 'grade_level', sql: 'ALTER TABLE students ADD COLUMN grade_level VARCHAR(50) NOT NULL' },
-
-      { name: 'section', sql: 'ALTER TABLE students ADD COLUMN section VARCHAR(50) NOT NULL' },
-
-      { name: 'parent_first_name', sql: 'ALTER TABLE students ADD COLUMN parent_first_name VARCHAR(255)' },
-
-      { name: 'parent_last_name', sql: 'ALTER TABLE students ADD COLUMN parent_last_name VARCHAR(255)' },
-
-      { name: 'parent_contact', sql: 'ALTER TABLE students ADD COLUMN parent_contact VARCHAR(20)' },
-
-      { name: 'parent_email', sql: 'ALTER TABLE students ADD COLUMN parent_email VARCHAR(255)' },
-
-      { name: 'student_email', sql: 'ALTER TABLE students ADD COLUMN student_email VARCHAR(100) UNIQUE' },
-
-      { name: 'password', sql: 'ALTER TABLE students ADD COLUMN password VARCHAR(255) NOT NULL' },
-
-      { name: 'profile_pic', sql: 'ALTER TABLE students ADD COLUMN profile_pic LONGTEXT' },
-
-      { name: 'qr_code', sql: 'ALTER TABLE students ADD COLUMN qr_code LONGTEXT' },
-
-      { name: 'status', sql: 'ALTER TABLE students ADD COLUMN status VARCHAR(20) DEFAULT "pending"' },
-
-      { name: 'attendance', sql: 'ALTER TABLE students ADD COLUMN attendance VARCHAR(10) DEFAULT "0%"' },
-
-      { name: 'average', sql: 'ALTER TABLE students ADD COLUMN average INT(11) DEFAULT 0' },
-
-      { name: 'grades', sql: 'ALTER TABLE students ADD COLUMN grades TEXT DEFAULT NULL' },
-
-      { name: 'created_by', sql: 'ALTER TABLE students ADD COLUMN created_by VARCHAR(50) DEFAULT "admin"' },
-
-      { name: 'created_at', sql: 'ALTER TABLE students ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP' },
-
-      { name: 'updated_at', sql: 'ALTER TABLE students ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP' },
-
-      { name: 'decline_reason', sql: 'ALTER TABLE students ADD COLUMN decline_reason TEXT' }
-
-    ];
-
-
-
-    for (const col of studentColumns) {
-
-      try {
-
-        const exists = await query(`SHOW COLUMNS FROM students LIKE '${col.name}'`);
-
-        if (exists.length === 0) {
-
-          await query(col.sql);
-
-          console.log(`✅ ${col.name} column added to students`);
-
-        } else {
-
-          console.log(`✅ ${col.name} column already exists in students`);
-
-        }
-
-      } catch (err) {
-
-        console.warn(`⚠️ Skipping students.${col.name} check:`, err.message);
-
-      }
-
-    }
-
-
-
-    console.log('✅ Database setup completed successfully!');
+    console.log('✅ Database setup skipped - schema setup temporarily disabled');
 
   } else {
 
@@ -4688,15 +4723,9 @@ const startServer = async () => {
 
   }
 
+  // 5️⃣ Create missing tables if they don't exist - TEMPORARILY DISABLED
 
-
-  // 5️⃣ Create missing tables if they don't exist
-
-  if (isDatabaseAvailable()) {
-
-    console.log('✅ Creating missing tables...');
-
-    
+  /*
 
     // Create teachers table if it doesn't exist
 
@@ -4733,8 +4762,6 @@ const startServer = async () => {
       console.warn('⚠️ Teachers table creation error:', err.message);
 
     }
-
-
 
     // Create help_center_messages table if it doesn't exist
 
@@ -4808,9 +4835,25 @@ const startServer = async () => {
 
     try {
 
-      await query(`ALTER TABLE help_center_messages ADD COLUMN IF NOT EXISTS grade_level VARCHAR(50) NULL`);
+      const gradeLevelCheck = await query(`SHOW COLUMNS FROM help_center_messages LIKE 'grade_level'`);
 
-      await query(`ALTER TABLE help_center_messages ADD COLUMN IF NOT EXISTS section VARCHAR(50) NULL`);
+      if (gradeLevelCheck.length === 0) {
+
+        await query(`ALTER TABLE help_center_messages ADD COLUMN grade_level VARCHAR(50) NULL`);
+
+        console.log('✅ Added grade_level column');
+
+      }
+
+      const sectionCheck = await query(`SHOW COLUMNS FROM help_center_messages LIKE 'section'`);
+
+      if (sectionCheck.length === 0) {
+
+        await query(`ALTER TABLE help_center_messages ADD COLUMN section VARCHAR(50) NULL`);
+
+        console.log('✅ Added section column');
+
+      }
 
       
 
@@ -4818,9 +4861,25 @@ const startServer = async () => {
 
       try {
 
-        await query(`ALTER TABLE help_center_messages ADD INDEX IF NOT EXISTS idx_grade_level (grade_level)`);
+        const gradeIndexCheck = await query(`SHOW INDEX FROM help_center_messages WHERE Key_name = 'idx_grade_level'`);
 
-        await query(`ALTER TABLE help_center_messages ADD INDEX IF NOT EXISTS idx_section (section)`);
+        if (gradeIndexCheck.length === 0) {
+
+          await query(`ALTER TABLE help_center_messages ADD INDEX idx_grade_level (grade_level)`);
+
+          console.log('✅ Added idx_grade_level index');
+
+        }
+
+        const sectionIndexCheck = await query(`SHOW INDEX FROM help_center_messages WHERE Key_name = 'idx_section'`);
+
+        if (sectionIndexCheck.length === 0) {
+
+          await query(`ALTER TABLE help_center_messages ADD INDEX idx_section (section)`);
+
+          console.log('✅ Added idx_section index');
+
+        }
 
       } catch (indexErr) {
 
@@ -4908,7 +4967,7 @@ const startServer = async () => {
 
   }
 
-
+  */
 
   // 4️⃣ Start Express server
 
