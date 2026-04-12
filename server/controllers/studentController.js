@@ -2351,6 +2351,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
   try {
     await ensureStudentSchoolYearColumn();
     await ensureStudentBirthDateColumn();
+    await ensureStudentArchiveColumns();
     await ensureStudentLrnScopedUniqueness();
 
     let targetSy;
@@ -2421,6 +2422,11 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
          WHERE school_year_id IN (${sourcePlaceholders})
            AND LOWER(COALESCE(grade_level, '')) <> 'graduate'
            AND LOWER(COALESCE(status, '')) <> 'graduated'
+           AND NOT (
+             LOWER(TRIM(COALESCE(status, ''))) = 'inactive'
+             AND stopped_year IS NOT NULL
+             AND TRIM(stopped_year) <> ''
+           )
          ORDER BY school_year_id DESC, created_at DESC`,
         sourceSchoolYearIds
       );
@@ -2432,6 +2438,11 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
        WHERE school_year_id IN (${sourcePlaceholders})
          AND LOWER(COALESCE(grade_level, '')) <> 'graduate'
          AND LOWER(COALESCE(status, '')) <> 'graduated'
+         AND NOT (
+           LOWER(TRIM(COALESCE(status, ''))) = 'inactive'
+           AND stopped_year IS NOT NULL
+           AND TRIM(stopped_year) <> ''
+         )
        ORDER BY school_year_id DESC, created_at DESC`,
       sourceSchoolYearIds
     );
@@ -2558,6 +2569,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     let updated = 0;
     let promotedInserted = 0;
     let retainedInserted = 0;
+    let archivedSkipped = 0;
     let duplicateConflicts = 0;
     const sourceLrns = new Set();
 
@@ -2613,11 +2625,21 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       const nextStatus = 'Active';
 
       const duplicateInTarget = await query(
-        'SELECT id FROM students WHERE lrn = ? AND school_year_id = ? LIMIT 1',
+        'SELECT id, status, stopped_year FROM students WHERE lrn = ? AND school_year_id = ? LIMIT 1',
         [sourceStudent.lrn, targetSy.id]
       );
 
       if (duplicateInTarget.length > 0) {
+        const targetRow = duplicateInTarget[0];
+        const targetStatus = String(targetRow?.status || '').trim().toLowerCase();
+        const targetStoppedYear = String(targetRow?.stopped_year || '').trim();
+        const targetIsArchived = targetStatus === 'inactive' && targetStoppedYear.length > 0;
+        if (targetIsArchived) {
+          archivedSkipped += 1;
+          skipped += 1;
+          continue;
+        }
+
         await query(
           `UPDATE students
            SET first_name = ?, middle_name = ?, last_name = ?, age = ?, birth_date = ?, sex = ?,
@@ -2724,6 +2746,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
         skipped,
         promotedInserted,
         retainedInserted,
+        archivedSkipped,
         duplicateConflicts,
         sourceSchoolYearId: sourceSy.id,
         sourceSchoolYearIds,
@@ -2745,6 +2768,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
 exports.getPreviousYearPromotionCandidates = async (req, res) => {
   try {
     await ensureStudentSchoolYearColumn();
+    await ensureStudentArchiveColumns();
 
     let targetSy;
     try {
@@ -2774,6 +2798,11 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
        WHERE school_year_id IN (${sourcePlaceholders})
          AND LOWER(COALESCE(grade_level, '')) <> 'graduate'
          AND LOWER(COALESCE(status, '')) <> 'graduated'
+         AND NOT (
+           LOWER(TRIM(COALESCE(status, ''))) = 'inactive'
+           AND stopped_year IS NOT NULL
+           AND TRIM(stopped_year) <> ''
+         )
        ORDER BY school_year_id DESC, created_at DESC`,
       sourceSchoolYearIds
     );
