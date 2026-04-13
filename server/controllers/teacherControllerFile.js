@@ -960,7 +960,7 @@ const archiveTeacher = async (req, res) => {
     // Archive the teacher
     users[teacherIndex] = {
       ...teacher,
-      archived: true,
+      verification_status: 'archived',
       archivedAt: new Date().toISOString()
     };
     
