@@ -327,6 +327,19 @@ export default function AdminSchoolYear() {
       setShowPromoteModal(false);
       setSelectedCandidateIds(new Set());
       setPromotionAssignments({});
+      setFormData({
+        label: '',
+        start_date: '',
+        end_date: '',
+        q1_end_date: '',
+        q2_end_date: '',
+        q3_end_date: '',
+        q4_end_date: '',
+        principal_name: '',
+        assistant_principal_name: '',
+        is_active: false
+      });
+      setShowAddModal(true);
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to promote students');
