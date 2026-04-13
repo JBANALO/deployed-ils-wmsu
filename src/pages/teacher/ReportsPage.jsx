@@ -625,7 +625,7 @@ export default function ReportsPage() {
     setSendingEmailFor(null);
   };
 
-  const buildRankingPublicationPayload = () => {
+  const buildRankingPublicationPayload = (publishScope = 'individual') => {
     if (!isAdviser && gradesSubTab !== 'per-subject') {
       return { error: 'Subject teachers can only post per-subject rankings.' };
     }
@@ -700,6 +700,7 @@ export default function ReportsPage() {
           gradeLevel,
           section,
           rankingType: 'overall',
+          publishScope,
           quarter: rankingQuarterForReadiness === 'all' ? '' : rankingQuarterForReadiness,
           subject: '',
           rankings
@@ -749,6 +750,7 @@ export default function ReportsPage() {
           gradeLevel,
           section,
           rankingType: 'subject',
+          publishScope,
           quarter: selectedQuarterForView === 'all' ? '' : selectedQuarterForView,
           subject: selectedSubjectForRanking,
           rankings
@@ -795,6 +797,7 @@ export default function ReportsPage() {
           gradeLevel,
           section,
           rankingType: 'quarter',
+          publishScope,
           quarter,
           subject: '',
           rankings
@@ -805,8 +808,8 @@ export default function ReportsPage() {
     return { error: 'Unsupported ranking tab selected.' };
   };
 
-  const publishCurrentRanking = async () => {
-    const { payload, error } = buildRankingPublicationPayload();
+  const publishRankingByScope = async (publishScope = 'individual') => {
+    const { payload, error } = buildRankingPublicationPayload(publishScope);
     if (error) {
       setPublishStatus({ type: 'error', message: error });
       return;
@@ -819,7 +822,11 @@ export default function ReportsPage() {
       const response = await axios.post('/students/ranking-publications', payload);
       setPublishStatus({
         type: 'success',
-        message: response?.data?.message || 'Ranking posted to student dashboard.'
+        message:
+          response?.data?.message ||
+          (publishScope === 'full_list'
+            ? 'Full class ranking list posted to student dashboard.'
+            : 'Individual ranking posted to student dashboard.')
       });
     } catch (err) {
       setPublishStatus({
@@ -1359,13 +1366,22 @@ export default function ReportsPage() {
             </div>
 
             <div className="mt-3 flex justify-end">
-              <button
-                onClick={publishCurrentRanking}
-                disabled={publishingRanking}
-                className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {publishingRanking ? 'Posting...' : 'Post Ranking to Student Dashboard'}
-              </button>
+              <div className="flex flex-wrap gap-2 justify-end">
+                <button
+                  onClick={() => publishRankingByScope('individual')}
+                  disabled={publishingRanking}
+                  className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {publishingRanking ? 'Posting...' : 'Post Individual Ranking'}
+                </button>
+                <button
+                  onClick={() => publishRankingByScope('full_list')}
+                  disabled={publishingRanking}
+                  className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {publishingRanking ? 'Posting...' : 'Post Full Ranking List'}
+                </button>
+              </div>
             </div>
 
             {publishStatus && (
