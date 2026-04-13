@@ -31,6 +31,17 @@ const normalizeSubjectName = (value) => String(value || '')
   .toLowerCase();
 
 const getStudentGradeLevel = (student) => student?.gradeLevel || student?.grade_level || '';
+const dedupeSubjects = (values = []) => {
+  const seen = new Set();
+  const result = [];
+  values.forEach((value) => {
+    const normalized = normalizeSubjectName(value);
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    result.push(String(value).trim());
+  });
+  return result;
+};
 
 export default function AdminGrades() {
   const { viewingSchoolYear, activeSchoolYear, isViewingLocked } = useSchoolYear();
@@ -41,6 +52,11 @@ export default function AdminGrades() {
   const [gradeLevels, setGradeLevels] = useState([]);
   const [recentUpdates, setRecentUpdates] = useState([]);
   const [rankingBasis, setRankingBasis] = useState('final');
+  const [activeTab, setActiveTab] = useState('students');
+  const [computationMode, setComputationMode] = useState('deped');
+  const [selectedComputationGradeLevel, setSelectedComputationGradeLevel] = useState('');
+  const [computationSubjects, setComputationSubjects] = useState([]);
+  const [newComputationSubject, setNewComputationSubject] = useState('');
   
   // Modal states
   const [showViewModal, setShowViewModal] = useState(false);
@@ -64,11 +80,229 @@ export default function AdminGrades() {
     q4: 'Q4 Average'
   };
 
+  const getComputationSettingsStorageKey = (schoolYearId, gradeLevel) =>
+    `adminGradeComputationSettings:${String(schoolYearId || 'default')}:${String(gradeLevel || 'all')}`;
+
+  const buildDefaultComputationSubjects = () => {
+    if (!selectedComputationGradeLevel) return [];
+    const gradeSubjects = dedupeSubjects([
+      ...(subjectsByGrade[selectedComputationGradeLevel] || []),
+      ...(DEPED_SUBJECTS[selectedComputationGradeLevel] || [])
+    ]);
+
+    return gradeSubjects.map((name) => ({
+      name,
+      included: true,
+      weight: 0
+    }));
+  };
+
+  const loadComputationSettings = () => {
+    if (!selectedComputationGradeLevel) return;
+
+    const defaults = buildDefaultComputationSubjects();
+    const key = getComputationSettingsStorageKey(targetSchoolYearId, selectedComputationGradeLevel);
+
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) {
+        setComputationMode('deped');
+        setComputationSubjects(defaults);
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      const mode = parsed?.mode === 'custom' ? 'custom' : 'deped';
+      const savedSubjects = Array.isArray(parsed?.subjects) ? parsed.subjects : [];
+      const merged = dedupeSubjects([
+        ...defaults.map((item) => item.name),
+        ...savedSubjects.map((item) => item?.name)
+      ]).map((name) => {
+        const saved = savedSubjects.find(
+          (item) => normalizeSubjectName(item?.name) === normalizeSubjectName(name)
+        );
+        return {
+          name,
+          included: saved ? Boolean(saved.included) : true,
+          weight: saved && Number.isFinite(Number(saved.weight)) ? Number(saved.weight) : 0
+        };
+      });
+
+      setComputationMode(mode);
+      setComputationSubjects(merged);
+    } catch (error) {
+      console.warn('Failed to parse admin computation settings. Falling back to defaults.', error);
+      setComputationMode('deped');
+      setComputationSubjects(defaults);
+    }
+  };
+
 
 
   useEffect(() => {
     loadGradesData();
   }, [targetSchoolYearId, rankingBasis]);
+
+  const computationGradeLevelOptions = dedupeSubjects([
+    ...gradeLevels,
+    ...Object.keys(subjectsByGrade || {}),
+    ...Object.keys(DEPED_SUBJECTS)
+  ]);
+
+  useEffect(() => {
+    if (computationGradeLevelOptions.length === 0) return;
+    if (!selectedComputationGradeLevel || !computationGradeLevelOptions.includes(selectedComputationGradeLevel)) {
+      const preferred = selectedGradeLevel !== 'All' && computationGradeLevelOptions.includes(selectedGradeLevel)
+        ? selectedGradeLevel
+        : computationGradeLevelOptions[0];
+      setSelectedComputationGradeLevel(preferred);
+    }
+  }, [computationGradeLevelOptions, selectedComputationGradeLevel, selectedGradeLevel]);
+
+  useEffect(() => {
+    loadComputationSettings();
+  }, [targetSchoolYearId, selectedComputationGradeLevel, subjectsByGrade]);
+
+  const findComputationSubjectConfig = (subjectName) => {
+    return computationSubjects.find(
+      (item) => normalizeSubjectName(item?.name) === normalizeSubjectName(subjectName)
+    ) || null;
+  };
+
+  const handleToggleComputationSubject = (subjectName) => {
+    setComputationSubjects((prev) =>
+      prev.map((item) =>
+        item.name === subjectName
+          ? { ...item, included: !item.included }
+          : item
+      )
+    );
+  };
+
+  const handleComputationWeightChange = (subjectName, rawValue) => {
+    const nextWeight = Number(rawValue);
+    setComputationSubjects((prev) =>
+      prev.map((item) => {
+        if (item.name !== subjectName) return item;
+        return {
+          ...item,
+          weight: Number.isFinite(nextWeight) && nextWeight >= 0 ? nextWeight : 0
+        };
+      })
+    );
+  };
+
+  const handleAddComputationSubject = () => {
+    if (!selectedComputationGradeLevel) {
+      toast.error('Select a grade level first.');
+      return;
+    }
+
+    const cleanName = String(newComputationSubject || '').trim();
+    if (!cleanName) return;
+
+    const exists = computationSubjects.some(
+      (item) => normalizeSubjectName(item?.name) === normalizeSubjectName(cleanName)
+    );
+    if (exists) {
+      toast.info('Subject already exists for this grade level.');
+      return;
+    }
+
+    setComputationSubjects((prev) => [
+      ...prev,
+      {
+        name: cleanName,
+        included: true,
+        weight: 0
+      }
+    ]);
+    setNewComputationSubject('');
+  };
+
+  const handleDeleteComputationSubject = (subjectName) => {
+    setComputationSubjects((prev) => prev.filter((item) => item.name !== subjectName));
+  };
+
+  const saveComputationSettings = () => {
+    if (!selectedComputationGradeLevel) {
+      toast.error('Select a grade level first.');
+      return;
+    }
+
+    const key = getComputationSettingsStorageKey(targetSchoolYearId, selectedComputationGradeLevel);
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        mode: computationMode,
+        subjects: computationSubjects
+      })
+    );
+    toast.success('Admin grade computation settings saved.');
+  };
+
+  const resetComputationSettings = () => {
+    if (!selectedComputationGradeLevel) {
+      toast.error('Select a grade level first.');
+      return;
+    }
+
+    const key = getComputationSettingsStorageKey(targetSchoolYearId, selectedComputationGradeLevel);
+    localStorage.removeItem(key);
+    setComputationMode('deped');
+    setComputationSubjects(buildDefaultComputationSubjects());
+    toast.info('Admin grade computation settings reset to default.');
+  };
+
+  const computeConfiguredAverage = (gradesMap) => {
+    let subjects = Object.keys(gradesMap || {});
+    if (computationSubjects.length > 0) {
+      subjects = subjects.filter((subject) => {
+        const config = findComputationSubjectConfig(subject);
+        return Boolean(config?.included);
+      });
+    }
+
+    if (subjects.length === 0) return 0;
+
+    const getSubjectScore = (subject) => {
+      if (selectedQuarter === 'all') {
+        const values = QUARTER_KEYS
+          .map((q) => Number(gradesMap?.[subject]?.[q] || 0))
+          .filter((value) => value > 0);
+        if (values.length === 0) return 0;
+        return values.reduce((sum, value) => sum + value, 0) / values.length;
+      }
+      return Number(gradesMap?.[subject]?.[selectedQuarter] || 0);
+    };
+
+    if (computationMode === 'custom') {
+      let weightedTotal = 0;
+      let appliedWeight = 0;
+
+      subjects.forEach((subject) => {
+        const score = getSubjectScore(subject);
+        if (score <= 0) return;
+
+        const config = findComputationSubjectConfig(subject);
+        const weight = Number(config?.weight) || 0;
+        if (weight <= 0) return;
+
+        weightedTotal += score * (weight / 100);
+        appliedWeight += weight;
+      });
+
+      if (appliedWeight <= 0) return 0;
+      return Number((((weightedTotal * 100) / appliedWeight).toFixed(2)));
+    }
+
+    const scores = subjects
+      .map((subject) => getSubjectScore(subject))
+      .filter((value) => value > 0);
+    if (scores.length === 0) return 0;
+
+    return Number((scores.reduce((sum, value) => sum + value, 0) / scores.length).toFixed(2));
+  };
 
   const loadGradesData = async () => {
     try {
@@ -279,13 +513,8 @@ export default function AdminGrades() {
         }
       });
 
-      // Calculate average from currently edited scope.
-      const gradeValues = selectedQuarter === 'all'
-        ? Object.values(editGrades).flatMap((values) => QUARTER_KEYS.map((q) => Number(values?.[q] || 0))).filter((g) => g > 0)
-        : Object.values(editGrades).map((values) => Number(values?.[selectedQuarter] || 0)).filter((g) => g > 0);
-      const average = gradeValues.length > 0 
-        ? gradeValues.reduce((a, b) => a + parseFloat(b), 0) / gradeValues.length 
-        : 0;
+      // Calculate average using active computation settings (DepEd or custom weights).
+      const average = computeConfiguredAverage(editGrades);
 
       const response = await axios.put(`/students/${selectedStudent.id}/grades`, {
         grades: payloadGrades,
@@ -333,6 +562,19 @@ export default function AdminGrades() {
 
     return matchesSearch && matchesGradeLevel;
   });
+
+  const includedComputationSubjects = computationSubjects.filter((item) => item?.included);
+  const includedSubjectCount = includedComputationSubjects.length;
+  const equalDepedWeight = includedSubjectCount > 0 ? (100 / includedSubjectCount) : 0;
+  const displayedTotalWeight = computationMode === 'deped'
+    ? (includedSubjectCount > 0 ? 100 : 0)
+    : includedComputationSubjects.reduce((sum, item) => {
+        const weight = Number(item?.weight);
+        return sum + (Number.isFinite(weight) ? weight : 0);
+      }, 0);
+  const activeFormulaText = computationMode === 'deped'
+    ? `Final Average = Σ(subject final grades) / ${includedSubjectCount || 'n'}`
+    : 'Final Average = Σ(subject grade × weight%)';
 
   const schoolYearLabel = viewingSchoolYear?.label || activeSchoolYear?.label || '';
 
@@ -450,8 +692,34 @@ export default function AdminGrades() {
 
       </div>
 
+      <div className="bg-white rounded-xl shadow border border-gray-200 px-6 pt-4">
+        <div className="flex items-center gap-6 border-b border-gray-200">
+          <button
+            type="button"
+            onClick={() => setActiveTab('students')}
+            className={`pb-3 text-xl font-semibold transition ${
+              activeTab === 'students'
+                ? 'text-red-700 border-b-2 border-red-700'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            All Students Grades
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('computation')}
+            className={`pb-3 text-xl font-semibold transition ${
+              activeTab === 'computation'
+                ? 'text-red-700 border-b-2 border-red-700'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            Grade Computation Settings
+          </button>
+        </div>
+      </div>
 
-
+      {activeTab === 'students' ? (
       <div className="bg-white shadow rounded-lg border border-gray-200 mt-6">
 
         <div className="flex justify-between items-center p-4 border-b flex-wrap gap-4">
@@ -676,6 +944,156 @@ export default function AdminGrades() {
           Showing {filteredStudents.length} of {students.length} students • Selected: {selectedStudentIds.size}
         </div>
       </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+          <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200 space-y-6">
+            <div className="bg-white border border-gray-200 rounded-xl p-4">
+              <label className="block text-lg font-semibold text-gray-700 mb-2">GRADE LEVEL</label>
+              <select
+                value={selectedComputationGradeLevel}
+                onChange={(e) => setSelectedComputationGradeLevel(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-xl font-semibold"
+              >
+                {computationGradeLevelOptions.map((grade) => (
+                  <option key={grade} value={grade}>
+                    {grade}
+                  </option>
+                ))}
+              </select>
+              <p className="text-base text-gray-500 mt-2">Subjects below are managed per selected grade level.</p>
+            </div>
+
+            <div>
+              <h3 className="text-2xl font-bold text-gray-900">AVERAGE COMPUTATION METHOD</h3>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={computationMode === 'custom'}
+                onClick={() => setComputationMode((prev) => (prev === 'custom' ? 'deped' : 'custom'))}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${
+                  computationMode === 'custom' ? 'bg-red-600' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
+                    computationMode === 'custom' ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+              <div>
+                <p className="text-2xl font-semibold text-gray-900">Custom weights (editable)</p>
+                <p className="text-base text-gray-500 mt-1">
+                  {computationMode === 'deped'
+                    ? 'DepEd standard mode is active: equal weight across included subjects.'
+                    : 'Custom mode is active: weights are editable per included subject.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-gray-100 rounded-xl p-4 border border-gray-200">
+              <p className="text-lg font-semibold text-gray-700 mb-2">Active formula</p>
+              <code className="block text-base text-gray-900 leading-relaxed whitespace-pre-wrap">
+                {activeFormulaText}
+              </code>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-xl p-4">
+              <p className="text-lg font-semibold text-gray-700">School Year: {schoolYearLabel || 'N/A'}</p>
+              <p className="text-base text-gray-500 mt-2">Computation settings are saved per school year + grade level.</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200 space-y-4">
+            <h3 className="text-2xl font-bold text-gray-900">SUBJECTS IN AVERAGE (N = {includedSubjectCount})</h3>
+
+            <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+              {computationSubjects.map((subject) => {
+                const displayedWeight = computationMode === 'deped'
+                  ? (subject.included ? equalDepedWeight : 0)
+                  : (subject.included ? (Number(subject.weight) || 0) : 0);
+
+                return (
+                  <div key={subject.name} className="flex items-center gap-3 border-b border-gray-100 pb-3">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(subject.included)}
+                      onChange={() => handleToggleComputationSubject(subject.name)}
+                      className="w-5 h-5"
+                    />
+                    <span className="flex-1 text-xl text-gray-900">{subject.name}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={Number.isFinite(displayedWeight) ? displayedWeight.toFixed(1) : '0.0'}
+                      onChange={(e) => handleComputationWeightChange(subject.name, e.target.value)}
+                      disabled={computationMode === 'deped' || !subject.included}
+                      className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-right text-xl disabled:bg-gray-100 disabled:text-gray-500"
+                    />
+                    <span className="text-lg text-gray-500">%</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteComputationSubject(subject.name)}
+                      className="w-9 h-9 flex items-center justify-center border border-gray-300 rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                      title="Delete subject"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-2xl text-gray-700">Total weight</p>
+              <p className={`text-3xl font-bold ${
+                computationMode === 'deped' || Math.abs(displayedTotalWeight - 100) < 0.01
+                  ? 'text-green-700'
+                  : 'text-orange-600'
+              }`}>
+                {displayedTotalWeight.toFixed(1)}%
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newComputationSubject}
+                onChange={(e) => setNewComputationSubject(e.target.value)}
+                placeholder="New subject name"
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-xl text-base"
+              />
+              <button
+                type="button"
+                onClick={handleAddComputationSubject}
+                className="px-5 py-3 border border-gray-300 rounded-xl text-2xl font-semibold hover:bg-gray-50"
+              >
+                + Add subject
+              </button>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={resetComputationSettings}
+                className="px-6 py-3 border border-gray-300 rounded-xl text-lg font-semibold hover:bg-gray-50"
+              >
+                Reset to default
+              </button>
+              <button
+                type="button"
+                onClick={saveComputationSettings}
+                className="px-6 py-3 bg-red-700 text-white rounded-xl text-lg font-semibold hover:bg-red-800"
+              >
+                Save settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showForm137Modal && (
         <AdminForm137Print
