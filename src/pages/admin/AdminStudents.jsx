@@ -58,6 +58,7 @@ const getAlternativeQRUrls = (qrCode) => {
 export default function AdminStudents() {
   const navigate = useNavigate();
   const { viewingSchoolYear, activeSchoolYear, isViewingLocked } = useSchoolYear();
+  const maxBirthDate = new Date().toISOString().split('T')[0];
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -93,6 +94,29 @@ export default function AdminStudents() {
 
   const isViewOnly = isViewingLocked;
   const targetSchoolYearId = viewingSchoolYear?.id || activeSchoolYear?.id || '';
+
+  const toDateInputValue = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toISOString().split('T')[0];
+  };
+
+  const calculateAgeFromBirthDate = (birthDateValue) => {
+    if (!birthDateValue) return '';
+    const birthDate = new Date(`${birthDateValue}T00:00:00`);
+    if (Number.isNaN(birthDate.getTime())) return '';
+
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age -= 1;
+    }
+
+    return age >= 0 ? age : '';
+  };
 
   // Fetch students from API
   useEffect(() => {
@@ -475,8 +499,15 @@ export default function AdminStudents() {
         }
     const normalizedStatus = String(student.status || '').trim().toLowerCase();
     const statusForEdit = normalizedStatus === 'inactive' ? 'inactive' : 'Active';
+    const birthDateValue = toDateInputValue(student.birthDate || student.birth_date);
+    const computedAge = calculateAgeFromBirthDate(birthDateValue);
     setSelectedStudent(student);
-    setEditFormData({ ...student, status: statusForEdit });
+    setEditFormData({
+      ...student,
+      status: statusForEdit,
+      birthDate: birthDateValue,
+      age: computedAge !== '' ? computedAge : (student.age || '')
+    });
     setShowEditModal(true);
   };
 
@@ -495,6 +526,7 @@ export default function AdminStudents() {
         firstName: editFormData.firstName,
         middleName: editFormData.middleName,
         lastName: editFormData.lastName,
+        birthDate: editFormData.birthDate || null,
         age: editFormData.age,
         gradeLevel: editFormData.gradeLevel,
         section: editFormData.section,
@@ -1553,6 +1585,24 @@ export default function AdminStudents() {
                   value={editFormData.lastName}
                   onChange={(e) => setEditFormData({...editFormData, lastName: e.target.value})}
                   className="w-full border p-2 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Birthday</label>
+                <input
+                  type="date"
+                  value={editFormData.birthDate || ''}
+                  onChange={(e) => {
+                    const nextBirthDate = e.target.value;
+                    const nextAge = calculateAgeFromBirthDate(nextBirthDate);
+                    setEditFormData({
+                      ...editFormData,
+                      birthDate: nextBirthDate,
+                      age: nextAge !== '' ? nextAge : editFormData.age
+                    });
+                  }}
+                  className="w-full border p-2 rounded-lg"
+                  max={maxBirthDate}
                 />
               </div>
               <div>
