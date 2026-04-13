@@ -637,6 +637,17 @@ const GRADE_PROGRESSION = {
   'Grade 5':      'Grade 6',
   'Grade 6':      'Graduate'
 };
+
+function getGradeRank(gradeLabel = '') {
+  const normalized = String(gradeLabel || '').trim().toLowerCase();
+  if (!normalized) return -1;
+  if (normalized === 'kindergarten' || normalized === 'kinder') return 0;
+  if (normalized === 'graduate') return 7;
+  const match = normalized.match(/grade\s*(\d+)/i);
+  if (!match) return -1;
+  return Number(match[1]);
+}
+
 const PASSING_GRADE = 75;
 const REQUIRED_QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'];
 const KINDERGARTEN_ATTENDANCE_THRESHOLD = 75;
@@ -1237,16 +1248,37 @@ exports.promoteStudents = async (req, res) => {
           });
         } else {
           let destinationClass = null;
+          let destinationGrade = nextGrade;
           const requestedClassId = assignmentByStudentId.get(String(student.id));
           if (requestedClassId) {
             const [rows] = await connection.query(
               `SELECT id, grade, section, adviser_id, adviser_name
                FROM classes
-               WHERE id = ? AND grade = ? AND school_year_id = ?
+               WHERE id = ? AND school_year_id = ?
                LIMIT 1`,
-              [requestedClassId, nextGrade, activeSY?.id || null]
+              [requestedClassId, activeSY?.id || null]
             );
             destinationClass = rows[0] || null;
+
+            if (destinationClass) {
+              const nextGradeRank = getGradeRank(nextGrade);
+              const selectedGradeRank = getGradeRank(destinationClass.grade);
+              const isAccelerated = selectedGradeRank > nextGradeRank;
+
+              if (selectedGradeRank < nextGradeRank || selectedGradeRank > 6) {
+                await connection.rollback();
+                return res.status(400).json({
+                  success: false,
+                  message: `Invalid destination grade selected for ${studentName}. Choose ${nextGrade} or higher up to Grade 6.`
+                });
+              }
+
+              destinationGrade = destinationClass.grade;
+
+              if (isAccelerated) {
+                console.log(`[promoteStudents] Accelerated promotion: ${studentName} from ${currentGrade} to ${destinationGrade}`);
+              }
+            }
           }
 
           if (!destinationClass) {
@@ -1258,6 +1290,7 @@ exports.promoteStudents = async (req, res) => {
               });
             }
             destinationClass = await pickDestinationClass(connection, nextGrade, activeSY?.id || null);
+            destinationGrade = nextGrade;
           }
 
           const nextSection = destinationClass?.section || currentSection || null;
@@ -1291,7 +1324,7 @@ exports.promoteStudents = async (req, res) => {
 
           await connection.query(
             'UPDATE students SET grade_level = ?, section = ? WHERE id = ?',
-            [nextGrade, nextSection, student.id]
+            [destinationGrade, nextSection, student.id]
           );
 
           const row = {
@@ -1299,7 +1332,7 @@ exports.promoteStudents = async (req, res) => {
             name: studentName,
             fromGrade: currentGrade,
             fromSection: currentSection,
-            toGrade: nextGrade,
+            toGrade: destinationGrade,
             toSection: nextSection,
             adviser: destinationClass?.adviser_name || null,
             avg: avg.toFixed(2)
@@ -1314,7 +1347,7 @@ exports.promoteStudents = async (req, res) => {
             studentName,
             fromGrade: currentGrade,
             fromSection: currentSection,
-            toGrade: nextGrade,
+            toGrade: destinationGrade,
             toSection: nextSection,
             average: avg,
             status: 'promoted',

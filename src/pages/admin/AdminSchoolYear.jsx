@@ -53,6 +53,7 @@ export default function AdminSchoolYear() {
   const [classes, setClasses] = useState([]);
   const [selectedPromotionSchoolYearId, setSelectedPromotionSchoolYearId] = useState('');
   const [promotionAssignments, setPromotionAssignments] = useState({});
+  const [promotionStudentSearch, setPromotionStudentSearch] = useState('');
   const [historyGradeFilter, setHistoryGradeFilter] = useState('All Grades');
   const [historySectionFilter, setHistorySectionFilter] = useState('All Sections');
   const [historyStudentNameFilter, setHistoryStudentNameFilter] = useState('');
@@ -339,14 +340,61 @@ export default function AdminSchoolYear() {
   const incompleteCount = promotionCandidates.filter(c => !c.hasCompleteGrades).length;
   const failingCount = promotionCandidates.filter(c => c.hasFailingGrade).length;
 
+  const gradeRank = (gradeLabel = '') => {
+    const cleaned = String(gradeLabel || '').trim().toLowerCase();
+    if (!cleaned) return -1;
+    if (cleaned === 'kindergarten' || cleaned === 'kinder') return 0;
+    const match = cleaned.match(/grade\s*(\d+)/i);
+    if (match) return Number(match[1]);
+    if (cleaned === 'graduate') return 7;
+    return -1;
+  };
+
+  const filteredPromotionCandidates = promotionCandidates.filter((cand) => {
+    const search = String(promotionStudentSearch || '').trim().toLowerCase();
+    if (!search) return true;
+
+    const haystack = [
+      cand?.name,
+      cand?.lrn,
+      cand?.fromGrade,
+      cand?.toGrade,
+      cand?.reason
+    ]
+      .map((value) => String(value || '').toLowerCase())
+      .join(' ');
+
+    return haystack.includes(search);
+  });
+
   const toggleSelectAllEligible = () => {
-    const eligibleIds = promotionCandidates.filter(c => c.canPromote).map(c => c.id);
+    const eligibleIds = filteredPromotionCandidates.filter(c => c.canPromote).map(c => c.id);
     const allSelected = eligibleIds.length > 0 && eligibleIds.every(id => selectedCandidateIds.has(id));
-    setSelectedCandidateIds(allSelected ? new Set() : new Set(eligibleIds));
+    setSelectedCandidateIds((prev) => {
+      if (allSelected) {
+        const next = new Set(prev);
+        eligibleIds.forEach((id) => next.delete(id));
+        return next;
+      }
+      const next = new Set(prev);
+      eligibleIds.forEach((id) => next.add(id));
+      return next;
+    });
   };
 
   const getDestinationClassOptions = (gradeLevel) => {
-    return classes.filter(c => String(c.grade || '').toLowerCase() === String(gradeLevel || '').toLowerCase());
+    const baseRank = gradeRank(gradeLevel);
+    return classes
+      .filter((c) => {
+        const classRank = gradeRank(c.grade);
+        if (baseRank < 0 || classRank < 0) return false;
+        return classRank >= baseRank && classRank <= 6;
+      })
+      .sort((a, b) => {
+        const rankDiff = gradeRank(a.grade) - gradeRank(b.grade);
+        if (rankDiff !== 0) return rankDiff;
+        return String(a.section || '').localeCompare(String(b.section || ''));
+      });
   };
 
   const handleDestinationClassChange = (studentId, classId) => {
@@ -1389,8 +1437,17 @@ export default function AdminSchoolYear() {
                   onClick={toggleSelectAllEligible}
                   className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
                 >
-                  {promotionCandidates.filter(c => c.canPromote).every(c => selectedCandidateIds.has(c.id)) ? 'Clear Selection' : 'Select All Eligible'}
+                  {filteredPromotionCandidates.filter(c => c.canPromote).every(c => selectedCandidateIds.has(c.id)) ? 'Clear Selection' : 'Select All Eligible'}
                 </button>
+              </div>
+              <div className="mb-3">
+                <input
+                  type="text"
+                  value={promotionStudentSearch}
+                  onChange={(e) => setPromotionStudentSearch(e.target.value)}
+                  placeholder="Search student by name, LRN, grade, or reason..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
               </div>
               <div className="flex flex-wrap gap-2 mb-2 text-xs">
                 <span className="px-2 py-1 rounded-full bg-green-100 text-green-700 font-semibold">Eligible: {eligibleCount}</span>
@@ -1399,7 +1456,7 @@ export default function AdminSchoolYear() {
                 <span className="px-2 py-1 rounded-full bg-red-100 text-red-700 font-semibold">With Failing Grade: {failingCount}</span>
               </div>
               <div className="max-h-[46vh] overflow-auto border border-gray-200 rounded bg-white">
-                {promotionCandidates.length === 0 ? (
+                {filteredPromotionCandidates.length === 0 ? (
                   <p className="text-sm text-gray-500 p-3">No candidates found</p>
                 ) : (
                   <table className="w-full text-xs">
@@ -1416,7 +1473,7 @@ export default function AdminSchoolYear() {
                       </tr>
                     </thead>
                     <tbody>
-                      {promotionCandidates.map((cand) => (
+                      {filteredPromotionCandidates.map((cand) => (
                         <tr key={cand.id} className="border-t border-gray-100">
                           <td className="py-2 px-2">
                             <input
@@ -1452,11 +1509,14 @@ export default function AdminSchoolYear() {
                                 className="w-full border border-gray-300 rounded px-2 py-1 disabled:bg-gray-100"
                               >
                                 <option value="">Select destination class</option>
-                                {getDestinationClassOptions(cand.toGrade).map((cls) => (
+                                {getDestinationClassOptions(cand.toGrade).map((cls) => {
+                                  const accelerated = gradeRank(cls.grade) > gradeRank(cand.toGrade);
+                                  return (
                                   <option key={cls.id} value={cls.id}>
-                                    {`${cls.grade} - ${cls.section} (${cls.adviser_name || 'No Adviser'})`}
+                                    {`${accelerated ? `Accelerated to ${cls.grade}: ` : ''}${cls.grade} - ${cls.section} (${cls.adviser_name || 'No Adviser'})`}
                                   </option>
-                                ))}
+                                  );
+                                })}
                               </select>
                             )}
                           </td>
