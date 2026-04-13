@@ -698,6 +698,8 @@ const verificationCodes = new Map();
 // Send verification email endpoint
 
 app.post('/api/auth/send-verification', async (req, res) => {
+  console.log('🔍 Send verification endpoint HIT!');
+  console.log('🔍 Request body:', req.body);
 
   try {
 

@@ -17,8 +17,12 @@ export default function SuperAdminSettings() {
   });
   const [passwordData, setPasswordData] = useState({
     newPassword: "",
-    confirmPassword: ""
+    confirmPassword: "",
+    verificationCode: ""
   });
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isSendingPasswordVerification, setIsSendingPasswordVerification] = useState(false);
+  const [passwordVerificationSent, setPasswordVerificationSent] = useState(false);
   const [systemSettings, setSystemSettings] = useState({
     schoolName: "WMSU Integrated Learning System",
     schoolYear: "2024-2025",
@@ -98,23 +102,48 @@ export default function SuperAdminSettings() {
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    
-    // Validate passwords
+
+    if (!passwordVerificationSent) {
+      toast.error('Please send verification first');
+      return;
+    }
+
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       toast.error("New passwords do not match");
-      setLoading(false);
       return;
     }
     
     if (passwordData.newPassword.length < 6) {
       toast.error("New password must be at least 6 characters long");
-      setLoading(false);
       return;
     }
-    
+
+    if (!passwordData.verificationCode) {
+      toast.error('Please enter the verification code');
+      return;
+    }
+
+    const email = user?.email || formData.email;
+    if (!email) {
+      toast.error('Email not found in your profile');
+      return;
+    }
+
+    setIsChangingPassword(true);
     try {
-      await api.put("/super-admin/change-password", {
+      // Verify the code first
+      const verifyResponse = await api.post('/auth/verify-code', {
+        email,
+        code: passwordData.verificationCode
+      });
+
+      if (verifyResponse.data.message !== 'Verification successful') {
+        toast.error(verifyResponse.data.message || 'Invalid or expired verification code');
+        return;
+      }
+
+      // Change password
+      await api.put('/auth/change-password', {
         newPassword: passwordData.newPassword
       });
       
@@ -122,15 +151,48 @@ export default function SuperAdminSettings() {
       
       // Clear password form
       setPasswordData({
-        currentPassword: "",
         newPassword: "",
-        confirmPassword: ""
+        confirmPassword: "",
+        verificationCode: ""
       });
+      setPasswordVerificationSent(false);
     } catch (error) {
       console.error("Error changing password:", error);
       toast.error(error.response?.data?.message || "Failed to change password");
     } finally {
-      setLoading(false);
+      setIsChangingPassword(false);
+    }
+  };
+
+  const handleSendPasswordVerification = async () => {
+    const email = user?.email || formData.email;
+    if (!email) {
+      toast.error('Email not found in your profile');
+      return;
+    }
+
+    if (!passwordData.newPassword || passwordData.newPassword.length < 6) {
+      toast.error('Please enter a new password (at least 6 characters)');
+      return;
+    }
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+
+    setIsSendingPasswordVerification(true);
+    try {
+      await api.post('/auth/send-verification', {
+        email
+      });
+      toast.success('Verification email sent successfully!');
+      setPasswordVerificationSent(true);
+    } catch (error) {
+      console.error('Error sending verification:', error);
+      toast.error(error.response?.data?.message || 'Failed to send verification email');
+    } finally {
+      setIsSendingPasswordVerification(false);
     }
   };
 
@@ -452,7 +514,10 @@ export default function SuperAdminSettings() {
                       <input
                         type={showNewPassword ? "text" : "password"}
                         value={passwordData.newPassword}
-                        onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
+                        onChange={(e) => {
+                          setPasswordData({...passwordData, newPassword: e.target.value});
+                          setPasswordVerificationSent(false);
+                        }}
                         className="mt-1 block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
                         required
                         minLength="6"
@@ -494,14 +559,48 @@ export default function SuperAdminSettings() {
                       </button>
                     </div>
                   </div>
-                  <div className="flex justify-end">
+
+                  {passwordVerificationSent && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Verification Code</label>
+                      <input
+                        type="text"
+                        value={passwordData.verificationCode}
+                        onChange={(e) => setPasswordData({...passwordData, verificationCode: e.target.value})}
+                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                        required
+                        placeholder="Enter 6-digit code"
+                        maxLength="6"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Enter the 6-digit code sent to your email</p>
+                    </div>
+                  )}
+
+                  {passwordVerificationSent && (
+                    <div className="bg-green-50 border border-green-200 rounded-md p-3">
+                      <p className="text-sm text-green-800">✓ Verification email sent. Please check your inbox and enter the code above.</p>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-3 pt-4">
                     <button
-                      type="submit"
-                      disabled={loading}
-                      className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                      type="button"
+                      onClick={handleSendPasswordVerification}
+                      disabled={isSendingPasswordVerification || passwordVerificationSent}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                     >
-                      {loading ? "Changing..." : "Change Password"}
+                      {isSendingPasswordVerification ? "Sending..." : passwordVerificationSent ? "Verification Sent" : "Send Verification"}
                     </button>
+
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={isChangingPassword || !passwordVerificationSent}
+                        className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                      >
+                        {isChangingPassword ? "Changing..." : "Change Password"}
+                      </button>
+                    </div>
                   </div>
                 </form>
               </div>
