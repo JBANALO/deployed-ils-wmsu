@@ -327,6 +327,36 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
               );
               return matchedKey ? gradeObj[matchedKey] : null;
             };
+
+            const quarterKeys = ['q1', 'q2', 'q3', 'q4'];
+            const quarterAverages = quarterKeys.reduce((acc, quarterKey) => {
+              const quarterValues = studentSubjects
+                .map((subject) => Number(findGrade(subject)?.[quarterKey]))
+                .filter((value) => Number.isFinite(value) && value > 0);
+
+              acc[quarterKey] = quarterValues.length > 0
+                ? Math.round(quarterValues.reduce((sum, value) => sum + value, 0) / quarterValues.length)
+                : '';
+              return acc;
+            }, {});
+
+            const computedFinalAverage = (() => {
+              const availableQuarterAverages = quarterKeys
+                .map((quarterKey) => quarterAverages[quarterKey])
+                .filter((value) => Number.isFinite(value) && value > 0);
+
+              if (availableQuarterAverages.length > 0) {
+                return Math.round(
+                  availableQuarterAverages.reduce((sum, value) => sum + value, 0) /
+                    availableQuarterAverages.length
+                );
+              }
+
+              const fallbackAverage = Number(student.average);
+              return Number.isFinite(fallbackAverage) && fallbackAverage > 0
+                ? Math.round(fallbackAverage)
+                : '';
+            })();
             
             return (
               <div key={student.id} className="mb-12 page-break">
@@ -424,12 +454,12 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
                       {/* AVERAGE row */}
                       <tr>
                         <td className="border-2 border-gray-900 p-2 text-left font-bold">AVERAGE</td>
-                        <td className="border-2 border-gray-900 p-2 text-center"></td>
-                        <td className="border-2 border-gray-900 p-2 text-center"></td>
-                        <td className="border-2 border-gray-900 p-2 text-center"></td>
-                        <td className="border-2 border-gray-900 p-2 text-center"></td>
+                        <td className="border-2 border-gray-900 p-2 text-center font-bold">{quarterAverages.q1}</td>
+                        <td className="border-2 border-gray-900 p-2 text-center font-bold">{quarterAverages.q2}</td>
+                        <td className="border-2 border-gray-900 p-2 text-center font-bold">{quarterAverages.q3}</td>
+                        <td className="border-2 border-gray-900 p-2 text-center font-bold">{quarterAverages.q4}</td>
                         <td className="border-2 border-gray-900 p-2 text-center font-bold">
-                          {student.average || ''}
+                          {computedFinalAverage}
                         </td>
                       </tr>
                     </tbody>

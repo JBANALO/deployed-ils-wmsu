@@ -85,6 +85,7 @@ const ensureRankingPublicationsTable = async () => {
       ranking_type ENUM('overall', 'quarter', 'subject') NOT NULL,
       quarter_key VARCHAR(16) NOT NULL DEFAULT '',
       subject_name VARCHAR(255) NOT NULL DEFAULT '',
+      publish_scope VARCHAR(20) NOT NULL DEFAULT 'individual',
       student_id VARCHAR(100) NOT NULL,
       student_name VARCHAR(255) NULL,
       rank_position INT NOT NULL,
@@ -100,6 +101,7 @@ const ensureRankingPublicationsTable = async () => {
         ranking_type,
         quarter_key,
         subject_name,
+        publish_scope,
         student_id
       ),
       INDEX idx_ranking_publication_lookup (
@@ -113,6 +115,84 @@ const ensureRankingPublicationsTable = async () => {
       INDEX idx_ranking_publication_student (student_id, school_year_id)
     )
   `);
+
+  const rankingCols = await query('SHOW COLUMNS FROM ranking_publications');
+  const hasPublishScope = rankingCols.some((col) => col.Field === 'publish_scope');
+  if (!hasPublishScope) {
+    await query("ALTER TABLE ranking_publications ADD COLUMN publish_scope VARCHAR(20) NOT NULL DEFAULT 'individual' AFTER subject_name");
+  }
+
+  const rankingIndexes = await query('SHOW INDEX FROM ranking_publications');
+  const indexesByName = new Map();
+  for (const idx of rankingIndexes) {
+    const key = String(idx.Key_name || '');
+    if (!indexesByName.has(key)) indexesByName.set(key, []);
+    indexesByName.get(key).push(idx);
+  }
+
+  const getIndexColumns = (rows) => rows
+    .slice()
+    .sort((a, b) => Number(a.Seq_in_index || 0) - Number(b.Seq_in_index || 0))
+    .map((row) => String(row.Column_name || '').toLowerCase());
+
+  let hasScopedUnique = false;
+  let legacyUniqueName = null;
+
+  for (const [indexName, rows] of indexesByName.entries()) {
+    if (!rows || rows.length === 0) continue;
+    const isUnique = Number(rows[0].Non_unique) === 0;
+    if (!isUnique) continue;
+
+    const cols = getIndexColumns(rows);
+    const legacyCols = [
+      'school_year_id',
+      'grade_level',
+      'section',
+      'ranking_type',
+      'quarter_key',
+      'subject_name',
+      'student_id'
+    ];
+    const scopedCols = [
+      'school_year_id',
+      'grade_level',
+      'section',
+      'ranking_type',
+      'quarter_key',
+      'subject_name',
+      'publish_scope',
+      'student_id'
+    ];
+
+    if (cols.join('|') === scopedCols.join('|')) {
+      hasScopedUnique = true;
+      continue;
+    }
+
+    if (cols.join('|') === legacyCols.join('|')) {
+      legacyUniqueName = indexName;
+    }
+  }
+
+  if (!hasScopedUnique && legacyUniqueName) {
+    await query(`ALTER TABLE ranking_publications DROP INDEX \`${legacyUniqueName}\``);
+  }
+
+  if (!hasScopedUnique) {
+    await query(
+      `ALTER TABLE ranking_publications
+       ADD UNIQUE INDEX uniq_ranking_publication_entry (
+         school_year_id,
+         grade_level,
+         section,
+         ranking_type,
+         quarter_key,
+         subject_name,
+         publish_scope,
+         student_id
+       )`
+    );
+  }
 
   rankingPublicationsEnsured = true;
 };
@@ -926,10 +1006,12 @@ router.post('/ranking-publications', verifyUserForGrades, async (req, res) => {
       rankingType,
       quarter,
       subject,
+      publishScope,
       rankings
     } = req.body || {};
 
     const normalizedRankingType = String(rankingType || '').trim().toLowerCase();
+    const normalizedPublishScope = String(publishScope || 'individual').trim().toLowerCase();
     const normalizedQuarter = normalizeQuarterKey(quarter);
     const normalizedSubject = String(subject || '').trim();
     const cleanGradeLevel = String(gradeLevel || '').trim();
@@ -941,6 +1023,10 @@ router.post('/ranking-publications', verifyUserForGrades, async (req, res) => {
 
     if (!['overall', 'quarter', 'subject'].includes(normalizedRankingType)) {
       return res.status(400).json({ success: false, error: 'rankingType must be overall, quarter, or subject.' });
+    }
+
+    if (!['individual', 'full_list'].includes(normalizedPublishScope)) {
+      return res.status(400).json({ success: false, error: 'publishScope must be individual or full_list.' });
     }
 
     if (userRole === 'subject_teacher' && normalizedRankingType !== 'subject') {
@@ -996,14 +1082,16 @@ router.post('/ranking-publications', verifyUserForGrades, async (req, res) => {
          AND section = ?
          AND ranking_type = ?
          AND quarter_key = ?
-         AND subject_name = ?`,
+         AND subject_name = ?
+         AND publish_scope = ?`,
       [
         targetSchoolYearId,
         cleanGradeLevel,
         cleanSection,
         normalizedRankingType,
         normalizedRankingType === 'quarter' || normalizedRankingType === 'subject' ? normalizedQuarter : '',
-        normalizedRankingType === 'subject' ? normalizedSubject : ''
+        normalizedRankingType === 'subject' ? normalizedSubject : '',
+        normalizedPublishScope
       ]
     );
 
@@ -1016,13 +1104,14 @@ router.post('/ranking-publications', verifyUserForGrades, async (req, res) => {
           ranking_type,
           quarter_key,
           subject_name,
+          publish_scope,
           student_id,
           student_name,
           rank_position,
           score,
           total_students,
           published_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           student_name = VALUES(student_name),
           rank_position = VALUES(rank_position),
@@ -1037,6 +1126,7 @@ router.post('/ranking-publications', verifyUserForGrades, async (req, res) => {
           normalizedRankingType,
           normalizedRankingType === 'quarter' || normalizedRankingType === 'subject' ? normalizedQuarter : '',
           normalizedRankingType === 'subject' ? normalizedSubject : '',
+          normalizedPublishScope,
           row.studentId,
           row.studentName || null,
           row.rankPosition,
@@ -1056,12 +1146,13 @@ router.post('/ranking-publications', verifyUserForGrades, async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `${summary} published to student dashboard.`,
+      message: `${summary} (${normalizedPublishScope === 'full_list' ? 'full list' : 'individual'}) published to student dashboard.`,
       data: {
         schoolYearId: targetSchoolYearId,
         gradeLevel: cleanGradeLevel,
         section: cleanSection,
         rankingType: normalizedRankingType,
+        publishScope: normalizedPublishScope,
         quarter: normalizedQuarter,
         subject: normalizedSubject,
         totalPublished: normalizedRankings.length

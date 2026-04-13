@@ -848,7 +848,7 @@ exports.getStudent = async (req, res) => {
       return res.status(400).json({ status: 'fail', message: syErr.message || 'No active school year found' });
     }
     // Handle both query parameter (studentId) and URL parameter (id)
-    const studentId = req.query.studentId || req.params.id;
+    let studentId = req.query.studentId || req.params.id;
     
     console.log('🔍 getStudent called with:', {
       query: req.query,
@@ -862,18 +862,77 @@ exports.getStudent = async (req, res) => {
     }
     
     console.log('🔍 Querying database for student ID:', studentId);
-    const students = await query('SELECT * FROM students WHERE id = ? AND school_year_id = ?', [studentId, targetSy.id]);
+    let students = await query('SELECT * FROM students WHERE id = ? AND school_year_id = ?', [studentId, targetSy.id]);
+
+    if (students.length === 0) {
+      // Fallback 1: treat identifier as LRN or student email for bulk-imported logins.
+      students = await query(
+        `SELECT *
+         FROM students
+         WHERE school_year_id = ?
+           AND (lrn = ? OR LOWER(COALESCE(student_email, '')) = LOWER(?))
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        [targetSy.id, studentId, studentId]
+      );
+    }
+
+    if (students.length === 0) {
+      // Fallback 2: resolve old/non-active student id to same LRN in target school year.
+      const anyYearRows = await query('SELECT lrn FROM students WHERE id = ? LIMIT 1', [studentId]);
+      const resolvedLrn = String(anyYearRows?.[0]?.lrn || '').trim();
+      if (resolvedLrn) {
+        students = await query(
+          `SELECT *
+           FROM students
+           WHERE school_year_id = ? AND lrn = ?
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [targetSy.id, resolvedLrn]
+        );
+      }
+    }
+
+    if (students.length === 0) {
+      // Fallback 3: when login came from users table, resolve via users.id -> (username/email) -> students.
+      const userRows = await query(
+        `SELECT username, email
+         FROM users
+         WHERE id = ?
+         LIMIT 1`,
+        [studentId]
+      );
+      const userLogin = String(userRows?.[0]?.username || '').trim();
+      const userEmail = String(userRows?.[0]?.email || '').trim();
+      if (userLogin || userEmail) {
+        students = await query(
+          `SELECT *
+           FROM students
+           WHERE school_year_id = ?
+             AND (
+               lrn = ?
+               OR LOWER(COALESCE(student_email, '')) = LOWER(?)
+               OR LOWER(COALESCE(student_email, '')) = LOWER(?)
+             )
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [targetSy.id, userLogin, userEmail, userLogin]
+        );
+      }
+    }
+
     console.log('🔍 Database result:', {
       found: students.length,
       student: students[0] || 'none'
     });
-    
+
     if (students.length === 0) {
       console.log('❌ Student not found in database');
       return res.status(404).json({ status: 'fail', message: 'Student not found' });
     }
-    
+
     const student = students[0];
+    studentId = student.id;
     const formattedStudent = formatStudent(student);
     const studentLRN = student.lrn; // LRN is used as studentId in attendance table
     const siblingStudentRows = studentLRN
@@ -1490,6 +1549,7 @@ exports.getStudent = async (req, res) => {
     }
 
     let publishedRankings = [];
+    let publishedRankingLists = [];
     try {
       const studentGradeNormalized = String(student.grade_level || '').replace(/^Grade\s+/i, '').trim();
       const studentFullNameNormalized = `${String(student.first_name || '').trim()} ${String(student.last_name || '').trim()}`
@@ -1504,20 +1564,46 @@ exports.getStudent = async (req, res) => {
         ].filter(Boolean)
       );
 
-      const rankingRows = await query(
-        `SELECT ranking_type, quarter_key, subject_name, student_id, student_name, rank_position, score, total_students, published_at
-         FROM ranking_publications
-         WHERE school_year_id = ?
-           AND (
-             grade_level = ?
-             OR REPLACE(LOWER(grade_level), 'grade ', '') = LOWER(?)
-           )
-           AND LOWER(TRIM(section)) = LOWER(TRIM(?))
-         ORDER BY FIELD(ranking_type, 'overall', 'quarter', 'subject'), quarter_key, subject_name, published_at DESC`,
-        [targetSy.id, student.grade_level, studentGradeNormalized, student.section]
-      );
+      let rankingRows = [];
+      try {
+        rankingRows = await query(
+          `SELECT ranking_type, quarter_key, subject_name, publish_scope, student_id, student_name, rank_position, score, total_students, published_at
+           FROM ranking_publications
+           WHERE school_year_id = ?
+             AND (
+               grade_level = ?
+               OR REPLACE(LOWER(grade_level), 'grade ', '') = LOWER(?)
+             )
+             AND LOWER(TRIM(section)) = LOWER(TRIM(?))
+           ORDER BY FIELD(ranking_type, 'overall', 'quarter', 'subject'), quarter_key, subject_name, published_at DESC`,
+          [targetSy.id, student.grade_level, studentGradeNormalized, student.section]
+        );
+      } catch (rankingQueryErr) {
+        if (rankingQueryErr?.code === 'ER_BAD_FIELD_ERROR') {
+          const legacyRows = await query(
+            `SELECT ranking_type, quarter_key, subject_name, student_id, student_name, rank_position, score, total_students, published_at
+             FROM ranking_publications
+             WHERE school_year_id = ?
+               AND (
+                 grade_level = ?
+                 OR REPLACE(LOWER(grade_level), 'grade ', '') = LOWER(?)
+               )
+               AND LOWER(TRIM(section)) = LOWER(TRIM(?))
+             ORDER BY FIELD(ranking_type, 'overall', 'quarter', 'subject'), quarter_key, subject_name, published_at DESC`,
+            [targetSy.id, student.grade_level, studentGradeNormalized, student.section]
+          );
+          rankingRows = legacyRows.map((row) => ({ ...row, publish_scope: 'individual' }));
+        } else {
+          throw rankingQueryErr;
+        }
+      }
 
-      const matchedRows = (rankingRows || []).filter((row) => {
+      const normalizeScope = (value = '') => {
+        const normalized = String(value || '').trim().toLowerCase();
+        return normalized === 'full_list' ? 'full_list' : 'individual';
+      };
+
+      const isCurrentStudentRow = (row) => {
         const rowStudentId = String(row?.student_id || '').trim();
         const rowStudentName = String(row?.student_name || '')
           .replace(/\s+/g, ' ')
@@ -1527,10 +1613,15 @@ exports.getStudent = async (req, res) => {
         if (rowStudentId && studentIdCandidates.has(rowStudentId)) return true;
         if (studentFullNameNormalized && rowStudentName && rowStudentName === studentFullNameNormalized) return true;
         return false;
-      });
+      };
 
       const quarterMap = { q1: 'Quarter 1', q2: 'Quarter 2', q3: 'Quarter 3', q4: 'Quarter 4' };
-      publishedRankings = matchedRows.map((row) => {
+      const individualRows = (rankingRows || []).filter((row) => {
+        const scope = normalizeScope(row?.publish_scope);
+        return scope !== 'full_list' && isCurrentStudentRow(row);
+      });
+
+      publishedRankings = individualRows.map((row) => {
         const type = String(row.ranking_type || '').toLowerCase();
         const quarterKey = String(row.quarter_key || '').toLowerCase();
         const subjectName = String(row.subject_name || '').trim();
@@ -1547,6 +1638,7 @@ exports.getStudent = async (req, res) => {
           rankingType: type,
           quarter: quarterKey || null,
           subject: subjectName || null,
+          publishScope: 'individual',
           rank: row.rank_position != null ? Number(row.rank_position) : null,
           score: row.score != null ? Number(row.score) : null,
           totalStudents: row.total_students != null ? Number(row.total_students) : null,
@@ -1554,6 +1646,72 @@ exports.getStudent = async (req, res) => {
           publishedAt: row.published_at || null
         };
       });
+
+      const fullListRows = (rankingRows || []).filter((row) => normalizeScope(row?.publish_scope) === 'full_list');
+      const groupedFullLists = new Map();
+
+      for (const row of fullListRows) {
+        const type = String(row?.ranking_type || '').toLowerCase();
+        const quarterKey = String(row?.quarter_key || '').toLowerCase();
+        const subjectName = String(row?.subject_name || '').trim();
+        const groupKey = `${type}|${quarterKey}|${subjectName}`;
+        if (!groupedFullLists.has(groupKey)) groupedFullLists.set(groupKey, []);
+        groupedFullLists.get(groupKey).push(row);
+      }
+
+      const typeSortOrder = { overall: 0, quarter: 1, subject: 2 };
+      publishedRankingLists = Array.from(groupedFullLists.entries())
+        .map(([_, rows]) => {
+          const first = rows[0] || {};
+          const type = String(first.ranking_type || '').toLowerCase();
+          const quarterKey = String(first.quarter_key || '').toLowerCase();
+          const subjectName = String(first.subject_name || '').trim();
+
+          let title = 'Full Class Ranking';
+          if (type === 'overall') title = 'Full Class Overall Ranking';
+          else if (type === 'quarter') title = `${quarterMap[quarterKey] || quarterKey.toUpperCase()} Full Class Ranking`;
+          else if (type === 'subject') {
+            const quarterLabel = quarterKey ? (quarterMap[quarterKey] || quarterKey.toUpperCase()) : '';
+            title = `${subjectName}${quarterLabel ? ` (${quarterLabel})` : ''} Full Class Ranking`;
+          }
+
+          const entries = [...rows]
+            .sort((a, b) => Number(a.rank_position || 0) - Number(b.rank_position || 0))
+            .map((row) => {
+              const rowStudentName = String(row?.student_name || '').replace(/\s+/g, ' ').trim();
+              return {
+                studentId: String(row?.student_id || '').trim() || null,
+                studentName: rowStudentName || 'Unknown Student',
+                rank: row.rank_position != null ? Number(row.rank_position) : null,
+                score: row.score != null ? Number(row.score) : null,
+                totalStudents: row.total_students != null ? Number(row.total_students) : null,
+                isCurrentStudent: isCurrentStudentRow(row)
+              };
+            });
+
+          const latestPublishedAt = rows
+            .map((row) => (row?.published_at ? new Date(row.published_at).getTime() : 0))
+            .reduce((max, current) => Math.max(max, current), 0);
+
+          return {
+            rankingType: type,
+            quarter: quarterKey || null,
+            subject: subjectName || null,
+            publishScope: 'full_list',
+            title,
+            totalStudents: entries[0]?.totalStudents || entries.length,
+            publishedAt: latestPublishedAt ? new Date(latestPublishedAt).toISOString() : null,
+            entries
+          };
+        })
+        .sort((a, b) => {
+          const typeDiff = (typeSortOrder[a.rankingType] ?? 99) - (typeSortOrder[b.rankingType] ?? 99);
+          if (typeDiff !== 0) return typeDiff;
+          const aQuarter = String(a.quarter || '');
+          const bQuarter = String(b.quarter || '');
+          if (aQuarter !== bQuarter) return aQuarter.localeCompare(bQuarter);
+          return String(a.subject || '').localeCompare(String(b.subject || ''));
+        });
     } catch (rankingErr) {
       console.log('published ranking lookup skipped:', rankingErr.message);
     }
@@ -1611,6 +1769,7 @@ exports.getStudent = async (req, res) => {
     formattedStudent.previousScheduleHistory = previousScheduleHistory;
     formattedStudent.adviserName = adviserName;
     formattedStudent.publishedRankings = publishedRankings;
+    formattedStudent.publishedRankingLists = publishedRankingLists;
     
     console.log('✅ Student portal data loaded:', {
       gradesCount: grades.length,
