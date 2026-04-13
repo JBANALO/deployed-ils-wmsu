@@ -325,6 +325,26 @@ async function ensureStudentLrnScopedUniqueness() {
 // HELPER: Format student object
 // -----------------------------
 function formatStudent(s) {
+  const computeAgeFromBirthDate = (birthDateValue) => {
+    if (!birthDateValue) return null;
+    const birthDate = new Date(birthDateValue);
+    if (Number.isNaN(birthDate.getTime())) return null;
+
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age -= 1;
+    }
+
+    return age >= 0 ? age : null;
+  };
+
+  const computedAge = computeAgeFromBirthDate(s.birth_date);
+  const resolvedAge = computedAge != null
+    ? computedAge
+    : (s.age != null ? Number(s.age) : null);
+
   let qrCodeUrl = s.qr_code;
   
   // Convert file paths to full URLs for mobile app compatibility
@@ -344,7 +364,7 @@ function formatStudent(s) {
     middleName: s.middle_name,
     lastName: s.last_name,
     fullName: `${s.first_name} ${s.middle_name || ''} ${s.last_name}`.trim(),
-    age: s.age,
+    age: resolvedAge,
     birthDate: s.birth_date,
     sex: s.sex,
     gradeLevel: s.grade_level,
