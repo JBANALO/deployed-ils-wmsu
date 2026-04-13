@@ -1372,14 +1372,14 @@ export default function ReportsPage() {
                   disabled={publishingRanking}
                   className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {publishingRanking ? 'Posting...' : 'Post Individual Ranking'}
+                  {publishingRanking ? 'Posting...' : 'Post Individual Ranking to Dashboard'}
                 </button>
                 <button
                   onClick={() => publishRankingByScope('full_list')}
                   disabled={publishingRanking}
                   className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {publishingRanking ? 'Posting...' : 'Post Full Ranking List'}
+                  {publishingRanking ? 'Posting...' : 'Post Full List Ranking to Dashboard'}
                 </button>
               </div>
             </div>
