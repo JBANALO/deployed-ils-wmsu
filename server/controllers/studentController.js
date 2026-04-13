@@ -367,6 +367,16 @@ function formatStudent(s) {
     q2_avg: s.q2_avg != null ? Number(s.q2_avg) : null,
     q3_avg: s.q3_avg != null ? Number(s.q3_avg) : null,
     q4_avg: s.q4_avg != null ? Number(s.q4_avg) : null,
+    completionStatus: s.completion_status || null,
+    q1CompletionStatus: s.q1_completion_status || null,
+    q2CompletionStatus: s.q2_completion_status || null,
+    q3CompletionStatus: s.q3_completion_status || null,
+    q4CompletionStatus: s.q4_completion_status || null,
+    q1CompletionGraded: s.q1_completion_graded != null ? Number(s.q1_completion_graded) : null,
+    q2CompletionGraded: s.q2_completion_graded != null ? Number(s.q2_completion_graded) : null,
+    q3CompletionGraded: s.q3_completion_graded != null ? Number(s.q3_completion_graded) : null,
+    q4CompletionGraded: s.q4_completion_graded != null ? Number(s.q4_completion_graded) : null,
+    completionRequiredCount: s.completion_required_count != null ? Number(s.completion_required_count) : null,
     declineReason: s.decline_reason || undefined,
     createdAt: s.created_at,
     updatedAt: s.updated_at,
@@ -727,6 +737,21 @@ exports.getStudents = async (req, res) => {
           gradesByStudent[studentKey].push(row);
         });
 
+        const studentClassById = {};
+        filteredStudents.forEach((student) => {
+          const key = `${String(student.grade_level || '').trim().toLowerCase()}||${String(student.section || '').trim().toLowerCase()}`;
+          studentClassById[String(student.id)] = key;
+        });
+
+        const classSubjectsFromGrades = {};
+        gradeRows.forEach((row) => {
+          const studentClassKey = studentClassById[String(row.student_id)];
+          if (!studentClassKey) return;
+          if (!classSubjectsFromGrades[studentClassKey]) classSubjectsFromGrades[studentClassKey] = new Set();
+          const normalized = normalizeSubject(row.subject);
+          if (normalized) classSubjectsFromGrades[studentClassKey].add(normalized);
+        });
+
         const withScopedAverages = filteredStudents.map((student) => {
           const classKey = `${String(student.grade_level || '').trim().toLowerCase()}||${String(student.section || '').trim().toLowerCase()}`;
           const isAdviserForClass = adviserClassKeys.has(classKey);
@@ -736,6 +761,48 @@ exports.getStudents = async (req, res) => {
             if (!allowedSubjects || allowedSubjects.size === 0) return false;
             return allowedSubjects.has(normalizeSubject(row.subject));
           });
+
+          const requiredSubjectsSet = (() => {
+            const fromClassGrades = classSubjectsFromGrades[classKey];
+            if (isAdviserForClass) {
+              return fromClassGrades || new Set();
+            }
+            if (allowedSubjects && allowedSubjects.size > 0) {
+              return allowedSubjects;
+            }
+            return fromClassGrades || new Set();
+          })();
+
+          const buildQuarterCompletion = (quarter) => {
+            const requiredCount = requiredSubjectsSet.size;
+            const gradedSubjects = new Set(
+              rows
+                .filter((row) => String(row.quarter || '').toUpperCase() === quarter)
+                .map((row) => normalizeSubject(row.subject))
+                .filter(Boolean)
+            );
+            const gradedCount = gradedSubjects.size;
+
+            let status = 'incomplete';
+            if (requiredCount > 0 && gradedCount >= requiredCount) {
+              status = 'complete';
+            } else if (gradedCount > 0) {
+              status = 'in_progress';
+            }
+
+            return { status, gradedCount, requiredCount };
+          };
+
+          const q1Completion = buildQuarterCompletion('Q1');
+          const q2Completion = buildQuarterCompletion('Q2');
+          const q3Completion = buildQuarterCompletion('Q3');
+          const q4Completion = buildQuarterCompletion('Q4');
+          const completionBuckets = [q1Completion, q2Completion, q3Completion, q4Completion];
+          const completionStatus = completionBuckets.every((bucket) => bucket.status === 'complete')
+            ? 'complete'
+            : completionBuckets.some((bucket) => bucket.gradedCount > 0)
+              ? 'in_progress'
+              : 'incomplete';
 
           const averageForQuarter = (quarter) => {
             const values = rows
@@ -761,7 +828,17 @@ exports.getStudents = async (req, res) => {
             q2_avg: averageForQuarter('Q2'),
             q3_avg: averageForQuarter('Q3'),
             q4_avg: averageForQuarter('Q4'),
-            average: liveAverage
+            average: liveAverage,
+            completion_status: completionStatus,
+            q1_completion_status: q1Completion.status,
+            q2_completion_status: q2Completion.status,
+            q3_completion_status: q3Completion.status,
+            q4_completion_status: q4Completion.status,
+            q1_completion_graded: q1Completion.gradedCount,
+            q2_completion_graded: q2Completion.gradedCount,
+            q3_completion_graded: q3Completion.gradedCount,
+            q4_completion_graded: q4Completion.gradedCount,
+            completion_required_count: q1Completion.requiredCount
           };
         });
 

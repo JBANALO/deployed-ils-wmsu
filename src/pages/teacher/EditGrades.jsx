@@ -1152,6 +1152,44 @@ export default function EditGrades() {
     (userRole === 'teacher' && assignedSubjects.length > 0 && adviserClassIds.length === 0);
   const averageColumnLabel = isSubjectTeacherOnlyMode ? 'My Subject Average' : 'Final Average';
   const remarksColumnLabel = isSubjectTeacherOnlyMode ? 'My Remarks' : 'Remarks';
+
+  const getStudentCompletionStatus = (student) => {
+    const normalizeStatus = (status) => {
+      const clean = String(status || '').trim().toLowerCase();
+      if (clean === 'complete') return 'complete';
+      if (clean === 'in_progress' || clean === 'in progress') return 'in_progress';
+      return 'incomplete';
+    };
+
+    if (selectedQuarter === 'q1') return normalizeStatus(student?.q1CompletionStatus);
+    if (selectedQuarter === 'q2') return normalizeStatus(student?.q2CompletionStatus);
+    if (selectedQuarter === 'q3') return normalizeStatus(student?.q3CompletionStatus);
+    if (selectedQuarter === 'q4') return normalizeStatus(student?.q4CompletionStatus);
+    if (selectedQuarter === 'all' && student?.completionStatus) return normalizeStatus(student.completionStatus);
+
+    // Fallback when completion metadata is not yet available.
+    if (selectedQuarter === 'all') {
+      const values = [student?.q1_avg, student?.q2_avg, student?.q3_avg, student?.q4_avg]
+        .map((value) => Number(value) || 0);
+      if (values.every((value) => value > 0)) return 'complete';
+      if (values.some((value) => value > 0)) return 'in_progress';
+      return 'incomplete';
+    }
+
+    const quarterValue = Number(student?.[`${selectedQuarter}_avg`]) || 0;
+    return quarterValue > 0 ? 'in_progress' : 'incomplete';
+  };
+
+  const getCompletionBadge = (status) => {
+    if (status === 'complete') {
+      return { label: 'Complete', classes: 'bg-green-100 text-green-800' };
+    }
+    if (status === 'in_progress') {
+      return { label: 'In Progress', classes: 'bg-yellow-100 text-yellow-800' };
+    }
+    return { label: 'Incomplete', classes: 'bg-gray-100 text-gray-700' };
+  };
+
   const computationGradeLevelOptions = buildComputationGradeLevelOptions();
   const selectedSchoolYearValue = selectedSchoolYearId || activeSchoolYearId || '';
   const includedComputationSubjects = computationSubjects.filter((item) => item?.included);
@@ -1479,21 +1517,12 @@ export default function EditGrades() {
                       </td>
                       <td className="px-6 py-5">
                         {(() => {
-                          const qAvg = selectedQuarter === 'all'
-                            ? (student.live_average || student.average)
-                            : student[`${selectedQuarter}_avg`];
-                          const avg = qAvg ? parseFloat(qAvg) : 0;
-                          return avg > 0 ? (
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              avg >= 90 ? "bg-green-100 text-green-800" :
-                              avg >= 85 ? "bg-blue-100 text-blue-800" :
-                              avg >= 80 ? "bg-yellow-100 text-yellow-800" :
-                              "bg-gray-100 text-gray-800"
-                            }`}>
-                              {getRemarks(avg)}
+                          const completionStatus = getStudentCompletionStatus(student);
+                          const badge = getCompletionBadge(completionStatus);
+                          return (
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${badge.classes}`}>
+                              {badge.label}
                             </span>
-                          ) : (
-                            <span className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-400">No Grades</span>
                           );
                         })()}
                       </td>
