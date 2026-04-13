@@ -27,6 +27,12 @@ export default function EditGrades() {
   const getStudentGradeLevel = (student) => student?.gradeLevel || student?.grade_level || "";
   const getStudentSection = (student) => student?.section || student?.Section || "";
   const normalizeText = (value) => String(value || "").trim().toLowerCase();
+  const normalizeSubjectForComputation = (value) =>
+    normalizeText(
+      String(value || '')
+        .replace(/\s*\(Grade\s+\d+\)\s*$/i, '')
+        .replace(/\s*\(Kindergarten\)\s*$/i, '')
+    );
   const normalizeClassSlug = (grade, section) => `${String(grade || '').toLowerCase().replace(/\s+/g, '-')}-${String(section || '').toLowerCase().replace(/\s+/g, '-')}`;
   const parseSubjectList = (rawValue) => {
     if (Array.isArray(rawValue)) return rawValue.map((item) => String(item || '').trim()).filter(Boolean);
@@ -47,6 +53,7 @@ export default function EditGrades() {
     return result;
   };
   const [students, setStudents] = useState([]);
+  const [activeTab, setActiveTab] = useState('grades');
   const [loading, setLoading] = useState(true);
   const [selectedSubject, setSelectedSubject] = useState("Mathematics");
   const [selectedQuarter, setSelectedQuarter] = useState("q1");
@@ -80,8 +87,85 @@ export default function EditGrades() {
   const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
   const [activeSchoolYearId, setActiveSchoolYearId] = useState(() => getTeacherActiveSchoolYearId());
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
+  const [schoolYears, setSchoolYears] = useState([]);
+  const [computationMode, setComputationMode] = useState('deped');
+  const [computationSubjects, setComputationSubjects] = useState([]);
+  const [newComputationSubject, setNewComputationSubject] = useState('');
+  const [selectedComputationGradeLevel, setSelectedComputationGradeLevel] = useState('');
   const lastKnownActiveSchoolYearIdRef = useRef(null);
   const isViewOnlyMode = isTeacherViewOnlyMode(selectedSchoolYearId, activeSchoolYearId);
+
+  const buildComputationGradeLevelOptions = () => {
+    const gradeOptions = dedupeSubjects([
+      ...assignedClasses.map((cls) => cls?.grade).filter(Boolean),
+      ...(selectedGradeLevel !== 'All Grades' ? [selectedGradeLevel] : []),
+      ...Object.keys(subjectsByGrade || {})
+    ]);
+    return gradeOptions;
+  };
+
+  const getComputationSettingsStorageKey = (schoolYearId, gradeLevel) =>
+    `gradeComputationSettings:${String(schoolYearId || 'default')}:${String(gradeLevel || 'all')}`;
+
+  const buildDefaultComputationSubjects = () => {
+    const selectedGradeSubjects =
+      selectedComputationGradeLevel && Array.isArray(subjectsByGrade[selectedComputationGradeLevel])
+        ? subjectsByGrade[selectedComputationGradeLevel]
+        : [];
+    const assignedGradeSubjects = assignedClasses
+      .filter((cls) => !selectedComputationGradeLevel || cls?.grade === selectedComputationGradeLevel)
+      .map((cls) => cls?.grade)
+      .filter(Boolean)
+      .flatMap((grade) => subjectsByGrade[grade] || []);
+    const candidates = dedupeSubjects([
+      ...selectedGradeSubjects,
+      ...availableSubjects,
+      ...assignedSubjects,
+      ...assignedGradeSubjects,
+      ...Object.values(subjectsByGrade).flat()
+    ]).filter(Boolean);
+
+    return candidates.map((name) => ({
+      name,
+      included: true,
+      weight: 0
+    }));
+  };
+
+  const loadComputationSettings = (schoolYearId) => {
+    const defaults = buildDefaultComputationSubjects();
+    const key = getComputationSettingsStorageKey(schoolYearId, selectedComputationGradeLevel);
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) {
+        setComputationMode('deped');
+        setComputationSubjects(defaults);
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      const mode = parsed?.mode === 'custom' ? 'custom' : 'deped';
+      const savedSubjects = Array.isArray(parsed?.subjects) ? parsed.subjects : [];
+      const mergedSubjects = dedupeSubjects([
+        ...defaults.map((item) => item.name),
+        ...savedSubjects.map((item) => item?.name)
+      ]).map((name) => {
+        const saved = savedSubjects.find((item) => normalizeSubjectForComputation(item?.name) === normalizeSubjectForComputation(name));
+        return {
+          name,
+          included: saved ? Boolean(saved.included) : true,
+          weight: saved && Number.isFinite(Number(saved.weight)) ? Number(saved.weight) : 0
+        };
+      });
+
+      setComputationMode(mode);
+      setComputationSubjects(mergedSubjects);
+    } catch (error) {
+      console.warn('Failed to parse computation settings, using defaults.', error);
+      setComputationMode('deped');
+      setComputationSubjects(defaults);
+    }
+  };
 
   const toggleStudentSelection = (id) => {
     setSelectedStudentIds(prev => {
@@ -156,6 +240,21 @@ export default function EditGrades() {
   }, [selectedSchoolYearId]);
 
   useEffect(() => {
+    const gradeOptions = buildComputationGradeLevelOptions();
+    if (gradeOptions.length === 0) return;
+
+    if (!selectedComputationGradeLevel || !gradeOptions.includes(selectedComputationGradeLevel)) {
+      setSelectedComputationGradeLevel(gradeOptions[0]);
+    }
+  }, [assignedClasses, subjectsByGrade, selectedGradeLevel, selectedComputationGradeLevel]);
+
+  useEffect(() => {
+    if (!selectedComputationGradeLevel) return;
+    const targetSchoolYearId = selectedSchoolYearId || activeSchoolYearId || 'default';
+    loadComputationSettings(targetSchoolYearId);
+  }, [selectedSchoolYearId, activeSchoolYearId, selectedComputationGradeLevel]);
+
+  useEffect(() => {
     fetchStudents();
   }, [selectedSchoolYearId]);
 
@@ -164,6 +263,7 @@ export default function EditGrades() {
       try {
         const syResponse = await api.get('/school-years');
         const schoolYears = syResponse.data?.data || [];
+        setSchoolYears(Array.isArray(schoolYears) ? schoolYears : []);
         const target = schoolYears.find((item) => String(item.id) === String(selectedSchoolYearId || activeSchoolYearId));
 
         if (!target) {
@@ -541,6 +641,7 @@ export default function EditGrades() {
     
     // Check if user is adviser for this class
     const isAdviserForClass = adviserClassIds.includes(studentClassId);
+    const shouldRestrictToAssignedSubjectsOnly = userRole === 'teacher' || userRole === 'subject_teacher';
     
     // --- Fetch subjects for this grade directly from DB (always fresh) ---
     let dbSubjectsForGrade = [];
@@ -624,7 +725,7 @@ export default function EditGrades() {
     console.log(isAdviserForClass ? 'Adviser' : 'Subject teacher', '- editable subjects:', editableSubjectsForClass);
 
     // Track whether adviser is viewing their own class (to show full read-only view)
-    setIsAdviserViewingClass(isAdviserForClass);
+    setIsAdviserViewingClass(isAdviserForClass && !shouldRestrictToAssignedSubjectsOnly);
 
     // Update availableSubjects (controls which inputs are enabled)
     // Both advisers and subject teachers can only edit their specifically assigned subjects
@@ -651,7 +752,15 @@ export default function EditGrades() {
     // Adviser sees ALL subjects; subject teacher sees only their assigned subjects
     // Always prefer admin-configured subjects as the source of truth
     let subjectsToShow;
-    if (isAdviserForClass) {
+    if (shouldRestrictToAssignedSubjectsOnly) {
+      // Teacher mode: show only subjects assigned to this teacher for this class.
+      if (gradeSubjectList.length > 0) {
+        subjectsToShow = editableSubjectsForClass.filter(s => gradeSubjectList.includes(s));
+        if (subjectsToShow.length === 0) subjectsToShow = editableSubjectsForClass;
+      } else {
+        subjectsToShow = editableSubjectsForClass;
+      }
+    } else if (isAdviserForClass) {
       // Adviser sees all admin-configured subjects for the grade level
       subjectsToShow = gradeSubjectList;
     } else if (gradeSubjectList.length > 0) {
@@ -694,6 +803,102 @@ export default function EditGrades() {
     }
   };
 
+  const findComputationSubjectConfig = (subjectName) => {
+    const normalizedName = normalizeSubjectForComputation(subjectName);
+    return computationSubjects.find(
+      (item) => normalizeSubjectForComputation(item?.name) === normalizedName
+    ) || null;
+  };
+
+  const handleToggleComputationSubject = (subjectName) => {
+    setComputationSubjects((prev) =>
+      prev.map((item) =>
+        item.name === subjectName
+          ? { ...item, included: !item.included }
+          : item
+      )
+    );
+  };
+
+  const handleComputationWeightChange = (subjectName, rawValue) => {
+    const nextWeight = Number(rawValue);
+    setComputationSubjects((prev) =>
+      prev.map((item) => {
+        if (item.name !== subjectName) return item;
+        return {
+          ...item,
+          weight: Number.isFinite(nextWeight) && nextWeight >= 0 ? nextWeight : 0
+        };
+      })
+    );
+  };
+
+  const handleAddComputationSubject = () => {
+    if (!selectedComputationGradeLevel) {
+      toast.error('Select a grade level first.');
+      return;
+    }
+
+    const cleanName = String(newComputationSubject || '').trim();
+    if (!cleanName) return;
+
+    const exists = computationSubjects.some(
+      (item) => normalizeSubjectForComputation(item?.name) === normalizeSubjectForComputation(cleanName)
+    );
+
+    if (exists) {
+      toast.info('Subject already exists in computation settings.');
+      return;
+    }
+
+    setComputationSubjects((prev) => [
+      ...prev,
+      {
+        name: cleanName,
+        included: true,
+        weight: 0
+      }
+    ]);
+    setNewComputationSubject('');
+  };
+
+  const handleDeleteComputationSubject = (subjectName) => {
+    setComputationSubjects((prev) => {
+      const next = prev.filter((item) => item.name !== subjectName);
+      return next;
+    });
+  };
+
+  const saveComputationSettings = () => {
+    if (!selectedComputationGradeLevel) {
+      toast.error('Select a grade level first.');
+      return;
+    }
+    const schoolYearKey = selectedSchoolYearId || activeSchoolYearId || 'default';
+    const key = getComputationSettingsStorageKey(schoolYearKey, selectedComputationGradeLevel);
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        mode: computationMode,
+        subjects: computationSubjects
+      })
+    );
+    toast.success('Grade computation settings saved.');
+  };
+
+  const resetComputationSettings = () => {
+    if (!selectedComputationGradeLevel) {
+      toast.error('Select a grade level first.');
+      return;
+    }
+    const schoolYearKey = selectedSchoolYearId || activeSchoolYearId || 'default';
+    const key = getComputationSettingsStorageKey(schoolYearKey, selectedComputationGradeLevel);
+    localStorage.removeItem(key);
+    setComputationMode('deped');
+    setComputationSubjects(buildDefaultComputationSubjects());
+    toast.info('Grade computation settings reset to default.');
+  };
+
   // Calculate final average based on selected quarter(s)
   const calculateFinalAverage = () => {
     let subjects = Object.keys(gradeData);
@@ -703,14 +908,46 @@ export default function EditGrades() {
     if (isSubjectTeacherMode) {
       subjects = subjects.filter(s => availableSubjects.includes(s));
     }
+
+    const hasComputationConfig = computationSubjects.length > 0;
+    if (hasComputationConfig) {
+      subjects = subjects.filter((subject) => {
+        const config = findComputationSubjectConfig(subject);
+        return Boolean(config?.included);
+      });
+    }
     
     if (subjects.length === 0) return 0;
     
+    const includedCount = computationSubjects.filter((item) => item?.included).length;
+    const equalWeight = includedCount > 0 ? 100 / includedCount : 0;
+
+    if (computationMode === 'custom') {
+      let weightedTotal = 0;
+      let appliedWeight = 0;
+
+      subjects.forEach((subject) => {
+        const score = selectedQuarter === 'all'
+          ? (parseFloat(calculateSubjectAverage(subject)) || 0)
+          : (parseFloat(gradeData?.[subject]?.[selectedQuarter]) || 0);
+        if (score <= 0) return;
+
+        const config = findComputationSubjectConfig(subject);
+        const weight = Number(config?.weight) || 0;
+        if (weight <= 0) return;
+
+        weightedTotal += score * (weight / 100);
+        appliedWeight += weight;
+      });
+
+      if (appliedWeight <= 0) return 0;
+      return ((weightedTotal * 100) / appliedWeight).toFixed(2);
+    }
+
     let total = 0;
     let count = 0;
-    if (selectedQuarter === "all") {
-      // Average of all quarters for all subjects (skip ungraded subjects)
-      subjects.forEach(subject => {
+    if (selectedQuarter === 'all') {
+      subjects.forEach((subject) => {
         const subAvg = parseFloat(calculateSubjectAverage(subject)) || 0;
         if (subAvg > 0) {
           total += subAvg;
@@ -718,17 +955,21 @@ export default function EditGrades() {
         }
       });
     } else {
-      // Only selected quarter — only count subjects where a grade has been entered
-      subjects.forEach(subject => {
-        const gradeVal = parseFloat(gradeData[subject][selectedQuarter]) || 0;
+      subjects.forEach((subject) => {
+        const gradeVal = parseFloat(gradeData?.[subject]?.[selectedQuarter]) || 0;
         if (gradeVal > 0) {
           total += gradeVal;
           count++;
         }
       });
     }
-    
-    return count > 0 ? (total / count).toFixed(2) : 0;
+
+    if (count === 0) return 0;
+    const simpleAverage = total / count;
+    if (!Number.isFinite(equalWeight) || equalWeight <= 0) {
+      return simpleAverage.toFixed(2);
+    }
+    return simpleAverage.toFixed(2);
   };
 
   // Get remarks based on average
@@ -878,8 +1119,18 @@ export default function EditGrades() {
 
       if (response.data?.success) {
         toast.success('Grades saved successfully! You have 24 hours to edit them again.');
-        fetchStudents();
-        setShowGradeModal(false);
+        const currentStudentId = String(selectedStudent?.id || '');
+        const currentIndex = orderedFilteredStudents.findIndex((student) => String(student.id) === currentStudentId);
+        const nextStudent = currentIndex >= 0 ? orderedFilteredStudents[currentIndex + 1] : null;
+
+        await fetchStudents();
+
+        if (nextStudent) {
+          await openGradeModal(nextStudent);
+        } else {
+          setInitialGradeData(JSON.parse(JSON.stringify(gradeData)));
+          toast.info('No next student in the current filtered list.');
+        }
       } else {
         setErrorMessage(`❌ Failed to save grades: ${response.data?.message || 'Unknown error'}`);
         setErrorModal(true);
@@ -906,6 +1157,9 @@ export default function EditGrades() {
     return matchesSearch && matchesGrade && matchesSection;
   });
 
+  const orderedFilteredStudents = [...filteredStudents]
+    .sort((a, b) => (b.average || 0) - (a.average || 0));
+
   // Calculate class statistics
   const classAverage = students.length > 0
     ? (students.reduce((sum, s) => sum + (s.average || 0), 0) / students.length).toFixed(2)
@@ -920,6 +1174,59 @@ export default function EditGrades() {
     (userRole === 'teacher' && assignedSubjects.length > 0 && adviserClassIds.length === 0);
   const averageColumnLabel = isSubjectTeacherOnlyMode ? 'My Subject Average' : 'Final Average';
   const remarksColumnLabel = isSubjectTeacherOnlyMode ? 'My Remarks' : 'Remarks';
+
+  const getStudentCompletionStatus = (student) => {
+    const normalizeStatus = (status) => {
+      const clean = String(status || '').trim().toLowerCase();
+      if (clean === 'complete') return 'complete';
+      if (clean === 'in_progress' || clean === 'in progress') return 'in_progress';
+      return 'incomplete';
+    };
+
+    if (selectedQuarter === 'q1') return normalizeStatus(student?.q1CompletionStatus);
+    if (selectedQuarter === 'q2') return normalizeStatus(student?.q2CompletionStatus);
+    if (selectedQuarter === 'q3') return normalizeStatus(student?.q3CompletionStatus);
+    if (selectedQuarter === 'q4') return normalizeStatus(student?.q4CompletionStatus);
+    if (selectedQuarter === 'all' && student?.completionStatus) return normalizeStatus(student.completionStatus);
+
+    // Fallback when completion metadata is not yet available.
+    if (selectedQuarter === 'all') {
+      const values = [student?.q1_avg, student?.q2_avg, student?.q3_avg, student?.q4_avg]
+        .map((value) => Number(value) || 0);
+      if (values.every((value) => value > 0)) return 'complete';
+      if (values.some((value) => value > 0)) return 'in_progress';
+      return 'incomplete';
+    }
+
+    const quarterValue = Number(student?.[`${selectedQuarter}_avg`]) || 0;
+    return quarterValue > 0 ? 'in_progress' : 'incomplete';
+  };
+
+  const getCompletionBadge = (status) => {
+    if (status === 'complete') {
+      return { label: 'Complete', classes: 'bg-green-100 text-green-800' };
+    }
+    if (status === 'in_progress') {
+      return { label: 'In Progress', classes: 'bg-yellow-100 text-yellow-800' };
+    }
+    return { label: 'Incomplete', classes: 'bg-gray-100 text-gray-700' };
+  };
+
+  const computationGradeLevelOptions = buildComputationGradeLevelOptions();
+  const selectedSchoolYearValue = selectedSchoolYearId || activeSchoolYearId || '';
+  const includedComputationSubjects = computationSubjects.filter((item) => item?.included);
+  const includedSubjectCount = includedComputationSubjects.length;
+  const equalDepedWeight = includedSubjectCount > 0 ? (100 / includedSubjectCount) : 0;
+  const customTotalWeight = includedComputationSubjects.reduce((sum, item) => {
+    const weight = Number(item?.weight);
+    return sum + (Number.isFinite(weight) ? weight : 0);
+  }, 0);
+  const displayedTotalWeight = computationMode === 'deped'
+    ? (includedSubjectCount > 0 ? 100 : 0)
+    : customTotalWeight;
+  const activeFormulaText = computationMode === 'deped'
+    ? `Final Average = Σ(subject final grades) / ${includedSubjectCount || 'n'}`
+    : 'Final Average = Σ(subject grade × weight%)';
 
   return (
     <div className="space-y-6">
@@ -1028,6 +1335,36 @@ export default function EditGrades() {
           </div>
         )}
       </div>
+
+      <div className="bg-white rounded-2xl shadow-xl border border-gray-200 px-6 pt-4">
+        <div className="flex items-center gap-6 border-b border-gray-200">
+          <button
+            type="button"
+            onClick={() => setActiveTab('grades')}
+            className={`pb-3 text-lg font-semibold transition ${
+              activeTab === 'grades'
+                ? 'text-red-700 border-b-2 border-red-700'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            Edit Grades
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('computation')}
+            className={`pb-3 text-lg font-semibold transition ${
+              activeTab === 'computation'
+                ? 'text-red-700 border-b-2 border-red-700'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            Grade Computation Settings
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'grades' ? (
+        <>
 
       {/* Filter Section */}
       <div className="bg-white rounded-2xl shadow-xl p-8 mb-8 border border-gray-200">
@@ -1163,8 +1500,7 @@ export default function EditGrades() {
                   </td>
                 </tr>
               ) : (
-                filteredStudents
-                  .sort((a, b) => (b.average || 0) - (a.average || 0))
+                orderedFilteredStudents
                   .map((student, index) => (
                     <tr key={student.id} className={`hover:bg-gray-50 transition ${selectedStudentIds.has(student.id) ? 'bg-blue-50' : ''}`}>
                       <td className="px-6 py-5">
@@ -1202,21 +1538,12 @@ export default function EditGrades() {
                       </td>
                       <td className="px-6 py-5">
                         {(() => {
-                          const qAvg = selectedQuarter === 'all'
-                            ? (student.live_average || student.average)
-                            : student[`${selectedQuarter}_avg`];
-                          const avg = qAvg ? parseFloat(qAvg) : 0;
-                          return avg > 0 ? (
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              avg >= 90 ? "bg-green-100 text-green-800" :
-                              avg >= 85 ? "bg-blue-100 text-blue-800" :
-                              avg >= 80 ? "bg-yellow-100 text-yellow-800" :
-                              "bg-gray-100 text-gray-800"
-                            }`}>
-                              {getRemarks(avg)}
+                          const completionStatus = getStudentCompletionStatus(student);
+                          const badge = getCompletionBadge(completionStatus);
+                          return (
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${badge.classes}`}>
+                              {badge.label}
                             </span>
-                          ) : (
-                            <span className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-400">No Grades</span>
                           );
                         })()}
                       </td>
@@ -1247,6 +1574,168 @@ export default function EditGrades() {
           </div>
         </div>
       </div>
+      </>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200 space-y-6">
+            <div className="bg-white border border-gray-200 rounded-xl p-4">
+              <label className="block text-lg font-semibold text-gray-700 mb-2">GRADE LEVEL</label>
+              <select
+                value={selectedComputationGradeLevel}
+                onChange={(e) => setSelectedComputationGradeLevel(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-xl font-semibold"
+              >
+                {computationGradeLevelOptions.map((grade) => (
+                  <option key={grade} value={grade}>
+                    {grade}
+                  </option>
+                ))}
+              </select>
+              <p className="text-base text-gray-500 mt-2">Subjects below are managed per selected grade level.</p>
+            </div>
+
+            <div>
+              <h3 className="text-2xl font-bold text-gray-900">AVERAGE COMPUTATION METHOD</h3>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={computationMode === 'custom'}
+                onClick={() => setComputationMode((prev) => (prev === 'custom' ? 'deped' : 'custom'))}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${
+                  computationMode === 'custom' ? 'bg-red-600' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
+                    computationMode === 'custom' ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+              <div>
+                <p className="text-2xl font-semibold text-gray-900">Custom weights (editable)</p>
+                <p className="text-base text-gray-500 mt-1">
+                  {computationMode === 'deped'
+                    ? 'DepEd standard mode is active: equal weight across included subjects.'
+                    : 'Custom mode is active: weights are editable per included subject.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-gray-100 rounded-xl p-4 border border-gray-200">
+              <p className="text-lg font-semibold text-gray-700 mb-2">Active formula</p>
+              <code className="block text-base text-gray-900 leading-relaxed whitespace-pre-wrap">
+                {activeFormulaText}
+              </code>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-xl p-4">
+              <label className="block text-lg font-semibold text-gray-700 mb-2">SCHOOL YEAR</label>
+              <select
+                value={selectedSchoolYearValue}
+                onChange={(e) => setSelectedSchoolYearId(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-xl font-semibold"
+              >
+                {(schoolYears.length > 0 ? schoolYears : [{ id: selectedSchoolYearValue, label: selectedSchoolYearValue }]).map((sy) => (
+                  <option key={String(sy.id)} value={String(sy.id)}>
+                    {sy.label || sy.name || String(sy.id)}
+                  </option>
+                ))}
+              </select>
+              <p className="text-base text-gray-500 mt-2">Computation settings are saved per school year.</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200 space-y-4">
+            <h3 className="text-2xl font-bold text-gray-900">SUBJECTS IN AVERAGE (N = {includedSubjectCount})</h3>
+
+            <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+              {computationSubjects.map((subject) => {
+                const displayedWeight = computationMode === 'deped'
+                  ? (subject.included ? equalDepedWeight : 0)
+                  : (subject.included ? (Number(subject.weight) || 0) : 0);
+
+                return (
+                  <div key={subject.name} className="flex items-center gap-3 border-b border-gray-100 pb-3">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(subject.included)}
+                      onChange={() => handleToggleComputationSubject(subject.name)}
+                      className="w-5 h-5"
+                    />
+                    <span className="flex-1 text-xl text-gray-900">{subject.name}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={Number.isFinite(displayedWeight) ? displayedWeight.toFixed(1) : '0.0'}
+                      onChange={(e) => handleComputationWeightChange(subject.name, e.target.value)}
+                      disabled={computationMode === 'deped' || !subject.included}
+                      className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-right text-xl disabled:bg-gray-100 disabled:text-gray-500"
+                    />
+                    <span className="text-lg text-gray-500">%</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteComputationSubject(subject.name)}
+                      className="w-9 h-9 flex items-center justify-center border border-gray-300 rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                      title="Delete subject"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-2xl text-gray-700">Total weight</p>
+              <p className={`text-3xl font-bold ${
+                computationMode === 'deped' || Math.abs(displayedTotalWeight - 100) < 0.01
+                  ? 'text-green-700'
+                  : 'text-orange-600'
+              }`}>
+                {displayedTotalWeight.toFixed(1)}%
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newComputationSubject}
+                onChange={(e) => setNewComputationSubject(e.target.value)}
+                placeholder="New subject name"
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-xl text-base"
+              />
+              <button
+                type="button"
+                onClick={handleAddComputationSubject}
+                className="px-5 py-3 border border-gray-300 rounded-xl text-2xl font-semibold hover:bg-gray-50"
+              >
+                + Add subject
+              </button>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={resetComputationSettings}
+                className="px-6 py-3 border border-gray-300 rounded-xl text-lg font-semibold hover:bg-gray-50"
+              >
+                Reset to default
+              </button>
+              <button
+                type="button"
+                onClick={saveComputationSettings}
+                className="px-6 py-3 bg-red-700 text-white rounded-xl text-lg font-semibold hover:bg-red-800"
+              >
+                Save settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Grade Edit Modal */}
       {showGradeModal && selectedStudent && (
