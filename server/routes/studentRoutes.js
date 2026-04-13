@@ -1111,7 +1111,7 @@ router.post('/ranking-publications', verifyUserForGrades, async (req, res) => {
           score,
           total_students,
           published_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           student_name = VALUES(student_name),
           rank_position = VALUES(rank_position),
