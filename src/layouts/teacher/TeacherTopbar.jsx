@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useContext } from "react";
 import { useNavigate } from "react-router-dom";
-import { BellIcon, UserCircleIcon, ChevronDownIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/solid";
+import { BellIcon, UserCircleIcon, ChevronDownIcon, EyeIcon, EyeSlashIcon, CheckCircleIcon, ExclamationTriangleIcon, Cog6ToothIcon } from "@heroicons/react/24/solid";
 import api from "../../api/axiosConfig";
 import { UserContext } from "../../context/UserContext";
+import notificationService from "../../services/notificationService";
 
 export default function TeacherTopbar({ sidebarOpen }) {
   const [showDropdown, setShowDropdown] = useState(false);
@@ -50,27 +51,35 @@ export default function TeacherTopbar({ sidebarOpen }) {
     }
   }, []);
 
+  // Initialize notifications
   useEffect(() => {
-    let timer = null;
-
-    const fetchNotifications = async () => {
-      try {
-        const response = await api.get('/notifications');
-        const items = response.data?.data?.items || [];
-        const unread = Number(response.data?.data?.unreadCount || 0);
-        setNotifications(items);
-        setUnreadCount(unread);
-      } catch (error) {
-        console.error('Failed to load notifications:', error);
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      const user = JSON.parse(storedUser);
+      if (user.id) {
+        const userId = `teacher_${user.id}`;
+        
+        // Initialize notification service
+        notificationService.initialize(userId, 'teacher').then(({ items, unread }) => {
+          setNotifications(items);
+          setUnreadCount(unread);
+        });
+        
+        // Add listener for real-time updates
+        const handleNotificationUpdate = (updatedNotifications) => {
+          setNotifications(updatedNotifications);
+          const unread = updatedNotifications.filter(n => !n.is_read).length;
+          setUnreadCount(unread);
+        };
+        
+        notificationService.addListener(userId, handleNotificationUpdate);
+        
+        return () => {
+          notificationService.removeListener(userId, handleNotificationUpdate);
+          notificationService.cleanup(userId);
+        };
       }
-    };
-
-    fetchNotifications();
-    timer = setInterval(fetchNotifications, 15000);
-
-    return () => {
-      if (timer) clearInterval(timer);
-    };
+    }
   }, []);
 
   const handleOpenNotifications = async () => {
@@ -79,14 +88,17 @@ export default function TeacherTopbar({ sidebarOpen }) {
 
     // Mark unread as read when opening dropdown.
     if (!showNotifications) {
-      const unreadItems = notifications.filter((item) => !item.is_read);
-      if (unreadItems.length > 0) {
-        try {
-          await Promise.all(unreadItems.map((item) => api.put(`/notifications/${item.id}/read`)));
-          setNotifications((prev) => prev.map((item) => ({ ...item, is_read: true })));
-          setUnreadCount(0);
-        } catch (error) {
-          console.error('Failed to mark notifications as read:', error);
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) {
+        const user = JSON.parse(storedUser);
+        const userId = `teacher_${user.id}`;
+        
+        const unreadItems = notifications.filter((item) => !item.is_read);
+        if (unreadItems.length > 0) {
+          const success = await notificationService.markAllAsRead(userId);
+          if (success) {
+            setUnreadCount(0);
+          }
         }
       }
     }

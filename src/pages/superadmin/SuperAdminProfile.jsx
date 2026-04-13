@@ -34,85 +34,98 @@ export default function SuperAdminProfile() {
     }
   }, [formData.profileImage]);
 
-  // Update form data when adminUser changes (fixes refresh issue)
+  // Initialize form data from multiple sources with proper fallbacks
   useEffect(() => {
-    console.log('SuperAdminProfile - adminUser changed:', adminUser);
-    if (adminUser) {
-      const newFormData = {
-        firstName: adminUser.firstName || '',
-        lastName: adminUser.lastName || '',
-        username: adminUser.username || '',
-        email: adminUser.email || '',
-        phone: adminUser.phone || '',
-        profileImage: (adminUser.profileImage && adminUser.profileImage !== 'null' && adminUser.profileImage !== 'undefined') ? adminUser.profileImage : ''
-      };
-      console.log('SuperAdminProfile - setting formData to:', newFormData);
-      setFormData(newFormData);
-      setLoading(false); // Set loading to false when data is loaded
-    } else {
-      // Try to get user data from localStorage if adminUser is null
-      try {
-        const storedUser = localStorage.getItem("user");
-        if (storedUser && storedUser !== 'undefined' && storedUser !== 'null') {
-          const parsedUser = JSON.parse(storedUser);
-          console.log('SuperAdminProfile - using stored user data:', parsedUser);
-          if (parsedUser && parsedUser.id) {
-            const newFormData = {
-              firstName: parsedUser.firstName || '',
-              lastName: parsedUser.lastName || '',
-              username: parsedUser.username || '',
-              email: parsedUser.email || '',
-              phone: parsedUser.phone || '',
-              profileImage: (parsedUser.profileImage && parsedUser.profileImage !== 'null' && parsedUser.profileImage !== 'undefined') ? parsedUser.profileImage : ''
-            };
-            setFormData(newFormData);
-            setLoading(false);
-          } else {
-            console.log('SuperAdminProfile - stored user data invalid, using defaults');
-            setLoading(false);
+    const initializeFormData = () => {
+      console.log('SuperAdminProfile - initializing form data...');
+      
+      // Try multiple sources for user data
+      let userData = adminUser;
+      
+      // If no adminUser, try localStorage
+      if (!userData) {
+        try {
+          const storedUser = localStorage.getItem("user");
+          if (storedUser && storedUser !== 'undefined' && storedUser !== 'null') {
+            userData = JSON.parse(storedUser);
+            console.log('SuperAdminProfile - using stored user data:', userData);
           }
-        } else {
-          // No stored user data, set loading to false to show empty form
-          console.log('SuperAdminProfile - no valid stored user data');
-          setLoading(false);
+        } catch (error) {
+          console.error('Error parsing stored user data:', error);
+          localStorage.removeItem("user");
         }
-      } catch (error) {
-        console.error('Error parsing stored user data:', error);
-        // Clear corrupted localStorage
-        localStorage.removeItem("user");
-        setLoading(false);
       }
-    }
+      
+      // If we have user data, update form
+      if (userData && userData.id) {
+        const newFormData = {
+          firstName: userData.firstName || '',
+          lastName: userData.lastName || '',
+          username: userData.username || '',
+          email: userData.email || '',
+          phone: userData.phone || '',
+          profileImage: (userData.profileImage && userData.profileImage !== 'null' && userData.profileImage !== 'undefined') ? userData.profileImage : ''
+        };
+        console.log('SuperAdminProfile - setting formData to:', newFormData);
+        setFormData(newFormData);
+        setLoading(false);
+      } else {
+        // No user data available, fetch fresh data
+        fetchFreshUserData();
+      }
+    };
+    
+    initializeFormData();
   }, [adminUser]);
 
-  // Fetch fresh user data on mount and when needed
+  // Fetch fresh user data when needed
+  const fetchFreshUserData = async () => {
+    try {
+      console.log('SuperAdminProfile - fetching fresh user data...');
+      const response = await axios.get('/auth/me');
+      
+      // Handle different response structures
+      let freshUser = null;
+      if (response.data?.user) {
+        freshUser = response.data.user;
+      } else if (response.data?.data?.user) {
+        freshUser = response.data.data.user;
+      } else if (response.data?.data) {
+        freshUser = response.data.data;
+      }
+      
+      if (freshUser) {
+        console.log('SuperAdminProfile - fetched fresh user:', freshUser);
+        updateUser(freshUser);
+        
+        const newFormData = {
+          firstName: freshUser.firstName || '',
+          lastName: freshUser.lastName || '',
+          username: freshUser.username || '',
+          email: freshUser.email || '',
+          phone: freshUser.phone || '',
+          profileImage: (freshUser.profileImage && freshUser.profileImage !== 'null' && freshUser.profileImage !== 'undefined') ? freshUser.profileImage : ''
+        };
+        setFormData(newFormData);
+      }
+    } catch (error) {
+      console.error('SuperAdminProfile - Error fetching fresh user data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch fresh data when page becomes visible
   useEffect(() => {
-    const fetchFreshUserData = async () => {
-      try {
-        console.log('SuperAdminProfile - fetching fresh user data...');
-        const response = await axios.get('/auth/me');
-        if (response.data.user) {
-          console.log('SuperAdminProfile - fresh user data:', response.data.user);
-          updateUser(response.data.user);
-        }
-      } catch (error) {
-        console.error('Error fetching fresh user data on mount:', error);
-        // Set loading to false even on error to prevent infinite loading
-        setLoading(false);
+    const handleVisibilityChange = () => {
+      if (!document.hidden && adminUser) {
+        fetchFreshUserData();
       }
     };
 
-    // Always fetch fresh data on component mount to ensure we have latest updates
-    fetchFreshUserData();
-
-    // Add timeout to prevent infinite loading
-    const timeout = setTimeout(() => {
-      console.log('SuperAdminProfile - timeout reached, setting loading to false');
-      setLoading(false);
-    }, 5000); // 5 second timeout
-
-    return () => clearTimeout(timeout);
-  }, []); // Empty dependency array means this runs only once on mount
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [adminUser]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -149,6 +162,8 @@ export default function SuperAdminProfile() {
     setSaving(true);
 
     try {
+      console.log('SuperAdminProfile - submitting profile update:', formData);
+      
       const formDataToSend = new FormData();
       formDataToSend.append('firstName', formData.firstName);
       formDataToSend.append('lastName', formData.lastName);
@@ -166,46 +181,40 @@ export default function SuperAdminProfile() {
         }
       });
 
-      // Update user context
-      if (response.data.user) {
-        console.log('SuperAdminProfile - updating with response data:', response.data.user);
-        updateUser(response.data.user);
-        
-        // Also update form data immediately to reflect changes
-        setFormData({
-          firstName: response.data.user.firstName || '',
-          lastName: response.data.user.lastName || '',
-          username: response.data.user.username || '',
-          email: response.data.user.email || '',
-          phone: response.data.user.phone || '',
-          profileImage: response.data.user.profileImage || ''
-        });
+      console.log('SuperAdminProfile - update response:', response.data);
+
+      // Handle different response structures
+      let updatedUser = null;
+      if (response.data?.user) {
+        updatedUser = response.data.user;
+      } else if (response.data?.data?.user) {
+        updatedUser = response.data.data.user;
+      } else if (response.data?.data) {
+        updatedUser = response.data.data;
       } else {
-        // Create updated user object from form data since API response doesn't include user
-        const updatedUser = {
+        // Fallback: create updated user from form data
+        updatedUser = {
+          ...adminUser,
+          ...formData,
           id: adminUser?.id || 'super-admin-001',
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          username: formData.username,
-          email: formData.email,
-          phone: formData.phone,
-          profileImage: formData.profileImage,
           role: 'super_admin'
         };
-        
-        console.log('SuperAdminProfile - updating with form data:', updatedUser);
-        updateUser(updatedUser);
-        
-        // Update form data with the same data
-        setFormData({
-          firstName: updatedUser.firstName || '',
-          lastName: updatedUser.lastName || '',
-          username: updatedUser.username || '',
-          email: updatedUser.email || '',
-          phone: updatedUser.phone || '',
-          profileImage: updatedUser.profileImage || ''
-        });
       }
+
+      console.log('SuperAdminProfile - final updated user:', updatedUser);
+      
+      // Update context and localStorage
+      updateUser(updatedUser);
+      
+      // Update form data immediately
+      setFormData({
+        firstName: updatedUser.firstName || '',
+        lastName: updatedUser.lastName || '',
+        username: updatedUser.username || '',
+        email: updatedUser.email || '',
+        phone: updatedUser.phone || '',
+        profileImage: updatedUser.profileImage || ''
+      });
 
       // Update profile image file in context if changed
       if (formData.profileImage && typeof formData.profileImage === 'object') {
@@ -214,8 +223,14 @@ export default function SuperAdminProfile() {
 
       toast.success('Profile updated successfully!');
       setEditMode(false);
+      
+      // Force a fresh data fetch to confirm persistence
+      setTimeout(() => {
+        fetchFreshUserData();
+      }, 1000);
+      
     } catch (error) {
-      console.error('Error updating profile:', error);
+      console.error('SuperAdminProfile - Error updating profile:', error);
       toast.error(error.response?.data?.message || 'Failed to update profile');
     } finally {
       setSaving(false);

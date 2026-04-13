@@ -12,13 +12,14 @@ export default function AdminProfile() {
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({
-    firstName: adminUser?.firstName || '',
-    lastName: adminUser?.lastName || '',
-    username: adminUser?.username || '',
-    email: adminUser?.email || '',
-    phone: adminUser?.phone || '',
-    profileImage: adminUser?.profileImage || ''
+    firstName: '',
+    lastName: '',
+    username: '',
+    email: '',
+    phone: '',
+    profileImage: ''
   });
   const navigate = useNavigate();
 
@@ -32,64 +33,92 @@ export default function AdminProfile() {
     }
   }, [formData.profileImage]);
 
-  // Update form data when adminUser changes (fixes refresh issue)
+  // Initialize form data from multiple sources with proper fallbacks
   useEffect(() => {
-    console.log('AdminProfile - adminUser changed:', adminUser);
-    if (adminUser) {
-      const newFormData = {
-        firstName: adminUser.firstName || '',
-        lastName: adminUser.lastName || '',
-        username: adminUser.username || '',
-        email: adminUser.email || '',
-        phone: adminUser.phone || '',
-        profileImage: (adminUser.profileImage && adminUser.profileImage !== 'null' && adminUser.profileImage !== 'undefined') ? adminUser.profileImage : ''
-      };
-      console.log('AdminProfile - setting formData to:', newFormData);
-      setFormData(newFormData);
-    }
-  }, [adminUser]);
-
-  // Fetch complete user data on component mount to ensure fresh data
-  useEffect(() => {
-    const fetchCompleteUserData = async () => {
-      if (adminUser) {
+    const initializeFormData = () => {
+      console.log('AdminProfile - initializing form data...');
+      
+      // Try multiple sources for user data
+      let userData = adminUser;
+      
+      // If no adminUser, try localStorage
+      if (!userData) {
         try {
-          console.log('AdminProfile - fetching fresh user data...');
-          const response = await axios.get('/auth/me');
-          if (response.data?.data?.user) {
-            const freshUser = response.data.data.user;
-            console.log('AdminProfile - fetched fresh user:', freshUser);
-            
-            // Update context with fresh data
-            updateUser(freshUser);
+          const storedUser = localStorage.getItem("user");
+          if (storedUser && storedUser !== 'undefined' && storedUser !== 'null') {
+            userData = JSON.parse(storedUser);
+            console.log('AdminProfile - using stored user data:', userData);
           }
         } catch (error) {
-          console.error('AdminProfile - Error fetching fresh user data:', error);
+          console.error('Error parsing stored user data:', error);
+          localStorage.removeItem("user");
         }
       }
+      
+      // If we have user data, update form
+      if (userData && userData.id) {
+        const newFormData = {
+          firstName: userData.firstName || '',
+          lastName: userData.lastName || '',
+          username: userData.username || '',
+          email: userData.email || '',
+          phone: userData.phone || '',
+          profileImage: (userData.profileImage && userData.profileImage !== 'null' && userData.profileImage !== 'undefined') ? userData.profileImage : ''
+        };
+        console.log('AdminProfile - setting formData to:', newFormData);
+        setFormData(newFormData);
+        setLoading(false);
+      } else {
+        // No user data available, fetch fresh data
+        fetchFreshUserData();
+      }
     };
+    
+    initializeFormData();
+  }, [adminUser]);
 
-    fetchCompleteUserData();
-  }, [adminUser?.id]); // Only run when user ID changes (login/logout)
+  // Fetch fresh user data when needed
+  const fetchFreshUserData = async () => {
+    try {
+      console.log('AdminProfile - fetching fresh user data...');
+      const response = await axios.get('/auth/me');
+      
+      // Handle different response structures
+      let freshUser = null;
+      if (response.data?.user) {
+        freshUser = response.data.user;
+      } else if (response.data?.data?.user) {
+        freshUser = response.data.data.user;
+      } else if (response.data?.data) {
+        freshUser = response.data.data;
+      }
+      
+      if (freshUser) {
+        console.log('AdminProfile - fetched fresh user:', freshUser);
+        updateUser(freshUser);
+        
+        const newFormData = {
+          firstName: freshUser.firstName || '',
+          lastName: freshUser.lastName || '',
+          username: freshUser.username || '',
+          email: freshUser.email || '',
+          phone: freshUser.phone || '',
+          profileImage: (freshUser.profileImage && freshUser.profileImage !== 'null' && freshUser.profileImage !== 'undefined') ? freshUser.profileImage : ''
+        };
+        setFormData(newFormData);
+      }
+    } catch (error) {
+      console.error('AdminProfile - Error fetching fresh user data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // Also fetch fresh data when page becomes visible (return from other tab)
+  // Fetch fresh data when page becomes visible
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden && adminUser) {
-        console.log('AdminProfile - page became visible, fetching fresh data...');
-        const fetchCompleteUserData = async () => {
-          try {
-            const response = await axios.get('/auth/me');
-            if (response.data?.data?.user) {
-              const freshUser = response.data.data.user;
-              console.log('AdminProfile - fetched fresh user on visibility change:', freshUser);
-              updateUser(freshUser);
-            }
-          } catch (error) {
-            console.error('AdminProfile - Error fetching fresh user data on visibility change:', error);
-          }
-        };
-        fetchCompleteUserData();
+        fetchFreshUserData();
       }
     };
 
@@ -124,22 +153,47 @@ const handleImageChange = (e) => {
     setSaving(true);
 
     try {
+      console.log('AdminProfile - submitting profile update:', submitData);
+      
       const formDataSubmit = new FormData();
-        Object.entries(submitData).forEach(([key, value]) => {
-          if (key === 'profileImage' && value instanceof File) {
-            formDataSubmit.append(key, value);
-          } else {
-            formDataSubmit.append(key, value);
-          }
-        });
+      Object.entries(submitData).forEach(([key, value]) => {
+        if (key === 'profileImage' && value instanceof File) {
+          formDataSubmit.append(key, value);
+        } else if (key !== 'profileImage') {
+          formDataSubmit.append(key, value);
+        }
+      });
 
       const response = await axios.put('/auth/update-profile', formDataSubmit, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      const updatedUser = response.data?.data?.user || { ...adminUser, ...formData };
-      updateUser(updatedUser);
+      console.log('AdminProfile - update response:', response.data);
 
+      // Handle different response structures
+      let updatedUser = null;
+      if (response.data?.user) {
+        updatedUser = response.data.user;
+      } else if (response.data?.data?.user) {
+        updatedUser = response.data.data.user;
+      } else if (response.data?.data) {
+        updatedUser = response.data.data;
+      } else {
+        // Fallback: create updated user from form data
+        updatedUser = {
+          ...adminUser,
+          ...submitData,
+          id: adminUser?.id || 'admin-001',
+          role: adminUser?.role || 'admin'
+        };
+      }
+
+      console.log('AdminProfile - final updated user:', updatedUser);
+      
+      // Update context and localStorage
+      updateUser(updatedUser);
+      
+      // Update form data immediately
       setFormData({
         firstName: updatedUser.firstName || '',
         lastName: updatedUser.lastName || '',
@@ -149,15 +203,17 @@ const handleImageChange = (e) => {
         profileImage: updatedUser.profileImage || ''
       });
 
-      // Clear preview and profile image file after successful update
-      setPreview(null);
-      setProfileImageFile(null);
-
       toast.success('Profile updated successfully!');
       setEditMode(false);
+      
+      // Force a fresh data fetch to confirm persistence
+      setTimeout(() => {
+        fetchFreshUserData();
+      }, 1000);
+      
     } catch (error) {
-      console.error('Error updating profile:', error);
-      toast.error(error.response?.data?.message || 'Error updating profile');
+      console.error('AdminProfile - Error updating profile:', error);
+      toast.error(error.response?.data?.message || 'Failed to update profile');
     } finally {
       setSaving(false);
     }
@@ -177,31 +233,34 @@ const handleImageChange = (e) => {
   };
 
   return (
-    <div className="space-y-4 md:space-y-8">
-      {/* Header */}
-      <div className="bg-white rounded-lg shadow p-3 md:p-5 border border-gray-300 border-b-red-800 border-b-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 md:gap-4 mb-4">
-          <Cog6ToothIcon className="w-12 md:w-20 h-12 md:h-20 text-red-800 transition-transform duration-300 hover:scale-105 shrink-0" />
-          <div className="flex-1">
-            <h2 className="text-3xl md:text-6xl font-bold text-gray-900">Admin Profile</h2>
-            <p className="text-xs md:text-sm text-gray-400 mt-2">
-              Manage your personal information and account settings
-            </p>
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Page Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Admin Profile</h1>
+          <p className="text-gray-600 mt-2">Manage your personal information and account settings</p>
+        </div>
+
+        {/* Loading State */}
+        {loading && (
+          <div className="bg-white shadow rounded-lg p-12 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-800 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading profile data...</p>
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* Profile Card */}
-      <div className="bg-white shadow rounded-lg overflow-hidden">
-        <div className="bg-red-800 px-6 py-4">
-          <h2 className="text-xl font-semibold text-white">Personal Information</h2>
-        </div>
+        {/* Profile Card */}
+        {!loading && (
+          <div className="bg-white shadow rounded-lg overflow-hidden">
+            <div className="bg-red-800 px-6 py-4">
+              <h2 className="text-xl font-semibold text-white">Personal Information</h2>
+            </div>
 
-      <div className="p-8">
-      {/* Profile Image */}
-      <div className="flex items-center gap-8 mb-10">
-        <div className="relative">
-          {formData.profileImage ? (
+            <div className="p-8">
+              {/* Profile Image */}
+              <div className="flex items-center gap-8 mb-10">
+                <div className="relative">
+                  {formData.profileImage ? (
             typeof formData.profileImage === 'object' ? (
               // Newly selected image (file object)
               <img
@@ -404,8 +463,10 @@ const handleImageChange = (e) => {
                 </button>
               </div>
             )}
+            </div>
           </div>
-        </div>
+        )}
+      </div>
     </div>
   );
 }

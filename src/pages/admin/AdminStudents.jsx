@@ -15,6 +15,8 @@ import {
   KeyIcon
 } from "@heroicons/react/24/solid";
 import BulkImportModal from "../../components/modals/BulkImportModal";
+import ConfirmationModal from "../../components/modals/ConfirmationModal";
+import PromptModal from "../../components/modals/PromptModal";
 import { useSchoolYear } from "../../context/SchoolYearContext";
 import { API_BASE_URL } from "../../api/config";
 
@@ -85,6 +87,14 @@ export default function AdminStudents() {
   const [selectAll, setSelectAll] = useState(false);
   const [selectAllK3, setSelectAllK3] = useState(false);
   const [selectAllG4to6, setSelectAllG4to6] = useState(false);
+  
+  // Modal states for replacing alerts
+  const [showStopModal, setShowStopModal] = useState(false);
+  const [studentToStop, setStudentToStop] = useState(null);
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [studentToRestore, setStudentToRestore] = useState(null);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [deleteConfirmMessage, setDeleteConfirmMessage] = useState('');
   const [fetchPrevLoading, setFetchPrevLoading] = useState(false);
   const [showFetchPrevModal, setShowFetchPrevModal] = useState(false);
   const [prevCandidatesLoading, setPrevCandidatesLoading] = useState(false);
@@ -206,12 +216,14 @@ export default function AdminStudents() {
       return;
     }
 
-    const reason = window.prompt('Stop reason (Dropped / LOA / Repeater):', 'Dropped');
-    if (reason === null) return;
+    setStudentToStop(student);
+    setShowStopModal(true);
+  };
 
+  const confirmStopStudent = async (reason) => {
     try {
-      setArchiveSubmittingId(student.id);
-      const response = await fetch(`${API_BASE_URL}/students/${student.id}/archive`, {
+      setArchiveSubmittingId(studentToStop.id);
+      const response = await fetch(`${API_BASE_URL}/students/${studentToStop.id}/archive`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: String(reason || '').trim() || 'Stopped' })
@@ -225,6 +237,8 @@ export default function AdminStudents() {
       toast.success('Student archived successfully.');
       await fetchStudents();
       if (showArchivedModal) await loadArchivedStudents();
+      setShowStopModal(false);
+      setStudentToStop(null);
     } catch (error) {
       toast.error(error.message || 'Failed to archive student');
     } finally {
@@ -233,15 +247,14 @@ export default function AdminStudents() {
   };
 
   const handleRestoreArchivedStudent = async (student) => {
-    const gradeLevel = window.prompt('Re-enroll grade level:', student.gradeLevel || 'Grade 1');
-    if (gradeLevel === null) return;
+    setStudentToRestore(student);
+    setShowRestoreModal(true);
+  };
 
-    const section = window.prompt('Re-enroll section:', student.section || '');
-    if (section === null) return;
-
+  const confirmRestoreStudent = async (gradeLevel, section) => {
     try {
-      setRestoreSubmittingId(student.id);
-      const response = await fetch(`${API_BASE_URL}/students/${student.id}/restore`, {
+      setRestoreSubmittingId(studentToRestore.id);
+      const response = await fetch(`${API_BASE_URL}/students/${studentToRestore.id}/restore`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -259,6 +272,8 @@ export default function AdminStudents() {
       toast.success('Archived student restored successfully.');
       await fetchStudents();
       await loadArchivedStudents();
+      setShowRestoreModal(false);
+      setStudentToRestore(null);
     } catch (error) {
       toast.error(error.message || 'Failed to restore student');
     } finally {
@@ -827,10 +842,14 @@ export default function AdminStudents() {
       return;
     }
 
-    if (!window.confirm(`Are you sure you want to delete ${allSelectedStudents.size} student(s)? This action cannot be undone.`)) {
-      return;
-    }
+    setDeleteConfirmMessage(`Are you sure you want to delete ${allSelectedStudents.size} student(s)? This action cannot be undone.`);
+    setShowDeleteConfirmModal(true);
+  };
 
+  const confirmBulkDelete = async () => {
+    // Combine all selected students from both tables
+    const allSelectedStudents = new Set([...selectedK3Students, ...selectedG4to6Students]);
+    
     try {
       let successCount = 0;
       for (const studentId of allSelectedStudents) {
@@ -849,9 +868,10 @@ export default function AdminStudents() {
       setSelectAllG4to6(false);
       setSelectAll(false);
       fetchStudents();
+      setShowDeleteConfirmModal(false);
+      setDeleteConfirmMessage('');
     } catch (error) {
       toast.error('Error deleting students: ' + error.message);
-      toast.error('Error deleting students');
     }
   };
 
@@ -1988,6 +2008,63 @@ export default function AdminStudents() {
         onSuccess={() => {
           fetchStudents(); // Refresh the students list
         }}
+      />
+
+      {/* Stop Reason Modal */}
+      <PromptModal
+        isOpen={showStopModal}
+        onClose={() => {
+          setShowStopModal(false);
+          setStudentToStop(null);
+        }}
+        onSubmit={confirmStopStudent}
+        title="Stop Student"
+        message="Please enter the reason for stopping this student:"
+        placeholder="Dropped / LOA / Repeater"
+        defaultValue="Dropped"
+        submitText="Stop Student"
+        cancelText="Cancel"
+        type="select"
+        options={['Dropped', 'LOA', 'Repeater']}
+      />
+
+      {/* Restore Student Modal */}
+      <PromptModal
+        isOpen={showRestoreModal}
+        onClose={() => {
+          setShowRestoreModal(false);
+          setStudentToRestore(null);
+        }}
+        onSubmit={(gradeLevel) => {
+          // For restore, we need both grade level and section
+          // We'll use a two-step process or create a custom modal
+          const section = prompt('Enter section:', studentToRestore?.section || '');
+          if (section !== null) {
+            confirmRestoreStudent(gradeLevel, section);
+          }
+        }}
+        title="Restore Student"
+        message="Please enter the grade level for re-enrollment:"
+        placeholder="Grade 1"
+        defaultValue={studentToRestore?.gradeLevel || 'Grade 1'}
+        submitText="Next"
+        cancelText="Cancel"
+        type="grade"
+      />
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showDeleteConfirmModal}
+        onClose={() => {
+          setShowDeleteConfirmModal(false);
+          setDeleteConfirmMessage('');
+        }}
+        onConfirm={confirmBulkDelete}
+        title="Delete Students"
+        message={deleteConfirmMessage}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
       />
     </div>
   );

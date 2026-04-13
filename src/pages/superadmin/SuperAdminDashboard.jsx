@@ -47,6 +47,35 @@ export default function SuperAdminDashboard() {
     loadAccountsData();
     fetchSuperAdminUser();
     fetchActiveSchoolYear();
+    
+    // Set up real-time updates every 15 seconds for better responsiveness
+    const interval = setInterval(() => {
+      loadAccountsData();
+    }, 15000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  // Add visibility change listener to refresh when tab becomes active
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        loadAccountsData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  // Add window focus listener to refresh when window gains focus
+  useEffect(() => {
+    const handleFocus = () => {
+      loadAccountsData();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
   const fetchActiveSchoolYear = async () => {
@@ -161,6 +190,13 @@ export default function SuperAdminDashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Manual refresh function
+  const handleManualRefresh = async () => {
+    toast.info('Refreshing dashboard data...');
+    await loadAccountsData();
+    toast.success('Dashboard data refreshed!');
   };
 
   const handleEditAccount = (account, type) => {

@@ -51,6 +51,19 @@ export default function AdminDashboard() {
   const [activeSchoolYear, setActiveSchoolYear] = useState(null);
   const [schoolYears, setSchoolYears] = useState([]);
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState('');
+  
+  // Student Performance State
+  const [gradeLevels, setGradeLevels] = useState([]);
+  const [sectionsForTop, setSectionsForTop] = useState([]);
+  const [sectionsForBottom, setSectionsForBottom] = useState([]);
+  const [selectedGradeLevelForTop, setSelectedGradeLevelForTop] = useState('');
+  const [selectedSectionForTop, setSelectedSectionForTop] = useState('');
+  const [selectedGradeLevelForBottom, setSelectedGradeLevelForBottom] = useState('');
+  const [selectedSectionForBottom, setSelectedSectionForBottom] = useState('');
+  const [topStudents, setTopStudents] = useState([]);
+  const [bottomStudents, setBottomStudents] = useState([]);
+  const [loadingTopStudents, setLoadingTopStudents] = useState(false);
+  const [loadingBottomStudents, setLoadingBottomStudents] = useState(false);
   const navigate = useNavigate();
 
   const formatSchoolYearLabel = (label = '') => {
@@ -98,25 +111,71 @@ export default function AdminDashboard() {
 
     fetchAdminUser();
     
-    // Set up real-time updates every 30 seconds
+    // Set up real-time updates every 15 seconds for better responsiveness
     const interval = setInterval(() => {
       loadDashboardStats();
-    }, 30000);
+    }, 15000);
     
     return () => clearInterval(interval);
   }, []);
 
+  // Add visibility change listener to refresh when tab becomes active
   useEffect(() => {
-    if (selectedSchoolYearId) {
-      loadDashboardStats(selectedSchoolYearId);
-    }
-  }, [selectedSchoolYearId]);
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        loadDashboardStats();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   useEffect(() => {
     if (viewingSchoolYear?.id) {
       setSelectedSchoolYearId(String(viewingSchoolYear.id));
     }
   }, [viewingSchoolYear?.id]);
+
+  // Initialize grade levels and sections
+  useEffect(() => {
+    fetchGradeLevelsAndSections();
+  }, [selectedSchoolYearId]);
+
+  // Update sections when grade level changes for top students
+  useEffect(() => {
+    if (selectedGradeLevelForTop) {
+      fetchGradeLevelsAndSections();
+    } else {
+      setSectionsForTop([]);
+    }
+    fetchTopStudents();
+  }, [selectedGradeLevelForTop, selectedSectionForTop, selectedSchoolYearId]);
+
+  // Update sections when grade level changes for bottom students
+  useEffect(() => {
+    if (selectedGradeLevelForBottom) {
+      fetchGradeLevelsAndSections();
+    } else {
+      setSectionsForBottom([]);
+    }
+    fetchBottomStudents();
+  }, [selectedGradeLevelForBottom, selectedSectionForBottom, selectedSchoolYearId]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      loadDashboardStats();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [selectedSchoolYearId]);
+
+  useEffect(() => {
+    if (selectedSchoolYearId) {
+      loadDashboardStats(selectedSchoolYearId);
+    }
+  }, [selectedSchoolYearId]);
 
   const fetchSchoolYears = async () => {
     try {
@@ -135,6 +194,126 @@ export default function AdminDashboard() {
     }
   };
 
+  // Fetch grade levels and sections
+  const fetchGradeLevelsAndSections = async () => {
+    try {
+      const response = await axios.get('/students', {
+        params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}
+      });
+      
+      const students = response.data?.data || [];
+      
+      // Extract unique grade levels
+      const uniqueGradeLevels = [...new Set(students.map(s => s.gradeLevel).filter(Boolean))];
+      setGradeLevels(uniqueGradeLevels.sort());
+      
+      // Extract sections for each grade level
+      if (selectedGradeLevelForTop) {
+        const sectionsForSelectedGrade = [...new Set(
+          students
+            .filter(s => s.gradeLevel === selectedGradeLevelForTop)
+            .map(s => s.section)
+            .filter(Boolean)
+        )].sort();
+        setSectionsForTop(sectionsForSelectedGrade);
+      }
+      
+      if (selectedGradeLevelForBottom) {
+        const sectionsForSelectedGrade = [...new Set(
+          students
+            .filter(s => s.gradeLevel === selectedGradeLevelForBottom)
+            .map(s => s.section)
+            .filter(Boolean)
+        )].sort();
+        setSectionsForBottom(sectionsForSelectedGrade);
+      }
+    } catch (error) {
+      console.error('Error fetching grade levels and sections:', error);
+    }
+  };
+
+  // Fetch top performing students
+  const fetchTopStudents = async () => {
+    setLoadingTopStudents(true);
+    try {
+      const params = {
+        limit: 5,
+        sortBy: 'average',
+        sortOrder: 'desc'
+      };
+      
+      if (selectedSchoolYearId) {
+        params.schoolYearId = selectedSchoolYearId;
+      }
+      
+      if (selectedGradeLevelForTop) {
+        params.gradeLevel = selectedGradeLevelForTop;
+      }
+      
+      if (selectedSectionForTop) {
+        params.section = selectedSectionForTop;
+      }
+      
+      const response = await axios.get('/students/ranking', { params });
+      
+      const topStudentsData = response.data?.data || [];
+      const formattedTopStudents = topStudentsData.map((student, index) => ({
+        id: student.id,
+        name: `${student.lastName}, ${student.firstName}`,
+        avg: student.average || student.avg || 0,
+        rank: index + 1
+      }));
+      
+      setTopStudents(formattedTopStudents);
+    } catch (error) {
+      console.error('Error fetching top students:', error);
+      setTopStudents([]);
+    } finally {
+      setLoadingTopStudents(false);
+    }
+  };
+
+  // Fetch bottom performing students
+  const fetchBottomStudents = async () => {
+    setLoadingBottomStudents(true);
+    try {
+      const params = {
+        limit: 5,
+        sortBy: 'average',
+        sortOrder: 'asc'
+      };
+      
+      if (selectedSchoolYearId) {
+        params.schoolYearId = selectedSchoolYearId;
+      }
+      
+      if (selectedGradeLevelForBottom) {
+        params.gradeLevel = selectedGradeLevelForBottom;
+      }
+      
+      if (selectedSectionForBottom) {
+        params.section = selectedSectionForBottom;
+      }
+      
+      const response = await axios.get('/students/ranking', { params });
+      
+      const bottomStudentsData = response.data?.data || [];
+      const formattedBottomStudents = bottomStudentsData.map((student, index) => ({
+        id: student.id,
+        name: `${student.lastName}, ${student.firstName}`,
+        avg: student.average || student.avg || 0,
+        rank: index + 1
+      }));
+      
+      setBottomStudents(formattedBottomStudents);
+    } catch (error) {
+      console.error('Error fetching bottom students:', error);
+      setBottomStudents([]);
+    } finally {
+      setLoadingBottomStudents(false);
+    }
+  };
+
   // Function to add real-time activity
   const logActivity = (type, title, subtitle, color = 'blue') => {
     const newActivity = {
@@ -147,6 +326,13 @@ export default function AdminDashboard() {
     
     setActivityLog(prev => [newActivity, ...prev].slice(0, 50)); // Keep last 50 activities
     setRecentActivity(prev => [newActivity, ...prev].slice(0, 3)); // Show latest 3 in dashboard
+  };
+
+  // Manual refresh function
+  const handleManualRefresh = async () => {
+    toast.info('Refreshing dashboard data...');
+    await loadDashboardStats();
+    toast.success('Dashboard data refreshed!');
   };
 
 const loadDashboardStats = async (overrideSyId) => {
@@ -738,35 +924,112 @@ const loadDashboardStats = async (overrideSyId) => {
                 </div>
               </div>
 
-              {/* Pending Approvals Section */}
+              {/* Student Performance Section */}
               <div className="mt-6">
-                <h3 className="text-lg font-semibold mb-3">Pending Approvals</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                    <h4 className="font-medium text-orange-800">Pending Teachers</h4>
-                    <p className="text-2xl font-bold text-orange-600">{loading ? '...' : pendingApprovals.pendingTeachers}</p>
-                    <button 
-                      onClick={() => {
-                        logActivity('navigation', 'Section Change', 'Navigated to admin teachers', 'orange');
-                        navigate("/admin/admin-teachers");
-                      }}
-                      className="mt-2 text-sm text-orange-700 hover:text-orange-900"
-                    >
-                      Review Now 
-                    </button>
+                <h3 className="text-lg font-semibold mb-3">Student Performance</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Top Performing Students */}
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-medium text-green-800">Top Performing Students</h4>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={selectedGradeLevelForTop}
+                          onChange={(e) => {
+                            setSelectedGradeLevelForTop(e.target.value);
+                            setSelectedSectionForTop('');
+                          }}
+                          className="text-sm border border-gray-300 rounded px-2 py-1"
+                        >
+                          <option value="">All Grade Levels</option>
+                          {gradeLevels.map(grade => (
+                            <option key={grade} value={grade}>{grade}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={selectedSectionForTop}
+                          onChange={(e) => setSelectedSectionForTop(e.target.value)}
+                          className="text-sm border border-gray-300 rounded px-2 py-1"
+                          disabled={!selectedGradeLevelForTop}
+                        >
+                          <option value="">All Sections</option>
+                          {sectionsForTop.map(section => (
+                            <option key={section} value={section}>{section}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    {loadingTopStudents ? (
+                      <div className="flex items-center justify-center py-4">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
+                      </div>
+                    ) : topStudents.length === 0 ? (
+                      <p className="text-center text-gray-500 py-4">No students found</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {topStudents.slice(0, 5).map((student, index) => (
+                          <div key={student.id} className="flex items-center justify-between p-2 bg-white rounded border border-green-100">
+                            <div className="flex items-center gap-2">
+                              <span className="text-green-600 font-bold text-sm">#{index + 1}</span>
+                              <span className="text-sm font-medium">{student.name}</span>
+                            </div>
+                            <span className="text-sm font-bold text-green-700">{student.avg}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <h4 className="font-medium text-blue-800">Pending Students</h4>
-                    <p className="text-2xl font-bold text-blue-600">{loading ? '...' : pendingApprovals.pendingStudents}</p>
-                    <button 
-                      onClick={() => {
-                        logActivity('navigation', 'Section Change', 'Navigated to admin students', 'blue');
-                        navigate("/admin/admin-students");
-                      }}
-                      className="mt-2 text-sm text-blue-700 hover:text-blue-900"
-                    >
-                      Review Now 
-                    </button>
+
+                  {/* Bottom Performing Students */}
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-medium text-red-800">Bottom Performing Students</h4>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={selectedGradeLevelForBottom}
+                          onChange={(e) => {
+                            setSelectedGradeLevelForBottom(e.target.value);
+                            setSelectedSectionForBottom('');
+                          }}
+                          className="text-sm border border-gray-300 rounded px-2 py-1"
+                        >
+                          <option value="">All Grade Levels</option>
+                          {gradeLevels.map(grade => (
+                            <option key={grade} value={grade}>{grade}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={selectedSectionForBottom}
+                          onChange={(e) => setSelectedSectionForBottom(e.target.value)}
+                          className="text-sm border border-gray-300 rounded px-2 py-1"
+                          disabled={!selectedGradeLevelForBottom}
+                        >
+                          <option value="">All Sections</option>
+                          {sectionsForBottom.map(section => (
+                            <option key={section} value={section}>{section}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    {loadingBottomStudents ? (
+                      <div className="flex items-center justify-center py-4">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-red-600"></div>
+                      </div>
+                    ) : bottomStudents.length === 0 ? (
+                      <p className="text-center text-gray-500 py-4">No students found</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {bottomStudents.slice(0, 5).map((student, index) => (
+                          <div key={student.id} className="flex items-center justify-between p-2 bg-white rounded border border-red-100">
+                            <div className="flex items-center gap-2">
+                              <span className="text-red-600 font-bold text-sm">#{index + 1}</span>
+                              <span className="text-sm font-medium">{student.name}</span>
+                            </div>
+                            <span className="text-sm font-bold text-red-700">{student.avg}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

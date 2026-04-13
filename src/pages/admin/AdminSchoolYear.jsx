@@ -17,6 +17,7 @@ import { toast } from 'react-toastify';
 import axios from "../../api/axiosConfig";
 import { useSchoolYear } from "../../context/SchoolYearContext";
 import GradesReportCard from "../../components/GradesReportCard";
+import ConfirmationModal from "../../components/modals/ConfirmationModal";
 import {
   BarChart,
   Bar,
@@ -56,6 +57,10 @@ export default function AdminSchoolYear() {
   const [promotionStudentSearch, setPromotionStudentSearch] = useState('');
   const [historyGradeFilter, setHistoryGradeFilter] = useState('All Grades');
   const [historySectionFilter, setHistorySectionFilter] = useState('All Sections');
+  
+  // Delete confirmation modal state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [schoolYearToDelete, setSchoolYearToDelete] = useState(null);
   const [historyStudentNameFilter, setHistoryStudentNameFilter] = useState('');
   const [showPromotionHistory, setShowPromotionHistory] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -249,11 +254,17 @@ export default function AdminSchoolYear() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this school year permanently?')) return;
+    setSchoolYearToDelete(id);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
     try {
-      await axios.delete(`/school-years/${id}`);
+      await axios.delete(`/school-years/${schoolYearToDelete}`);
       toast.success('School year deleted permanently.');
       loadData();
+      setShowDeleteModal(false);
+      setSchoolYearToDelete(null);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to delete school year');
     }
@@ -1603,6 +1614,21 @@ export default function AdminSchoolYear() {
           }}
         />
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={() => {
+          setShowDeleteModal(false);
+          setSchoolYearToDelete(null);
+        }}
+        onConfirm={confirmDelete}
+        title="Delete School Year"
+        message="Are you sure you want to delete this school year permanently? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+      />
     </div>
   );
 }

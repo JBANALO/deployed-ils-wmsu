@@ -8,6 +8,7 @@ import {
 import axios from "../../api/axiosConfig";
 import { toast } from 'react-toastify';
 import { UserContext } from "../../context/UserContext";
+import notificationService from "../../services/notificationService";
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -42,37 +43,155 @@ export default function SuperAdminTopbar() {
   const handleStudents = () => navigate("/admin/admin-students");
   const handleAdminProfile = () => navigate("/admin/super-profile");
 
-  // Add a notification
-  const addNotification = (type, title, message, data = {}) => {
-    const newNotification = {
-      id: Date.now() + Math.random(),
-      type,
-      title,
-      message,
-      timestamp: new Date().toISOString(),
-      read: false,
-      ...data
-    };
-    setNotifications(prev => [newNotification, ...prev]);
-    setUnreadCount(prev => prev + 1);
-  };
+  // Initialize notifications
+  useEffect(() => {
+    if (adminUser?.id) {
+      const userId = `super_admin_${adminUser.id}`;
+      
+      // Initialize notification service
+      notificationService.initialize(userId, 'super_admin').then(({ items, unread }) => {
+        setNotifications(items);
+        setUnreadCount(unread);
+      });
+      
+      // Add listener for real-time updates
+      const handleNotificationUpdate = (updatedNotifications) => {
+        setNotifications(updatedNotifications);
+        const unread = updatedNotifications.filter(n => !n.is_read).length;
+        setUnreadCount(unread);
+      };
+      
+      notificationService.addListener(userId, handleNotificationUpdate);
+      
+      return () => {
+        notificationService.removeListener(userId, handleNotificationUpdate);
+        notificationService.cleanup(userId);
+      };
+    }
+  }, [adminUser?.id]);
 
   // Mark notification as read
-  const markAsRead = (id) => {
-    setNotifications(prev => 
-      prev.map(notif => 
-        notif.id === id ? { ...notif, read: true } : notif
-      )
-    );
-    setUnreadCount(prev => Math.max(0, prev - 1));
+  const markAsRead = async (id) => {
+    if (adminUser?.id) {
+      const userId = `super_admin_${adminUser.id}`;
+      const success = await notificationService.markAsRead(userId, id);
+      if (success) {
+        const updated = notificationService.getNotifications(userId);
+        setNotifications(updated);
+        setUnreadCount(notificationService.getUnreadCount(userId));
+      }
+    }
   };
 
   // Mark all as read
-  const markAllAsRead = () => {
-    setNotifications(prev => 
-      prev.map(notif => ({ ...notif, read: true }))
-    );
-    setUnreadCount(0);
+  const markAllAsRead = async () => {
+    if (adminUser?.id) {
+      const userId = `super_admin_${adminUser.id}`;
+      const success = await notificationService.markAllAsRead(userId);
+      if (success) {
+        setUnreadCount(0);
+      }
+    }
+  };
+
+  // Helper functions for notification display
+  const getPriorityBackground = (priority) => {
+    switch (priority) {
+      case 'critical': return 'bg-red-50';
+      case 'important': return 'bg-orange-50';
+      case 'info': return 'bg-blue-50';
+      default: return 'bg-gray-50';
+    }
+  };
+
+  const getPriorityTextColor = (priority) => {
+    switch (priority) {
+      case 'critical': return 'text-red-800';
+      case 'important': return 'text-orange-800';
+      case 'info': return 'text-blue-800';
+      default: return 'text-gray-900';
+    }
+  };
+
+  const getPriorityDotColor = (priority) => {
+    switch (priority) {
+      case 'critical': return 'bg-red-600';
+      case 'important': return 'bg-orange-600';
+      case 'info': return 'bg-blue-600';
+      default: return 'bg-gray-600';
+    }
+  };
+
+  const getPriorityBadge = (priority) => {
+    switch (priority) {
+      case 'critical':
+        return <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full font-medium">Critical</span>;
+      case 'important':
+        return <span className="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded-full font-medium">Important</span>;
+      case 'info':
+        return <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium">Info</span>;
+      default:
+        return null;
+    }
+  };
+
+  const getNotificationIcon = (notification) => {
+    const { type, category, priority } = notification;
+    
+    // Priority-based icons
+    if (priority === 'critical') {
+      return <ExclamationTriangleIcon className="w-4 h-4 text-red-600" />;
+    }
+    
+    // Category-based icons
+    switch (category) {
+      case 'security':
+        return <ExclamationTriangleIcon className="w-4 h-4 text-red-600" />;
+      case 'system':
+        return <Cog6ToothIcon className="w-4 h-4 text-purple-600" />;
+      case 'account':
+        return <UserPlusIcon className="w-4 h-4 text-blue-600" />;
+      case 'grade':
+        return <CheckCircleIcon className="w-4 h-4 text-green-600" />;
+      case 'attendance':
+        return <CheckCircleIcon className="w-4 h-4 text-green-600" />;
+      default:
+        return <CheckCircleIcon className="w-4 h-4 text-gray-600" />;
+    }
+  };
+
+  const handleNotificationAction = (notification) => {
+    const { category, type, data } = notification;
+    
+    switch (category) {
+      case 'account':
+        if (type === 'admin_registration') {
+          navigate('/admin/admin-teachers');
+        } else if (type === 'teacher_registration') {
+          navigate('/admin/admin-teachers');
+        } else if (type === 'student_registration') {
+          navigate('/admin/admin-students');
+        }
+        break;
+      case 'security':
+        if (type === 'password_change') {
+          navigate('/admin/super-profile');
+        } else if (type === 'failed_login') {
+          navigate('/admin/admin-teachers');
+        }
+        break;
+      case 'system':
+        navigate('/admin/super-admin');
+        break;
+      case 'grade':
+        navigate('/admin/admin-grades');
+        break;
+      case 'attendance':
+        navigate('/admin/admin-attendance');
+        break;
+      default:
+        break;
+    }
   };
 
   // Click outside handlers
@@ -125,20 +244,7 @@ export default function SuperAdminTopbar() {
     }
   };
 
-  const getNotificationIcon = (type) => {
-    switch (type) {
-      case 'success':
-        return <CheckCircleIcon className="w-5 h-5 text-green-500" />;
-      case 'error':
-        return <XCircleIcon className="w-5 h-5 text-red-500" />;
-      case 'warning':
-        return <ExclamationTriangleIcon className="w-5 h-5 text-yellow-500" />;
-      case 'info':
-      default:
-        return <UserPlusIcon className="w-5 h-5 text-blue-500" />;
-    }
-  };
-
+  
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
     const now = new Date();
@@ -201,48 +307,40 @@ export default function SuperAdminTopbar() {
                       <div
                         key={notification.id}
                         className={`px-4 py-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${
-                          !notification.read ? 'bg-blue-50' : ''
+                          !notification.is_read ? getPriorityBackground(notification.priority) : ''
                         }`}
                         onClick={() => {
                           markAsRead(notification.id);
-                          // Handle notification action
-                          if (notification.data?.action === 'approve') {
-                            navigate(notification.data.userType === 'teacher' ? '/admin/admin-teachers' : '/admin/admin-students');
-                          } else if (notification.data?.action === 'verify') {
-                            // Navigate to login verification page
-                            navigate('/admin/login-verification');
-                          }
+                          // Handle notification action based on category
+                          handleNotificationAction(notification);
                           setShowNotifications(false);
                         }}
                       >
                         <div className="flex items-start gap-3">
                           <div className="shrink-0 mt-1">
-                            {notification.type === 'account_approval' && (
-                              <UserPlusIcon className="w-4 h-4 text-blue-600" />
-                            )}
-                            {notification.type === 'login_attempt' && (
-                              <ExclamationTriangleIcon className="w-4 h-4 text-orange-600" />
-                            )}
-                            {notification.type === 'account_approved' && (
-                              <CheckCircleIcon className="w-4 h-4 text-green-600" />
-                            )}
-                            {notification.type === 'account_declined' && (
-                              <XCircleIcon className="w-4 h-4 text-red-600" />
-                            )}
+                            {getNotificationIcon(notification)}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900">
-                              {notification.title}
-                            </p>
+                            <div className="flex items-center justify-between">
+                              <p className={`text-sm font-medium ${getPriorityTextColor(notification.priority)}`}>
+                                {notification.title}
+                                {notification.count > 1 && (
+                                  <span className="ml-2 text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded-full">
+                                    {notification.count}
+                                  </span>
+                                )}
+                              </p>
+                              {getPriorityBadge(notification.priority)}
+                            </div>
                             <p className="text-xs text-gray-600 mt-1">
                               {notification.message}
                             </p>
                             <p className="text-xs text-gray-400 mt-1">
-                              {new Date(notification.timestamp).toLocaleTimeString()}
+                              {new Date(notification.latestTimestamp || notification.timestamp).toLocaleString()}
                             </p>
                           </div>
-                          {!notification.read && (
-                            <div className="w-2 h-2 bg-blue-600 rounded-full shrink-0 mt-2"></div>
+                          {!notification.is_read && (
+                            <div className={`w-2 h-2 rounded-full shrink-0 mt-2 ${getPriorityDotColor(notification.priority)}`}></div>
                           )}
                         </div>
                       </div>

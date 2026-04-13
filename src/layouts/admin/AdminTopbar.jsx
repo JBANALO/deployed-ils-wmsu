@@ -3,11 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { 
   BellIcon, UserCircleIcon, ChevronDownIcon, 
   CheckCircleIcon, XCircleIcon, UserPlusIcon, ExclamationTriangleIcon,
-  QuestionMarkCircleIcon, ArrowLeftIcon
+  QuestionMarkCircleIcon, ArrowLeftIcon, Cog6ToothIcon
 } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
 import { toast } from 'react-toastify';
 import { UserContext } from "../../context/UserContext";
+import notificationService from "../../services/notificationService";
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -56,93 +57,56 @@ export default function AdminTopbar() {
   const effectiveRole = normalizeRole(adminUser?.role || localUserRole);
   const isSuperAdminView = effectiveRole === 'super_admin' || effectiveRole === 'superadmin';
 
-  // Add a notification
-  const addNotification = (type, title, message, data = {}) => {
-    const newNotification = {
-      id: Date.now() + Math.random(),
-      type,
-      title,
-      message,
-      timestamp: new Date().toISOString(),
-      read: false,
-      ...data
-    };
-    setNotifications(prev => [newNotification, ...prev].slice(0, 50));
-    setUnreadCount(prev => prev + 1);
+  // Initialize notifications
+  useEffect(() => {
+    if (adminUser?.id) {
+      const userId = `admin_${adminUser.id}`;
+      
+      // Initialize notification service
+      notificationService.initialize(userId, 'admin').then(({ items, unread }) => {
+        setNotifications(items);
+        setUnreadCount(unread);
+      });
+      
+      // Add listener for real-time updates
+      const handleNotificationUpdate = (updatedNotifications) => {
+        setNotifications(updatedNotifications);
+        const unread = updatedNotifications.filter(n => !n.is_read).length;
+        setUnreadCount(unread);
+      };
+      
+      notificationService.addListener(userId, handleNotificationUpdate);
+      
+      return () => {
+        notificationService.removeListener(userId, handleNotificationUpdate);
+        notificationService.cleanup(userId);
+      };
+    }
+  }, [adminUser?.id]);
 
-    if (type === 'login_attempt' || type === 'account_approval') {
-      toast.info(`${title}: ${message}`, { position: 'top-right', autoClose: 5000 });
+  // Mark notification as read
+  const markAsRead = async (notificationId) => {
+    if (adminUser?.id) {
+      const userId = `admin_${adminUser.id}`;
+      const success = await notificationService.markAsRead(userId, notificationId);
+      if (success) {
+        const updated = notificationService.getNotifications(userId);
+        setNotifications(updated);
+        setUnreadCount(notificationService.getUnreadCount(userId));
+      }
     }
   };
 
-  const markAsRead = (notificationId) => {
-    setNotifications(prev => 
-      prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
-    );
-    setUnreadCount(prev => Math.max(0, prev - 1));
-  };
-
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-    setUnreadCount(0);
-  };
-
-  // Fetch pending approvals & login attempts
-  useEffect(() => {
-    const fetchNotifications = async () => {
-      try {
-        const [teachersRes, studentsRes, loginRes] = await Promise.all([
-          axios.get('/users/pending-teachers'),
-          axios.get('/users/pending-students'),
-          axios.get('/admin/recent-login-attempts').catch(() => ({ data: { attempts: [] } }))
-        ]);
-
-        const pendingTeachers = teachersRes.data?.data?.teachers || [];
-        const pendingStudents = studentsRes.data?.data?.students || [];
-        const loginAttempts = loginRes.data?.attempts || [];
-
-        pendingTeachers.forEach(t => {
-          if (!notifications.find(n => n.type === 'account_approval' && n.data?.userId === t.id)) {
-            addNotification(
-              'account_approval',
-              'New Teacher Registration',
-              `${t.firstName} ${t.lastName} is awaiting approval`,
-              { userId: t.id, userType: 'teacher', action: 'approve' }
-            );
-          }
-        });
-
-        pendingStudents.forEach(s => {
-          if (!notifications.find(n => n.type === 'account_approval' && n.data?.userId === s.id)) {
-            addNotification(
-              'account_approval',
-              'New Student Registration',
-              `${s.firstName} ${s.lastName} is awaiting approval`,
-              { userId: s.id, userType: 'student', action: 'approve' }
-            );
-          }
-        });
-
-        loginAttempts.forEach(a => {
-          if (!notifications.find(n => n.type === 'login_attempt' && n.data?.attemptId === a.id) && a.status === 'pending_verification') {
-            addNotification(
-              'login_attempt',
-              'Login Verification Required',
-              `${a.email} is attempting to log in - verification needed`,
-              { attemptId: a.id, email: a.email, action: 'verify' }
-            );
-          }
-        });
-
-      } catch (err) {
-        console.error('Error fetching notifications:', err);
+  // Mark all as read
+  const markAllAsRead = async () => {
+    if (adminUser?.id) {
+      const userId = `admin_${adminUser.id}`;
+      const success = await notificationService.markAllAsRead(userId);
+      if (success) {
+        setUnreadCount(0);
       }
-    };
-
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60000); // every 1 minute to reduce spam
-    return () => clearInterval(interval);
-  }, []);
+    }
+  };
 
   // Click outside to close dropdowns
   useEffect(() => {
