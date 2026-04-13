@@ -715,13 +715,19 @@ exports.updateProfile = async (req, res) => {
 // Change password
 exports.changePassword = async (req, res) => {
   try {
+    console.log('🔍 Change password request received');
+    console.log('🔍 Request body:', { currentPassword: req.body.currentPassword ? '***' : 'No', newPassword: req.body.newPassword ? '***' : 'No' });
+    console.log('🔍 User from token:', req.user);
+    
     const { currentPassword, newPassword } = req.body;
     const userId = req.user.id;
 
-    if (!currentPassword || !newPassword) {
+    console.log('🔍 User ID:', userId);
+
+    if (!newPassword) {
       return res.status(400).json({
         status: 'fail',
-        message: 'Please provide current password and new password',
+        message: 'Please provide new password',
       });
     }
 
@@ -732,8 +738,18 @@ exports.changePassword = async (req, res) => {
       });
     }
 
-    // Get user from database
-    const users = await query('SELECT * FROM users WHERE id = ?', [userId]);
+    // Get user from database - check both users and teachers tables
+    let users = await query('SELECT * FROM users WHERE id = ?', [userId]);
+    let user = null;
+    let tableName = 'users';
+
+    if (users.length === 0) {
+      users = await query('SELECT * FROM teachers WHERE id = ?', [userId]);
+      if (users.length > 0) {
+        tableName = 'teachers';
+      }
+    }
+
     if (users.length === 0) {
       return res.status(404).json({
         status: 'fail',
@@ -741,22 +757,25 @@ exports.changePassword = async (req, res) => {
       });
     }
 
-    const user = users[0];
+    user = users[0];
 
-    // Check if current password is correct
-    const isCurrentPasswordCorrect = await bcrypt.compare(currentPassword, user.password);
-    if (!isCurrentPasswordCorrect) {
-      return res.status(401).json({
-        status: 'fail',
-        message: 'Current password is incorrect',
-      });
+    // Check if current password is correct (only if provided)
+    if (currentPassword) {
+      const isCurrentPasswordCorrect = await bcrypt.compare(currentPassword, user.password);
+
+      if (!isCurrentPasswordCorrect) {
+        return res.status(401).json({
+          status: 'fail',
+          message: 'Current password is incorrect',
+        });
+      }
     }
 
     // Hash new password
     const hashedPassword = await bcrypt.hash(newPassword, 12);
 
     // Update password in database
-    await query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, userId]);
+    await query(`UPDATE ${tableName} SET password = ? WHERE id = ?`, [hashedPassword, userId]);
 
     res.status(200).json({
       status: 'success',

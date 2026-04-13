@@ -14,10 +14,13 @@ export default function TeacherTopbar({ sidebarOpen }) {
   const [passwordData, setPasswordData] = useState({
     newPassword: "",
     confirmPassword: "",
+    verificationCode: "",
   });
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isSendingPasswordVerification, setIsSendingPasswordVerification] = useState(false);
+  const [passwordVerificationSent, setPasswordVerificationSent] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailData, setEmailData] = useState({
     newEmail: "",
@@ -147,33 +150,124 @@ export default function TeacherTopbar({ sidebarOpen }) {
   const handlePasswordChange = async (e) => {
     e.preventDefault();
 
+    if (!passwordVerificationSent) {
+      setErrorMessage('Please send verification first');
+      setShowErrorModal(true);
+      return;
+    }
+
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       setErrorMessage('Passwords do not match');
       setShowErrorModal(true);
       return;
     }
 
-    if (passwordData.newPassword.length < 6) {
-      setErrorMessage('Password must be at least 6 characters long');
+    if (!passwordData.newPassword || passwordData.newPassword.length < 8) {
+      setErrorMessage('Password must be at least 8 characters long');
+      setShowErrorModal(true);
+      return;
+    }
+
+    if (!passwordData.verificationCode) {
+      setErrorMessage('Please enter the verification code');
+      setShowErrorModal(true);
+      return;
+    }
+
+    // Get current user email from localStorage
+    const userStr = localStorage.getItem('user');
+    if (!userStr) {
+      setErrorMessage('User not found. Please log in again.');
+      setShowErrorModal(true);
+      return;
+    }
+
+    const user = JSON.parse(userStr);
+    const email = user.email || user.student_email;
+
+    if (!email) {
+      setErrorMessage('Email not found in your profile.');
       setShowErrorModal(true);
       return;
     }
 
     setIsChangingPassword(true);
     try {
-      await api.put('/teacher/password', { 
-        newPassword: passwordData.newPassword 
+      // Verify the code first
+      const verifyResponse = await api.post('/auth/verify-code', {
+        email,
+        code: passwordData.verificationCode
       });
+
+      if (verifyResponse.data.message !== 'Verification successful') {
+        setErrorMessage(verifyResponse.data.message || 'Invalid or expired verification code');
+        setShowErrorModal(true);
+        return;
+      }
+
+      // Change password
+      await api.put('/auth/change-password', {
+        newPassword: passwordData.newPassword
+      });
+
       setErrorMessage('Password changed successfully!');
       setShowErrorModal(true);
       setShowPasswordModal(false);
-      setPasswordData({ newPassword: '', confirmPassword: '' });
+      setPasswordData({ newPassword: '', confirmPassword: '', verificationCode: '' });
+      setPasswordVerificationSent(false);
     } catch (error) {
       console.error('Error changing password:', error);
       setErrorMessage(error.response?.data?.message || 'Failed to change password');
       setShowErrorModal(true);
     } finally {
       setIsChangingPassword(false);
+    }
+  };
+
+  const handleSendPasswordVerification = async () => {
+    // Get current user email from localStorage
+    const userStr = localStorage.getItem('user');
+    if (!userStr) {
+      setErrorMessage('User not found. Please log in again.');
+      setShowErrorModal(true);
+      return;
+    }
+
+    const user = JSON.parse(userStr);
+    const email = user.email || user.student_email;
+
+    if (!email) {
+      setErrorMessage('Email not found in your profile.');
+      setShowErrorModal(true);
+      return;
+    }
+
+    if (!passwordData.newPassword || passwordData.newPassword.length < 8) {
+      setErrorMessage('Please enter a new password (at least 8 characters)');
+      setShowErrorModal(true);
+      return;
+    }
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setErrorMessage('Passwords do not match');
+      setShowErrorModal(true);
+      return;
+    }
+
+    setIsSendingPasswordVerification(true);
+    try {
+      await api.post('/auth/send-verification', {
+        email
+      });
+      setErrorMessage('Verification email sent successfully!');
+      setShowErrorModal(true);
+      setPasswordVerificationSent(true);
+    } catch (error) {
+      console.error('Error sending verification:', error);
+      setErrorMessage(error.response?.data?.message || 'Failed to send verification email');
+      setShowErrorModal(true);
+    } finally {
+      setIsSendingPasswordVerification(false);
     }
   };
 
@@ -199,7 +293,6 @@ export default function TeacherTopbar({ sidebarOpen }) {
     }
 
     if (!emailData.verificationCode) {
-      console.log('🔍 Verification code:', emailData.verificationCode);
       setErrorMessage('Please enter the verification code');
       setShowErrorModal(true);
       return;
@@ -207,13 +300,10 @@ export default function TeacherTopbar({ sidebarOpen }) {
 
     // Verify the code first
     try {
-      console.log('🔍 Verifying code:', { email: emailData.newEmail, code: emailData.verificationCode });
       const verifyResponse = await api.post('/auth/verify-code', {
         email: emailData.newEmail,
         code: emailData.verificationCode
       });
-
-      console.log('🔍 Verification response:', verifyResponse.data);
 
       if (verifyResponse.data.message !== 'Verification successful') {
         setErrorMessage(verifyResponse.data.message || 'Invalid or expired verification code');
@@ -222,7 +312,6 @@ export default function TeacherTopbar({ sidebarOpen }) {
       }
     } catch (error) {
       console.error('Error verifying code:', error);
-      console.error('Error response:', error.response?.data);
       setErrorMessage(error.response?.data?.message || 'Invalid or expired verification code');
       setShowErrorModal(true);
       return;
@@ -421,7 +510,7 @@ export default function TeacherTopbar({ sidebarOpen }) {
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
             <div className="p-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Change Account Password</h2>
-              
+
               <form onSubmit={handlePasswordChange} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
@@ -429,25 +518,25 @@ export default function TeacherTopbar({ sidebarOpen }) {
                     <input
                       type={showNewPassword ? "text" : "password"}
                       value={passwordData.newPassword}
-                      onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
-                      className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                      onChange={(e) => {
+                        setPasswordData({...passwordData, newPassword: e.target.value});
+                        setPasswordVerificationSent(false);
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500 pr-10"
                       required
-                      minLength="6"
+                      placeholder="Enter new password (min 8 characters)"
+                      minLength="8"
                     />
                     <button
                       type="button"
                       onClick={() => setShowNewPassword(!showNewPassword)}
-                      className="absolute inset-y-0 right-0 flex items-center pr-3"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                     >
-                      {showNewPassword ? (
-                        <EyeSlashIcon className="h-5 w-5 text-gray-400" />
-                      ) : (
-                        <EyeIcon className="h-5 w-5 text-gray-400" />
-                      )}
+                      {showNewPassword ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
                     </button>
                   </div>
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
                   <div className="relative">
@@ -455,42 +544,73 @@ export default function TeacherTopbar({ sidebarOpen }) {
                       type={showConfirmPassword ? "text" : "password"}
                       value={passwordData.confirmPassword}
                       onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
-                      className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500 pr-10"
                       required
-                      minLength="6"
+                      placeholder="Confirm new password"
+                      minLength="8"
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute inset-y-0 right-0 flex items-center pr-3"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                     >
-                      {showConfirmPassword ? (
-                        <EyeSlashIcon className="h-5 w-5 text-gray-400" />
-                      ) : (
-                        <EyeIcon className="h-5 w-5 text-gray-400" />
-                      )}
+                      {showConfirmPassword ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
                     </button>
                   </div>
                 </div>
-                
-                <div className="flex justify-end gap-3 pt-4">
+
+                {passwordVerificationSent && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Verification Code</label>
+                    <input
+                      type="text"
+                      value={passwordData.verificationCode}
+                      onChange={(e) => setPasswordData({...passwordData, verificationCode: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                      required
+                      placeholder="Enter 6-digit code"
+                      maxLength="6"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Enter the 6-digit code sent to your email</p>
+                  </div>
+                )}
+
+                {passwordVerificationSent && (
+                  <div className="bg-green-50 border border-green-200 rounded-md p-3">
+                    <p className="text-sm text-green-800">✓ Verification email sent. Please check your inbox and enter the code above.</p>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-3 pt-4">
                   <button
                     type="button"
-                    onClick={() => {
-                      setShowPasswordModal(false);
-                      setPasswordData({ newPassword: '', confirmPassword: '' });
-                    }}
-                    className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                    onClick={handleSendPasswordVerification}
+                    disabled={isSendingPasswordVerification || passwordVerificationSent}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
                   >
-                    Cancel
+                    {isSendingPasswordVerification ? "Sending..." : passwordVerificationSent ? "Verification Sent" : "Send Verification"}
                   </button>
-                  <button
-                    type="submit"
-                    disabled={isChangingPassword}
-                    className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 disabled:opacity-50 transition-colors"
-                  >
-                    {isChangingPassword ? "Changing..." : "Save"}
-                  </button>
+
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowPasswordModal(false);
+                        setPasswordData({ newPassword: '', confirmPassword: '', verificationCode: '' });
+                        setPasswordVerificationSent(false);
+                      }}
+                      className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isChangingPassword || !passwordVerificationSent}
+                      className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 disabled:opacity-50 transition-colors"
+                    >
+                      {isChangingPassword ? "Changing..." : "Save"}
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>

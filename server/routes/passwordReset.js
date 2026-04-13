@@ -27,6 +27,8 @@ const resetTokens = new Map();
 
 // Forgot password route
 router.post('/forgot-password', async (req, res) => {
+  console.log('🔍 Password reset endpoint HIT!');
+  console.log('🔍 Request body:', req.body);
   try {
     const { email } = req.body;
     

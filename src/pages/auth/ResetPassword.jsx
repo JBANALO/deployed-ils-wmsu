@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { EyeIcon, EyeSlashIcon } from "@heroicons/react/24/solid";
-import { authService } from "../../api/userService";
+import api from "../../api/axiosConfig";
 
 export default function ResetPasswordPage() {
   const { token } = useParams();
@@ -32,11 +32,11 @@ export default function ResetPasswordPage() {
     setError("");
     setLoading(true);
     try {
-      await authService.resetPassword({ token, password });
+      await api.post('/password-reset/reset-password', { token, password });
       setSuccess(true);
       setTimeout(() => navigate("/login"), 2500);
     } catch (err) {
-      setError(err?.message || "Unable to reset password. Please try again.");
+      setError(err?.response?.data?.message || err?.message || "Unable to reset password. Please try again.");
     } finally {
       setLoading(false);
     }
