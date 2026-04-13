@@ -415,6 +415,7 @@ exports.createStudent = async (req, res) => {
     await ensureStudentSchoolYearColumn();
     await ensureGradesSchoolYearColumn();
     await ensureStudentLrnScopedUniqueness();
+    await ensureStudentBirthDateColumn();
     let targetSy;
     try {
       targetSy = await resolveTargetSchoolYear(req.body.schoolYearId);
@@ -436,11 +437,13 @@ exports.createStudent = async (req, res) => {
       lrn, firstName, middleName, lastName, sex,
       parentFirstName, parentLastName, parentEmail, parentContact,
       parentContact: contact,
-      password, gradeLevel, section, profilePic, qrCode, status: reqStatus
+      password, gradeLevel, section, profilePic, qrCode, status: reqStatus,
+      birthDate: reqBirthDate, birth_date: reqBirthDateLegacy
     } = req.body;
 
     // Accept both 'age' and default to 0 for bulk imports
     const age = req.body.age || 0;
+    const birthDate = reqBirthDate || reqBirthDateLegacy || null;
     // Accept both 'studentEmail' and 'email' (bulk import sends 'email')
     const studentEmail = req.body.studentEmail || req.body.email || null;
 
@@ -448,6 +451,7 @@ exports.createStudent = async (req, res) => {
       lrn: lrn || 'MISSING',
       firstName: firstName || 'MISSING',
       lastName: lastName || 'MISSING',
+      birthDate: birthDate || 'MISSING',
       age,
       sex: sex || 'MISSING',
       gradeLevel: gradeLevel || 'MISSING',
@@ -528,12 +532,12 @@ exports.createStudent = async (req, res) => {
     // -----------------------------
     const result = await query(
       `INSERT INTO students (
-        lrn, first_name, middle_name, last_name, age, sex,
+        lrn, first_name, middle_name, last_name, age, birth_date, sex,
         grade_level, section, parent_first_name, parent_last_name,
         parent_email, parent_contact, student_email, password,
         profile_pic, qr_code, status, created_by, school_year_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [lrn, firstName, middleName || null, lastName, age, sex || 'N/A',
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+      [lrn, firstName, middleName || null, lastName, age, birthDate || null, sex || 'N/A',
         gradeLevel, section, parentFirstName || null, parentLastName || null,
         parentEmail || null, parentContact || null, studentEmail || null, hashedPassword,
         safeProfilePic, safeQRCode, reqStatus || 'Active', 'admin', targetSy.id]
@@ -545,6 +549,7 @@ exports.createStudent = async (req, res) => {
       firstName,
       middleName: middleName || null,
       lastName,
+      birthDate: birthDate || null,
       age,
       sex,
       gradeLevel,
