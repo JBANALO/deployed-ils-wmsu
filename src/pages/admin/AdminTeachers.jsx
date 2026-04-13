@@ -357,22 +357,27 @@ export default function AdminTeachers() {
       return;
     }
     
-    const confirmed = window.confirm(`Are you sure you want to PERMANENTLY DELETE ${selectedArchivedTeachers.size} archived teacher(s)? This cannot be undone.`);
+    setTeacherToPermanentDelete({ id: 'bulk', count: selectedArchivedTeachers.size });
+    setShowPermanentDeleteModal(true);
+  };
+
+  const confirmBulkPermanentDelete = async () => {
+    if (!teacherToPermanentDelete || teacherToPermanentDelete.id !== 'bulk') return;
     
-    if (confirmed) {
-      try {
-        for (const teacherId of selectedArchivedTeachers) {
-          await api.delete(`/teachers/${teacherId}/permanent`);
-        }
-        setSelectedArchivedTeachers(new Set());
-        setSelectAllArchived(false);
-        await fetchArchivedTeachers();
-        toast.success(`${selectedArchivedTeachers.size} archived teacher(s) permanently deleted.`);
-      } catch (error) {
-        console.error('Bulk permanent delete error:', error);
-        toast.error('Error deleting archived teachers: ' + error.message);
-        await fetchArchivedTeachers();
+    try {
+      for (const teacherId of selectedArchivedTeachers) {
+        await api.delete(`/teachers/${teacherId}/permanent`);
       }
+      setSelectedArchivedTeachers(new Set());
+      setSelectAllArchived(false);
+      await fetchArchivedTeachers();
+      toast.success(`${selectedArchivedTeachers.size} archived teacher(s) permanently deleted.`);
+      setShowPermanentDeleteModal(false);
+      setTeacherToPermanentDelete(null);
+    } catch (error) {
+      console.error('Bulk permanent delete error:', error);
+      toast.error('Error deleting archived teachers: ' + error.message);
+      await fetchArchivedTeachers();
     }
   };
 
@@ -2471,7 +2476,7 @@ export default function AdminTeachers() {
       <PermanentDeleteTeacherModal
         showPermanentDeleteModal={showPermanentDeleteModal}
         teacherToPermanentDelete={teacherToPermanentDelete}
-        onConfirm={confirmPermanentDelete}
+        onConfirm={teacherToPermanentDelete?.id === 'bulk' ? confirmBulkPermanentDelete : confirmPermanentDelete}
         onCancel={() => {
           setShowPermanentDeleteModal(false);
           setTeacherToPermanentDelete(null);

@@ -71,7 +71,7 @@ function App() {
         <SchoolYearProvider>
           <Router>
           <Toaster 
-            position="bottom-right"          
+            position="top-right"          
             toastOptions={{
               duration: 5000,             
               style: {

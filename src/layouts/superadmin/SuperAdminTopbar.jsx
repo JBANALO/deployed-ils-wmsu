@@ -421,7 +421,7 @@ export default function SuperAdminTopbar() {
             {showDropdown && (
               <div ref={dropdownRef} className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-md shadow-lg w-48 text-sm z-50">
                 <div className="px-4 py-2 border-b font-semibold text-gray-700">
-                  {adminUser ? `${adminUser.firstName} ${adminUser.lastName}` : 'Super Admin Account'}
+                  {adminUser ? `${adminUser.firstName || adminUser.first_name || ''} ${adminUser.lastName || adminUser.last_name || ''}`.trim() : 'Super Admin Account'}
                 </div>
                 <ul>
                   <li onClick={handleAdminProfile} className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-gray-700 transition-colors">Profile</li>

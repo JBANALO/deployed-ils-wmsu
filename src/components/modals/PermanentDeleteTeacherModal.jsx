@@ -25,15 +25,28 @@ const PermanentDeleteTeacherModal = ({
         
         <div className="mb-4">
           <div className="bg-gray-50 p-3 rounded border">
-            <p className="text-sm font-medium text-gray-900">
-              <strong>Teacher:</strong> {teacherToPermanentDelete.firstName || teacherToPermanentDelete.first_name} {teacherToPermanentDelete.lastName || teacherToPermanentDelete.last_name}
-            </p>
-            <p className="text-sm text-gray-600 mt-1">
-              <strong>Email:</strong> {teacherToPermanentDelete.email}
-            </p>
-            <p className="text-sm text-red-600 mt-2">
-              <strong>⚠️ WARNING:</strong> This will permanently delete the teacher account and all associated data.
-            </p>
+            {teacherToPermanentDelete.id === 'bulk' ? (
+              <>
+                <p className="text-sm font-medium text-gray-900">
+                  <strong>Bulk Delete:</strong> {teacherToPermanentDelete.count} archived teacher(s)
+                </p>
+                <p className="text-sm text-red-600 mt-2">
+                  <strong>⚠️ WARNING:</strong> This will permanently delete {teacherToPermanentDelete.count} archived teacher accounts and all associated data.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-gray-900">
+                  <strong>Teacher:</strong> {teacherToPermanentDelete.firstName || teacherToPermanentDelete.first_name} {teacherToPermanentDelete.lastName || teacherToPermanentDelete.last_name}
+                </p>
+                <p className="text-sm text-gray-600 mt-1">
+                  <strong>Email:</strong> {teacherToPermanentDelete.email}
+                </p>
+                <p className="text-sm text-red-600 mt-2">
+                  <strong>⚠️ WARNING:</strong> This will permanently delete the teacher account and all associated data.
+                </p>
+              </>
+            )}
           </div>
         </div>
 

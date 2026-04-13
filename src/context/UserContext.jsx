@@ -53,8 +53,8 @@ export const UserProvider = ({ children }) => {
         // Preserve updated fields from localStorage that might be newer than server data
         finalUser = {
           ...serverUser,
-          firstName: parsedStoredUser.firstName || serverUser.firstName,
-          lastName: parsedStoredUser.lastName || serverUser.lastName,
+          firstName: parsedStoredUser.firstName || serverUser.firstName || serverUser.first_name,
+          lastName: parsedStoredUser.lastName || serverUser.lastName || serverUser.last_name,
           phone: parsedStoredUser.phone || serverUser.phone,
           profileImage: parsedStoredUser.profileImage || serverUser.profileImage,
         };

@@ -421,20 +421,23 @@ exports.getDeclinedTeachers = async (req, res) => {
   }
 };
 
-// Restore declined teacher
+// Restore archived or declined teacher
 exports.restoreTeacher = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Check if teacher exists and is declined
+    // Check if teacher exists
     const existingTeacher = await query('SELECT * FROM teachers WHERE id = ?', [id]);
     
     if (existingTeacher.length === 0) {
       return res.status(404).json({ message: 'Teacher not found' });
     }
     
-    if (existingTeacher[0].verification_status !== 'rejected') {
-      return res.status(400).json({ message: 'Teacher is not in declined status' });
+    const currentStatus = existingTeacher[0].verification_status;
+    
+    // Check if teacher is in a restorable status
+    if (currentStatus !== 'rejected' && currentStatus !== 'archived') {
+      return res.status(400).json({ message: 'Teacher is not in archived or declined status' });
     }
 
     // Restore teacher by setting status back to pending
@@ -450,9 +453,11 @@ exports.restoreTeacher = async (req, res) => {
     // Get the full teacher data to return with all fields
     const restoredTeacher = await query('SELECT * FROM teachers WHERE id = ?', [id]);
 
+    const statusText = currentStatus === 'archived' ? 'archived' : 'declined';
+    
     res.status(200).json({
       status: 'success',
-      message: 'Teacher restored successfully',
+      message: `Teacher restored from ${statusText} status successfully`,
       data: {
         teacher: restoredTeacher[0] // Return the complete teacher object
       }
@@ -460,5 +465,57 @@ exports.restoreTeacher = async (req, res) => {
   } catch (error) {
     console.error('Error restoring teacher:', error);
     res.status(500).json({ message: 'Error restoring teacher', error: error.message });
+  }
+};
+
+// Archive teacher
+exports.archiveTeacher = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if teacher exists
+    const existingTeacher = await query('SELECT * FROM teachers WHERE id = ?', [id]);
+    
+    if (existingTeacher.length === 0) {
+      return res.status(404).json({ message: 'Teacher not found' });
+    }
+    
+    // Archive teacher by setting status to archived
+    const result = await query(
+      `UPDATE teachers SET verification_status = 'archived', updated_at = NOW() WHERE id = ?`,
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'Teacher not found' });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Teacher archived successfully',
+      data: {
+        teacher: existingTeacher[0]
+      }
+    });
+  } catch (error) {
+    console.error('Error archiving teacher:', error);
+    res.status(500).json({ message: 'Error archiving teacher', error: error.message });
+  }
+};
+
+// Get archived teachers
+exports.getArchivedTeachers = async (req, res) => {
+  try {
+    const archivedTeachers = await query(
+      `SELECT * FROM teachers WHERE verification_status = 'archived' ORDER BY updated_at DESC`
+    );
+
+    res.status(200).json({
+      status: 'success',
+      data: archivedTeachers
+    });
+  } catch (error) {
+    console.error('Error fetching archived teachers:', error);
+    res.status(500).json({ message: 'Error fetching archived teachers', error: error.message });
   }
 };
