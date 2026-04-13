@@ -91,18 +91,29 @@ export default function EditGrades() {
   const [computationMode, setComputationMode] = useState('deped');
   const [computationSubjects, setComputationSubjects] = useState([]);
   const [newComputationSubject, setNewComputationSubject] = useState('');
+  const [selectedComputationGradeLevel, setSelectedComputationGradeLevel] = useState('');
   const lastKnownActiveSchoolYearIdRef = useRef(null);
   const isViewOnlyMode = isTeacherViewOnlyMode(selectedSchoolYearId, activeSchoolYearId);
 
-  const getComputationSettingsStorageKey = (schoolYearId) =>
-    `gradeComputationSettings:${String(schoolYearId || 'default')}`;
+  const buildComputationGradeLevelOptions = () => {
+    const gradeOptions = dedupeSubjects([
+      ...assignedClasses.map((cls) => cls?.grade).filter(Boolean),
+      ...(selectedGradeLevel !== 'All Grades' ? [selectedGradeLevel] : []),
+      ...Object.keys(subjectsByGrade || {})
+    ]);
+    return gradeOptions;
+  };
+
+  const getComputationSettingsStorageKey = (schoolYearId, gradeLevel) =>
+    `gradeComputationSettings:${String(schoolYearId || 'default')}:${String(gradeLevel || 'all')}`;
 
   const buildDefaultComputationSubjects = () => {
     const selectedGradeSubjects =
-      selectedGradeLevel !== 'All Grades' && Array.isArray(subjectsByGrade[selectedGradeLevel])
-        ? subjectsByGrade[selectedGradeLevel]
+      selectedComputationGradeLevel && Array.isArray(subjectsByGrade[selectedComputationGradeLevel])
+        ? subjectsByGrade[selectedComputationGradeLevel]
         : [];
     const assignedGradeSubjects = assignedClasses
+      .filter((cls) => !selectedComputationGradeLevel || cls?.grade === selectedComputationGradeLevel)
       .map((cls) => cls?.grade)
       .filter(Boolean)
       .flatMap((grade) => subjectsByGrade[grade] || []);
@@ -123,7 +134,7 @@ export default function EditGrades() {
 
   const loadComputationSettings = (schoolYearId) => {
     const defaults = buildDefaultComputationSubjects();
-    const key = getComputationSettingsStorageKey(schoolYearId);
+    const key = getComputationSettingsStorageKey(schoolYearId, selectedComputationGradeLevel);
     try {
       const raw = localStorage.getItem(key);
       if (!raw) {
@@ -229,9 +240,19 @@ export default function EditGrades() {
   }, [selectedSchoolYearId]);
 
   useEffect(() => {
+    const gradeOptions = buildComputationGradeLevelOptions();
+    if (gradeOptions.length === 0) return;
+
+    if (!selectedComputationGradeLevel || !gradeOptions.includes(selectedComputationGradeLevel)) {
+      setSelectedComputationGradeLevel(gradeOptions[0]);
+    }
+  }, [assignedClasses, subjectsByGrade, selectedGradeLevel, selectedComputationGradeLevel]);
+
+  useEffect(() => {
+    if (!selectedComputationGradeLevel) return;
     const targetSchoolYearId = selectedSchoolYearId || activeSchoolYearId || 'default';
     loadComputationSettings(targetSchoolYearId);
-  }, [selectedSchoolYearId, activeSchoolYearId]);
+  }, [selectedSchoolYearId, activeSchoolYearId, selectedComputationGradeLevel]);
 
   useEffect(() => {
     fetchStudents();
@@ -804,6 +825,11 @@ export default function EditGrades() {
   };
 
   const handleAddComputationSubject = () => {
+    if (!selectedComputationGradeLevel) {
+      toast.error('Select a grade level first.');
+      return;
+    }
+
     const cleanName = String(newComputationSubject || '').trim();
     if (!cleanName) return;
 
@@ -827,9 +853,20 @@ export default function EditGrades() {
     setNewComputationSubject('');
   };
 
+  const handleDeleteComputationSubject = (subjectName) => {
+    setComputationSubjects((prev) => {
+      const next = prev.filter((item) => item.name !== subjectName);
+      return next;
+    });
+  };
+
   const saveComputationSettings = () => {
+    if (!selectedComputationGradeLevel) {
+      toast.error('Select a grade level first.');
+      return;
+    }
     const schoolYearKey = selectedSchoolYearId || activeSchoolYearId || 'default';
-    const key = getComputationSettingsStorageKey(schoolYearKey);
+    const key = getComputationSettingsStorageKey(schoolYearKey, selectedComputationGradeLevel);
     localStorage.setItem(
       key,
       JSON.stringify({
@@ -841,8 +878,12 @@ export default function EditGrades() {
   };
 
   const resetComputationSettings = () => {
+    if (!selectedComputationGradeLevel) {
+      toast.error('Select a grade level first.');
+      return;
+    }
     const schoolYearKey = selectedSchoolYearId || activeSchoolYearId || 'default';
-    const key = getComputationSettingsStorageKey(schoolYearKey);
+    const key = getComputationSettingsStorageKey(schoolYearKey, selectedComputationGradeLevel);
     localStorage.removeItem(key);
     setComputationMode('deped');
     setComputationSubjects(buildDefaultComputationSubjects());
@@ -1111,6 +1152,7 @@ export default function EditGrades() {
     (userRole === 'teacher' && assignedSubjects.length > 0 && adviserClassIds.length === 0);
   const averageColumnLabel = isSubjectTeacherOnlyMode ? 'My Subject Average' : 'Final Average';
   const remarksColumnLabel = isSubjectTeacherOnlyMode ? 'My Remarks' : 'Remarks';
+  const computationGradeLevelOptions = buildComputationGradeLevelOptions();
   const selectedSchoolYearValue = selectedSchoolYearId || activeSchoolYearId || '';
   const includedComputationSubjects = computationSubjects.filter((item) => item?.included);
   const includedSubjectCount = includedComputationSubjects.length;
@@ -1486,6 +1528,22 @@ export default function EditGrades() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200 space-y-6">
+            <div className="bg-white border border-gray-200 rounded-xl p-4">
+              <label className="block text-lg font-semibold text-gray-700 mb-2">GRADE LEVEL</label>
+              <select
+                value={selectedComputationGradeLevel}
+                onChange={(e) => setSelectedComputationGradeLevel(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-xl font-semibold"
+              >
+                {computationGradeLevelOptions.map((grade) => (
+                  <option key={grade} value={grade}>
+                    {grade}
+                  </option>
+                ))}
+              </select>
+              <p className="text-base text-gray-500 mt-2">Subjects below are managed per selected grade level.</p>
+            </div>
+
             <div>
               <h3 className="text-2xl font-bold text-gray-900">AVERAGE COMPUTATION METHOD</h3>
             </div>
@@ -1568,6 +1626,14 @@ export default function EditGrades() {
                       className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-right text-xl disabled:bg-gray-100 disabled:text-gray-500"
                     />
                     <span className="text-lg text-gray-500">%</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteComputationSubject(subject.name)}
+                      className="w-9 h-9 flex items-center justify-center border border-gray-300 rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                      title="Delete subject"
+                    >
+                      ×
+                    </button>
                   </div>
                 );
               })}
