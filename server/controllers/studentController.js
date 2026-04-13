@@ -848,7 +848,7 @@ exports.getStudent = async (req, res) => {
       return res.status(400).json({ status: 'fail', message: syErr.message || 'No active school year found' });
     }
     // Handle both query parameter (studentId) and URL parameter (id)
-    const studentId = req.query.studentId || req.params.id;
+    let studentId = req.query.studentId || req.params.id;
     
     console.log('🔍 getStudent called with:', {
       query: req.query,
@@ -862,18 +862,77 @@ exports.getStudent = async (req, res) => {
     }
     
     console.log('🔍 Querying database for student ID:', studentId);
-    const students = await query('SELECT * FROM students WHERE id = ? AND school_year_id = ?', [studentId, targetSy.id]);
+    let students = await query('SELECT * FROM students WHERE id = ? AND school_year_id = ?', [studentId, targetSy.id]);
+
+    if (students.length === 0) {
+      // Fallback 1: treat identifier as LRN or student email for bulk-imported logins.
+      students = await query(
+        `SELECT *
+         FROM students
+         WHERE school_year_id = ?
+           AND (lrn = ? OR LOWER(COALESCE(student_email, '')) = LOWER(?))
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        [targetSy.id, studentId, studentId]
+      );
+    }
+
+    if (students.length === 0) {
+      // Fallback 2: resolve old/non-active student id to same LRN in target school year.
+      const anyYearRows = await query('SELECT lrn FROM students WHERE id = ? LIMIT 1', [studentId]);
+      const resolvedLrn = String(anyYearRows?.[0]?.lrn || '').trim();
+      if (resolvedLrn) {
+        students = await query(
+          `SELECT *
+           FROM students
+           WHERE school_year_id = ? AND lrn = ?
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [targetSy.id, resolvedLrn]
+        );
+      }
+    }
+
+    if (students.length === 0) {
+      // Fallback 3: when login came from users table, resolve via users.id -> (username/email) -> students.
+      const userRows = await query(
+        `SELECT username, email
+         FROM users
+         WHERE id = ?
+         LIMIT 1`,
+        [studentId]
+      );
+      const userLogin = String(userRows?.[0]?.username || '').trim();
+      const userEmail = String(userRows?.[0]?.email || '').trim();
+      if (userLogin || userEmail) {
+        students = await query(
+          `SELECT *
+           FROM students
+           WHERE school_year_id = ?
+             AND (
+               lrn = ?
+               OR LOWER(COALESCE(student_email, '')) = LOWER(?)
+               OR LOWER(COALESCE(student_email, '')) = LOWER(?)
+             )
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [targetSy.id, userLogin, userEmail, userLogin]
+        );
+      }
+    }
+
     console.log('🔍 Database result:', {
       found: students.length,
       student: students[0] || 'none'
     });
-    
+
     if (students.length === 0) {
       console.log('❌ Student not found in database');
       return res.status(404).json({ status: 'fail', message: 'Student not found' });
     }
-    
+
     const student = students[0];
+    studentId = student.id;
     const formattedStudent = formatStudent(student);
     const studentLRN = student.lrn; // LRN is used as studentId in attendance table
     const siblingStudentRows = studentLRN

@@ -1104,22 +1104,42 @@ app.post('/api/auth/login', async (req, res) => {
         
 
         let students;
+        let activeSchoolYearId = null;
+
+        try {
+          const activeSchoolYearRows = await query(
+            'SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1'
+          );
+          activeSchoolYearId = activeSchoolYearRows?.[0]?.id || null;
+        } catch (activeSyErr) {
+          console.log('Active school year lookup skipped during login:', activeSyErr.message);
+        }
 
         try {
 
-          students = await query(
-
-            `SELECT id, lrn, first_name as firstName, last_name as lastName, 
-
-             student_email as email, grade_level as gradeLevel, section, password
-
-             FROM students 
-
-             WHERE lrn = ? OR student_email = ?`,
-
-            [loginField, loginField]
-
-          );
+          if (activeSchoolYearId) {
+            students = await query(
+              `SELECT id, lrn, first_name as firstName, last_name as lastName,
+                      student_email as email, grade_level as gradeLevel, section, password, school_year_id
+               FROM students
+               WHERE lrn = ? OR LOWER(COALESCE(student_email, '')) = LOWER(?)
+               ORDER BY CASE WHEN school_year_id = ? THEN 0 ELSE 1 END,
+                        COALESCE(updated_at, created_at) DESC,
+                        id DESC
+               LIMIT 1`,
+              [loginField, loginField, activeSchoolYearId]
+            );
+          } else {
+            students = await query(
+              `SELECT id, lrn, first_name as firstName, last_name as lastName,
+                      student_email as email, grade_level as gradeLevel, section, password, school_year_id
+               FROM students
+               WHERE lrn = ? OR LOWER(COALESCE(student_email, '')) = LOWER(?)
+               ORDER BY COALESCE(updated_at, created_at) DESC, id DESC
+               LIMIT 1`,
+              [loginField, loginField]
+            );
+          }
 
           console.log(`🔍 Database query executed successfully`);
 
@@ -1432,6 +1452,78 @@ app.post('/api/auth/login', async (req, res) => {
       }
     }
 
+    if (roleLower === 'student') {
+      try {
+        const loginKey = String(loginField || '').trim();
+        const activeSchoolYearRows = await query(
+          'SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1'
+        );
+        const activeSchoolYearId = activeSchoolYearRows?.[0]?.id || null;
+
+        let matchedStudents = [];
+        if (activeSchoolYearId) {
+          matchedStudents = await query(
+            `SELECT id, lrn, first_name, last_name, student_email, grade_level, section, school_year_id
+             FROM students
+             WHERE school_year_id = ?
+               AND (
+                 lrn = ?
+                 OR LOWER(COALESCE(student_email, '')) = LOWER(?)
+                 OR LOWER(COALESCE(student_email, '')) = LOWER(?)
+               )
+             ORDER BY COALESCE(updated_at, created_at) DESC
+             LIMIT 1`,
+            [activeSchoolYearId, loginKey, loginKey, String(user.email || '').trim()]
+          );
+        }
+
+        if ((!matchedStudents || matchedStudents.length === 0) && user.id) {
+          const byIdRows = await query(
+            `SELECT id, lrn, first_name, last_name, student_email, grade_level, section, school_year_id
+             FROM students
+             WHERE id = ?
+             ORDER BY COALESCE(updated_at, created_at) DESC
+             LIMIT 1`,
+            [user.id]
+          );
+
+          if (byIdRows.length > 0 && activeSchoolYearId) {
+            const byLrnRows = await query(
+              `SELECT id, lrn, first_name, last_name, student_email, grade_level, section, school_year_id
+               FROM students
+               WHERE school_year_id = ? AND lrn = ?
+               ORDER BY COALESCE(updated_at, created_at) DESC
+               LIMIT 1`,
+              [activeSchoolYearId, byIdRows[0].lrn]
+            );
+            matchedStudents = byLrnRows.length > 0 ? byLrnRows : byIdRows;
+          } else {
+            matchedStudents = byIdRows;
+          }
+        }
+
+        if (matchedStudents && matchedStudents.length > 0) {
+          const dbStudent = matchedStudents[0];
+          user = {
+            ...user,
+            id: dbStudent.id,
+            lrn: dbStudent.lrn || user.lrn || user.username,
+            firstName: user.firstName || dbStudent.first_name || '',
+            lastName: user.lastName || dbStudent.last_name || '',
+            email: dbStudent.student_email || user.email,
+            username: dbStudent.lrn || user.username,
+            role: 'student',
+            gradeLevel: dbStudent.grade_level || user.gradeLevel,
+            section: dbStudent.section || user.section,
+            schoolYearId: dbStudent.school_year_id || user.schoolYearId
+          };
+          console.log(`✅ Student login identity aligned to DB id: ${dbStudent.id}`);
+        }
+      } catch (studentAlignError) {
+        console.log('Student identity alignment skipped:', studentAlignError.message);
+      }
+    }
+
     
 
     // Generate token
@@ -1469,6 +1561,8 @@ app.post('/api/auth/login', async (req, res) => {
         email: user.email,
 
         username: user.username,
+
+        lrn: user.lrn || user.username || '',
 
         phone: user.phone || '',
 
