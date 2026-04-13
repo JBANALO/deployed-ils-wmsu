@@ -12,6 +12,8 @@ const QUARTER_LABELS = {
   q3: 'Q3',
   q4: 'Q4'
 };
+const TOP_PERFORMER_MIN_GRADE = 95;
+const TOP_PERFORMER_LIMIT_PER_GRADE = 5;
 
 // DepEd K-12 Subjects
 const DEPED_SUBJECTS = {
@@ -50,7 +52,7 @@ export default function AdminGrades() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGradeLevel, setSelectedGradeLevel] = useState('All');
   const [gradeLevels, setGradeLevels] = useState([]);
-  const [recentUpdates, setRecentUpdates] = useState([]);
+  const [topPerformersByGrade, setTopPerformersByGrade] = useState([]);
   const [rankingBasis, setRankingBasis] = useState('final');
   const [activeTab, setActiveTab] = useState('students');
   const [computationMode, setComputationMode] = useState('deped');
@@ -373,19 +375,38 @@ export default function AdminGrades() {
 
       // Extract unique grade levels from ALL students
       const uniqueGradeLevels = [...new Set(allStudents.map(s => s.gradeLevel).filter(Boolean))];
-      setGradeLevels(uniqueGradeLevels.sort((a, b) => {
+      const sortedGradeLevels = uniqueGradeLevels.sort((a, b) => {
         const gradeA = parseInt(String(a).replace(/\D/g, ''), 10);
         const gradeB = parseInt(String(b).replace(/\D/g, ''), 10);
         return (Number.isNaN(gradeA) ? 0 : gradeA) - (Number.isNaN(gradeB) ? 0 : gradeB);
-      }));
+      });
+      setGradeLevels(sortedGradeLevels);
 
-      // Generate recent updates from students with grades
-      const updates = sortedStudents.slice(0, 5).map(s => ({
-        name: s.fullName || `${s.firstName} ${s.lastName}`,
-        subject: rankingLabelMap[rankingBasis] || 'Final Average',
-        grade: s.rankingValue
-      }));
-      setRecentUpdates(updates);
+      // Top performers: 95+ only, max 5 students per grade level.
+      const groupedTopPerformers = sortedGradeLevels
+        .map((gradeLabel) => {
+          const topStudents = studentsWithRankingValue
+            .filter((student) =>
+              String(student.gradeLevel || '').trim() === String(gradeLabel || '').trim() &&
+              Number(student.rankingValue || 0) >= TOP_PERFORMER_MIN_GRADE
+            )
+            .sort((a, b) => Number(b.rankingValue || 0) - Number(a.rankingValue || 0))
+            .slice(0, TOP_PERFORMER_LIMIT_PER_GRADE)
+            .map((student, index) => ({
+              rankInGrade: index + 1,
+              name: student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim(),
+              metricLabel: rankingLabelMap[rankingBasis] || 'Final Average',
+              grade: Number(student.rankingValue || 0)
+            }));
+
+          return {
+            gradeLevel: gradeLabel,
+            students: topStudents
+          };
+        })
+        .filter((group) => group.students.length > 0);
+
+      setTopPerformersByGrade(groupedTopPerformers);
 
       setLoading(false);
     } catch (error) {
@@ -668,25 +689,29 @@ export default function AdminGrades() {
 
           <p className="text-gray-500">Loading...</p>
 
-        ) : recentUpdates.length === 0 ? (
+        ) : topPerformersByGrade.length === 0 ? (
 
-          <p className="text-gray-500">No grade records found</p>
+          <p className="text-gray-500">No students with 95+ grades found.</p>
 
         ) : (
 
-          <ul className="text-gray-700 text-sm list-disc ml-5 space-y-1">
-
-            {recentUpdates.map((update, index) => (
-
-              <li key={index}>
-
-                <span className="font-semibold">{update.name}</span> — {update.subject}: <span className="text-green-700 font-bold">{update.grade}</span>
-
-              </li>
-
+          <div className="space-y-3">
+            {topPerformersByGrade.map((group) => (
+              <div key={group.gradeLevel}>
+                <p className="text-sm font-semibold text-gray-700 mb-1">
+                  {group.gradeLevel} - Top {TOP_PERFORMER_LIMIT_PER_GRADE} ({TOP_PERFORMER_MIN_GRADE}+)
+                </p>
+                <ul className="text-gray-700 text-sm list-disc ml-5 space-y-1">
+                  {group.students.map((student) => (
+                    <li key={`${group.gradeLevel}-${student.rankInGrade}-${student.name}`}>
+                      <span className="font-semibold">#{student.rankInGrade} {student.name}</span>
+                      {' '}— {student.metricLabel}: <span className="text-green-700 font-bold">{student.grade}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
-
-          </ul>
+          </div>
 
         )}
 
