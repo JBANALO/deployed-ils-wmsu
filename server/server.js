@@ -2529,7 +2529,7 @@ app.put('/api/super-admin/update-profile', upload.single('profileImage'), async 
 
 app.use('/api/auth', authRoutes);
 
-app.use('/api/auth', passwordResetRoutes); // Password reset routes
+app.use('/api/password-reset', passwordResetRoutes); // Password reset routes
 
 app.use('/api/students', studentRoutes); // grades routes are now INSIDE studentRoutes.js
 

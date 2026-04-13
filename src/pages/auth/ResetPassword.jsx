@@ -19,6 +19,10 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     if (loading) return;
 
+    console.log('🔍 Reset password form submitted');
+    console.log('🔍 Token:', token ? 'present' : 'missing');
+    console.log('🔍 Password length:', password?.length);
+
     if (!password || password.length < 8) {
       setError("Password must be at least 8 characters long.");
       return;
@@ -32,10 +36,14 @@ export default function ResetPasswordPage() {
     setError("");
     setLoading(true);
     try {
+      console.log('🔍 Calling API: /password-reset/reset-password');
       await api.post('/password-reset/reset-password', { token, password });
+      console.log('✅ Password reset successful');
       setSuccess(true);
       setTimeout(() => navigate("/login"), 2500);
     } catch (err) {
+      console.error('❌ Password reset error:', err);
+      console.error('❌ Error response:', err?.response?.data);
       setError(err?.response?.data?.message || err?.message || "Unable to reset password. Please try again.");
     } finally {
       setLoading(false);
