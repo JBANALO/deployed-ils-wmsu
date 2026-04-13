@@ -8,6 +8,7 @@ import axios from "../../api/axiosConfig";
 
 export default function AdminCreateK6() {
   const navigate = useNavigate();
+  const maxBirthDate = new Date().toISOString().split('T')[0];
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdStudentEmail, setCreatedStudentEmail] = useState('');
   const [createdStudentPassword, setCreatedStudentPassword] = useState('');
@@ -19,6 +20,7 @@ export default function AdminCreateK6() {
     middleName: '',
     lastName: '',
     username: '', // Add username field
+    birthDate: '',
     age: '',
     sex: '',
     gradeLevel: '',
@@ -37,8 +39,33 @@ export default function AdminCreateK6() {
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
+  const calculateAgeFromBirthDate = (birthDateValue) => {
+    if (!birthDateValue) return '';
+
+    const birthDate = new Date(`${birthDateValue}T00:00:00`);
+    if (Number.isNaN(birthDate.getTime())) return '';
+
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age -= 1;
+    }
+
+    return age >= 0 ? String(age) : '';
+  };
+
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+
+    if (name === 'birthDate') {
+      const computedAge = calculateAgeFromBirthDate(value);
+      setFormData((prev) => ({ ...prev, birthDate: value, age: computedAge }));
+      return;
+    }
+
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleLRNChange = (e) => {
@@ -128,6 +155,7 @@ const handleSubmit = async (e) => {
       firstName: formData.firstName.trim(),
       middleName: formData.middleName.trim(),
       lastName: formData.lastName.trim(),
+      birthDate: formData.birthDate || null,
       age: formData.age,
       sex: formData.sex,
       gradeLevel: formData.gradeLevel,
@@ -169,7 +197,7 @@ const handleSubmit = async (e) => {
       // Reset form
       setFormData({
         profilePic: "", lrn: "", firstName: "", middleName: "", lastName: "",
-        age: "", sex: "", gradeLevel: "", section: "", parentFirstName: "",
+        birthDate: "", age: "", sex: "", gradeLevel: "", section: "", parentFirstName: "",
         parentLastName: "", parentEmail: "", parentContact: "",
         wmsuEmail: "", password: ""
       });
@@ -292,8 +320,33 @@ const handleSubmit = async (e) => {
           <div><label className="block font-semibold mb-1">Last Name</label><input type="text" name="lastName" value={formData.lastName} onChange={handleChange} className="w-full border p-3 rounded-lg" required /></div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div><label className="block font-semibold mb-1">Age</label><input type="number" name="age" value={formData.age} onChange={handleChange} className="w-full border p-3 rounded-lg" min="3" max="12" step="1" required /></div>
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <label className="block font-semibold mb-1">Birthday</label>
+            <input
+              type="date"
+              name="birthDate"
+              value={formData.birthDate}
+              onChange={handleChange}
+              className="w-full border p-3 rounded-lg"
+              max={maxBirthDate}
+              required
+            />
+          </div>
+          <div>
+            <label className="block font-semibold mb-1">Age (Auto)</label>
+            <input
+              type="number"
+              name="age"
+              value={formData.age}
+              className="w-full border p-3 rounded-lg bg-gray-50"
+              min="3"
+              max="12"
+              step="1"
+              readOnly
+              required
+            />
+          </div>
           <div><label className="block font-semibold mb-1">Sex</label>
             <select name="sex" value={formData.sex} onChange={handleChange} className="w-full border p-3 rounded-lg" required>
               <option value="">Select Sex</option>
