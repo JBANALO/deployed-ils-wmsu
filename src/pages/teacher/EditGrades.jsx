@@ -1119,8 +1119,18 @@ export default function EditGrades() {
 
       if (response.data?.success) {
         toast.success('Grades saved successfully! You have 24 hours to edit them again.');
-        fetchStudents();
-        setInitialGradeData(JSON.parse(JSON.stringify(gradeData)));
+        const currentStudentId = String(selectedStudent?.id || '');
+        const currentIndex = orderedFilteredStudents.findIndex((student) => String(student.id) === currentStudentId);
+        const nextStudent = currentIndex >= 0 ? orderedFilteredStudents[currentIndex + 1] : null;
+
+        await fetchStudents();
+
+        if (nextStudent) {
+          await openGradeModal(nextStudent);
+        } else {
+          setInitialGradeData(JSON.parse(JSON.stringify(gradeData)));
+          toast.info('No next student in the current filtered list.');
+        }
       } else {
         setErrorMessage(`❌ Failed to save grades: ${response.data?.message || 'Unknown error'}`);
         setErrorModal(true);
@@ -1146,6 +1156,9 @@ export default function EditGrades() {
     
     return matchesSearch && matchesGrade && matchesSection;
   });
+
+  const orderedFilteredStudents = [...filteredStudents]
+    .sort((a, b) => (b.average || 0) - (a.average || 0));
 
   // Calculate class statistics
   const classAverage = students.length > 0
@@ -1487,8 +1500,7 @@ export default function EditGrades() {
                   </td>
                 </tr>
               ) : (
-                filteredStudents
-                  .sort((a, b) => (b.average || 0) - (a.average || 0))
+                orderedFilteredStudents
                   .map((student, index) => (
                     <tr key={student.id} className={`hover:bg-gray-50 transition ${selectedStudentIds.has(student.id) ? 'bg-blue-50' : ''}`}>
                       <td className="px-6 py-5">
