@@ -12,6 +12,7 @@ const StudentPortal = () => {
   const [loading, setLoading] = useState(true);
   const [showReportCardModal, setShowReportCardModal] = useState(false);
   const [showRankingModal, setShowRankingModal] = useState(false);
+  const [rankingModalFilter, setRankingModalFilter] = useState('all');
   const [currentSchoolYearId, setCurrentSchoolYearId] = useState(null);
   const { user } = useContext(UserContext); // Get logged-in user from context
 
@@ -165,6 +166,9 @@ const StudentPortal = () => {
   const publishedRankings = Array.isArray(data?.publishedRankings) ? data.publishedRankings : [];
   const publishedRankingLists = Array.isArray(data?.publishedRankingLists) ? data.publishedRankingLists : [];
   const totalRankingUpdates = publishedRankings.length + publishedRankingLists.length;
+  const filteredIndividualRankings = rankingModalFilter === 'full_list' ? [] : publishedRankings;
+  const filteredFullListRankings = rankingModalFilter === 'individual' ? [] : publishedRankingLists;
+  const visibleRankingUpdates = filteredIndividualRankings.length + filteredFullListRankings.length;
 
   const formatRankingScore = (value) => {
     const parsed = Number(value);
@@ -1037,7 +1041,10 @@ const StudentPortal = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setShowRankingModal(true)}
+                      onClick={() => {
+                        setRankingModalFilter('all');
+                        setShowRankingModal(true);
+                      }}
                       className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2"
                     >
                       <Trophy className="w-5 h-5" /> View Ranking
@@ -1396,18 +1403,42 @@ const StudentPortal = () => {
             </div>
 
             <div className="p-6">
-              {publishedRankings.length === 0 && publishedRankingLists.length === 0 ? (
+              {totalRankingUpdates > 0 && (
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {[
+                    { key: 'all', label: `All Updates (${totalRankingUpdates})` },
+                    { key: 'individual', label: `Individual Only (${publishedRankings.length})` },
+                    { key: 'full_list', label: `Full List Only (${publishedRankingLists.length})` }
+                  ].map((option) => (
+                    <button
+                      key={option.key}
+                      onClick={() => setRankingModalFilter(option.key)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold transition ${rankingModalFilter === option.key ? 'bg-blue-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {visibleRankingUpdates === 0 ? (
                 <div className="text-center py-10 text-gray-600">
-                  <p className="text-lg font-semibold text-gray-700">No ranking posted yet</p>
-                  <p className="text-sm mt-2">Your adviser/teacher has not posted ranking for your class yet.</p>
+                  <p className="text-lg font-semibold text-gray-700">
+                    {totalRankingUpdates === 0 ? 'No ranking posted yet' : 'No ranking found for this filter'}
+                  </p>
+                  <p className="text-sm mt-2">
+                    {totalRankingUpdates === 0
+                      ? 'Your adviser/teacher has not posted ranking for your class yet.'
+                      : 'Try another ranking filter above.'}
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {publishedRankings.length > 0 && (
+                  {filteredIndividualRankings.length > 0 && (
                     <div>
                       <h3 className="text-sm font-semibold text-blue-700 uppercase tracking-wide mb-3">Individual Ranking Posts</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {publishedRankings.map((ranking, idx) => (
+                        {filteredIndividualRankings.map((ranking, idx) => (
                           <div key={`${ranking.rankingType || 'ranking'}-${ranking.quarter || 'all'}-${ranking.subject || 'general'}-${idx}`} className="rounded-lg bg-white border border-blue-100 p-4">
                             <div className="flex items-center justify-between gap-2">
                               <p className="font-semibold text-gray-800">{ranking.title || 'Published Ranking'}</p>
@@ -1432,10 +1463,10 @@ const StudentPortal = () => {
                     </div>
                   )}
 
-                  {publishedRankingLists.length > 0 && (
+                  {filteredFullListRankings.length > 0 && (
                     <div className="space-y-4">
                       <h3 className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Full Class Ranking Lists</h3>
-                      {publishedRankingLists.map((rankingList, idx) => (
+                      {filteredFullListRankings.map((rankingList, idx) => (
                         <div key={`${rankingList.rankingType || 'list'}-${rankingList.quarter || 'all'}-${rankingList.subject || 'general'}-${idx}`} className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4">
                           <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
                             <p className="font-semibold text-gray-800">{rankingList.title || 'Full Class Ranking'}</p>
