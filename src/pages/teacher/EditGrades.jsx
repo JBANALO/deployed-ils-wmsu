@@ -641,6 +641,7 @@ export default function EditGrades() {
     
     // Check if user is adviser for this class
     const isAdviserForClass = adviserClassIds.includes(studentClassId);
+    const shouldRestrictToAssignedSubjectsOnly = userRole === 'teacher' || userRole === 'subject_teacher';
     
     // --- Fetch subjects for this grade directly from DB (always fresh) ---
     let dbSubjectsForGrade = [];
@@ -724,7 +725,7 @@ export default function EditGrades() {
     console.log(isAdviserForClass ? 'Adviser' : 'Subject teacher', '- editable subjects:', editableSubjectsForClass);
 
     // Track whether adviser is viewing their own class (to show full read-only view)
-    setIsAdviserViewingClass(isAdviserForClass);
+    setIsAdviserViewingClass(isAdviserForClass && !shouldRestrictToAssignedSubjectsOnly);
 
     // Update availableSubjects (controls which inputs are enabled)
     // Both advisers and subject teachers can only edit their specifically assigned subjects
@@ -751,7 +752,15 @@ export default function EditGrades() {
     // Adviser sees ALL subjects; subject teacher sees only their assigned subjects
     // Always prefer admin-configured subjects as the source of truth
     let subjectsToShow;
-    if (isAdviserForClass) {
+    if (shouldRestrictToAssignedSubjectsOnly) {
+      // Teacher mode: show only subjects assigned to this teacher for this class.
+      if (gradeSubjectList.length > 0) {
+        subjectsToShow = editableSubjectsForClass.filter(s => gradeSubjectList.includes(s));
+        if (subjectsToShow.length === 0) subjectsToShow = editableSubjectsForClass;
+      } else {
+        subjectsToShow = editableSubjectsForClass;
+      }
+    } else if (isAdviserForClass) {
       // Adviser sees all admin-configured subjects for the grade level
       subjectsToShow = gradeSubjectList;
     } else if (gradeSubjectList.length > 0) {
@@ -1111,7 +1120,7 @@ export default function EditGrades() {
       if (response.data?.success) {
         toast.success('Grades saved successfully! You have 24 hours to edit them again.');
         fetchStudents();
-        setShowGradeModal(false);
+        setInitialGradeData(JSON.parse(JSON.stringify(gradeData)));
       } else {
         setErrorMessage(`❌ Failed to save grades: ${response.data?.message || 'Unknown error'}`);
         setErrorModal(true);
