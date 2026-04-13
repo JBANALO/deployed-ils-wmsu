@@ -287,6 +287,12 @@ export default function AdminSchoolYear() {
 
       const selectedCandidates = promotionCandidates.filter(c => selectedIds.includes(c.id));
       const needsAssignment = selectedCandidates.filter(c => c.canPromote && c.toGrade !== 'Graduate');
+      const manualAssignments = promotionCandidates
+        .filter((c) => c.canPromote && c.toGrade !== 'Graduate' && promotionAssignments[c.id])
+        .map((cand) => ({
+          studentId: cand.id,
+          classId: String(promotionAssignments[cand.id])
+        }));
 
       for (const cand of needsAssignment) {
         if (!promotionAssignments[cand.id]) {
@@ -296,14 +302,16 @@ export default function AdminSchoolYear() {
         }
       }
 
-      const assignments = needsAssignment.map(cand => ({
-        studentId: cand.id,
-        classId: String(promotionAssignments[cand.id])
-      }));
+      const assignments = mode === 'selected'
+        ? needsAssignment.map(cand => ({
+            studentId: cand.id,
+            classId: String(promotionAssignments[cand.id])
+          }))
+        : manualAssignments;
 
       const payload = mode === 'selected'
         ? { studentIds: selectedIds, assignments, schoolYearId: Number(selectedPromotionSchoolYearId) }
-        : { schoolYearId: Number(selectedPromotionSchoolYearId) };
+        : { assignments, schoolYearId: Number(selectedPromotionSchoolYearId) };
 
       const response = await axios.post('/school-years/promote-students', payload);
       const data = response.data?.data;
