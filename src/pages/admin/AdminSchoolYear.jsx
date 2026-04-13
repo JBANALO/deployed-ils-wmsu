@@ -55,6 +55,7 @@ export default function AdminSchoolYear() {
   const [promotionAssignments, setPromotionAssignments] = useState({});
   const [historyGradeFilter, setHistoryGradeFilter] = useState('All Grades');
   const [historySectionFilter, setHistorySectionFilter] = useState('All Sections');
+  const [historyStudentNameFilter, setHistoryStudentNameFilter] = useState('');
   const [showPromotionHistory, setShowPromotionHistory] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -493,9 +494,12 @@ export default function AdminSchoolYear() {
   )];
 
   const filteredPromotionHistory = scopedPromotionHistory.filter((row) => {
+    const normalizedSearch = String(historyStudentNameFilter || '').trim().toLowerCase();
+    const studentName = String(row.student_name || '').toLowerCase();
     const gradeOk = historyGradeFilter === 'All Grades' || row.from_grade === historyGradeFilter;
     const sectionOk = historySectionFilter === 'All Sections' || row.from_section === historySectionFilter;
-    return gradeOk && sectionOk;
+    const studentOk = !normalizedSearch || studentName.includes(normalizedSearch);
+    return gradeOk && sectionOk && studentOk;
   });
 
   if (loading) {
@@ -862,7 +866,17 @@ export default function AdminSchoolYear() {
           <p className="text-gray-400 text-center py-6">Promotion history is hidden for now.</p>
         ) : (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Search Student Name</label>
+                <input
+                  type="text"
+                  value={historyStudentNameFilter}
+                  onChange={(e) => setHistoryStudentNameFilter(e.target.value)}
+                  placeholder="Type student name"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+              </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Filter by Grade</label>
                 <select
