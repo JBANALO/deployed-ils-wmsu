@@ -76,6 +76,35 @@ export default function ScanQRScreen() {
     return (hh * 60) + mm;
   };
 
+  const parseScheduleWindow = (schedule = {}) => {
+    let startRaw = String(schedule.start_time || schedule.startTime || '').trim();
+    let endRaw = String(schedule.end_time || schedule.endTime || '').trim();
+
+    // Some payloads store range in one field, e.g. "00:00-00:15".
+    if ((!startRaw || !endRaw) && startRaw.includes('-')) {
+      const parts = startRaw.split('-').map((p) => p.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        startRaw = parts[0];
+        endRaw = parts[1];
+      }
+    }
+
+    if ((!startRaw || !endRaw) && endRaw.includes('-')) {
+      const parts = endRaw.split('-').map((p) => p.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        startRaw = startRaw || parts[0];
+        endRaw = parts[1];
+      }
+    }
+
+    return {
+      startMinutes: toMinutes(startRaw),
+      endMinutes: toMinutes(endRaw),
+      startTimeText: startRaw,
+      endTimeText: endRaw,
+    };
+  };
+
   const doesScheduleMatchToday = (dayValue, nowDate) => {
     const dayText = normalizeDayText(dayValue);
     const todayName = nowDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
@@ -94,8 +123,7 @@ export default function ScanQRScreen() {
 
   const getSubjectScheduleStatus = (schedule, nowDate) => {
     const nowMinutes = (nowDate.getHours() * 60) + nowDate.getMinutes();
-    const startMinutes = toMinutes(schedule.start_time);
-    const endMinutes = toMinutes(schedule.end_time);
+    const { startMinutes, endMinutes } = parseScheduleWindow(schedule);
 
     if (startMinutes === null || endMinutes === null) {
       return { status: 'present', period: 'subject' };
@@ -125,8 +153,7 @@ export default function ScanQRScreen() {
     });
 
     return candidates.find(s => {
-      const start = toMinutes(s.start_time);
-      const end = toMinutes(s.end_time);
+      const { startMinutes: start, endMinutes: end } = parseScheduleWindow(s);
       if (start === null || end === null) return false;
       return nowMinutes >= start && nowMinutes <= end;
     }) || null;

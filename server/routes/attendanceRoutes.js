@@ -28,6 +28,32 @@ const parseTimeToMinutes = (value) => {
   return (h * 60) + m;
 };
 
+const parseScheduleWindow = (startValue, endValue) => {
+  let startRaw = String(startValue || '').trim();
+  let endRaw = String(endValue || '').trim();
+
+  if ((!startRaw || !endRaw) && startRaw.includes('-')) {
+    const parts = startRaw.split('-').map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      startRaw = parts[0];
+      endRaw = parts[1];
+    }
+  }
+
+  if ((!startRaw || !endRaw) && endRaw.includes('-')) {
+    const parts = endRaw.split('-').map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      startRaw = startRaw || parts[0];
+      endRaw = parts[1];
+    }
+  }
+
+  return {
+    startClock: normalizeScheduleClock(startRaw, false),
+    endClock: normalizeScheduleClock(endRaw, true),
+  };
+};
+
 const normalizeScheduleClock = (value, preferEnd = false) => {
   const raw = String(value || '').trim();
   if (!raw) return null;
@@ -488,7 +514,8 @@ const runAutoAbsentGeneration = async ({ schoolYearId, date, dryRun }) => {
 
   for (const schedule of uniqueSchedules) {
     const scheduleDay = schedule.day || '';
-    const endMinutes = parseTimeToMinutes(schedule.end_time || '');
+    const { startClock, endClock } = parseScheduleWindow(schedule.start_time, schedule.end_time);
+    const endMinutes = parseTimeToMinutes(endClock || '');
 
     if (!doesScheduleMatchWeekday(scheduleDay, weekdayName)) {
       continue;
@@ -578,8 +605,8 @@ const runAutoAbsentGeneration = async ({ schoolYearId, date, dryRun }) => {
           schedule.class_id || null,
           schedule.subject || null,
           schedule.day || null,
-          schedule.start_time || null,
-          schedule.end_time || null,
+          startClock || schedule.start_time || null,
+          endClock || schedule.end_time || null,
           1
         ]
       );
