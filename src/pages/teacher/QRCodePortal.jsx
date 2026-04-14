@@ -18,7 +18,6 @@ import {
   CalendarIcon,
   ChevronDownIcon,
   PencilSquareIcon,
-  DocumentArrowDownIcon,
   PrinterIcon as PrinterIconSolid,
   ChartBarSquareIcon,
 } from "@heroicons/react/24/solid";
@@ -620,6 +619,10 @@ export default function QRCodePortal() {
     }
   };
 
+  const handlePrintAttendanceLog = () => {
+    window.print();
+  };
+
   useEffect(() => {
     if (!scannerActive || !videoRef.current) return;
 
@@ -1218,16 +1221,11 @@ export default function QRCodePortal() {
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row justify-center gap-6">
-              <button className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-base flex items-center justify-center gap-3 shadow-lg transition">
-                <DocumentArrowDownIcon className="w-5 h-5" />
-                Export PDF
-              </button>
-              <button className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-base flex items-center justify-center gap-3 shadow-lg transition">
-                <DocumentArrowDownIcon className="w-5 h-5" />
-                Export Excel
-              </button>
-              <button className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-base flex items-center justify-center gap-3 shadow-md transition">
+            <div className="flex justify-center">
+              <button
+                onClick={handlePrintAttendanceLog}
+                className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-base flex items-center justify-center gap-3 shadow-md transition"
+              >
                 <PrinterIconSolid className="w-5 h-5" />
                 Print
               </button>
