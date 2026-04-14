@@ -10,6 +10,7 @@ let attendanceSubjectColumnsEnsured = false;
 let attendanceStatusColumnEnsured = false;
 const autoAbsentRunMarker = new Map();
 let schoolYearLabelColumn = null;
+let autoAbsentTickerStarted = false;
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -66,7 +67,14 @@ const doesScheduleMatchWeekday = (dayValue, weekdayName) => {
   const targetShort = target.slice(0, 3);
 
   if (!dayText) return false;
-  if (dayText.includes('monday - friday') || dayText.includes('mon-fri') || dayText.includes('weekdays')) {
+  if (
+    dayText === 'all' ||
+    dayText.includes('monday - friday') ||
+    dayText.includes('monday-friday') ||
+    dayText.includes('mon-fri') ||
+    dayText.includes('weekdays') ||
+    dayText.includes('weekday')
+  ) {
     return target !== 'saturday' && target !== 'sunday';
   }
   if (dayText.includes('daily') || dayText.includes('every day') || dayText.includes('everyday')) {
@@ -586,6 +594,26 @@ const maybeRunAutoAbsentForToday = async ({ schoolYearId, date }) => {
     console.warn('[attendance] auto-absent run skipped:', autoErr.message);
   }
 };
+
+const startAutoAbsentTicker = () => {
+  if (autoAbsentTickerStarted) return;
+  autoAbsentTickerStarted = true;
+
+  const intervalRef = setInterval(async () => {
+    try {
+      await maybeRunAutoAbsentForToday({ date: new Date() });
+    } catch (tickerErr) {
+      console.warn('[attendance] auto-absent ticker error:', tickerErr.message);
+    }
+  }, 60 * 1000);
+
+  // Allow process to exit naturally in environments where no other work remains.
+  if (typeof intervalRef.unref === 'function') {
+    intervalRef.unref();
+  }
+};
+
+startAutoAbsentTicker();
 
 // Helper to normalize status values to valid ENUM values
 const normalizeStatus = (status) => {
