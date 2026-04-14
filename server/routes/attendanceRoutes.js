@@ -632,29 +632,75 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Look up student in the students table by lrn or id
-    const studentRows = await query(
-      'SELECT * FROM students WHERE (lrn = ? OR id = ?)',
-      [studentId, studentId]
+    let targetSy;
+    try {
+      // Always save to active school year unless explicitly requested.
+      targetSy = await resolveTargetSchoolYear(req.body.schoolYearId);
+      const activeSy = await getActiveSchoolYear();
+      if (!activeSy || targetSy.id !== activeSy.id) {
+        return res.status(403).json({ success: false, message: 'Attendance can only be recorded in the active school year (view-only for past years).' });
+      }
+    } catch (syErr) {
+      return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
+    }
+
+    const normalizedStudentId = String(studentId).trim();
+
+    // Resolve student in current school year first, then gracefully fallback to legacy rows.
+    let student = null;
+    let studentRows = await query(
+      'SELECT * FROM students WHERE id = ? AND school_year_id = ? LIMIT 1',
+      [normalizedStudentId, targetSy.id]
     );
-    
-    let student = studentRows[0] || null;
+    student = studentRows[0] || null;
+
+    if (!student) {
+      studentRows = await query(
+        'SELECT * FROM students WHERE lrn = ? AND school_year_id = ? LIMIT 1',
+        [normalizedStudentId, targetSy.id]
+      );
+      student = studentRows[0] || null;
+    }
+
+    if (!student) {
+      const legacyRows = await query(
+        `SELECT * FROM students
+         WHERE (lrn = ? OR id = ?)
+         ORDER BY COALESCE(school_year_id, 0) DESC, id DESC`,
+        [normalizedStudentId, normalizedStudentId]
+      );
+
+      const legacyStudent = legacyRows[0] || null;
+      if (legacyStudent?.lrn) {
+        const resolvedRows = await query(
+          `SELECT * FROM students
+           WHERE lrn = ? AND school_year_id = ?
+           ORDER BY id DESC
+           LIMIT 1`,
+          [legacyStudent.lrn, targetSy.id]
+        );
+        student = resolvedRows[0] || legacyStudent;
+      } else {
+        student = legacyStudent;
+      }
+    }
+
     let studentName = 'Unknown';
     let studentGradeLevel = 'N/A';
     let studentSection = 'N/A';
     let parentEmail = null;
-    let studentLRN = studentId;
+    let studentLRN = normalizedStudentId;
 
     if (student) {
       studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim();
       studentGradeLevel = student.grade_level || 'N/A';
       studentSection = student.section || 'N/A';
       parentEmail = student.parent_email || null;
-      studentLRN = student.lrn || studentId;
+      studentLRN = student.lrn || normalizedStudentId;
       console.log(`Found student in students table: ${studentName}, Parent Email: ${parentEmail}`);
     } else {
       // Fallback: check users table
-      const userRows = await query('SELECT * FROM users WHERE id = ? OR username = ?', [studentId, studentId]);
+      const userRows = await query('SELECT * FROM users WHERE id = ? OR username = ?', [normalizedStudentId, normalizedStudentId]);
       const userStudent = userRows[0];
       if (userStudent) {
         studentName = `${userStudent.firstName || userStudent.first_name || ''} ${userStudent.lastName || userStudent.last_name || ''}`.trim();
@@ -668,18 +714,6 @@ router.post('/', async (req, res) => {
           message: 'Student not found'
         });
       }
-    }
-
-    let targetSy;
-    try {
-      // Always save to active school year unless explicitly requested.
-      targetSy = await resolveTargetSchoolYear(req.body.schoolYearId);
-      const activeSy = await getActiveSchoolYear();
-      if (!activeSy || targetSy.id !== activeSy.id) {
-        return res.status(403).json({ success: false, message: 'Attendance can only be recorded in the active school year (view-only for past years).' });
-      }
-    } catch (syErr) {
-      return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
     }
 
     const today = getDateString(date || new Date());
