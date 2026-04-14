@@ -1026,11 +1026,16 @@ const archiveTeacher = async (req, res) => {
       // Fallback: some teacher accounts are stored in users table.
       if (!teacher) {
         try {
+          const userCols = await query('SHOW COLUMNS FROM users');
+          const userFieldSet = new Set(userCols.map((col) => col.Field));
+          const firstNameExpr = userFieldSet.has('firstName') ? 'firstName' : (userFieldSet.has('first_name') ? 'first_name' : "''");
+          const lastNameExpr = userFieldSet.has('lastName') ? 'lastName' : (userFieldSet.has('last_name') ? 'last_name' : "''");
+          const schoolYearExpr = userFieldSet.has('school_year_id') ? 'school_year_id' : 'NULL as school_year_id';
           const userRows = await query(
             `SELECT id, username,
-                    COALESCE(firstName, first_name) as firstName,
-                    COALESCE(lastName, last_name) as lastName,
-                    email, role, school_year_id
+                    ${firstNameExpr} as firstName,
+                    ${lastNameExpr} as lastName,
+                    email, role, ${schoolYearExpr}
              FROM users
              WHERE CAST(id AS CHAR) = ?
                AND role IN ('teacher', 'adviser', 'subject_teacher')
@@ -1095,10 +1100,35 @@ const archiveTeacher = async (req, res) => {
     } else if (source === 'teachers_table') {
       // Update teachers table and sync users status if linked.
       try {
-        await query(
-          'UPDATE teachers SET verification_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-          ['archived', targetId]
+        const teacherCols = await query('SHOW COLUMNS FROM teachers');
+        const teacherFieldSet = new Set(teacherCols.map((col) => col.Field));
+        const teacherStatusCol = teacherFieldSet.has('verification_status')
+          ? 'verification_status'
+          : (teacherFieldSet.has('status') ? 'status' : null);
+        const teacherUpdatedCol = teacherFieldSet.has('updated_at')
+          ? 'updated_at'
+          : (teacherFieldSet.has('updatedAt') ? 'updatedAt' : null);
+
+        if (!teacherStatusCol) {
+          throw new Error('No teacher status column found for archiving');
+        }
+
+        const updateClauses = [`${teacherStatusCol} = ?`];
+        const updateParams = ['archived'];
+        if (teacherUpdatedCol) updateClauses.push(`${teacherUpdatedCol} = CURRENT_TIMESTAMP`);
+
+        let updateResult = await query(
+          `UPDATE teachers SET ${updateClauses.join(', ')} WHERE CAST(id AS CHAR) = ?`,
+          [...updateParams, targetId]
         );
+
+        const affected = Number(updateResult?.affectedRows || 0);
+        if (affected === 0 && teacher?.email) {
+          updateResult = await query(
+            `UPDATE teachers SET ${updateClauses.join(', ')} WHERE LOWER(email) = LOWER(?)`,
+            [...updateParams, String(teacher.email || '').trim()]
+          );
+        }
 
         try {
           await query(
@@ -1686,6 +1716,12 @@ const updateTeacher = async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = { ...req.body };
+
+    const requestedStatus = String(updateData.status ?? updateData.verification_status ?? '').trim().toLowerCase();
+    if (requestedStatus === 'inactive' || requestedStatus === 'archived') {
+      return archiveTeacher(req, res);
+    }
+
     let activeSchoolYear;
 
     try {
