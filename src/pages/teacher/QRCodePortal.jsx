@@ -13,7 +13,6 @@ import {
   PrinterIcon,
   CloudArrowUpIcon,
   MagnifyingGlassIcon,    
-  FunnelIcon,             
   IdentificationIcon,  
   UserCircleIcon,   
   CalendarIcon,
@@ -985,10 +984,6 @@ export default function QRCodePortal() {
                   ))}
                 </select>
               </div>
-              <button className="px-8 py-4 bg-white border border-gray-300 rounded-xl flex items-center gap-3 hover:bg-gray-50 transition shadow-sm">
-                <FunnelIcon className="w-6 h-6 text-gray-600" />
-                <span className="font-medium">Filter</span>
-              </button>
             </div>
 
             <div ref={idCardRef} className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200 w-[800px] h-[700px]">

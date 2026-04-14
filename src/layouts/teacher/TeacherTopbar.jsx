@@ -1,16 +1,12 @@
 import React, { useState, useEffect, useRef, useContext } from "react";
 import { useNavigate } from "react-router-dom";
-import { BellIcon, UserCircleIcon, ChevronDownIcon, EyeIcon, EyeSlashIcon, CheckCircleIcon, ExclamationTriangleIcon, Cog6ToothIcon } from "@heroicons/react/24/solid";
+import { UserCircleIcon, ChevronDownIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/solid";
 import api from "../../api/axiosConfig";
 import { UserContext } from "../../context/UserContext";
-import notificationService from "../../services/notificationService";
 
 export default function TeacherTopbar({ sidebarOpen }) {
   const [showDropdown, setShowDropdown] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [userName, setUserName] = useState("");
-  const [notifications, setNotifications] = useState([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordData, setPasswordData] = useState({
     newPassword: "",
@@ -36,7 +32,6 @@ export default function TeacherTopbar({ sidebarOpen }) {
   const { logout } = useContext(UserContext);
   const navigate = useNavigate();
   const dropdownRef = useRef(null);
-  const notificationsRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -51,73 +46,14 @@ export default function TeacherTopbar({ sidebarOpen }) {
     }
   }, []);
 
-  // Initialize notifications
-  useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      const user = JSON.parse(storedUser);
-      if (user.id) {
-        const userId = `teacher_${user.id}`;
-        
-        // Initialize notification service
-        notificationService.initialize(userId, 'teacher').then(({ items, unread }) => {
-          setNotifications(items);
-          setUnreadCount(unread);
-        });
-        
-        // Add listener for real-time updates
-        const handleNotificationUpdate = (updatedNotifications) => {
-          setNotifications(updatedNotifications);
-          const unread = updatedNotifications.filter(n => !n.is_read).length;
-          setUnreadCount(unread);
-        };
-        
-        notificationService.addListener(userId, handleNotificationUpdate);
-        
-        return () => {
-          notificationService.removeListener(userId, handleNotificationUpdate);
-          notificationService.cleanup(userId);
-        };
-      }
-    }
-  }, []);
-
-  const handleOpenNotifications = async () => {
-    setShowNotifications(!showNotifications);
-    setShowDropdown(false);
-
-    // Mark unread as read when opening dropdown.
-    if (!showNotifications) {
-      const storedUser = localStorage.getItem('user');
-      if (storedUser) {
-        const user = JSON.parse(storedUser);
-        const userId = `teacher_${user.id}`;
-        
-        const unreadItems = notifications.filter((item) => !item.is_read);
-        if (unreadItems.length > 0) {
-          const success = await notificationService.markAllAsRead(userId);
-          if (success) {
-            setUnreadCount(0);
-          }
-        }
-      }
-    }
-  };
-
   useEffect(() => {
     const handleClickOutside = (event) => {
-      // Don't close if clicking on the buttons themselves
+      // Don't close if clicking on the user menu button itself
       const target = event.target;
-      const isNotificationButton = target.closest('[aria-label="Notifications"]');
       const isUserMenuButton = target.closest('[aria-label="User menu"]');
       
-      if (isNotificationButton || isUserMenuButton) {
+      if (isUserMenuButton) {
         return;
-      }
-      
-      // Close notifications if clicking outside
-      if (showNotifications && notificationsRef.current && !notificationsRef.current.contains(event.target)) {
-        setShowNotifications(false);
       }
       
       // Close user dropdown if clicking outside
@@ -130,7 +66,7 @@ export default function TeacherTopbar({ sidebarOpen }) {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showNotifications, showDropdown]);
+  }, [showDropdown]);
 
   const handleLogout = () => {
     // Use UserContext logout to clear user data properly
@@ -408,52 +344,11 @@ export default function TeacherTopbar({ sidebarOpen }) {
         </div>
 
         <div className="flex items-center gap-6 relative">
-          {/* Notification Bell */}
-          <div className="relative">
-            <button
-              className="relative p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              onClick={handleOpenNotifications}
-              aria-label="Notifications"
-            >
-              <BellIcon className="w-5 h-5 md:w-6 md:h-6 text-red-800 cursor-pointer hover:scale-110 transition-all shrink-0" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-600 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </button>
-
-            {/* Notifications Dropdown */}
-            {showNotifications && (
-              <div ref={notificationsRef} className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-md shadow-lg w-80 max-h-96 overflow-hidden z-50">
-                <div className="px-4 py-3 border-b flex items-center justify-between bg-gray-50">
-                  <h3 className="font-semibold text-gray-700">Notifications</h3>
-                </div>
-                
-                <div className="max-h-64 overflow-y-auto">
-                  {notifications.length === 0 ? (
-                    <div className="px-4 py-8 text-center">
-                      <p className="text-gray-500 text-sm">No notifications</p>
-                    </div>
-                  ) : (
-                    notifications.map((item) => (
-                      <div key={item.id} className="px-4 py-3 border-b border-gray-100 hover:bg-gray-50">
-                        <p className="text-sm font-semibold text-gray-800">{item.title}</p>
-                        <p className="text-xs text-gray-600 mt-1">{item.message}</p>
-                        <p className="text-[11px] text-gray-400 mt-2">{new Date(item.created_at).toLocaleString()}</p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-          
           {/* User Dropdown */}
           <div className="relative">
             <button
               className="flex items-center gap-2 p-1 hover:bg-gray-100 rounded-lg transition-colors"
-              onClick={() => { setShowDropdown(!showDropdown); setShowNotifications(false); }}
+              onClick={() => setShowDropdown(!showDropdown)}
               aria-label="User menu"
             >
               <UserCircleIcon className="w-8 h-8 text-red-800" />
