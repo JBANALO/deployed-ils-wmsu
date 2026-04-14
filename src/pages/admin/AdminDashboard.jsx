@@ -17,6 +17,13 @@ import { useSchoolYear } from "../../context/SchoolYearContext";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 
+const QUARTER_LABELS = {
+  q1: 'Q1',
+  q2: 'Q2',
+  q3: 'Q3',
+  q4: 'Q4'
+};
+
 export default function AdminDashboard() {
   const { viewingSchoolYear, setViewingSchoolYear, setActiveSchoolYear: setContextActiveSchoolYear } = useSchoolYear();
   const [students, setStudents] = useState([]);
@@ -51,6 +58,7 @@ export default function AdminDashboard() {
   const [activeSchoolYear, setActiveSchoolYear] = useState(null);
   const [schoolYears, setSchoolYears] = useState([]);
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState('');
+  const [selectedGradesQuarter, setSelectedGradesQuarter] = useState('q1');
   
   // Student Performance State
   const [gradeLevels, setGradeLevels] = useState([]);
@@ -137,30 +145,20 @@ export default function AdminDashboard() {
     }
   }, [viewingSchoolYear?.id]);
 
-  // Initialize grade levels and sections
+  // Initialize grade levels and sections from loaded student data.
   useEffect(() => {
     fetchGradeLevelsAndSections();
-  }, [selectedSchoolYearId]);
+  }, [students, selectedGradeLevelForTop, selectedGradeLevelForBottom]);
 
   // Update sections when grade level changes for top students
   useEffect(() => {
-    if (selectedGradeLevelForTop) {
-      fetchGradeLevelsAndSections();
-    } else {
-      setSectionsForTop([]);
-    }
     fetchTopStudents();
-  }, [selectedGradeLevelForTop, selectedSectionForTop, selectedSchoolYearId]);
+  }, [students, selectedGradeLevelForTop, selectedSectionForTop, selectedSchoolYearId]);
 
   // Update sections when grade level changes for bottom students
   useEffect(() => {
-    if (selectedGradeLevelForBottom) {
-      fetchGradeLevelsAndSections();
-    } else {
-      setSectionsForBottom([]);
-    }
     fetchBottomStudents();
-  }, [selectedGradeLevelForBottom, selectedSectionForBottom, selectedSchoolYearId]);
+  }, [students, selectedGradeLevelForBottom, selectedSectionForBottom, selectedSchoolYearId]);
 
   useEffect(() => {
     const handleFocus = () => {
@@ -176,6 +174,12 @@ export default function AdminDashboard() {
       loadDashboardStats(selectedSchoolYearId);
     }
   }, [selectedSchoolYearId]);
+
+  useEffect(() => {
+    if (selectedSchoolYearId) {
+      loadDashboardStats(selectedSchoolYearId);
+    }
+  }, [selectedGradesQuarter]);
 
   const fetchSchoolYears = async () => {
     try {
@@ -195,37 +199,37 @@ export default function AdminDashboard() {
   };
 
   // Fetch grade levels and sections
-  const fetchGradeLevelsAndSections = async () => {
+  const fetchGradeLevelsAndSections = () => {
     try {
-      const response = await axios.get('/students', {
-        params: selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}
-      });
-      
-      const students = response.data?.data || [];
-      
+      const sourceStudents = Array.isArray(students) ? students : [];
+
       // Extract unique grade levels
-      const uniqueGradeLevels = [...new Set(students.map(s => s.gradeLevel).filter(Boolean))];
+      const uniqueGradeLevels = [...new Set(sourceStudents.map(s => s.gradeLevel).filter(Boolean))];
       setGradeLevels(uniqueGradeLevels.sort());
       
       // Extract sections for each grade level
       if (selectedGradeLevelForTop) {
         const sectionsForSelectedGrade = [...new Set(
-          students
+          sourceStudents
             .filter(s => s.gradeLevel === selectedGradeLevelForTop)
             .map(s => s.section)
             .filter(Boolean)
         )].sort();
         setSectionsForTop(sectionsForSelectedGrade);
+      } else {
+        setSectionsForTop([]);
       }
       
       if (selectedGradeLevelForBottom) {
         const sectionsForSelectedGrade = [...new Set(
-          students
+          sourceStudents
             .filter(s => s.gradeLevel === selectedGradeLevelForBottom)
             .map(s => s.section)
             .filter(Boolean)
         )].sort();
         setSectionsForBottom(sectionsForSelectedGrade);
+      } else {
+        setSectionsForBottom([]);
       }
     } catch (error) {
       console.error('Error fetching grade levels and sections:', error);
@@ -236,41 +240,22 @@ export default function AdminDashboard() {
   const fetchTopStudents = async () => {
     setLoadingTopStudents(true);
     try {
-      const params = {
-        limit: 5,
-        sortBy: 'average',
-        sortOrder: 'desc'
-      };
-      
-      if (selectedSchoolYearId) {
-        params.schoolYearId = selectedSchoolYearId;
-      }
-      
-      if (selectedGradeLevelForTop) {
-        params.gradeLevel = selectedGradeLevelForTop;
-      }
-      
-      if (selectedSectionForTop) {
-        params.section = selectedSectionForTop;
-      }
-      
-      const response = await axios.get('/students/ranking', { params });
-      
-      const topStudentsData = response.data?.data || [];
-      const formattedTopStudents = topStudentsData
-        .map((student) => ({
-          id: student.id,
-          name: `${student.lastName}, ${student.firstName}`,
-          avg: Number(student.average || student.avg || 0)
-        }))
-        .filter((student) => student.avg >= 90)
+      const formattedTopStudents = (students || [])
+        .filter((student) => {
+          const status = String(student?.status || '').toLowerCase();
+          const avg = Number(student?.average ?? student?.live_average ?? 0);
+          const gradeMatches = !selectedGradeLevelForTop || student?.gradeLevel === selectedGradeLevelForTop;
+          const sectionMatches = !selectedSectionForTop || student?.section === selectedSectionForTop;
+          return status !== 'inactive' && status !== 'graduated' && status !== 'archived' && avg >= 90 && gradeMatches && sectionMatches;
+        })
+        .sort((a, b) => Number(b?.average ?? b?.live_average ?? 0) - Number(a?.average ?? a?.live_average ?? 0))
         .slice(0, 5)
         .map((student, index) => ({
-        id: student.id,
-        name: student.name,
-        avg: student.avg,
-        rank: index + 1
-      }));
+          id: student?.id,
+          name: `${student?.lastName || ''}, ${student?.firstName || ''}`.replace(/^,\s*/, '').trim() || student?.fullName || 'Unknown Student',
+          avg: Number(student?.average ?? student?.live_average ?? 0).toFixed(2),
+          rank: index + 1
+        }));
       
       setTopStudents(formattedTopStudents);
     } catch (error) {
@@ -285,33 +270,22 @@ export default function AdminDashboard() {
   const fetchBottomStudents = async () => {
     setLoadingBottomStudents(true);
     try {
-      const params = {
-        limit: 5,
-        sortBy: 'average',
-        sortOrder: 'asc'
-      };
-      
-      if (selectedSchoolYearId) {
-        params.schoolYearId = selectedSchoolYearId;
-      }
-      
-      if (selectedGradeLevelForBottom) {
-        params.gradeLevel = selectedGradeLevelForBottom;
-      }
-      
-      if (selectedSectionForBottom) {
-        params.section = selectedSectionForBottom;
-      }
-      
-      const response = await axios.get('/students/ranking', { params });
-      
-      const bottomStudentsData = response.data?.data || [];
-      const formattedBottomStudents = bottomStudentsData.map((student, index) => ({
-        id: student.id,
-        name: `${student.lastName}, ${student.firstName}`,
-        avg: student.average || student.avg || 0,
-        rank: index + 1
-      }));
+      const formattedBottomStudents = (students || [])
+        .filter((student) => {
+          const status = String(student?.status || '').toLowerCase();
+          const avg = Number(student?.average ?? student?.live_average ?? 0);
+          const gradeMatches = !selectedGradeLevelForBottom || student?.gradeLevel === selectedGradeLevelForBottom;
+          const sectionMatches = !selectedSectionForBottom || student?.section === selectedSectionForBottom;
+          return status !== 'inactive' && status !== 'graduated' && status !== 'archived' && avg > 0 && avg <= 75 && gradeMatches && sectionMatches;
+        })
+        .sort((a, b) => Number(a?.average ?? a?.live_average ?? 0) - Number(b?.average ?? b?.live_average ?? 0))
+        .slice(0, 5)
+        .map((student, index) => ({
+          id: student?.id,
+          name: `${student?.lastName || ''}, ${student?.firstName || ''}`.replace(/^,\s*/, '').trim() || student?.fullName || 'Unknown Student',
+          avg: Number(student?.average ?? student?.live_average ?? 0).toFixed(2),
+          rank: index + 1
+        }));
       
       setBottomStudents(formattedBottomStudents);
     } catch (error) {
@@ -506,41 +480,66 @@ const loadDashboardStats = async (overrideSyId) => {
     setAttendanceData(attendanceList); // ✅ important for SF2
 
     // =========================
-    // FETCH GRADES (SAFE)
-    // =========================
-    let grades = [];
-    try {
-      const gradesRes = await axios.get(`/grades${querySuffix}`);
-      grades =
-        Array.isArray(gradesRes.data?.data)
-          ? gradesRes.data.data
-          : Array.isArray(gradesRes.data)
-          ? gradesRes.data
-          : [];
-    } catch {
-      grades = [];
-    }
-
-    // =========================
     // TODAY ATTENDANCE RATE
     // =========================
     const today = new Date().toISOString().split('T')[0];
     const todayAttendance = attendanceList.filter(a => a.date === today);
 
+    const todayAttendanceByStudent = new Map();
+    todayAttendance.forEach((record) => {
+      const key = String(record?.studentId || '').trim();
+      if (!key) return;
+      const normalizedStatus = String(record?.status || '').toLowerCase();
+      const current = todayAttendanceByStudent.get(key);
+      if (!current) {
+        todayAttendanceByStudent.set(key, normalizedStatus);
+        return;
+      }
+      // If a student has at least one present/late record for today, count as present.
+      if (normalizedStatus === 'present' || normalizedStatus === 'late') {
+        todayAttendanceByStudent.set(key, normalizedStatus);
+      }
+    });
+
+    const todayPresentCount = Array.from(todayAttendanceByStudent.values()).filter(
+      (status) => status === 'present' || status === 'late'
+    ).length;
+
     const attendanceRate =
       studentsList.length > 0
-        ? ((todayAttendance.length / studentsList.length) * 100).toFixed(1)
+        ? ((todayPresentCount / studentsList.length) * 100).toFixed(1)
         : 0;
 
     // =========================
-    // WEEKLY DATA
+    // QUARTER GRADE DATA
     // =========================
+    const quarterMetaByKey = {
+      q1: { status: 'q1CompletionStatus', graded: 'q1CompletionGraded', avg: 'q1_avg' },
+      q2: { status: 'q2CompletionStatus', graded: 'q2CompletionGraded', avg: 'q2_avg' },
+      q3: { status: 'q3CompletionStatus', graded: 'q3CompletionGraded', avg: 'q3_avg' },
+      q4: { status: 'q4CompletionStatus', graded: 'q4CompletionGraded', avg: 'q4_avg' }
+    };
+    const quarterMeta = quarterMetaByKey[selectedGradesQuarter] || quarterMetaByKey.q1;
+    const quarterEligibleStudents = studentsList.filter((student) => {
+      const status = String(student?.status || '').toLowerCase();
+      return status !== 'inactive' && status !== 'graduated' && status !== 'archived';
+    });
+
+    const quarterSubmittedCount = quarterEligibleStudents.filter((student) => {
+      const completionStatus = String(student?.[quarterMeta.status] || '').toLowerCase();
+      const quarterAverage = Number(student?.[quarterMeta.avg] || 0);
+      return completionStatus === 'complete' || quarterAverage > 0;
+    }).length;
+
+    const quarterNoGradesCount = quarterEligibleStudents.filter((student) => {
+      const completionStatus = String(student?.[quarterMeta.status] || '').toLowerCase();
+      const gradedCount = Number(student?.[quarterMeta.graded] || 0);
+      const quarterAverage = Number(student?.[quarterMeta.avg] || 0);
+      return completionStatus === 'incomplete' && gradedCount <= 0 && quarterAverage <= 0;
+    }).length;
+
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
-
-    const weeklyGrades = grades.filter((g) => new Date(g.createdAt || g.updatedAt || g.date) > weekAgo);
-
-    const pendingGrades = grades.filter((g) => g.status === 'pending' || !g.status);
 
     // =========================
     // ACTIVE USERS
@@ -583,8 +582,8 @@ const loadDashboardStats = async (overrideSyId) => {
 
     setPerformanceMetrics({
       todayAttendance: parseFloat(attendanceRate),
-      weeklyGrades: weeklyGrades.length,
-      pendingGrades: pendingGrades.length,
+      weeklyGrades: quarterSubmittedCount,
+      pendingGrades: quarterNoGradesCount,
       activeUsers: activeIdentitySet.size,
       activeTeachers: activeTeachers.length,
       activeStudents: activeStudents.length,
@@ -606,22 +605,21 @@ const loadDashboardStats = async (overrideSyId) => {
       );
     }
 
-    if (pendingGrades.length > 0) {
+    if (quarterNoGradesCount > 0) {
       logActivity(
         'grade_submission',
-        'Grade submission',
-        `${pendingGrades.length} grade${pendingGrades.length > 1 ? 's' : ''} pending review`,
+        'Quarter grades pending',
+        `${quarterNoGradesCount} student${quarterNoGradesCount > 1 ? 's' : ''} still have no ${String(QUARTER_LABELS[selectedGradesQuarter] || 'Q1')} grades`,
         'blue'
       );
     }
 
     if (attendanceList.length > 0) {
-      const todayAttendance = attendanceList.filter(a => a.date === new Date().toISOString().split('T')[0]);
-      if (todayAttendance.length > 0) {
+      if (todayPresentCount > 0) {
         logActivity(
           'attendance',
           'Attendance recorded',
-          `${todayAttendance.length} attendance record${todayAttendance.length > 1 ? 's' : ''} for today`,
+          `${todayPresentCount} present student${todayPresentCount > 1 ? 's' : ''} for today`,
           'purple'
         );
       }
@@ -751,8 +749,8 @@ const loadDashboardStats = async (overrideSyId) => {
 
       const performanceData = [
         { label: 'Today\'s Attendance', value: `${performanceMetrics.todayAttendance}%` },
-        { label: 'Weekly Grades', value: performanceMetrics.weeklyGrades.toString() },
-        { label: 'Pending Grades', value: performanceMetrics.pendingGrades.toString() },
+        { label: `Quarter Grades Submitted (${QUARTER_LABELS[selectedGradesQuarter] || 'Q1'})`, value: performanceMetrics.weeklyGrades.toString() },
+        { label: `No Grades Yet (${QUARTER_LABELS[selectedGradesQuarter] || 'Q1'})`, value: performanceMetrics.pendingGrades.toString() },
         { label: 'Active Users', value: performanceMetrics.activeUsers.toString() },
         { label: 'Active Teachers', value: performanceMetrics.activeTeachers.toString() },
         { label: 'Active Students', value: performanceMetrics.activeStudents.toString() },
@@ -826,8 +824,8 @@ const loadDashboardStats = async (overrideSyId) => {
         ['Total Classes', stats.totalClasses],
         ['Attendance Records', stats.totalAttendanceRecords],
         ['Today Attendance Rate', `${performanceMetrics.todayAttendance}%`],
-        ['Weekly Grades', performanceMetrics.weeklyGrades],
-        ['Pending Grades', performanceMetrics.pendingGrades],
+        [`Quarter Grades Submitted (${QUARTER_LABELS[selectedGradesQuarter] || 'Q1'})`, performanceMetrics.weeklyGrades],
+        [`No Grades Yet (${QUARTER_LABELS[selectedGradesQuarter] || 'Q1'})`, performanceMetrics.pendingGrades],
         ['Active Users', performanceMetrics.activeUsers],
         ['Active Teachers', performanceMetrics.activeTeachers],
         ['Active Students', performanceMetrics.activeStudents],
@@ -1080,12 +1078,24 @@ const loadDashboardStats = async (overrideSyId) => {
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-blue-800">Weekly Grades</p>
+                        <p className="text-sm font-medium text-blue-800">Quarter Grades ({QUARTER_LABELS[selectedGradesQuarter] || 'Q1'})</p>
                         <p className="text-2xl font-bold text-blue-600">{loading ? '...' : performanceMetrics.weeklyGrades}</p>
-                        <p className="text-xs text-blue-600">{performanceMetrics.pendingGrades} pending review</p>
+                        <p className="text-xs text-blue-600">{performanceMetrics.pendingGrades} students with no quarter grades yet</p>
                       </div>
-                      <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
-                        <BookOpenIcon className="w-5 h-5 text-white" />
+                      <div className="flex flex-col items-end gap-2">
+                        <select
+                          value={selectedGradesQuarter}
+                          onChange={(e) => setSelectedGradesQuarter(e.target.value)}
+                          className="text-xs border border-blue-200 rounded px-2 py-1 bg-white text-blue-700"
+                        >
+                          <option value="q1">Q1</option>
+                          <option value="q2">Q2</option>
+                          <option value="q3">Q3</option>
+                          <option value="q4">Q4</option>
+                        </select>
+                        <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                          <BookOpenIcon className="w-5 h-5 text-white" />
+                        </div>
                       </div>
                     </div>
                   </div>
