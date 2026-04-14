@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useState } from "react";
 
 export default function HomePage() {
+  const APK_DOWNLOAD_URL = "https://expo.dev/artifacts/eas/rzs8tmmhq9K3UgHjyV731x.apk";
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showQuickLinksModal, setShowQuickLinksModal] = useState(false);
 
@@ -50,7 +51,7 @@ export default function HomePage() {
                   Login to System
                 </Link>
                 <a
-                  href="https://expo.dev/artifacts/eas/rzs8tmmhq9K3UgHjyV731x.apk"
+                  href={APK_DOWNLOAD_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-center gap-2 text-red-800 hover:text-red-600 font-medium"
@@ -147,7 +148,7 @@ export default function HomePage() {
                   Get Started
                 </Link>
                 <a
-                  href="https://expo.dev/artifacts/eas/rzs8tmmhq9K3UgHjyV731x.apk"
+                  href={APK_DOWNLOAD_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-center gap-2 bg-yellow-400 text-red-800 px-8 py-3 rounded-lg hover:bg-yellow-300 transition duration-300 font-bold text-lg shadow-lg"
@@ -328,7 +329,7 @@ export default function HomePage() {
                   Login to System
                 </Link>
                 <a
-                  href="https://expo.dev/artifacts/eas/rzs8tmmhq9K3UgHjyV731x.apk"
+                  href={APK_DOWNLOAD_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-center gap-2 bg-yellow-400 text-red-800 px-4 py-2 rounded-lg hover:bg-yellow-300 transition font-medium"
