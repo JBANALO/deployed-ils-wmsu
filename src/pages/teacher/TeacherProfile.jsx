@@ -106,6 +106,31 @@ export default function TeacherProfile() {
                   String(teacherName).includes(user.firstName) &&
                   String(teacherName).includes(user.lastName)
                 );
+                const classKey = (cls) => {
+                  const grade = String(cls?.grade || '').trim().toLowerCase();
+                  const section = String(cls?.section || '').trim().toLowerCase();
+                  if (grade || section) return `${grade}::${section}`;
+                  return normalizeId(cls?.id).toLowerCase();
+                };
+                const dedupeSubjectTeacherRows = (rows = []) => {
+                  const seen = new Set();
+                  const deduped = [];
+                  rows.forEach((row) => {
+                    if (!row) return;
+                    const key = [
+                      String(row.teacher_id || '').trim().toLowerCase(),
+                      String(row.teacher_name || '').trim().toLowerCase(),
+                      String(row.subject || '').trim().toLowerCase(),
+                      String(row.day || '').trim().toLowerCase(),
+                      String(row.start_time || '').trim().toLowerCase(),
+                      String(row.end_time || '').trim().toLowerCase(),
+                    ].join('|');
+                    if (!key || seen.has(key)) return;
+                    seen.add(key);
+                    deduped.push(row);
+                  });
+                  return deduped;
+                };
                 const dedupeClassesById = (classes = []) => {
                   const map = new Map();
                   classes.forEach((cls) => {
@@ -172,6 +197,60 @@ export default function TeacherProfile() {
                   } catch (nameFallbackErr) {
                     console.error('Name-based adviser fallback failed:', nameFallbackErr);
                   }
+                }
+
+                // Safety net: merge in teacher-relevant rows from all classes for this school year.
+                // This handles data inconsistencies where teacher_id stored in subject_teachers may
+                // not match the logged-in user id used by role-filtered endpoints.
+                try {
+                  const allClassesResp = await api.get(appendSchoolYearId('/classes', viewingSyId));
+                  const allClasses = extractClasses(allClassesResp);
+                  const mergedByClass = new Map();
+
+                  const upsertClass = (cls, forcedRole) => {
+                    if (!cls) return;
+                    const key = classKey(cls);
+                    if (!key) return;
+
+                    const existing = mergedByClass.get(key);
+                    const existingRows = Array.isArray(existing?.subject_teachers) ? existing.subject_teachers : [];
+                    const incomingRows = Array.isArray(cls?.subject_teachers) ? cls.subject_teachers : [];
+                    const mergedRows = dedupeSubjectTeacherRows([...existingRows, ...incomingRows]);
+
+                    const existingIsAdviser = existing?.role_in_class === 'adviser';
+                    const incomingRole = forcedRole || cls.role_in_class || existing?.role_in_class || '';
+                    const resolvedRole = existingIsAdviser || incomingRole === 'adviser' ? 'adviser' : incomingRole;
+
+                    mergedByClass.set(key, {
+                      ...(existing || {}),
+                      ...cls,
+                      role_in_class: resolvedRole,
+                      subject_teachers: mergedRows,
+                    });
+                  };
+
+                  visibleClasses.forEach((cls) => upsertClass(cls, cls?.role_in_class));
+
+                  allClasses.forEach((cls) => {
+                    const adviserMatch = isSameTeacher(cls?.adviser_id, user.id) || isAdviserNameMatch(cls);
+                    const subjectRows = Array.isArray(cls?.subject_teachers)
+                      ? cls.subject_teachers.filter((st) => isSameTeacher(st?.teacher_id, user.id) || isTeacherNameMatch(st?.teacher_name))
+                      : [];
+
+                    if (!adviserMatch && subjectRows.length === 0) return;
+
+                    upsertClass(
+                      {
+                        ...cls,
+                        role_in_class: adviserMatch ? 'adviser' : 'subject_teacher',
+                      },
+                      adviserMatch ? 'adviser' : 'subject_teacher'
+                    );
+                  });
+
+                  visibleClasses = Array.from(mergedByClass.values());
+                } catch (allClassesErr) {
+                  console.error('All-classes fallback merge failed:', allClassesErr);
                 }
 
                 // Keep a single class entry even if backend returns adviser + subject_teacher
