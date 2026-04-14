@@ -1142,7 +1142,7 @@ exports.getStudent = async (req, res) => {
     const studentLRN = student.lrn; // LRN is used as studentId in attendance table
     const siblingStudentRows = studentLRN
       ? await query(
-          `SELECT id, school_year_id, grade_level, section
+          `SELECT id, school_year_id, grade_level, section, first_name, last_name
            FROM students
            WHERE lrn = ?
            ORDER BY COALESCE(school_year_id, 0) DESC, id DESC`,
@@ -1153,6 +1153,10 @@ exports.getStudent = async (req, res) => {
     const normalizeSubjectName = (value = '') => String(value)
       .replace(/\s*\(Grade\s+\d+\)\s*$/i, '')
       .replace(/\s*\(Kindergarten\)\s*$/i, '')
+      .trim()
+      .toLowerCase();
+    const normalizeIdentityValue = (value = '') => String(value)
+      .replace(/\s+/g, ' ')
       .trim()
       .toLowerCase();
 
@@ -1478,10 +1482,20 @@ exports.getStudent = async (req, res) => {
     
     // ======== FETCH ATTENDANCE ========
     // Attendance may store either current student ID, LRN, or sibling-row IDs.
+    // Guard against reused LRNs by matching sibling IDs to the same student identity.
+    const currentStudentNameKey = normalizeIdentityValue(`${student.first_name || ''} ${student.last_name || ''}`);
+    const identityMatchedSiblingIds = siblingStudentRows
+      .filter((row) => {
+        const siblingNameKey = normalizeIdentityValue(`${row?.first_name || ''} ${row?.last_name || ''}`);
+        return !currentStudentNameKey || !siblingNameKey || siblingNameKey === currentStudentNameKey;
+      })
+      .map((row) => row?.id)
+      .filter(Boolean);
+
     const attendanceCandidateIds = Array.from(new Set([
       studentLRN,
       studentId,
-      ...siblingStudentRows.map((row) => row?.id)
+      ...identityMatchedSiblingIds
     ]
       .filter(Boolean)
       .map((value) => String(value).trim())
@@ -1516,6 +1530,28 @@ exports.getStudent = async (req, res) => {
           attendanceCandidateIds
         );
       }
+
+      const expectedGradeKey = normalizeIdentityValue(student.grade_level || '');
+      const expectedSectionKey = normalizeIdentityValue(student.section || '');
+
+      attendanceRaw = (attendanceRaw || []).filter((record) => {
+        const recordStudentId = String(record?.studentId || '').trim();
+        const recordNameKey = normalizeIdentityValue(record?.studentName || '');
+        const recordGradeKey = normalizeIdentityValue(record?.gradeLevel || '');
+        const recordSectionKey = normalizeIdentityValue(record?.section || '');
+
+        const idMatches = attendanceCandidateIds.includes(recordStudentId);
+        const nameMatches = currentStudentNameKey && recordNameKey && recordNameKey === currentStudentNameKey;
+        const classMatches = (
+          expectedGradeKey &&
+          expectedSectionKey &&
+          expectedGradeKey === recordGradeKey &&
+          expectedSectionKey === recordSectionKey
+        );
+
+        // Keep rows only when ID linkage is reinforced by name/class identity.
+        return idMatches && (nameMatches || classMatches);
+      });
     }
     
     // Group attendance by month for report card format
