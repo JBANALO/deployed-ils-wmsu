@@ -84,7 +84,7 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    loadDashboardStats();
+    loadDashboardStats(undefined, { showLoader: true, silent: false });
     fetchSchoolYears();
     
     // Fetch admin user data
@@ -119,24 +119,7 @@ export default function AdminDashboard() {
 
     fetchAdminUser();
     
-    // Set up real-time updates every 15 seconds for better responsiveness
-    const interval = setInterval(() => {
-      loadDashboardStats();
-    }, 15000);
-    
-    return () => clearInterval(interval);
-  }, []);
-
-  // Add visibility change listener to refresh when tab becomes active
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        loadDashboardStats();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    return undefined;
   }, []);
 
   useEffect(() => {
@@ -161,23 +144,14 @@ export default function AdminDashboard() {
   }, [students, selectedGradeLevelForBottom, selectedSectionForBottom, selectedSchoolYearId]);
 
   useEffect(() => {
-    const handleFocus = () => {
-      loadDashboardStats();
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [selectedSchoolYearId]);
-
-  useEffect(() => {
     if (selectedSchoolYearId) {
-      loadDashboardStats(selectedSchoolYearId);
+      loadDashboardStats(selectedSchoolYearId, { showLoader: false, silent: false });
     }
   }, [selectedSchoolYearId]);
 
   useEffect(() => {
     if (selectedSchoolYearId) {
-      loadDashboardStats(selectedSchoolYearId);
+      loadDashboardStats(selectedSchoolYearId, { showLoader: false, silent: false });
     }
   }, [selectedGradesQuarter]);
 
@@ -238,7 +212,6 @@ export default function AdminDashboard() {
 
   // Fetch top performing students
   const fetchTopStudents = async () => {
-    setLoadingTopStudents(true);
     try {
       const formattedTopStudents = (students || [])
         .filter((student) => {
@@ -261,14 +234,11 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('Error fetching top students:', error);
       setTopStudents([]);
-    } finally {
-      setLoadingTopStudents(false);
     }
   };
 
   // Fetch bottom performing students
   const fetchBottomStudents = async () => {
-    setLoadingBottomStudents(true);
     try {
       const formattedBottomStudents = (students || [])
         .filter((student) => {
@@ -291,8 +261,6 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('Error fetching bottom students:', error);
       setBottomStudents([]);
-    } finally {
-      setLoadingBottomStudents(false);
     }
   };
 
@@ -313,13 +281,14 @@ export default function AdminDashboard() {
   // Manual refresh function
   const handleManualRefresh = async () => {
     toast.info('Refreshing dashboard data...');
-    await loadDashboardStats();
+    await loadDashboardStats(undefined, { showLoader: true, silent: false });
     toast.success('Dashboard data refreshed!');
   };
 
-const loadDashboardStats = async (overrideSyId) => {
+const loadDashboardStats = async (overrideSyId, options = {}) => {
+  const { showLoader = true, silent = false } = options;
   try {
-    setLoading(true);
+    if (showLoader) setLoading(true);
     console.log('Loading dashboard stats...');
 
     // Ensure we have a target school year (prefer override -> selected -> active)
@@ -330,8 +299,8 @@ const loadDashboardStats = async (overrideSyId) => {
         const activeRes = await axios.get('/school-years/active');
         const activeSy = activeRes.data?.data || null;
         if (!activeSy) {
-          toast.error('No active school year found. Please activate one in School Year.');
-          setLoading(false);
+          if (!silent) toast.error('No active school year found. Please activate one in School Year.');
+          if (showLoader) setLoading(false);
           return;
         }
         targetSyId = String(activeSy.id);
@@ -343,8 +312,8 @@ const loadDashboardStats = async (overrideSyId) => {
         }
       } catch (syErr) {
         console.error('Error fetching active school year for dashboard:', syErr);
-        toast.error('Failed to fetch active school year');
-        setLoading(false);
+        if (!silent) toast.error('Failed to fetch active school year');
+        if (showLoader) setLoading(false);
         return;
       }
     }
@@ -474,7 +443,7 @@ const loadDashboardStats = async (overrideSyId) => {
     } catch (attendanceErr) {
       console.error('Error fetching attendance:', attendanceErr);
       attendanceList = [];
-      toast.warn('Attendance data unavailable for this school year.');
+      if (!silent) toast.warn('Attendance data unavailable for this school year.');
     }
 
     setAttendanceData(attendanceList); // ✅ important for SF2
@@ -643,7 +612,7 @@ const loadDashboardStats = async (overrideSyId) => {
       console.error('Error fetching active school year:', err);
     }
 
-    setLoading(false);
+    if (showLoader) setLoading(false);
 
   } catch (error) {
     try {
@@ -658,8 +627,8 @@ const loadDashboardStats = async (overrideSyId) => {
       console.error('Fallback school year hydrate failed:', syFallbackErr);
     }
 
-    toast.error('Error loading dashboard stats: ' + error.message);
-    setLoading(false);
+    if (!silent) toast.error('Error loading dashboard stats: ' + error.message);
+    if (showLoader) setLoading(false);
   }
 };
 
