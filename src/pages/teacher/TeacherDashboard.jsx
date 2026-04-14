@@ -21,6 +21,7 @@ export default function TeacherDashboard() {
     activeClasses: 0,
     averageAttendance: 0
   });
+  const [todayNoClassEntry, setTodayNoClassEntry] = useState(null);
   const [recentActivity, setRecentActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeSchoolYear, setActiveSchoolYear] = useState(null);
@@ -30,6 +31,14 @@ export default function TeacherDashboard() {
   const [assignedClassKeys, setAssignedClassKeys] = useState([]);
   const [showPromotionHistory, setShowPromotionHistory] = useState(false);
   const lastKnownActiveSchoolYearIdRef = useRef(null);
+
+  const getLocalIsoDate = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   useEffect(() => {
     loadDashboardData();
@@ -137,6 +146,20 @@ export default function TeacherDashboard() {
       setLoading(true);
       const syParam = overrideSyId || selectedSchoolYearId || '';
       const querySuffix = syParam ? `?schoolYearId=${syParam}` : '';
+      const todayIsoDate = getLocalIsoDate();
+
+      try {
+        const noClassRes = await axios.get(`/school-years/no-class-days${querySuffix}`);
+        const noClassRows = Array.isArray(noClassRes.data?.data)
+          ? noClassRes.data.data
+          : [];
+        const todayEntry = noClassRows.find(
+          (row) => String(row?.no_class_date || '').split('T')[0] === todayIsoDate
+        ) || null;
+        setTodayNoClassEntry(todayEntry);
+      } catch (calendarErr) {
+        setTodayNoClassEntry(null);
+      }
       
       // Get current user from localStorage
       let user = null;
@@ -267,9 +290,15 @@ export default function TeacherDashboard() {
       setLoading(false);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
+      setTodayNoClassEntry(null);
       setLoading(false);
     }
   };
+
+  const isViewingActiveSchoolYear =
+    !selectedSchoolYearId ||
+    !activeSchoolYear?.id ||
+    Number(selectedSchoolYearId) === Number(activeSchoolYear.id);
 
   return (
     <div className="space-y-8">
@@ -302,6 +331,21 @@ export default function TeacherDashboard() {
           </div>
         </div>
       </div>
+
+      {todayNoClassEntry && isViewingActiveSchoolYear && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 shadow-sm">
+          <div className="flex items-start gap-3">
+            <CalendarIcon className="w-6 h-6 text-amber-700 mt-0.5" />
+            <div>
+              <h3 className="text-sm font-bold text-amber-800">No Class Day Today</h3>
+              <p className="text-sm text-amber-900">
+                Today is marked in the university calendar as a no-class day.
+                {todayNoClassEntry?.reason ? ` Reason: ${todayNoClassEntry.reason}` : ''}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-gray-50 p-4 rounded-lg text-center shadow border border-gray-300 border-l-red-800 border-l-8 hover:shadow-md transition">
