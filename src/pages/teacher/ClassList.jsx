@@ -33,6 +33,7 @@ export default function ClassList() {
   const [gradeOpen, setGradeOpen] = useState(false);
   const [sectionOpen, setSectionOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
+  const [includeLrnInExport, setIncludeLrnInExport] = useState(true);
 
   const [students, setStudents] = useState([]);
   const [assignedClasses, setAssignedClasses] = useState([]);
@@ -260,6 +261,12 @@ export default function ClassList() {
     });
   };
 
+  const normalizeSex = (value) => String(value || '').trim().toLowerCase();
+  const getStudentName = (student) => student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim();
+  const sortByName = (rows = []) => [...rows].sort((a, b) =>
+    getStudentName(a).localeCompare(getStudentName(b), undefined, { sensitivity: 'base' })
+  );
+
   const getClassListDocumentHtml = (rowsToExport = []) => {
     const generatedAt = new Date().toLocaleString();
     const statusLabel = statusFilter === 'All Status' ? 'All Statuses' : statusFilter;
@@ -269,18 +276,47 @@ export default function ClassList() {
       ? `${gradeLabel} - ${sectionLabel}`
       : getFilterLabel();
 
-    const rowsHtml = rowsToExport.map((student, index) => `
-      <tr>
-        <td>${index + 1}</td>
-        <td>${escapeHtml(student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim())}</td>
-        <td>${escapeHtml(student.lrn || '')}</td>
-        <td>${escapeHtml(student.gradeLevel || '')}</td>
-        <td>${escapeHtml(student.section || '')}</td>
-        <td>${escapeHtml(student.age || '')}</td>
-        <td>${escapeHtml(student.sex || '')}</td>
-        <td>${escapeHtml(student.status || '')}</td>
-      </tr>
-    `).join('');
+    const maleStudents = sortByName(rowsToExport.filter((student) => normalizeSex(student.sex) === 'male'));
+    const femaleStudents = sortByName(rowsToExport.filter((student) => normalizeSex(student.sex) === 'female'));
+    const otherStudents = sortByName(rowsToExport.filter((student) => {
+      const normalized = normalizeSex(student.sex);
+      return normalized !== 'male' && normalized !== 'female';
+    }));
+
+    const renderGroupTable = (label, rows) => {
+      if (!rows.length) {
+        return `
+          <div class="group-block">
+            <div class="group-title">${label} (0)</div>
+            <div class="no-students">No students in this group.</div>
+          </div>
+        `;
+      }
+
+      const rowsHtml = rows.map((student, index) => `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${escapeHtml(getStudentName(student))}</td>
+          ${includeLrnInExport ? `<td>${escapeHtml(student.lrn || 'N/A')}</td>` : ''}
+        </tr>
+      `).join('');
+
+      return `
+        <div class="group-block">
+          <div class="group-title">${label} (${rows.length})</div>
+          <table>
+            <thead>
+              <tr>
+                <th>No.</th>
+                <th>Student Name</th>
+                ${includeLrnInExport ? '<th>LRN</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      `;
+    };
 
     return `
       <html>
@@ -323,10 +359,19 @@ export default function ClassList() {
               color: #4b5563;
               margin-bottom: 3px;
             }
+            .group-block {
+              margin-top: 14px;
+            }
+            .group-title {
+              font-size: 16px;
+              font-weight: 700;
+              color: #111827;
+              margin-bottom: 8px;
+            }
             table {
               width: 100%;
               border-collapse: collapse;
-              margin-top: 18px;
+              margin-top: 8px;
             }
             th, td {
               padding: 10px;
@@ -361,25 +406,12 @@ export default function ClassList() {
             <div class="class-info">${escapeHtml(classLabel)} Class List</div>
             <div class="meta"><strong>Status:</strong> ${escapeHtml(statusLabel)}</div>
             <div class="meta"><strong>Total Students:</strong> ${rowsToExport.length}</div>
+            <div class="meta"><strong>LRN:</strong> ${includeLrnInExport ? 'Included' : 'Hidden'}</div>
             <div class="meta"><strong>Generated:</strong> ${escapeHtml(generatedAt)}</div>
           </div>
-          ${rowsToExport.length > 0 ? `
-            <table>
-              <thead>
-                <tr>
-                  <th>No.</th>
-                  <th>Student Name</th>
-                  <th>LRN</th>
-                  <th>Grade</th>
-                  <th>Section</th>
-                  <th>Age</th>
-                  <th>Sex</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>${rowsHtml}</tbody>
-            </table>
-          ` : '<div class="no-students">No students in this class yet.</div>'}
+          ${rowsToExport.length > 0
+            ? `${renderGroupTable('Male Students', maleStudents)}${renderGroupTable('Female Students', femaleStudents)}${otherStudents.length > 0 ? renderGroupTable('Other / Unspecified', otherStudents) : ''}`
+            : '<div class="no-students">No students in this class yet.</div>'}
         </body>
       </html>
     `;
@@ -688,6 +720,16 @@ export default function ClassList() {
         </div>
 
         <div className="w-full md:w-auto flex items-center gap-2">
+          <label className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-gray-300 rounded-xl text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={includeLrnInExport}
+              onChange={(e) => setIncludeLrnInExport(e.target.checked)}
+              className="accent-red-700"
+            />
+            Include LRN
+          </label>
+
           <button
             onClick={printClassList}
             className="w-full md:w-auto flex items-center justify-center gap-2 bg-gray-700 text-white px-4 py-3 rounded-xl font-semibold hover:bg-gray-600 transition"
