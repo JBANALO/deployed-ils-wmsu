@@ -32,6 +32,11 @@ router.get('/promotion-candidates', schoolYearController.getPromotionCandidates)
 // Get promotion history logs
 router.get('/promotion-history', schoolYearController.getPromotionHistory);
 
+// University calendar (no-class days)
+router.get('/no-class-days', schoolYearController.getNoClassDays);
+router.post('/no-class-days', schoolYearController.createNoClassDay);
+router.delete('/no-class-days/:calendarId', schoolYearController.deleteNoClassDay);
+
 // Create a new school year
 router.post('/', schoolYearController.createSchoolYear);
 

@@ -14,6 +14,7 @@ import { useAttendance } from '../context/AttendanceContext';
 import { useAuth } from '../context/AuthProvider';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
+import { authAPI } from '../services/api';
 
 export default function NotificationsScreen({ navigation }) {
   const { attendanceLog, loadAttendanceLogs } = useAttendance();
@@ -21,6 +22,9 @@ export default function NotificationsScreen({ navigation }) {
   const [readNotifications, setReadNotifications] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [noClassDates, setNoClassDates] = useState([]);
+
+  const getTodayDate = () => new Date().toISOString().split('T')[0];
 
   // Reload data when screen is focused
   useFocusEffect(
@@ -39,8 +43,22 @@ export default function NotificationsScreen({ navigation }) {
   // Load all data
   const loadAllData = async () => {
     setLoading(true);
-    await Promise.all([loadAttendanceLogs()]);
+    await Promise.all([loadAttendanceLogs(), loadNoClassDays()]);
     setLoading(false);
+  };
+
+  const loadNoClassDays = async () => {
+    if (!user) return;
+    try {
+      const activeSyRes = await authAPI.getActiveSchoolYear(user?.token);
+      const activeSy = activeSyRes?.data || activeSyRes?.schoolYear || activeSyRes || null;
+      const calendarRes = await authAPI.getNoClassDays(user?.token, activeSy?.id || undefined);
+      const rows = Array.isArray(calendarRes?.data) ? calendarRes.data : [];
+      setNoClassDates(rows.map((row) => String(row.no_class_date || '').split('T')[0]).filter(Boolean));
+    } catch (error) {
+      console.error('Error loading no-class dates in notifications:', error);
+      setNoClassDates([]);
+    }
   };
 
   const loadReadNotifications = async () => {
@@ -92,11 +110,9 @@ export default function NotificationsScreen({ navigation }) {
     const day = now.getDay();
     // Saturday = 6, Sunday = 0
     if (day === 0 || day === 6) return false;
+    if (noClassDates.includes(getTodayDate())) return false;
     return true;
   };
-
-  // Get today's date in YYYY-MM-DD format
-  const getTodayDate = () => new Date().toISOString().split('T')[0];
 
   // Get subject-based notifications for today (absent and late records)
   const getTodayNotifications = () => {

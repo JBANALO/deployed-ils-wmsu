@@ -8,6 +8,7 @@ let attendanceSyEnsured = false;
 let studentsSyChecked = false;
 let attendanceSubjectColumnsEnsured = false;
 let attendanceStatusColumnEnsured = false;
+let noClassDaysEnsured = false;
 const autoAbsentRunMarker = new Map();
 let schoolYearLabelColumn = null;
 let autoAbsentTickerStarted = false;
@@ -269,6 +270,39 @@ const ensureAttendanceStatusColumn = async () => {
   attendanceStatusColumnEnsured = true;
 };
 
+const ensureNoClassDaysTable = async () => {
+  if (noClassDaysEnsured) return;
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS no_class_days (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      school_year_id INT NOT NULL,
+      no_class_date DATE NOT NULL,
+      reason VARCHAR(255) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_no_class_per_day (school_year_id, no_class_date),
+      INDEX idx_no_class_school_year_date (school_year_id, no_class_date)
+    )
+  `);
+
+  noClassDaysEnsured = true;
+};
+
+const getNoClassEntryForDate = async (schoolYearId, dateValue) => {
+  await ensureNoClassDaysTable();
+
+  const targetDate = getDateString(dateValue);
+  const rows = await query(
+    `SELECT id, school_year_id, no_class_date, reason
+     FROM no_class_days
+     WHERE school_year_id = ? AND no_class_date = ?
+     LIMIT 1`,
+    [schoolYearId, targetDate]
+  );
+  return rows[0] || null;
+};
+
 const ensureAttendanceFallbackTable = async () => {
   await query(`
     CREATE TABLE IF NOT EXISTS attendance_fallback (
@@ -478,6 +512,8 @@ const runAutoAbsentGeneration = async ({ schoolYearId, date, dryRun }) => {
     throw new Error('Invalid date format. Use YYYY-MM-DD');
   }
 
+  const noClassEntry = await getNoClassEntryForDate(targetSy.id, targetDate);
+
   const weekdayName = WEEKDAY_NAMES[targetDateObj.getDay()];
   const now = new Date();
   const nowMinutes = (now.getHours() * 60) + now.getMinutes();
@@ -505,12 +541,18 @@ const runAutoAbsentGeneration = async ({ schoolYearId, date, dryRun }) => {
   const summary = {
     schoolYearId: targetSy.id,
     date: targetDate,
+    skippedNoClassDay: Boolean(noClassEntry),
+    noClassReason: noClassEntry?.reason || null,
     matchedSchedules: 0,
     studentsEvaluated: 0,
     autoAbsentInserted: 0,
     skippedExisting: 0,
     dryRun: Boolean(dryRun)
   };
+
+  if (noClassEntry) {
+    return summary;
+  }
 
   for (const schedule of uniqueSchedules) {
     const scheduleDay = schedule.day || '';
@@ -733,6 +775,15 @@ router.post('/', async (req, res) => {
       }
     } catch (syErr) {
       return res.status(400).json({ success: false, message: syErr.message || 'No active school year found' });
+    }
+
+    const requestedDate = getDateString(date || new Date());
+    const noClassEntry = await getNoClassEntryForDate(targetSy.id, requestedDate);
+    if (noClassEntry) {
+      return res.status(403).json({
+        success: false,
+        message: `No class scheduled on ${requestedDate}${noClassEntry.reason ? ` (${noClassEntry.reason})` : ''}. Attendance is disabled for this date.`
+      });
     }
 
     const normalizedStudentId = String(studentId).trim();

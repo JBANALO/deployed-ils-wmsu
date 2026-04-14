@@ -1,6 +1,7 @@
 const { query, pool } = require('../config/database');
 
 let leadershipColumnsEnsured = false;
+let noClassDaysTableEnsured = false;
 
 async function ensureSchoolYearLeadershipColumns() {
   if (leadershipColumnsEnsured) return;
@@ -45,6 +46,154 @@ const normalizeDateValue = (value) => {
   const raw = String(value).trim();
   if (!raw) return null;
   return raw;
+};
+
+const normalizeIsoDate = (value) => {
+  const raw = normalizeDateValue(value);
+  if (!raw) return null;
+  if (raw.includes('T')) return raw.split('T')[0];
+  if (raw.includes(' ')) return raw.split(' ')[0];
+  return raw;
+};
+
+async function ensureNoClassDaysTable() {
+  if (noClassDaysTableEnsured) return;
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS no_class_days (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      school_year_id INT NOT NULL,
+      no_class_date DATE NOT NULL,
+      reason VARCHAR(255) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_no_class_per_day (school_year_id, no_class_date),
+      INDEX idx_no_class_school_year_date (school_year_id, no_class_date)
+    )
+  `);
+
+  noClassDaysTableEnsured = true;
+}
+
+async function resolveCalendarSchoolYear(requestedId) {
+  const parsed = Number(requestedId || 0);
+  if (Number.isInteger(parsed) && parsed > 0) {
+    const rows = await query(
+      'SELECT id, label, is_active, is_archived FROM school_years WHERE id = ? LIMIT 1',
+      [parsed]
+    );
+    const found = rows[0] || null;
+    if (!found || Number(found.is_archived || 0) === 1) {
+      throw new Error('School year not found');
+    }
+    return found;
+  }
+
+  const activeRows = await query(
+    'SELECT id, label, is_active, is_archived FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1'
+  );
+  const active = activeRows[0] || null;
+  if (!active) {
+    throw new Error('No active school year found');
+  }
+  return active;
+}
+
+// Get no-class calendar days for a school year
+exports.getNoClassDays = async (req, res) => {
+  try {
+    await ensureNoClassDaysTable();
+    const targetSy = await resolveCalendarSchoolYear(req.query?.schoolYearId);
+    const rows = await query(
+      `SELECT id, school_year_id, no_class_date, reason, created_at, updated_at
+       FROM no_class_days
+       WHERE school_year_id = ?
+       ORDER BY no_class_date ASC`,
+      [targetSy.id]
+    );
+
+    res.json({
+      success: true,
+      data: rows,
+      meta: {
+        schoolYearId: targetSy.id,
+        schoolYearLabel: targetSy.label || null
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching no-class days:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to fetch no-class days' });
+  }
+};
+
+// Create a no-class day entry (admin editable only for active SY)
+exports.createNoClassDay = async (req, res) => {
+  try {
+    await ensureNoClassDaysTable();
+
+    const requestedSchoolYearId = req.body?.schoolYearId || req.query?.schoolYearId;
+    const targetSy = await resolveCalendarSchoolYear(requestedSchoolYearId);
+    const activeSy = await resolveCalendarSchoolYear(null);
+    if (Number(targetSy.id) !== Number(activeSy.id)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Editing past school years is not allowed (view only).'
+      });
+    }
+
+    const noClassDate = normalizeIsoDate(req.body?.no_class_date || req.body?.date);
+    const reason = String(req.body?.reason || '').trim() || null;
+
+    if (!noClassDate) {
+      return res.status(400).json({ success: false, message: 'no_class_date is required (YYYY-MM-DD)' });
+    }
+
+    const result = await query(
+      'INSERT INTO no_class_days (school_year_id, no_class_date, reason) VALUES (?, ?, ?)',
+      [targetSy.id, noClassDate, reason]
+    );
+
+    const inserted = await query(
+      'SELECT id, school_year_id, no_class_date, reason, created_at, updated_at FROM no_class_days WHERE id = ? LIMIT 1',
+      [result.insertId]
+    );
+
+    res.status(201).json({ success: true, message: 'No-class day added successfully', data: inserted[0] || null });
+  } catch (error) {
+    console.error('Error creating no-class day:', error);
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ success: false, message: 'No-class date already exists for this school year' });
+    }
+    res.status(500).json({ success: false, message: error.message || 'Failed to add no-class day' });
+  }
+};
+
+// Delete a no-class day entry (admin editable only for active SY)
+exports.deleteNoClassDay = async (req, res) => {
+  try {
+    await ensureNoClassDaysTable();
+    const entryId = Number(req.params?.calendarId || 0);
+    if (!Number.isInteger(entryId) || entryId <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid calendar entry id' });
+    }
+
+    const rows = await query('SELECT id, school_year_id FROM no_class_days WHERE id = ? LIMIT 1', [entryId]);
+    const row = rows[0] || null;
+    if (!row) {
+      return res.status(404).json({ success: false, message: 'No-class day entry not found' });
+    }
+
+    const activeSy = await resolveCalendarSchoolYear(null);
+    if (Number(row.school_year_id) !== Number(activeSy.id)) {
+      return res.status(403).json({ success: false, message: 'Editing past school years is not allowed (view only).' });
+    }
+
+    await query('DELETE FROM no_class_days WHERE id = ?', [entryId]);
+    res.json({ success: true, message: 'No-class day removed successfully' });
+  } catch (error) {
+    console.error('Error deleting no-class day:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to delete no-class day' });
+  }
 };
 
 // Get all school years (non-archived)

@@ -146,6 +146,33 @@ export const authAPI = {
       console.error('Error fetching active school year:', error);
       throw error;
     }
+  },
+
+  // Get no-class days (university calendar) for a school year
+  getNoClassDays: async (token, schoolYearId) => {
+    try {
+      const params = schoolYearId ? `?schoolYearId=${encodeURIComponent(String(schoolYearId))}` : '';
+      const response = await fetchWithTimeout(`${API_BASE_URL}/school-years/no-class-days${params}`, {
+        headers: token
+          ? {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            }
+          : {
+              'Content-Type': 'application/json',
+            },
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || `Server error: ${response.status}`);
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error fetching no-class days:', error);
+      throw error;
+    }
   }
 };
 

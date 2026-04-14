@@ -50,6 +50,11 @@ export default function AdminSchoolYear() {
   const [promotionPreview, setPromotionPreview] = useState([]);
   const [promotionHistory, setPromotionHistory] = useState([]);
   const [promotionCandidates, setPromotionCandidates] = useState([]);
+  const [noClassDays, setNoClassDays] = useState([]);
+  const [newNoClassDate, setNewNoClassDate] = useState('');
+  const [newNoClassReason, setNewNoClassReason] = useState('');
+  const [addingNoClassDay, setAddingNoClassDay] = useState(false);
+  const [removingNoClassDayId, setRemovingNoClassDayId] = useState(null);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState(new Set());
   const [classes, setClasses] = useState([]);
   const [selectedPromotionSchoolYearId, setSelectedPromotionSchoolYearId] = useState('');
@@ -111,7 +116,7 @@ export default function AdminSchoolYear() {
         ? { params: { schoolYearId: scopedSchoolYearId } }
         : undefined;
 
-      const [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes, candidatesRes, classesRes] = await Promise.allSettled([
+      const [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes, candidatesRes, classesRes, noClassRes] = await Promise.allSettled([
         axios.get('/school-years'),
         axios.get('/school-years/active'),
         axios.get('/school-years/students-by-grade', scopedRequestConfig),
@@ -119,7 +124,8 @@ export default function AdminSchoolYear() {
         axios.get('/school-years/archived'),
         axios.get('/school-years/promotion-history', scopedRequestConfig),
         axios.get('/school-years/promotion-candidates', scopedRequestConfig),
-        axios.get('/classes', scopedRequestConfig)
+        axios.get('/classes', scopedRequestConfig),
+        axios.get('/school-years/no-class-days', scopedRequestConfig)
       ]);
 
       if (syRes.status === 'fulfilled') {
@@ -153,6 +159,12 @@ export default function AdminSchoolYear() {
           : (Array.isArray(classesRes.value.data?.data) ? classesRes.value.data.data : []);
         setClasses(classesData);
       }
+      if (noClassRes.status === 'fulfilled') {
+        const noClassData = Array.isArray(noClassRes.value.data?.data)
+          ? noClassRes.value.data.data
+          : [];
+        setNoClassDays(noClassData);
+      }
 
       if (activeRes.status === 'fulfilled') {
         const active = activeRes.value.data?.data || null;
@@ -161,7 +173,7 @@ export default function AdminSchoolYear() {
         }
       }
 
-      const failed = [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes, candidatesRes, classesRes].filter(r => r.status === 'rejected');
+      const failed = [syRes, activeRes, gradeRes, previewRes, archivedRes, historyRes, candidatesRes, classesRes, noClassRes].filter(r => r.status === 'rejected');
       if (failed.length > 0) {
         console.error('Some school year data failed to load:', failed.map(f => f.reason?.message));
       }
@@ -277,6 +289,58 @@ export default function AdminSchoolYear() {
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to set active school year');
+    }
+  };
+
+  const canEditCalendar = activeSchoolYear && viewingSchoolYear && Number(activeSchoolYear.id) === Number(viewingSchoolYear.id);
+
+  const handleAddNoClassDay = async (e) => {
+    e.preventDefault();
+
+    if (!canEditCalendar) {
+      toast.error('Switch to the active school year to edit the university calendar.');
+      return;
+    }
+
+    if (!newNoClassDate) {
+      toast.error('Please select a no-class date.');
+      return;
+    }
+
+    setAddingNoClassDay(true);
+    try {
+      await axios.post('/school-years/no-class-days', {
+        schoolYearId: viewingSchoolYear?.id,
+        no_class_date: newNoClassDate,
+        reason: String(newNoClassReason || '').trim() || null
+      });
+
+      toast.success('No-class day added to university calendar.');
+      setNewNoClassDate('');
+      setNewNoClassReason('');
+      await loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to add no-class day.');
+    } finally {
+      setAddingNoClassDay(false);
+    }
+  };
+
+  const handleRemoveNoClassDay = async (calendarId) => {
+    if (!canEditCalendar) {
+      toast.error('Switch to the active school year to edit the university calendar.');
+      return;
+    }
+
+    setRemovingNoClassDayId(calendarId);
+    try {
+      await axios.delete(`/school-years/no-class-days/${calendarId}`);
+      toast.success('No-class day removed from university calendar.');
+      await loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to remove no-class day.');
+    } finally {
+      setRemovingNoClassDayId(null);
     }
   };
 
@@ -859,6 +923,88 @@ export default function AdminSchoolYear() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* University Calendar (No-Class Days) */}
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+            <CalendarDaysIcon className="w-5 h-5 text-red-800" />
+            University Calendar - No Class Days
+          </h3>
+          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${canEditCalendar ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+            {canEditCalendar ? 'Editable (Active SY)' : 'View Only (Past SY)'}
+          </span>
+        </div>
+
+        <form onSubmit={handleAddNoClassDay} className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">No-Class Date</label>
+            <input
+              type="date"
+              value={newNoClassDate}
+              onChange={(e) => setNewNoClassDate(e.target.value)}
+              disabled={!canEditCalendar || addingNoClassDay}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm disabled:bg-gray-100"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-xs text-gray-500 mb-1">Reason (optional)</label>
+            <input
+              type="text"
+              value={newNoClassReason}
+              onChange={(e) => setNewNoClassReason(e.target.value)}
+              placeholder="e.g., University Foundation Day"
+              disabled={!canEditCalendar || addingNoClassDay}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm disabled:bg-gray-100"
+            />
+          </div>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              disabled={!canEditCalendar || addingNoClassDay}
+              className="w-full bg-red-800 text-white px-3 py-2 rounded text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
+            >
+              {addingNoClassDay ? 'Adding...' : 'Add Date'}
+            </button>
+          </div>
+        </form>
+
+        {noClassDays.length === 0 ? (
+          <p className="text-gray-500 text-sm">No no-class dates set for this school year.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-left text-gray-500">
+                  <th className="py-2 pr-4">Date</th>
+                  <th className="py-2 pr-4">Reason</th>
+                  <th className="py-2 pr-2 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {noClassDays.map((entry) => (
+                  <tr key={entry.id} className="border-b border-gray-100">
+                    <td className="py-2 pr-4 font-medium text-gray-800">
+                      {entry.no_class_date ? new Date(entry.no_class_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                    </td>
+                    <td className="py-2 pr-4 text-gray-700">{entry.reason || '—'}</td>
+                    <td className="py-2 pr-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveNoClassDay(entry.id)}
+                        disabled={!canEditCalendar || removingNoClassDayId === entry.id}
+                        className="text-red-600 hover:text-red-800 disabled:opacity-60"
+                      >
+                        {removingNoClassDayId === entry.id ? 'Removing...' : 'Remove'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Promote Students Section */}

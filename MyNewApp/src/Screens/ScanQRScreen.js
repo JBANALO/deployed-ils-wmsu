@@ -20,6 +20,7 @@ export default function ScanQRScreen() {
   const [successData, setSuccessData] = useState(null);
   const [sendingEmail, setSendingEmail] = useState(false);
   const [teacherSchedules, setTeacherSchedules] = useState([]);
+  const [noClassDates, setNoClassDates] = useState([]);
   const [activeSchedule, setActiveSchedule] = useState(null);
   const [scheduleLoading, setScheduleLoading] = useState(false);
 
@@ -51,6 +52,13 @@ export default function ScanQRScreen() {
 
   const normalizeDayText = (value = '') => String(value).trim().toLowerCase();
   const normalizeGradeText = (value = '') => String(value).toLowerCase().replace('grade ', '').trim();
+  const getLocalDateString = (value = new Date()) => {
+    const d = new Date(value);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
 
   const toMinutes = (value) => {
     const raw = String(value || '').trim();
@@ -229,6 +237,24 @@ export default function ScanQRScreen() {
     loadTeacherSchedules();
   }, [user?.id]);
 
+  useEffect(() => {
+    const loadNoClassDays = async () => {
+      if (!user) return;
+      try {
+        const activeSyRes = await authAPI.getActiveSchoolYear(user?.token);
+        const activeSy = activeSyRes?.data || activeSyRes?.schoolYear || activeSyRes || null;
+        const calendarRes = await authAPI.getNoClassDays(user?.token, activeSy?.id || undefined);
+        const rows = Array.isArray(calendarRes?.data) ? calendarRes.data : [];
+        setNoClassDates(rows.map((row) => String(row.no_class_date || '').split('T')[0]).filter(Boolean));
+      } catch (error) {
+        console.error('Error loading no-class dates in scanner:', error);
+        setNoClassDates([]);
+      }
+    };
+
+    loadNoClassDays();
+  }, [user?.id]);
+
 
   const getPeriodMessage = () => {
     if (!scannedStudent || !activeSchedule) {
@@ -255,6 +281,16 @@ export default function ScanQRScreen() {
   
   const handleBarCodeScanned = async ({ data }) => {
     if (hasScanned || !user) return;
+
+    const todayIsoDate = getLocalDateString(new Date());
+    if (noClassDates.includes(todayIsoDate)) {
+      Alert.alert(
+        'No Class Day',
+        'Today is marked as a no-class day in the university calendar. Attendance scanning is disabled.',
+        [{ text: 'OK', onPress: () => resetScanner() }]
+      );
+      return;
+    }
 
     if (scheduleLoading || teacherSchedules.length === 0) {
       Alert.alert(

@@ -20,6 +20,8 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [teacherSchedules, setTeacherSchedules] = useState([]);
   const [activeSchoolYearLabel, setActiveSchoolYearLabel] = useState('');
+  const [activeSchoolYearId, setActiveSchoolYearId] = useState(null);
+  const [noClassDates, setNoClassDates] = useState([]);
   const lastDateRef = useRef(new Date().toISOString().split('T')[0]);
   const { attendanceLog, addManualAbsence, recordAttendance, loadAttendanceLogs } = useAttendance();
   const { user, userData, loading: authLoading } = useAuth();
@@ -53,20 +55,6 @@ export default function HomeScreen() {
     name: getTeacherName(),
     department: user?.department || 'Elementary Department'
   };
-
-  const holidays = [
-    '1/1/2025',   
-    '4/9/2025',   
-    '4/17/2025',  
-    '4/18/2025',  
-    '5/1/2025',   
-    '6/12/2025', 
-    '8/25/2025',  
-    '11/1/2025',  
-    '11/30/2025', 
-    '12/25/2025', 
-    '12/30/2025', 
-  ];
 
   useFocusEffect(
     React.useCallback(() => {
@@ -321,9 +309,27 @@ export default function HomeScreen() {
       const sy = response?.data || response?.schoolYear || response || null;
       const label = sy?.label || sy?.name || '';
       setActiveSchoolYearLabel(label);
+      setActiveSchoolYearId(sy?.id ? Number(sy.id) : null);
+      await loadNoClassDays(sy?.id || null);
     } catch (error) {
       console.error('Error loading active school year:', error);
       setActiveSchoolYearLabel('');
+      setActiveSchoolYearId(null);
+      setNoClassDates([]);
+    }
+  };
+
+  const loadNoClassDays = async (schoolYearId = null) => {
+    try {
+      const response = await authAPI.getNoClassDays(user?.token, schoolYearId || activeSchoolYearId || undefined);
+      const rows = Array.isArray(response?.data) ? response.data : [];
+      const normalized = rows
+        .map((row) => String(row.no_class_date || '').split('T')[0])
+        .filter(Boolean);
+      setNoClassDates(normalized);
+    } catch (error) {
+      console.error('Error loading no-class calendar:', error);
+      setNoClassDates([]);
     }
   };
 
@@ -411,10 +417,10 @@ export default function HomeScreen() {
 
   const isSchoolDay = () => {
     const day = currentTime.getDay();
-    const dateString = currentTime.toLocaleDateString('en-US');
+    const dateString = getLocalDateString(currentTime);
     
     if (day === 0 || day === 6) return false;
-    if (holidays.includes(dateString)) return false;
+    if (noClassDates.includes(dateString)) return false;
     
     return true;
   };

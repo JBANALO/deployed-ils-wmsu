@@ -4,6 +4,7 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useAttendance } from '../context/AttendanceContext';
 import { useAuth } from '../context/AuthProvider'; 
 import { useFocusEffect } from '@react-navigation/native';
+import { authAPI } from '../services/api';
 
 export default function LogScreen() {
   const [students, setStudents] = useState([]);
@@ -12,8 +13,14 @@ export default function LogScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [noClassDates, setNoClassDates] = useState([]);
   const { attendanceLog, loadAttendanceLogs } = useAttendance();
   const { user } = useAuth();
+
+  const toIsoDate = (date) => {
+    const d = new Date(date);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
 
   const normalizeDateString = (value) => {
     if (!value) return '';
@@ -31,7 +38,24 @@ export default function LogScreen() {
   // Check if selected date is a school day (not weekend)
   const isSchoolDay = (date) => {
     const day = date.getDay();
-    return day !== 0 && day !== 6; // Not Sunday (0) or Saturday (6)
+    if (day === 0 || day === 6) return false;
+    const isoDate = toIsoDate(date);
+    if (noClassDates.includes(isoDate)) return false;
+    return true;
+  };
+
+  const loadNoClassDays = async () => {
+    if (!user) return;
+    try {
+      const activeSyRes = await authAPI.getActiveSchoolYear(user?.token);
+      const activeSy = activeSyRes?.data || activeSyRes?.schoolYear || activeSyRes || null;
+      const calendarRes = await authAPI.getNoClassDays(user?.token, activeSy?.id || undefined);
+      const rows = Array.isArray(calendarRes?.data) ? calendarRes.data : [];
+      setNoClassDates(rows.map((row) => String(row.no_class_date || '').split('T')[0]).filter(Boolean));
+    } catch (error) {
+      console.error('Error loading no-class dates in logs:', error);
+      setNoClassDates([]);
+    }
   };
 
   useFocusEffect(
@@ -41,6 +65,7 @@ export default function LogScreen() {
         setSelectedDate(new Date());
         loadStudents();
         loadAttendanceLogs();
+        loadNoClassDays();
         setRefreshKey(prev => prev + 1);
       }
     }, [user])
@@ -50,7 +75,7 @@ export default function LogScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     setSelectedDate(new Date()); // Reset to today
-    await Promise.all([loadStudents(), loadAttendanceLogs()]);
+    await Promise.all([loadStudents(), loadAttendanceLogs(), loadNoClassDays()]);
     setRefreshKey(prev => prev + 1);
     setRefreshing(false);
   };
