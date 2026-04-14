@@ -1023,6 +1023,59 @@ exports.getStudent = async (req, res) => {
       }
     }
 
+    if (students.length === 0) {
+      // Fallback 4: no active-year row yet. Use the latest non-archived student record from any school year.
+      students = await query(
+        `SELECT *
+         FROM students
+         WHERE (
+           id = ?
+           OR lrn = ?
+           OR LOWER(COALESCE(student_email, '')) = LOWER(?)
+         )
+           AND NOT (
+             LOWER(TRIM(COALESCE(status, ''))) = 'inactive'
+             AND stopped_year IS NOT NULL
+             AND TRIM(stopped_year) <> ''
+           )
+         ORDER BY COALESCE(school_year_id, 0) DESC, updated_at DESC, id DESC
+         LIMIT 1`,
+        [studentId, studentId, studentId]
+      );
+    }
+
+    if (students.length === 0) {
+      // Fallback 5: resolve via user login identifiers across all school years.
+      const userRows = await query(
+        `SELECT username, email
+         FROM users
+         WHERE id = ?
+         LIMIT 1`,
+        [studentId]
+      );
+      const userLogin = String(userRows?.[0]?.username || '').trim();
+      const userEmail = String(userRows?.[0]?.email || '').trim();
+      if (userLogin || userEmail) {
+        students = await query(
+          `SELECT *
+           FROM students
+           WHERE (
+             lrn = ?
+             OR LOWER(COALESCE(student_email, '')) = LOWER(?)
+             OR LOWER(COALESCE(student_email, '')) = LOWER(?)
+           )
+             AND NOT (
+               LOWER(TRIM(COALESCE(status, ''))) = 'inactive'
+               AND stopped_year IS NOT NULL
+               AND TRIM(stopped_year) <> ''
+             )
+           ORDER BY COALESCE(school_year_id, 0) DESC, updated_at DESC, id DESC
+           LIMIT 1`,
+          [userLogin, userEmail, userLogin]
+        );
+      }
+    }
+
     console.log('🔍 Database result:', {
       found: students.length,
       student: students[0] || 'none'
@@ -1034,6 +1087,11 @@ exports.getStudent = async (req, res) => {
     }
 
     const student = students[0];
+    const portalSyId = Number(student?.school_year_id || targetSy?.id || 0);
+    const portalSchoolYearRows = portalSyId
+      ? await query('SELECT id, label, principal_name, assistant_principal_name FROM school_years WHERE id = ? LIMIT 1', [portalSyId])
+      : [];
+    const portalSchoolYear = portalSchoolYearRows?.[0] || null;
     studentId = student.id;
     const formattedStudent = formatStudent(student);
     const studentLRN = student.lrn; // LRN is used as studentId in attendance table
@@ -1070,7 +1128,7 @@ exports.getStudent = async (req, res) => {
        WHERE student_id = ?
          AND school_year_id = ?
        ORDER BY subject, quarter`,
-      [studentId, targetSy.id]
+      [studentId, portalSyId]
     );
     
     // Group grades by subject with quarters
@@ -1103,7 +1161,7 @@ exports.getStudent = async (req, res) => {
     const gradeKey = toGradeKey(student.grade_level);
     const currentGradeSubjectsRows = await query(
       'SELECT name FROM subjects WHERE is_archived = 0 AND school_year_id = ? AND FIND_IN_SET(?, grade_levels) ORDER BY name',
-      [targetSy.id, gradeKey]
+      [portalSyId, gradeKey]
     );
     const currentGradeSubjects = currentGradeSubjectsRows.map(r => r.name).filter(Boolean);
 
@@ -1219,7 +1277,7 @@ exports.getStudent = async (req, res) => {
         const prevKey = toGradeKey(prevGrade);
         const prevSubjectsRows = await query(
           'SELECT name FROM subjects WHERE is_archived = 0 AND school_year_id = ? AND FIND_IN_SET(?, grade_levels) ORDER BY name',
-          [targetSy.id, prevKey]
+          [portalSyId, prevKey]
         );
         const prevSubjects = prevSubjectsRows.map(r => r.name).filter(Boolean);
 
@@ -1284,7 +1342,7 @@ exports.getStudent = async (req, res) => {
            AND g.school_year_id IS NOT NULL
            AND g.school_year_id <> ?
          ORDER BY g.school_year_id DESC, g.subject, g.quarter`,
-        [studentId, targetSy.id]
+        [studentId, portalSyId]
       );
 
       const gradeRowsBySchoolYearId = {};
@@ -1324,7 +1382,7 @@ exports.getStudent = async (req, res) => {
       const historicalRows = siblingStudentRows.filter((row) => {
         if (!row || !row.id || Number(row.id) === Number(studentId)) return false;
         if (!row.school_year_id) return false;
-        return Number(row.school_year_id) !== Number(targetSy.id);
+        return Number(row.school_year_id) !== Number(portalSyId);
       });
 
       if (historicalRows.length > 0) {
@@ -1417,7 +1475,7 @@ exports.getStudent = async (req, res) => {
          WHERE school_year_id = ?
            AND (grade = ? OR grade = ? OR REPLACE(LOWER(grade), 'grade ', '') = LOWER(?))
            AND section = ?`,
-        [targetSy.id, gradeLevel, toGradeKey(gradeLevel), toGradeKey(gradeLevel), section]
+        [portalSyId, gradeLevel, toGradeKey(gradeLevel), toGradeKey(gradeLevel), section]
       );
 
       classRows.forEach((row) => {
@@ -1434,7 +1492,7 @@ exports.getStudent = async (req, res) => {
          WHERE school_year_id = ?
            AND LOWER(TRIM(grade_level)) = LOWER(TRIM(?))
            AND LOWER(TRIM(section)) = LOWER(TRIM(?))`,
-        [targetSy.id, gradeLevel, section]
+        [portalSyId, gradeLevel, section]
       );
 
       assignmentRows.forEach((row) => {
@@ -1458,7 +1516,7 @@ exports.getStudent = async (req, res) => {
          ORDER BY
            FIELD(day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'),
            start_time`,
-        [targetSy.id, ...classIdList]
+        [portalSyId, ...classIdList]
       );
     }
 
@@ -1514,7 +1572,7 @@ exports.getStudent = async (req, res) => {
              AND g.school_year_id IS NOT NULL
              AND g.school_year_id <> ?
            ORDER BY g.school_year_id DESC`,
-          [studentId, targetSy.id]
+            [studentId, portalSyId]
         );
 
         for (const syRow of historicalSchoolYears || []) {
@@ -1609,7 +1667,7 @@ exports.getStudent = async (req, res) => {
     try {
       const classInfoById = await query(
         'SELECT adviser_name FROM classes WHERE id = ? AND school_year_id = ? LIMIT 1',
-        [classId, targetSy.id]
+        [classId, portalSyId]
       );
       adviserName = classInfoById[0]?.adviser_name || null;
     } catch (classIdErr) {
@@ -1624,7 +1682,7 @@ exports.getStudent = async (req, res) => {
            WHERE (grade = ? OR grade = ? OR REPLACE(LOWER(grade), 'grade ', '') = LOWER(?))
              AND section = ? AND school_year_id = ?
            LIMIT 1`,
-          [student.grade_level, toGradeKey(student.grade_level), toGradeKey(student.grade_level), student.section, targetSy.id]
+          [student.grade_level, toGradeKey(student.grade_level), toGradeKey(student.grade_level), student.section, portalSyId]
         );
         adviserName = classInfoByGradeSection[0]?.adviser_name || null;
       } catch (classGradeErr) {
@@ -1642,7 +1700,7 @@ exports.getStudent = async (req, res) => {
            WHERE (c.grade = ? OR c.grade = ? OR REPLACE(LOWER(c.grade), 'grade ', '') = LOWER(?))
              AND c.section = ? AND c.school_year_id = ?
            LIMIT 1`,
-          [student.grade_level, toGradeKey(student.grade_level), toGradeKey(student.grade_level), student.section, targetSy.id]
+          [student.grade_level, toGradeKey(student.grade_level), toGradeKey(student.grade_level), student.section, portalSyId]
         );
         adviserName = adviserFromAssignment[0]?.adviser_name || null;
       } catch (assignmentErr) {
@@ -1678,7 +1736,7 @@ exports.getStudent = async (req, res) => {
              )
              AND LOWER(TRIM(section)) = LOWER(TRIM(?))
            ORDER BY FIELD(ranking_type, 'overall', 'quarter', 'subject'), quarter_key, subject_name, published_at DESC`,
-          [targetSy.id, student.grade_level, studentGradeNormalized, student.section]
+          [portalSyId, student.grade_level, studentGradeNormalized, student.section]
         );
       } catch (rankingQueryErr) {
         if (rankingQueryErr?.code === 'ER_BAD_FIELD_ERROR') {
@@ -1692,7 +1750,7 @@ exports.getStudent = async (req, res) => {
                )
                AND LOWER(TRIM(section)) = LOWER(TRIM(?))
              ORDER BY FIELD(ranking_type, 'overall', 'quarter', 'subject'), quarter_key, subject_name, published_at DESC`,
-            [targetSy.id, student.grade_level, studentGradeNormalized, student.section]
+            [portalSyId, student.grade_level, studentGradeNormalized, student.section]
           );
           rankingRows = legacyRows.map((row) => ({ ...row, publish_scope: 'individual' }));
         } else {
@@ -1872,6 +1930,10 @@ exports.getStudent = async (req, res) => {
     formattedStudent.adviserName = adviserName;
     formattedStudent.publishedRankings = publishedRankings;
     formattedStudent.publishedRankingLists = publishedRankingLists;
+    formattedStudent.schoolYearId = portalSchoolYear?.id || portalSyId || null;
+    formattedStudent.schoolYearLabel = portalSchoolYear?.label || targetSy?.label || null;
+    formattedStudent.principalName = portalSchoolYear?.principal_name || null;
+    formattedStudent.assistantPrincipalName = portalSchoolYear?.assistant_principal_name || null;
     
     console.log('✅ Student portal data loaded:', {
       gradesCount: grades.length,

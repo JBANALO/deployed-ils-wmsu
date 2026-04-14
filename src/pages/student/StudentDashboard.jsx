@@ -57,6 +57,9 @@ const StudentPortal = () => {
           // Map API response structure to frontend expectations
           if (result.status === 'success' && result.data?.student) {
             const studentData = result.data.student;
+            const resolvedSchoolYearLabel = studentData.schoolYearLabel || activeSchoolYear?.label || '';
+            const resolvedPrincipalName = studentData.principalName || activeSchoolYear?.principal_name || '';
+            const resolvedAssistantPrincipalName = studentData.assistantPrincipalName || activeSchoolYear?.assistant_principal_name || '';
             const mappedData = {
               profile: {
                 fullName: studentData.fullName || `${studentData.firstName} ${studentData.lastName}`,
@@ -67,9 +70,9 @@ const StudentPortal = () => {
                 sex: studentData.sex || '',
                 finalAverage: studentData.average || 'N/A',
                 adviserName: studentData.adviserName || '',
-                schoolYearLabel: activeSchoolYear?.label || '',
-                principalName: activeSchoolYear?.principal_name || '',
-                assistantPrincipalName: activeSchoolYear?.assistant_principal_name || ''
+                schoolYearLabel: resolvedSchoolYearLabel,
+                principalName: resolvedPrincipalName,
+                assistantPrincipalName: resolvedAssistantPrincipalName
               },
               grades: studentData.grades || [],
               gradeHistory: studentData.gradeHistory || [],
