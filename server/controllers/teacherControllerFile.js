@@ -1211,9 +1211,52 @@ const archiveTeacher = async (req, res) => {
         });
       } catch (dbError) {
         console.error('Database error while archiving teacher:', dbError);
+        // Final fallback: try users table / file storage so admin flow is not blocked.
+        let fallbackUpdated = false;
+
+        try {
+          const fallbackUsersResult = await query(
+            'UPDATE users SET status = ? WHERE CAST(id AS CHAR) = ? OR LOWER(email) = LOWER(?)',
+            ['inactive', targetId, teacher?.email || '']
+          );
+          fallbackUpdated = Number(fallbackUsersResult?.affectedRows || 0) > 0;
+        } catch (fallbackUsersErr) {
+          console.log('archiveTeacher fallback users status update skipped:', fallbackUsersErr.message);
+        }
+
+        if (!fallbackUpdated) {
+          const fileIndex = users.findIndex((u) => {
+            const sameId = String(u?.id || '').trim() === targetId;
+            const sameEmail = String(u?.email || '').trim().toLowerCase() &&
+              String(teacher?.email || '').trim().toLowerCase() &&
+              String(u?.email || '').trim().toLowerCase() === String(teacher?.email || '').trim().toLowerCase();
+            return sameId || sameEmail;
+          });
+
+          if (fileIndex !== -1) {
+            users[fileIndex] = {
+              ...users[fileIndex],
+              status: 'inactive',
+              archived: true,
+              verification_status: 'archived',
+              archivedAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            };
+            fallbackUpdated = writeUsers(users);
+          }
+        }
+
+        if (fallbackUpdated) {
+          return res.json({
+            success: true,
+            message: 'Teacher archived successfully',
+            source: 'fallback_after_db_error'
+          });
+        }
+
         res.status(500).json({
           success: false,
-          message: 'Failed to archive teacher in database'
+          message: `Failed to archive teacher in database: ${dbError.message || 'unknown error'}`
         });
       }
     } else {
@@ -1311,9 +1354,36 @@ const archiveTeacher = async (req, res) => {
         });
       } catch (usersDbError) {
         console.error('Users table error while archiving teacher:', usersDbError);
+        const fileIndex = users.findIndex((u) => {
+          const sameId = String(u?.id || '').trim() === targetId;
+          const sameEmail = String(u?.email || '').trim().toLowerCase() &&
+            String(teacher?.email || '').trim().toLowerCase() &&
+            String(u?.email || '').trim().toLowerCase() === String(teacher?.email || '').trim().toLowerCase();
+          return sameId || sameEmail;
+        });
+
+        if (fileIndex !== -1) {
+          users[fileIndex] = {
+            ...users[fileIndex],
+            status: 'inactive',
+            archived: true,
+            verification_status: 'archived',
+            archivedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+
+          if (writeUsers(users)) {
+            return res.json({
+              success: true,
+              message: 'Teacher archived successfully',
+              source: 'file_fallback_after_users_error'
+            });
+          }
+        }
+
         res.status(500).json({
           success: false,
-          message: 'Failed to archive teacher in users table'
+          message: `Failed to archive teacher in users table: ${usersDbError.message || 'unknown error'}`
         });
       }
     }
