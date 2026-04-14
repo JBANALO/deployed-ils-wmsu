@@ -826,8 +826,15 @@ export default function AdminTeachers() {
       setShowArchives(true);
       fetchArchivedTeachers();
     } catch (error) {
+      console.error('Archive error details:', {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+        stack: error.stack
+      });
+      
       // Fallback to regular delete if archive endpoint doesn't exist
-      console.log('Archive endpoint not found, falling back to delete');
+      console.log('Archive endpoint failed, falling back to delete');
       try {
         await api.delete(`/teachers/${teacherToDelete.id}`);
         await fetchTeachers();
@@ -835,7 +842,12 @@ export default function AdminTeachers() {
         setTeacherToDelete(null);
         toast.success('Teacher record has been removed (permanent deletion).');
       } catch (deleteError) {
-        console.error('Delete error:', deleteError);
+        console.error('Delete error details:', {
+          message: deleteError.message,
+          status: deleteError.response?.status,
+          data: deleteError.response?.data,
+          stack: deleteError.stack
+        });
         setShowDeleteModal(false);
         setTeacherToDelete(null);
         toast.error('Delete functionality not available');

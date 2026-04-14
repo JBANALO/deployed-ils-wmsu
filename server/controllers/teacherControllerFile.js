@@ -980,11 +980,17 @@ const archiveTeacher = async (req, res) => {
     }
   } catch (error) {
     console.error('Error in archiveTeacher:', error);
+    console.error('Error details:', {
+      message: error.message,
+      statusCode: error.statusCode,
+      stack: error.stack
+    });
     const status = error.statusCode || 500;
     res.status(status).json({
       success: false,
       message: error.message || 'Error archiving teacher',
-      error: error.message
+      error: error.message,
+      statusCode: status
     });
   }
 };
