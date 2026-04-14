@@ -43,13 +43,6 @@ export default function GradeLevel() {
 
   useEffect(() => {
     fetchData();
-    
-    // Auto-refresh every 15 seconds to reflect admin changes immediately
-    const interval = setInterval(() => {
-      fetchData();
-    }, 15000);
-    
-    return () => clearInterval(interval);
   }, [selectedSchoolYearId]);
 
   const fetchActiveSchoolYear = async () => {
@@ -84,12 +77,6 @@ export default function GradeLevel() {
 
   useEffect(() => {
     fetchActiveSchoolYear();
-
-    const interval = setInterval(() => {
-      fetchActiveSchoolYear();
-    }, 15000);
-
-    return () => clearInterval(interval);
   }, [selectedSchoolYearId]);
 
   useEffect(() => {

@@ -88,14 +88,6 @@ export default function ClassList() {
   useEffect(() => {
     fetchActiveSchoolYear();
     fetchStudents();
-    
-    // Auto-refresh every 15 seconds
-    const interval = setInterval(() => {
-      fetchActiveSchoolYear();
-      fetchStudents();
-    }, 15000);
-    
-    return () => clearInterval(interval);
   }, [selectedSchoolYearId]);
 
   useEffect(() => {

@@ -168,16 +168,6 @@ export default function AdminTeachers() {
     }
   }, [selectedSchoolYearId]);
 
-  useEffect(() => {
-    if (!selectedSchoolYearId) return;
-
-    const interval = setInterval(() => {
-      fetchTeachers(true);
-    }, 15000);
-
-    return () => clearInterval(interval);
-  }, [selectedSchoolYearId]);
-
   // Helper function to fix mixed up grade level and section data
   const fixGradeAndSection = (teacher) => {
     const gradeLevel = teacher.grade_level || teacher.gradeLevel || '';

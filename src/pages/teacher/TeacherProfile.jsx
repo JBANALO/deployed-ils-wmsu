@@ -257,12 +257,6 @@ export default function TeacherProfile() {
     
     // Fetch data immediately on mount
     fetchUserData();
-    
-    // Auto-refresh every 10 seconds to reflect admin changes
-    const interval = setInterval(fetchUserData, 10000);
-    
-    // Cleanup interval on unmount
-    return () => clearInterval(interval);
   }, []);
 
   const [schedules, setSchedules] = useState([]);

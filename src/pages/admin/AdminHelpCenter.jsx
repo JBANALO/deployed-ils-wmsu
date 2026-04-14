@@ -20,29 +20,10 @@ export default function AdminHelpCenter() {
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, messageId: null, message: null });
   const [selectedMessage, setSelectedMessage] = useState(null);
 
-  // Fetch messages and component mount with auto-refresh
+  // Fetch messages on component mount and when filters change
   useEffect(() => {
     fetchMessages();
     fetchStats();
-    
-    // Set up auto-refresh every 30 seconds
-    const interval = setInterval(() => {
-      fetchMessages();
-      fetchStats();
-    }, 30000);
-    
-    return () => clearInterval(interval);
-  }, [filter]);
-
-  // Also refresh when window gains focus (user returns to tab)
-  useEffect(() => {
-    const handleFocus = () => {
-      fetchMessages();
-      fetchStats();
-    };
-    
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
   }, [filter]);
 
   const fetchMessages = async () => {

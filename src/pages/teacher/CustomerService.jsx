@@ -58,26 +58,9 @@ export default function CustomerServicePage() {
     });
   };
 
-  // Fetch messages on component mount and set up auto-refresh
+  // Fetch messages on component mount
   useEffect(() => {
     fetchMessages();
-    
-    // Set up auto-refresh every 30 seconds
-    const interval = setInterval(() => {
-      fetchMessages();
-    }, 30000);
-    
-    return () => clearInterval(interval);
-  }, []);
-
-  // Also refresh when window gains focus (user returns to tab)
-  useEffect(() => {
-    const handleFocus = () => {
-      fetchMessages();
-    };
-    
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
   // Fetch messages when modal is opened

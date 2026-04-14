@@ -35,14 +35,6 @@ export default function TeacherDashboard() {
     loadDashboardData();
     fetchActiveSchoolYear();
     fetchSchoolYears();
-    
-    // Auto-refresh every 15 seconds to reflect admin changes immediately
-    const interval = setInterval(() => {
-      fetchActiveSchoolYear();
-      loadDashboardData();
-    }, 15000);
-    
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {

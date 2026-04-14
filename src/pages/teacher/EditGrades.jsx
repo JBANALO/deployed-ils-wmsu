@@ -225,12 +225,6 @@ export default function EditGrades() {
 
   useEffect(() => {
     fetchActiveSchoolYear();
-
-    const interval = setInterval(() => {
-      fetchActiveSchoolYear();
-    }, 15000);
-
-    return () => clearInterval(interval);
   }, [selectedSchoolYearId]);
 
   useEffect(() => {

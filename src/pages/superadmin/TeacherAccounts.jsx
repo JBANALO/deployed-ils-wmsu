@@ -38,12 +38,6 @@ export default function TeacherAccounts() {
 
     fetchActiveSchoolYear();
     fetchTeachers();
-
-    const interval = setInterval(() => {
-      fetchTeachers(true);
-    }, 15000);
-
-    return () => clearInterval(interval);
   }, []);
 
   const normalizeTeacherRecord = (teacher) => ({

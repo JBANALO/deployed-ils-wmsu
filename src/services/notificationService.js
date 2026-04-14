@@ -33,11 +33,12 @@ class NotificationService {
   startRealTimeUpdates(userId, role) {
     if (this.realTimeInterval) {
       clearInterval(this.realTimeInterval);
+      this.realTimeInterval = null;
     }
 
-    this.realTimeInterval = setInterval(async () => {
-      await this.fetchLatestNotifications(userId, role);
-    }, 15000); // 15 seconds
+    // Auto-refresh polling is disabled; notifications now update on explicit fetch actions.
+    void userId;
+    void role;
   }
 
   // Fetch latest notifications
