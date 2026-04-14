@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useLocation } from "react-router-dom";
-import { UsersIcon, MagnifyingGlassIcon, PrinterIcon, ArrowDownTrayIcon } from "@heroicons/react/24/solid";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
+import { UsersIcon, MagnifyingGlassIcon, PrinterIcon, ArrowDownTrayIcon, ArrowLeftIcon } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
 
 export default function AdminClassList() {
   const { id } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [classInfo, setClassInfo] = useState({ id: "", grade: "", section: "", adviserName: "" });
   const [searchQuery, setSearchQuery] = useState("");
+  const [includeLrnInExport, setIncludeLrnInExport] = useState(true);
 
   const searchParams = new URLSearchParams(location.search || '');
   const selectedSchoolYearId = String(searchParams.get('schoolYearId') || '').trim();
@@ -31,7 +33,55 @@ export default function AdminClassList() {
     return fullName.includes(query) || lrn.includes(query);
   });
 
+  const normalizeSex = (value) => String(value || '').trim().toLowerCase();
+  const getStudentName = (student) => student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim();
+  const sortByName = (rows = []) => [...rows].sort((a, b) =>
+    getStudentName(a).localeCompare(getStudentName(b), undefined, { sensitivity: 'base' })
+  );
+
   const buildClassListHtml = () => {
+    const maleStudents = sortByName(filteredStudents.filter((student) => normalizeSex(student.sex) === 'male'));
+    const femaleStudents = sortByName(filteredStudents.filter((student) => normalizeSex(student.sex) === 'female'));
+    const otherStudents = sortByName(filteredStudents.filter((student) => {
+      const normalized = normalizeSex(student.sex);
+      return normalized !== 'male' && normalized !== 'female';
+    }));
+
+    const renderGroupTable = (label, rows) => {
+      if (!rows.length) {
+        return `
+          <div class="group-block">
+            <div class="group-title">${label} (0)</div>
+            <div class="no-students">No students in this group.</div>
+          </div>
+        `;
+      }
+
+      const bodyRows = rows.map((student, index) => `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${getStudentName(student)}</td>
+          ${includeLrnInExport ? `<td>${student.lrn || 'N/A'}</td>` : ''}
+        </tr>
+      `).join('');
+
+      return `
+        <div class="group-block">
+          <div class="group-title">${label} (${rows.length})</div>
+          <table>
+            <thead>
+              <tr>
+                <th>No.</th>
+                <th>Student Name</th>
+                ${includeLrnInExport ? '<th>LRN</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>${bodyRows}</tbody>
+          </table>
+        </div>
+      `;
+    };
+
     return `
       <html>
         <head>
@@ -71,12 +121,26 @@ export default function AdminClassList() {
             .teacher-info {
               font-size: 16px;
               color: #666;
-              margin-bottom: 30px;
+              margin-bottom: 10px;
+            }
+            .meta-info {
+              font-size: 13px;
+              color: #4b5563;
+              margin-bottom: 3px;
+            }
+            .group-block {
+              margin-top: 14px;
+            }
+            .group-title {
+              font-size: 16px;
+              font-weight: 700;
+              color: #111827;
+              margin-bottom: 8px;
             }
             table {
               width: 100%;
               border-collapse: collapse;
-              margin-top: 20px;
+              margin-top: 8px;
             }
             th, td {
               padding: 12px;
@@ -110,32 +174,13 @@ export default function AdminClassList() {
             <div class="system-name">Automated Grades Portal and Students Attendance using QR Code</div>
             <div class="class-info">${classInfo.grade} - ${classInfo.section} Class List</div>
             ${classInfo.adviserName ? `<div class="teacher-info">Adviser: ${classInfo.adviserName}</div>` : ''}
+            <div class="meta-info"><strong>Total Students:</strong> ${filteredStudents.length}</div>
+            <div class="meta-info"><strong>LRN:</strong> ${includeLrnInExport ? 'Included' : 'Hidden'}</div>
           </div>
-          
-          ${filteredStudents.length > 0 ? `
-            <table>
-              <thead>
-                <tr>
-                  <th>Student Name</th>
-                  <th>LRN</th>
-                  <th>Sex</th>
-                  <th>Grade Level</th>
-                  <th>Section</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${filteredStudents.map((student) => `
-                  <tr>
-                    <td>${student.fullName || `${student.firstName || ''} ${student.lastName || ''}`}</td>
-                    <td>${student.lrn || 'N/A'}</td>
-                    <td>${student.sex || 'N/A'}</td>
-                    <td>${student.gradeLevel || classInfo.grade}</td>
-                    <td>${student.section || classInfo.section}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          ` : '<div class="no-students">No students in this class yet.</div>'}
+
+          ${filteredStudents.length > 0
+            ? `${renderGroupTable('Male Students', maleStudents)}${renderGroupTable('Female Students', femaleStudents)}${otherStudents.length > 0 ? renderGroupTable('Other / Unspecified', otherStudents) : ''}`
+            : '<div class="no-students">No students in this class yet.</div>'}
         </body>
       </html>
     `;
@@ -272,6 +317,24 @@ export default function AdminClassList() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/admin/admin-classes')}
+              className="flex items-center gap-2 bg-white text-red-800 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-50 transition-colors"
+            >
+              <ArrowLeftIcon className="w-5 h-5" />
+              Back to Classes
+            </button>
+
+            <label className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={includeLrnInExport}
+                onChange={(e) => setIncludeLrnInExport(e.target.checked)}
+                className="accent-red-700"
+              />
+              Include LRN
+            </label>
+
             <button
               onClick={handleDownloadClassList}
               className="flex items-center gap-2 bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors"
