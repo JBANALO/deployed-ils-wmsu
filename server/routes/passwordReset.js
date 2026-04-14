@@ -82,6 +82,11 @@ const resetTokens = {
     const tokens = readTokens();
     delete tokens[token];
     writeTokens(tokens);
+  },
+  
+  entries: () => {
+    const tokens = readTokens();
+    return Object.entries(tokens);
   }
 };
 
@@ -355,11 +360,27 @@ router.post('/reset-password', async (req, res) => {
 
 // Clean up expired tokens (run periodically)
 setInterval(() => {
-  const now = new Date();
-  for (const [token, data] of resetTokens.entries()) {
-    if (now > data.expiry) {
-      resetTokens.delete(token);
+  try {
+    const now = new Date();
+    // Use the storage function directly to avoid "this" or scope issues
+    const currentTokens = readTokens(); 
+    const entries = Object.entries(currentTokens);
+
+    let changed = false;
+
+    for (const [token, data] of entries) {
+      if (now > new Date(data.expiry)) {
+        delete currentTokens[token];
+        changed = true;
+      }
     }
+
+    if (changed) {
+      writeTokens(currentTokens);
+      console.log('ð§¹ Cleaned up expired reset tokens');
+    }
+  } catch (error) {
+    console.error('â Error during token cleanup:', error);
   }
 }, 60000); // Clean up every minute
 
