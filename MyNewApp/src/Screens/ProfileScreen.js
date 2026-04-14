@@ -305,9 +305,6 @@ export default function ProfileScreen({ navigation }) {
                 <Icon name="account" size={60} color="#999" />
               </View>
             )}
-            <View style={styles.cameraIcon}>
-              <Icon name="camera" size={18} color="#fff" />
-            </View>
           </TouchableOpacity>
 
           <Text style={styles.userName}>{getDisplayName()}</Text>

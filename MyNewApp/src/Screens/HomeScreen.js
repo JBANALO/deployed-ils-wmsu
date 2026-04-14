@@ -671,7 +671,7 @@ WMSU ILS - Elementary Department`;
         loadActiveSchoolYear();
         setRefreshKey(prev => prev + 1);
       }
-    }, 60000); // Check every minute
+    }, 1000); // Keep mobile clock in sync every second
     return () => clearInterval(timer);
   }, [students, attendanceLog]);
 
