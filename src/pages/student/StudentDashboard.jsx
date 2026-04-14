@@ -33,13 +33,8 @@ const StudentPortal = () => {
         }
         const baseURL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 
                  (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
-        const [res, activeSchoolYearRes] = await Promise.all([
-          fetch(`${baseURL}/students/portal?studentId=${studentId}`, { credentials: 'include' }),
-          fetch(`${baseURL}/school-years/active`, { credentials: 'include' })
-        ]);
 
-        if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
-        const result = await res.json();
+        const activeSchoolYearRes = await fetch(`${baseURL}/school-years/active`, { credentials: 'include' });
         let activeSchoolYear = null;
         if (activeSchoolYearRes.ok) {
           const activeResult = await activeSchoolYearRes.json();
@@ -53,6 +48,29 @@ const StudentPortal = () => {
           }
           setCurrentSchoolYearId(nextSchoolYearId);
         }
+
+        // Keep student attendance in sync with persisted auto-absent records.
+        try {
+          const today = new Date();
+          const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+          await fetch(`${baseURL}/attendance/auto-absent/run`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              date: todayString,
+              schoolYearId: activeSchoolYear?.id || undefined
+            })
+          });
+        } catch (autoAbsentErr) {
+          console.warn('Student portal auto-absent pre-sync failed:', autoAbsentErr.message);
+        }
+
+        const res = await fetch(`${baseURL}/students/portal?studentId=${studentId}`, { credentials: 'include' });
+        if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
+        const result = await res.json();
           
           // Map API response structure to frontend expectations
           if (result.status === 'success' && result.data?.student) {

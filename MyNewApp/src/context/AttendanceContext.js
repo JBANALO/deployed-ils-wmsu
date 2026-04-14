@@ -124,6 +124,16 @@ export function AttendanceProvider({ children }) {
   }, [user]);
 
   useEffect(() => {
+    if (!user) return undefined;
+
+    const timer = setInterval(() => {
+      loadAttendanceLogs();
+    }, 30000);
+
+    return () => clearInterval(timer);
+  }, [user]);
+
+  useEffect(() => {
     if (!user) return;
     writeDailyCache(attendanceLog);
   }, [attendanceLog, user]);
@@ -134,6 +144,23 @@ export function AttendanceProvider({ children }) {
 
     try {
       setLoading(true);
+      const today = getLocalDateString();
+
+      // Force a lightweight auto-absent pass first so unscanned students are persisted,
+      // then all clients (admin/teacher/mobile) read the same DB-backed status.
+      try {
+        await fetch('https://deployed-ils-wmsu-production.up.railway.app/api/attendance/auto-absent/run', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${user.token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ date: today }),
+        });
+      } catch (autoAbsentErr) {
+        console.warn('Auto-absent pre-sync failed:', autoAbsentErr.message);
+      }
+
       const cachedRecords = await readDailyCache();
       if (cachedRecords.length > 0) {
         setAttendanceLog(prev => dedupeRecords([...prev, ...cachedRecords]));
@@ -145,7 +172,7 @@ export function AttendanceProvider({ children }) {
       );
       
       // Don't use teacherId - just get all attendance data
-      const fetchPromise = fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/attendance`, {
+      const fetchPromise = fetch(`https://deployed-ils-wmsu-production.up.railway.app/api/attendance?date=${today}`, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
           'Content-Type': 'application/json',

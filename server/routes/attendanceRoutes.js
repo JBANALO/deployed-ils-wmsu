@@ -17,7 +17,8 @@ const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', '
 const normalizeDayText = (value = '') => String(value).trim().toLowerCase();
 
 const parseTimeToMinutes = (value) => {
-  const raw = String(value || '').trim();
+  const normalized = normalizeScheduleClock(value, true);
+  const raw = String(normalized || value || '').trim();
   if (!raw) return null;
   const parts = raw.split(':');
   if (parts.length < 2) return null;
@@ -402,6 +403,38 @@ const findStudentsForClassSchedule = async (grade, section, schoolYearId) => {
   );
 };
 
+const tableHasColumn = async (tableName, columnName) => {
+  const cols = await query(`SHOW COLUMNS FROM ${tableName}`);
+  return cols.some((c) => String(c.Field || '').toLowerCase() === String(columnName || '').toLowerCase());
+};
+
+const loadClassRowsForAutoAbsent = async (schoolYearId) => {
+  const hasSchoolYearColumn = await tableHasColumn('classes', 'school_year_id');
+  if (hasSchoolYearColumn) {
+    return query(
+      'SELECT id, grade, section FROM classes WHERE school_year_id = ? OR school_year_id IS NULL',
+      [schoolYearId]
+    );
+  }
+  return query('SELECT id, grade, section FROM classes');
+};
+
+const loadSubjectSchedulesForAutoAbsent = async (schoolYearId) => {
+  const hasSchoolYearColumn = await tableHasColumn('subject_teachers', 'school_year_id');
+  if (hasSchoolYearColumn) {
+    return query(
+      `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time
+       FROM subject_teachers
+       WHERE school_year_id = ? OR school_year_id IS NULL`,
+      [schoolYearId]
+    );
+  }
+  return query(
+    `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time
+     FROM subject_teachers`
+  );
+};
+
 const runAutoAbsentGeneration = async ({ schoolYearId, date, dryRun }) => {
   await ensureAttendanceSchoolYearColumn();
   await ensureStudentsSchoolYearColumnExists();
@@ -424,17 +457,12 @@ const runAutoAbsentGeneration = async ({ schoolYearId, date, dryRun }) => {
   const nowMinutes = (now.getHours() * 60) + now.getMinutes();
   const isToday = targetDate === getDateString(new Date().toISOString());
 
-  const classRows = await query('SELECT id, grade, section FROM classes WHERE school_year_id = ?', [targetSy.id]);
+  const classRows = await loadClassRowsForAutoAbsent(targetSy.id);
   const classById = new Map(classRows.map(c => [String(c.id), c]));
 
   let schedules = [];
   try {
-    schedules = await query(
-      `SELECT class_id, teacher_id, teacher_name, subject, day, start_time, end_time
-       FROM subject_teachers
-       WHERE school_year_id = ?`,
-      [targetSy.id]
-    );
+    schedules = await loadSubjectSchedulesForAutoAbsent(targetSy.id);
   } catch (scheduleErr) {
     throw new Error(`Could not load subject schedules. ${scheduleErr.message}`);
   }
@@ -472,8 +500,16 @@ const runAutoAbsentGeneration = async ({ schoolYearId, date, dryRun }) => {
       continue;
     }
 
-    const classMeta = classById.get(String(schedule.class_id));
-    if (!classMeta) {
+    let classMeta = classById.get(String(schedule.class_id));
+    if (!classMeta && schedule.class_id) {
+      const fallbackClassRows = await query('SELECT id, grade, section FROM classes WHERE id = ? LIMIT 1', [schedule.class_id]);
+      classMeta = fallbackClassRows[0] || null;
+      if (classMeta) {
+        classById.set(String(schedule.class_id), classMeta);
+      }
+    }
+
+    if (!classMeta || !classMeta.grade || !classMeta.section) {
       continue;
     }
 
