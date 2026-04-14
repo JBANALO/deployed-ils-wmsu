@@ -226,8 +226,7 @@ export default function ClassList() {
   const filteredStudents = students.filter(student => {
     const matchesSearch = 
       student.fullName.toLowerCase().includes(search.toLowerCase()) ||
-      student.lrn.includes(search) ||
-      student.wmsuEmail.toLowerCase().includes(search.toLowerCase());
+      student.lrn.includes(search);
     const matchesGrade = gradeFilter === "All Grades" || student.gradeLevel === gradeFilter;
     const matchesSection = sectionFilter === "All Sections" || student.section === sectionFilter;
     const matchesStatus = statusFilter === "All Status" || student.status === statusFilter;
@@ -266,7 +265,7 @@ export default function ClassList() {
       return;
     }
 
-    const headers = ['No.', 'Student Name', 'LRN', 'Grade Level', 'Section', 'Age', 'Sex', 'Status', 'WMSU Email'];
+    const headers = ['No.', 'Student Name', 'LRN', 'Grade Level', 'Section', 'Age', 'Sex', 'Status'];
     const rows = gradeRows.map((student, index) => ([
       index + 1,
       student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim(),
@@ -275,8 +274,7 @@ export default function ClassList() {
       student.section || '',
       student.age || '',
       student.sex || '',
-      student.status || '',
-      student.wmsuEmail || ''
+      student.status || ''
     ]));
 
     const csv = [headers, ...rows]
@@ -496,7 +494,7 @@ export default function ClassList() {
       <div className="bg-white p-4 rounded-xl flex flex-col md:flex-row gap-4 items-center">
         <input
           type="text"
-          placeholder="Search by name, LRN, email..."
+          placeholder="Search by name, LRN..."
           className="flex-1 border border-gray-300 rounded-xl px-4 py-3 focus:ring-1 focus:ring-red-600"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -582,7 +580,6 @@ export default function ClassList() {
           <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 uppercase tracking-wider w-37">Grade & Section</th>
           <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 uppercase tracking-wider w-16">Age</th>
           <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 uppercase tracking-wider w-16">Sex</th>
-          <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 uppercase tracking-wider w-12">WMSU Email</th>
           <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 uppercase tracking-wider w-20">Status</th>
           <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 uppercase tracking-wider w-32 text-center">Actions</th>
         </tr>
@@ -590,13 +587,13 @@ export default function ClassList() {
       <tbody className="bg-white divide-y divide-gray-200">
         {loading ? (
           <tr>
-            <td colSpan="9" className="text-center py-12 text-gray-500 text-sm">
+            <td colSpan="8" className="text-center py-12 text-gray-500 text-sm">
               Loading students...
             </td>
           </tr>
         ) : filteredStudents.length === 0 ? (
           <tr>
-            <td colSpan="9" className="text-center py-12 text-gray-500 text-sm">
+            <td colSpan="8" className="text-center py-12 text-gray-500 text-sm">
               No students found
             </td>
           </tr>
