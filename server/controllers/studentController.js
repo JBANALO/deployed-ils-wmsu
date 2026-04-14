@@ -12,6 +12,25 @@ let studentBirthDateEnsured = false;
 let studentArchiveColumnsEnsured = false;
 let studentLrnScopeEnsured = false;
 
+const HISTORICAL_SOURCE_EXISTS_CLAUSE = `(
+  EXISTS (
+    SELECT 1 FROM students s WHERE s.school_year_id = sy.id LIMIT 1
+  )
+  OR EXISTS (
+    SELECT 1
+    FROM promotion_history ph
+    WHERE ph.school_year_id = sy.id
+      AND LOWER(TRIM(COALESCE(ph.status, ''))) IN ('promoted', 'retained', 'accelerated')
+    LIMIT 1
+  )
+)`;
+
+const HISTORICAL_STUDENTS_ONLY_EXISTS_CLAUSE = `(
+  EXISTS (
+    SELECT 1 FROM students s WHERE s.school_year_id = sy.id LIMIT 1
+  )
+)`;
+
 async function getActiveSchoolYear() {
   const rows = await query('SELECT id, label, start_date FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
   return rows[0] || null;
@@ -66,9 +85,7 @@ async function getLatestHistoricalStudentSchoolYear(targetSy) {
          WHERE sy.is_archived = 0
            AND sy.id <> ?
            AND sy.start_date < ?
-           AND EXISTS (
-             SELECT 1 FROM students s WHERE s.school_year_id = sy.id LIMIT 1
-           )
+           AND ${HISTORICAL_SOURCE_EXISTS_CLAUSE}
          ORDER BY sy.start_date DESC
          LIMIT 1`,
         [targetSy.id, targetSy.start_date]
@@ -81,9 +98,7 @@ async function getLatestHistoricalStudentSchoolYear(targetSy) {
        FROM school_years sy
        WHERE sy.is_archived = 0
          AND sy.id < ?
-         AND EXISTS (
-           SELECT 1 FROM students s WHERE s.school_year_id = sy.id LIMIT 1
-         )
+         AND ${HISTORICAL_SOURCE_EXISTS_CLAUSE}
        ORDER BY sy.id DESC
        LIMIT 1`,
       [targetSy.id]
@@ -91,6 +106,37 @@ async function getLatestHistoricalStudentSchoolYear(targetSy) {
     if (byId[0]) return byId[0];
   } catch (err) {
     console.log('getLatestHistoricalStudentSchoolYear fallback:', err.message);
+
+    try {
+      if (targetSy.start_date) {
+        const byDateStudentsOnly = await query(
+          `SELECT sy.id, sy.label, sy.start_date
+           FROM school_years sy
+           WHERE sy.is_archived = 0
+             AND sy.id <> ?
+             AND sy.start_date < ?
+             AND ${HISTORICAL_STUDENTS_ONLY_EXISTS_CLAUSE}
+           ORDER BY sy.start_date DESC
+           LIMIT 1`,
+          [targetSy.id, targetSy.start_date]
+        );
+        if (byDateStudentsOnly[0]) return byDateStudentsOnly[0];
+      }
+
+      const byIdStudentsOnly = await query(
+        `SELECT sy.id, sy.label, sy.start_date
+         FROM school_years sy
+         WHERE sy.is_archived = 0
+           AND sy.id < ?
+           AND ${HISTORICAL_STUDENTS_ONLY_EXISTS_CLAUSE}
+         ORDER BY sy.id DESC
+         LIMIT 1`,
+        [targetSy.id]
+      );
+      if (byIdStudentsOnly[0]) return byIdStudentsOnly[0];
+    } catch (fallbackErr) {
+      console.log('getLatestHistoricalStudentSchoolYear students-only fallback:', fallbackErr.message);
+    }
   }
 
   return getPreviousSchoolYear(targetSy);
@@ -107,9 +153,7 @@ async function getHistoricalStudentSchoolYears(targetSy) {
          WHERE sy.is_archived = 0
            AND sy.id <> ?
            AND sy.start_date < ?
-           AND EXISTS (
-             SELECT 1 FROM students s WHERE s.school_year_id = sy.id LIMIT 1
-           )
+           AND ${HISTORICAL_SOURCE_EXISTS_CLAUSE}
          ORDER BY sy.start_date DESC`,
         [targetSy.id, targetSy.start_date]
       );
@@ -121,15 +165,42 @@ async function getHistoricalStudentSchoolYears(targetSy) {
        FROM school_years sy
        WHERE sy.is_archived = 0
          AND sy.id < ?
-         AND EXISTS (
-           SELECT 1 FROM students s WHERE s.school_year_id = sy.id LIMIT 1
-         )
+         AND ${HISTORICAL_SOURCE_EXISTS_CLAUSE}
        ORDER BY sy.id DESC`,
       [targetSy.id]
     );
     return rowsById;
   } catch (err) {
     console.log('getHistoricalStudentSchoolYears fallback:', err.message);
+
+    try {
+      if (targetSy.start_date) {
+        const rowsByDateStudentsOnly = await query(
+          `SELECT sy.id, sy.label, sy.start_date
+           FROM school_years sy
+           WHERE sy.is_archived = 0
+             AND sy.id <> ?
+             AND sy.start_date < ?
+             AND ${HISTORICAL_STUDENTS_ONLY_EXISTS_CLAUSE}
+           ORDER BY sy.start_date DESC`,
+          [targetSy.id, targetSy.start_date]
+        );
+        if (rowsByDateStudentsOnly.length > 0) return rowsByDateStudentsOnly;
+      }
+
+      const rowsByIdStudentsOnly = await query(
+        `SELECT sy.id, sy.label, sy.start_date
+         FROM school_years sy
+         WHERE sy.is_archived = 0
+           AND sy.id < ?
+           AND ${HISTORICAL_STUDENTS_ONLY_EXISTS_CLAUSE}
+         ORDER BY sy.id DESC`,
+        [targetSy.id]
+      );
+      if (rowsByIdStudentsOnly.length > 0) return rowsByIdStudentsOnly;
+    } catch (fallbackErr) {
+      console.log('getHistoricalStudentSchoolYears students-only fallback:', fallbackErr.message);
+    }
   }
 
   const latest = await getLatestHistoricalStudentSchoolYear(targetSy);
@@ -146,9 +217,7 @@ async function getNearestStudentSchoolYearWithData(targetSy) {
          FROM school_years sy
          WHERE sy.is_archived = 0
            AND sy.id <> ?
-           AND EXISTS (
-             SELECT 1 FROM students s WHERE s.school_year_id = sy.id LIMIT 1
-           )
+           AND ${HISTORICAL_SOURCE_EXISTS_CLAUSE}
          ORDER BY ABS(DATEDIFF(sy.start_date, ?)) ASC, sy.start_date DESC
          LIMIT 1`,
         [targetSy.id, targetSy.start_date]
@@ -161,9 +230,7 @@ async function getNearestStudentSchoolYearWithData(targetSy) {
        FROM school_years sy
        WHERE sy.is_archived = 0
          AND sy.id <> ?
-         AND EXISTS (
-           SELECT 1 FROM students s WHERE s.school_year_id = sy.id LIMIT 1
-         )
+         AND ${HISTORICAL_SOURCE_EXISTS_CLAUSE}
        ORDER BY ABS(sy.id - ?) ASC, sy.id DESC
        LIMIT 1`,
       [targetSy.id, targetSy.id]
