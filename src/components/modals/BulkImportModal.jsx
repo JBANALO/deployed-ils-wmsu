@@ -15,10 +15,22 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
   const [fileError, setFileError] = useState('');
 
   const handleDownloadTemplate = () => {
+    const csvTemplate = [
+      'firstName,lastName,sex,gradeLevel,section',
+      'Juan,Dela Cruz,Male,Grade 3,Wisdom',
+      'Maria,Santos,Female,Grade 4,Knowledge'
+    ].join('\r\n');
+
+    // Add UTF-8 BOM so Excel reads encoding correctly.
+    const blob = new Blob(['\uFEFF' + csvTemplate], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    link.href = '/student-import-template.csv';
+    const url = window.URL.createObjectURL(blob);
+    link.href = url;
     link.download = 'student-import-template.csv';
+    document.body.appendChild(link);
     link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
   };
 
   const handleFileUpload = async (e) => {
