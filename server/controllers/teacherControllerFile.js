@@ -327,6 +327,15 @@ const resolveTeacherArchiveStatusValue = (columnDef = null) => {
   return matched || enumValues[0];
 };
 
+const resolveTeacherRestoreStatusValue = (columnDef = null) => {
+  const defaultCandidates = ['approved', 'active', 'pending', 'verified'];
+  if (!columnDef || !columnDef.Type) return 'approved';
+  const enumValues = parseEnumValuesFromColumnType(columnDef.Type).map((v) => String(v).toLowerCase());
+  if (enumValues.length === 0) return 'approved';
+  const matched = defaultCandidates.find((candidate) => enumValues.includes(candidate));
+  return matched || enumValues[0];
+};
+
 const normalizeAccountStatus = (value = '') => String(value || '').trim().toLowerCase();
 
 const isTruthyArchiveFlag = (value) => {
@@ -1614,44 +1623,218 @@ const archiveTeacher = async (req, res) => {
 const restoreTeacher = async (req, res) => {
   try {
     const { id } = req.params;
+    const targetId = String(id || '').trim();
     const users = readUsers();
-    
-    const teacherIndex = users.findIndex(u => u.id === id);
-    
-    if (teacherIndex === -1) {
+
+    let teacherIndex = users.findIndex((u) => String(u?.id || '').trim() === targetId);
+    let teacher = teacherIndex !== -1 ? users[teacherIndex] : null;
+
+    if (!teacher) {
+      try {
+        const dbTeacherRows = await query(
+          `SELECT id, first_name AS firstName, middle_name AS middleName, last_name AS lastName,
+                  username, email, role, verification_status, created_at, updated_at
+           FROM teachers
+           WHERE CAST(id AS CHAR) = ?
+           LIMIT 1`,
+          [targetId]
+        );
+
+        if (dbTeacherRows.length > 0) {
+          teacher = dbTeacherRows[0];
+        }
+      } catch (dbTeacherLookupErr) {
+        console.log('restoreTeacher teachers lookup skipped:', dbTeacherLookupErr.message);
+      }
+    }
+
+    if (!teacher) {
+      try {
+        const userCols = await query('SHOW COLUMNS FROM users');
+        const userFieldSet = new Set(userCols.map((col) => String(col.Field || '').trim()));
+        const hasRole = userFieldSet.has('role');
+        const hasEmail = userFieldSet.has('email');
+
+        const firstNameExpr = userFieldSet.has('firstName')
+          ? 'firstName'
+          : (userFieldSet.has('first_name') ? 'first_name' : "''");
+        const middleNameExpr = userFieldSet.has('middleName')
+          ? 'middleName'
+          : (userFieldSet.has('middle_name') ? 'middle_name' : "''");
+        const lastNameExpr = userFieldSet.has('lastName')
+          ? 'lastName'
+          : (userFieldSet.has('last_name') ? 'last_name' : "''");
+        const roleExpr = hasRole ? 'role' : "'teacher'";
+        const statusExpr = userFieldSet.has('status')
+          ? 'status'
+          : (userFieldSet.has('verification_status') ? 'verification_status' : (userFieldSet.has('approval_status') ? 'approval_status' : 'NULL'));
+        const archivedExpr = userFieldSet.has('archived')
+          ? 'archived'
+          : (userFieldSet.has('is_archived') ? 'is_archived' : 'NULL');
+
+        const whereParts = [
+          `(CAST(id AS CHAR) = ?${hasEmail ? ' OR LOWER(email) = LOWER(?)' : ''})`
+        ];
+        if (hasRole) whereParts.push(`role IN ('teacher', 'adviser', 'subject_teacher')`);
+
+        const userRows = await query(
+          `SELECT id,
+                  ${firstNameExpr} AS firstName,
+                  ${middleNameExpr} AS middleName,
+                  ${lastNameExpr} AS lastName,
+                  username,
+                  ${hasEmail ? 'email' : "''"} AS email,
+                  ${roleExpr} AS role,
+                  ${statusExpr} AS account_status,
+                  ${archivedExpr} AS account_archived
+           FROM users
+           WHERE ${whereParts.join(' AND ')}
+           LIMIT 1`,
+          hasEmail ? [targetId, targetId] : [targetId]
+        );
+
+        if (userRows.length > 0) {
+          teacher = userRows[0];
+        }
+      } catch (usersLookupErr) {
+        console.log('restoreTeacher users lookup skipped:', usersLookupErr.message);
+      }
+    }
+
+    if (!teacher) {
       return res.status(404).json({
         success: false,
         message: 'Teacher not found'
       });
     }
-    
-    const teacher = users[teacherIndex];
 
-    await assertTeacherEditableInActiveSchoolYear(id, teacher);
-    
-    // Check if it's archived
-    if (!teacher.archived) {
+    await assertTeacherEditableInActiveSchoolYear(targetId, teacher);
+
+    const currentStatus = normalizeAccountStatus(
+      teacher.verification_status
+      || teacher.status
+      || teacher.approval_status
+      || teacher.account_status
+    );
+    const currentArchivedFlag = isTruthyArchiveFlag(
+      teacher.archived
+      || teacher.is_archived
+      || teacher.account_archived
+    );
+
+    if (!currentArchivedFlag && !isBlockedAccountStatus(currentStatus)) {
       return res.status(400).json({
         success: false,
         message: 'Teacher is not archived'
       });
     }
-    
-    // Restore the teacher
-    users[teacherIndex] = {
-      ...teacher,
-      archived: false,
-      archivedAt: null,
-      restoredAt: new Date().toISOString()
-    };
-    
-    const success = writeUsers(users);
-    
-    if (success) {
+
+    let usersUpdated = false;
+    let teachersUpdated = false;
+    let fileUpdated = false;
+
+    try {
+      const userCols = await query('SHOW COLUMNS FROM users');
+      const userFieldSet = new Set(userCols.map((col) => String(col.Field || '').trim()));
+      const statusColDef = userCols.find((col) => ['status', 'verification_status', 'approval_status'].includes(col.Field)) || null;
+      const statusCol = statusColDef?.Field || null;
+      const archivedCol = userFieldSet.has('archived')
+        ? 'archived'
+        : (userFieldSet.has('is_archived') ? 'is_archived' : null);
+      const updatedCol = userFieldSet.has('updatedAt')
+        ? 'updatedAt'
+        : (userFieldSet.has('updated_at') ? 'updated_at' : null);
+      const restoreStatusValue = resolveTeacherRestoreStatusValue(statusColDef);
+
+      const setParts = [];
+      const setParams = [];
+      if (statusCol) {
+        setParts.push(`${statusCol} = ?`);
+        setParams.push(restoreStatusValue);
+      }
+      if (archivedCol) {
+        setParts.push(`${archivedCol} = ?`);
+        setParams.push(0);
+      }
+      if (updatedCol) {
+        setParts.push(`${updatedCol} = CURRENT_TIMESTAMP`);
+      }
+
+      if (setParts.length > 0) {
+        let updateResult = await query(
+          `UPDATE users SET ${setParts.join(', ')} WHERE CAST(id AS CHAR) = ?`,
+          [...setParams, targetId]
+        );
+        let affected = Number(updateResult?.affectedRows || 0);
+        if (affected === 0 && teacher?.email) {
+          updateResult = await query(
+            `UPDATE users SET ${setParts.join(', ')} WHERE LOWER(email) = LOWER(?)`,
+            [...setParams, String(teacher.email || '').trim()]
+          );
+          affected = Number(updateResult?.affectedRows || 0);
+        }
+        usersUpdated = affected > 0;
+      }
+    } catch (usersRestoreErr) {
+      console.log('restoreTeacher users-table restore skipped:', usersRestoreErr.message);
+    }
+
+    try {
+      const teacherCols = await query('SHOW COLUMNS FROM teachers');
+      const teacherFieldSet = new Set(teacherCols.map((col) => String(col.Field || '').trim()));
+      const statusColDef = teacherCols.find((col) => ['verification_status', 'status'].includes(col.Field)) || null;
+      const statusCol = statusColDef?.Field || null;
+      const updatedCol = teacherFieldSet.has('updated_at')
+        ? 'updated_at'
+        : (teacherFieldSet.has('updatedAt') ? 'updatedAt' : null);
+      const restoreStatusValue = resolveTeacherRestoreStatusValue(statusColDef);
+
+      if (statusCol) {
+        const setParts = [`${statusCol} = ?`];
+        const setParams = [restoreStatusValue];
+        if (updatedCol) setParts.push(`${updatedCol} = CURRENT_TIMESTAMP`);
+
+        const syncResult = await query(
+          `UPDATE teachers SET ${setParts.join(', ')} WHERE CAST(id AS CHAR) = ? OR LOWER(email) = LOWER(?)`,
+          [...setParams, targetId, String(teacher?.email || '').trim()]
+        );
+        teachersUpdated = Number(syncResult?.affectedRows || 0) > 0;
+      }
+    } catch (teachersRestoreErr) {
+      console.log('restoreTeacher teachers-table restore skipped:', teachersRestoreErr.message);
+    }
+
+    const fileTargetIndex = users.findIndex((u) => {
+      const sameId = String(u?.id || '').trim() === targetId;
+      const sameEmail = String(u?.email || '').trim().toLowerCase()
+        && String(teacher?.email || '').trim().toLowerCase()
+        && String(u?.email || '').trim().toLowerCase() === String(teacher?.email || '').trim().toLowerCase();
+      return sameId || sameEmail;
+    });
+
+    if (fileTargetIndex !== -1) {
+      users[fileTargetIndex] = {
+        ...users[fileTargetIndex],
+        archived: false,
+        archivedAt: null,
+        status: 'approved',
+        verification_status: 'approved',
+        restoredAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      fileUpdated = writeUsers(users);
+    }
+
+    if (usersUpdated || teachersUpdated || fileUpdated) {
       console.log(`Teacher ${teacher.firstName} ${teacher.lastName} restored successfully`);
       res.json({
         success: true,
-        message: 'Teacher restored successfully'
+        message: 'Teacher restored successfully',
+        source: [
+          usersUpdated ? 'users_table' : null,
+          teachersUpdated ? 'teachers_table' : null,
+          fileUpdated ? 'file' : null
+        ].filter(Boolean)
       });
     } else {
       res.status(500).json({
