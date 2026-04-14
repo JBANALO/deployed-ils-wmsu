@@ -126,7 +126,18 @@ export const parseCSVFile = (file) => {
 
         // Parse rows with proper quote handling
         for (let i = 1; i < lines.length; i++) {
-          const values = parseCSVLine(lines[i], delimiter);
+          let values = parseCSVLine(lines[i], delimiter);
+
+          // Recover common malformed CSV rows like "777777777777: Bella,Swan,Female,Grade 4,Forks"
+          // where LRN and firstName are joined by ':' and one comma is missing.
+          if (values.length === headers.length - 1 && values[0]?.includes(':')) {
+            const [rawLrn, ...rawFirstNameParts] = String(values[0]).split(':');
+            const recoveredFirstName = rawFirstNameParts.join(':').trim();
+            const recoveredLrn = String(rawLrn || '').trim();
+            if (recoveredLrn && recoveredFirstName) {
+              values = [recoveredLrn, recoveredFirstName, ...values.slice(1)];
+            }
+          }
           
           console.log(`Row ${i} raw line:`, lines[i]);
           console.log(`Row ${i} parsed values:`, values);
