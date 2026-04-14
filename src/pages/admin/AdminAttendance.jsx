@@ -6,12 +6,27 @@ import axios from "../../api/axiosConfig";
 export default function AdminAttendance() {
   const { isViewingLocked, viewingSchoolYear, activeSchoolYear } = useSchoolYear();
   const [attendance, setAttendance] = useState([]);
-  const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedGradeLevel, setSelectedGradeLevel] = useState('All');
+  const [selectedSection, setSelectedSection] = useState('All');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [stats, setStats] = useState({ present: 0, absent: 0, late: 0 });
   const targetSchoolYearId = viewingSchoolYear?.id || activeSchoolYear?.id || null;
+
+  const gradeLevels = ['All', ...new Set(attendance.map((record) => String(record.gradeLevel || '').trim()).filter(Boolean))];
+  const sections = ['All', ...new Set(
+    attendance
+      .filter((record) => selectedGradeLevel === 'All' || String(record.gradeLevel || '').trim() === selectedGradeLevel)
+      .map((record) => String(record.section || '').trim())
+      .filter(Boolean)
+  )];
+
+  useEffect(() => {
+    if (selectedSection !== 'All' && !sections.includes(selectedSection)) {
+      setSelectedSection('All');
+    }
+  }, [selectedGradeLevel, attendance]);
 
   useEffect(() => {
     loadAttendanceData();
@@ -20,12 +35,6 @@ export default function AdminAttendance() {
   const loadAttendanceData = async () => {
     try {
       setLoading(true);
-
-      // Fetch students
-      const studentsRes = await axios.get('/students');
-      const studentsData = Array.isArray(studentsRes.data.data) ? studentsRes.data.data : 
-                           Array.isArray(studentsRes.data) ? studentsRes.data : [];
-      setStudents(studentsData);
 
       // Fetch attendance
       const attendanceRes = await axios.get('/attendance', {
@@ -59,15 +68,20 @@ export default function AdminAttendance() {
     }
   };
 
-  // Filter attendance by search
+  // Filter attendance by search + grade + section
   const filteredAttendance = attendance.filter(record => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
+    const query = searchQuery.toLowerCase().trim();
+    const matchesSearch = !query || (
       record.studentName?.toLowerCase().includes(query) ||
       record.studentId?.toLowerCase().includes(query) ||
+      record.gradeLevel?.toLowerCase().includes(query) ||
       record.section?.toLowerCase().includes(query)
     );
+
+    const matchesGrade = selectedGradeLevel === 'All' || String(record.gradeLevel || '').trim() === selectedGradeLevel;
+    const matchesSection = selectedSection === 'All' || String(record.section || '').trim() === selectedSection;
+
+    return matchesSearch && matchesGrade && matchesSection;
   });
 
   const getStatusColor = (status) => {
@@ -119,17 +133,39 @@ export default function AdminAttendance() {
       </div>
 
       <div className="bg-white shadow rounded-lg border border-gray-200 mt-6">
-        <div className="flex justify-between items-center p-4 border-b">
+        <div className="flex flex-wrap justify-between items-center gap-3 p-4 border-b">
           <h3 className="text-lg font-semibold text-gray-800">Daily Attendance List</h3>
-          <div className="relative">
-            <MagnifyingGlassIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search LRN or name..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-3 py-2 border rounded-lg w-64 outline-none focus:ring-2 focus:ring-red-800"
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <MagnifyingGlassIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search LRN, name, grade, section..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-3 py-2 border rounded-lg w-64 outline-none focus:ring-2 focus:ring-red-800"
+              />
+            </div>
+
+            <select
+              value={selectedGradeLevel}
+              onChange={(e) => setSelectedGradeLevel(e.target.value)}
+              className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-red-800"
+            >
+              {gradeLevels.map((grade) => (
+                <option key={grade} value={grade}>{grade === 'All' ? 'All Grade Levels' : grade}</option>
+              ))}
+            </select>
+
+            <select
+              value={selectedSection}
+              onChange={(e) => setSelectedSection(e.target.value)}
+              className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-red-800"
+            >
+              {sections.map((section) => (
+                <option key={section} value={section}>{section === 'All' ? 'All Sections' : section}</option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -139,7 +175,8 @@ export default function AdminAttendance() {
               <tr>
                 <th className="p-4">LRN</th>
                 <th className="p-4">Name</th>
-                <th className="p-4">Grade & Section</th>
+                <th className="p-4">Grade Level</th>
+                <th className="p-4">Section</th>
                 <th className="p-4">Status</th>
                 <th className="p-4">Time In</th>
                 <th className="p-4">Location</th>
@@ -149,18 +186,19 @@ export default function AdminAttendance() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="p-4 text-center text-gray-500">Loading attendance data...</td>
+                  <td colSpan="7" className="p-4 text-center text-gray-500">Loading attendance data...</td>
                 </tr>
               ) : filteredAttendance.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="p-4 text-center text-gray-500">No attendance records found for this date</td>
+                  <td colSpan="7" className="p-4 text-center text-gray-500">No attendance records found for this date</td>
                 </tr>
               ) : (
                 filteredAttendance.map((record, index) => (
                   <tr key={record.id || index} className="border-b hover:bg-gray-50">
                     <td className="p-4">{record.studentId || 'N/A'}</td>
                     <td className="p-4">{record.studentName || 'Unknown'}</td>
-                    <td className="p-4">{record.gradeLevel} - {record.section}</td>
+                    <td className="p-4">{record.gradeLevel || 'N/A'}</td>
+                    <td className="p-4">{record.section || 'N/A'}</td>
                     <td className={`p-4 font-semibold ${getStatusColor(record.status)}`}>
                       {record.status || 'N/A'}
                     </td>
