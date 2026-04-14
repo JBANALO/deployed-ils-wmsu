@@ -15,7 +15,7 @@ import { useSchoolYear } from "../../context/SchoolYearContext";
 import axios from "../../api/axiosConfig";
 
 export default function AdminSections() {
-  const { viewingSchoolYear, activeSchoolYear, isViewingLocked } = useSchoolYear();
+  const { viewingSchoolYear, activeSchoolYear } = useSchoolYear();
   const [sections, setSections] = useState([]);
   const [archivedSections, setArchivedSections] = useState([]);
   const [sectionStats, setSectionStats] = useState([]);
@@ -35,6 +35,7 @@ export default function AdminSections() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showFetchModal, setShowFetchModal] = useState(false);
   const [prevSections, setPrevSections] = useState([]);
+  const [prevMeta, setPrevMeta] = useState(null);
   const [selectedPrevIds, setSelectedPrevIds] = useState(new Set());
   const [fetchLoading, setFetchLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
@@ -51,6 +52,7 @@ export default function AdminSections() {
         params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
       });
       setPrevSections(res.data?.data || []);
+      setPrevMeta(res.data?.meta || null);
       setSelectedPrevIds(new Set());
     } catch (error) {
       console.error('Error loading previous year sections:', error);
@@ -431,7 +433,10 @@ export default function AdminSections() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-3xl mx-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-800">Fetch Sections from Previous School Year</h3>
+              <div>
+                <h3 className="text-xl font-bold text-gray-800">Fetch Sections from Past School Years</h3>
+                <p className="text-sm text-gray-500 mt-1">Source: {prevMeta?.sourceSchoolYearLabel || 'Previous school year'}</p>
+              </div>
               <button
                 onClick={() => setShowFetchModal(false)}
                 className="p-2 hover:bg-gray-100 rounded-lg"
@@ -454,13 +459,14 @@ export default function AdminSections() {
               {fetchLoading ? (
                 <div className="flex items-center justify-center py-10 text-gray-500">Loading previous year sections...</div>
               ) : prevSections.length === 0 ? (
-                <div className="flex items-center justify-center py-10 text-gray-500">No sections found in previous year.</div>
+                <div className="flex items-center justify-center py-10 text-gray-500">No sections found in past school years.</div>
               ) : (
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="p-3 text-left">Select</th>
                       <th className="p-3 text-left">Section</th>
+                      <th className="p-3 text-left">Source Year</th>
                       <th className="p-3 text-left">Description</th>
                     </tr>
                   </thead>
@@ -475,6 +481,7 @@ export default function AdminSections() {
                           />
                         </td>
                         <td className="p-3 font-medium text-gray-800">{sec.name}</td>
+                        <td className="p-3 text-gray-600">{sec.source_school_year_label || 'Past Year'}</td>
                         <td className="p-3 text-gray-600">{sec.description || '—'}</td>
                       </tr>
                     ))}

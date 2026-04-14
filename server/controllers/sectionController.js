@@ -174,6 +174,149 @@ const getNearestSectionSourceSchoolYear = async (targetSy) => {
   return fallbackRows[0] || null;
 };
 
+const getSectionSourceSchoolYears = async (targetSy) => {
+  if (!targetSy?.id) return [];
+
+  const baseExistsClause = `(
+      EXISTS (
+        SELECT 1
+        FROM sections s
+        WHERE s.school_year_id = sy.id
+          AND IFNULL(s.is_archived, 0) = 0
+        LIMIT 1
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM classes c
+        WHERE c.school_year_id = sy.id
+          AND c.section IS NOT NULL
+          AND TRIM(c.section) <> ''
+        LIMIT 1
+      )
+    )`;
+
+  if (targetSy.start_date) {
+    const previousRows = await query(
+      `SELECT sy.id, sy.label, sy.start_date
+       FROM school_years sy
+       WHERE sy.is_archived = 0
+         AND sy.id <> ?
+         AND sy.start_date < ?
+         AND ${baseExistsClause}
+       ORDER BY sy.start_date DESC, sy.id DESC`,
+      [targetSy.id, targetSy.start_date]
+    );
+
+    if (previousRows.length > 0) return previousRows;
+
+    const nearestRows = await query(
+      `SELECT sy.id, sy.label, sy.start_date
+       FROM school_years sy
+       WHERE sy.is_archived = 0
+         AND sy.id <> ?
+         AND ${baseExistsClause}
+       ORDER BY ABS(DATEDIFF(sy.start_date, ?)) ASC, sy.start_date DESC, sy.id DESC`,
+      [targetSy.id, targetSy.start_date]
+    );
+
+    return nearestRows;
+  }
+
+  const fallbackRows = await query(
+    `SELECT sy.id, sy.label, sy.start_date
+     FROM school_years sy
+     WHERE sy.is_archived = 0
+       AND sy.id <> ?
+       AND ${baseExistsClause}
+     ORDER BY sy.id DESC`,
+    [targetSy.id]
+  );
+
+  return fallbackRows;
+};
+
+const buildSectionFetchCandidates = async (targetSy) => {
+  const sourceSchoolYears = await getSectionSourceSchoolYears(targetSy);
+  if (!sourceSchoolYears.length) {
+    return { sourceSchoolYears: [], candidates: [], usedClassesFallback: false };
+  }
+
+  const sourceIds = sourceSchoolYears
+    .map((sy) => Number(sy?.id || 0))
+    .filter((id) => Number.isInteger(id) && id > 0);
+
+  const sourceLabelById = sourceSchoolYears.reduce((acc, sy) => {
+    acc[String(sy.id)] = sy.label || null;
+    return acc;
+  }, {});
+
+  const sourceOrderById = sourceSchoolYears.reduce((acc, sy, idx) => {
+    acc[String(sy.id)] = idx;
+    return acc;
+  }, {});
+
+  let rawSectionRows = [];
+  if (sourceIds.length > 0) {
+    const placeholders = sourceIds.map(() => '?').join(',');
+    rawSectionRows = await query(
+      `SELECT s.id, s.name, s.description, s.grade_level, s.is_archived, s.school_year_id
+       FROM sections s
+       WHERE s.school_year_id IN (${placeholders})
+         AND IFNULL(s.is_archived, 0) = 0
+       ORDER BY s.school_year_id DESC, s.name ASC`,
+      sourceIds
+    );
+  }
+
+  const byName = new Map();
+  const sectionCandidates = (rawSectionRows || []).map((row) => ({
+    ...row,
+    source_school_year_label: sourceLabelById[String(row.school_year_id)] || null,
+    source: 'sections'
+  }));
+
+  for (const sec of sectionCandidates) {
+    const key = String(sec?.name || '').trim().toLowerCase();
+    if (!key) continue;
+    if (!byName.has(key)) {
+      byName.set(key, sec);
+      continue;
+    }
+
+    const existing = byName.get(key);
+    const existingOrder = sourceOrderById[String(existing?.school_year_id)] ?? Number.MAX_SAFE_INTEGER;
+    const candidateOrder = sourceOrderById[String(sec?.school_year_id)] ?? Number.MAX_SAFE_INTEGER;
+
+    if (candidateOrder < existingOrder) {
+      byName.set(key, sec);
+    }
+  }
+
+  let usedClassesFallback = false;
+  for (const sy of sourceSchoolYears) {
+    const fallbackRows = await getSectionFallbackFromClasses(sy.id);
+    for (const sec of fallbackRows) {
+      const key = String(sec?.name || '').trim().toLowerCase();
+      if (!key || byName.has(key)) continue;
+      byName.set(key, {
+        ...sec,
+        source_school_year_label: sy.label || null,
+        source: sec.source || 'classes_fallback'
+      });
+      usedClassesFallback = true;
+    }
+  }
+
+  const candidates = Array.from(byName.values()).sort((a, b) => {
+    const aOrder = sourceOrderById[String(a?.school_year_id)] ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = sourceOrderById[String(b?.school_year_id)] ?? Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return String(a?.name || '').localeCompare(String(b?.name || ''));
+  });
+
+  return { sourceSchoolYears, candidates, usedClassesFallback };
+};
+
 const normalizeGradeForCompare = (value = '') =>
   String(value || '').trim().toLowerCase().replace(/^grade\s+/i, '');
 
@@ -617,25 +760,22 @@ const getPreviousYearSections = async (req, res) => {
   try {
     await ensureSectionColumns();
     const targetSy = await resolveSchoolYear(req);
-    const prevSy = await getNearestSectionSourceSchoolYear(targetSy);
-    if (!prevSy) return res.json({ success: true, data: [] });
+    const { sourceSchoolYears, candidates, usedClassesFallback } = await buildSectionFetchCandidates(targetSy);
+    if (!sourceSchoolYears.length) return res.json({ success: true, data: [] });
 
-    let sections = await query(
-      'SELECT * FROM sections WHERE is_archived = FALSE AND school_year_id = ? ORDER BY name',
-      [prevSy.id]
-    );
-
-    let usedClassesFallback = false;
-    if (sections.length === 0) {
-      sections = await getSectionFallbackFromClasses(prevSy.id);
-      usedClassesFallback = sections.length > 0;
-    }
+    const primarySource = sourceSchoolYears[0] || null;
+    const sourceSchoolYearIds = sourceSchoolYears.map((sy) => sy.id);
+    const sourceSchoolYearLabel = sourceSchoolYears.length > 1
+      ? `${primarySource?.label || 'Previous school year'} and older years`
+      : (primarySource?.label || 'Previous school year');
 
     res.json({
       success: true,
-      data: sections,
+      data: candidates,
       meta: {
-        sourceSchoolYearId: prevSy.id,
+        sourceSchoolYearId: primarySource?.id || null,
+        sourceSchoolYearIds,
+        sourceSchoolYearLabel,
         targetSchoolYearId: targetSy.id,
         usedClassesFallback
       }
@@ -652,10 +792,13 @@ const fetchSectionsFromPreviousYear = async (req, res) => {
     await ensureSectionColumns();
     const targetSy = await resolveSchoolYear(req);
     await assertActiveTargetSchoolYear(targetSy);
-    const prevSy = await getNearestSectionSourceSchoolYear(targetSy);
-    if (!prevSy) {
+    const { sourceSchoolYears, candidates, usedClassesFallback } = await buildSectionFetchCandidates(targetSy);
+    if (!sourceSchoolYears.length) {
       return res.status(400).json({ success: false, message: 'No source school year found to fetch from' });
     }
+
+    const primarySource = sourceSchoolYears[0] || null;
+    const sourceSchoolYearIds = sourceSchoolYears.map((sy) => sy.id);
 
     const { ids } = req.body || {};
     const selectedIds = Array.isArray(ids)
@@ -663,17 +806,7 @@ const fetchSectionsFromPreviousYear = async (req, res) => {
       : [];
     const selectedIdSet = new Set(selectedIds);
 
-    let prevSections = [];
-    prevSections = await query(
-      'SELECT * FROM sections WHERE is_archived = FALSE AND school_year_id = ?',
-      [prevSy.id]
-    );
-
-    let usedClassesFallback = false;
-    if (!prevSections.length) {
-      prevSections = await getSectionFallbackFromClasses(prevSy.id);
-      usedClassesFallback = prevSections.length > 0;
-    }
+    let prevSections = candidates;
 
     if (selectedIdSet.size > 0) {
       prevSections = prevSections.filter((sec) => selectedIdSet.has(String(sec.id || '').trim()));
@@ -723,7 +856,8 @@ const fetchSectionsFromPreviousYear = async (req, res) => {
       data: {
         inserted,
         skipped,
-        sourceSchoolYearId: prevSy.id,
+        sourceSchoolYearId: primarySource?.id || null,
+        sourceSchoolYearIds,
         targetSchoolYearId: targetSy.id,
         usedClassesFallback
       }
