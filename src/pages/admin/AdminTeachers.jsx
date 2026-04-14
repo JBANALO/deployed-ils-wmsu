@@ -1046,6 +1046,20 @@ export default function AdminTeachers() {
 
       const normalizedEditStatus = String(editFormData.status || 'active').trim().toLowerCase();
       const statusPayload = normalizedEditStatus === 'inactive' ? 'inactive' : 'approved';
+
+      // Match student archive behavior: when status is set to inactive,
+      // archive immediately instead of running full profile update validation.
+      if (normalizedEditStatus === 'inactive') {
+        await api.put(`/teachers/${selectedTeacher.id}/archive`);
+        await fetchTeachers();
+        setShowEditModal(false);
+        setEditFormData({});
+        setSelectedTeacher(null);
+        setShowArchives(true);
+        fetchArchivedTeachers();
+        toast.success('Teacher account archived successfully and login has been disabled.');
+        return;
+      }
       
       // Prepare the data for API call - handle kindergarten subjects properly
       let updateData;

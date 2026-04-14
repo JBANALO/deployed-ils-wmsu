@@ -1670,6 +1670,10 @@ const updateTeacher = async (req, res) => {
         }
 
         if (updateData.email) {
+          const incomingEmail = String(updateData.email || '').trim().toLowerCase();
+          const currentEmail = String(current.email || '').trim().toLowerCase();
+
+          if (incomingEmail !== currentEmail) {
           const duplicateEmailRows = await query(
             'SELECT id FROM teachers WHERE email = ? AND id <> ? LIMIT 1',
             [updateData.email, id]
@@ -1679,6 +1683,7 @@ const updateTeacher = async (req, res) => {
               success: false,
               message: 'Email already exists'
             });
+          }
           }
         }
 
@@ -1787,6 +1792,10 @@ const updateTeacher = async (req, res) => {
             }
 
             if (updateData.email) {
+              const incomingEmail = String(updateData.email || '').trim().toLowerCase();
+              const currentEmail = String(currentUser.email || '').trim().toLowerCase();
+
+              if (incomingEmail !== currentEmail) {
               const duplicateUserEmailRows = await query(
                 'SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id <> ? LIMIT 1',
                 [updateData.email, id]
@@ -1796,6 +1805,7 @@ const updateTeacher = async (req, res) => {
                   success: false,
                   message: 'Email already exists'
                 });
+              }
               }
             }
 
