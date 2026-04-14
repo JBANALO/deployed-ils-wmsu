@@ -10,7 +10,6 @@ import {
   ArrowTrendingUpIcon,
   Bars3BottomLeftIcon,
   PrinterIcon,
-  ArrowDownTrayIcon,
   XMarkIcon,
 } from "@heroicons/react/24/solid";
 import {
@@ -1230,17 +1229,6 @@ export default function EditGrades() {
           <BookOpenIcon className="w-10 h-10 text-red-800" />
           Edit Grades
         </h2>
-
-        <div className="flex gap-3">
-          <button className="px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center gap-2 text-sm font-medium shadow-md">
-            <ArrowDownTrayIcon className="w-5 h-5" />
-            Export Grades
-          </button>
-          <button className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition flex items-center gap-2 text-sm font-medium shadow-md">
-            <PrinterIcon className="w-5 h-5" />
-            Print Report
-          </button>
-        </div>
       </div>
 
       {isViewOnlyMode && (
