@@ -3427,3 +3427,6 @@ const getStudentRankings = async (req, res) => {
     });
   }
 };
+
+// Export the getStudentRankings function
+exports.getStudentRankings = getStudentRankings;
