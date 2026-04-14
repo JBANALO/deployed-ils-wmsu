@@ -164,7 +164,25 @@ export default function AdminGrades() {
 
   useEffect(() => {
     loadComputationSettings();
-  }, [targetSchoolYearId, selectedComputationGradeLevel, subjectsByGrade]);
+  }, [targetSchoolYearId, selectedComputationGradeLevel]);
+
+  // Merge newly discovered grade subjects without wiping unsaved manual additions.
+  useEffect(() => {
+    if (!selectedComputationGradeLevel) return;
+    const defaults = buildDefaultComputationSubjects();
+    if (!Array.isArray(defaults) || defaults.length === 0) return;
+
+    setComputationSubjects((prev) => {
+      if (!Array.isArray(prev) || prev.length === 0) {
+        return defaults;
+      }
+
+      const existing = new Set(prev.map((item) => normalizeSubjectName(item?.name)));
+      const additions = defaults.filter((item) => !existing.has(normalizeSubjectName(item?.name)));
+      if (additions.length === 0) return prev;
+      return [...prev, ...additions];
+    });
+  }, [selectedComputationGradeLevel, subjectsByGrade]);
 
   const findComputationSubjectConfig = (subjectName) => {
     return computationSubjects.find(
@@ -221,6 +239,7 @@ export default function AdminGrades() {
       }
     ]);
     setNewComputationSubject('');
+    toast.success(`Added subject: ${cleanName}`);
   };
 
   const handleDeleteComputationSubject = (subjectName) => {
