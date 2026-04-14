@@ -48,6 +48,28 @@ const normalizeGradeLevel = (value = '') => {
 };
 
 const normalizeSectionLabel = (value = '') => String(value || '').trim().replace(/\s+/g, ' ');
+const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const normalizeScheduleDay = (value = '') => {
+  const raw = String(value || '').trim();
+  if (!raw) return 'Monday';
+
+  const lower = raw.toLowerCase();
+  if (['all', 'monday-friday', 'monday - friday', 'monday to friday', 'weekdays', 'weekday'].includes(lower)) {
+    return 'All';
+  }
+
+  const weekday = WEEKDAY_NAMES.find((day) => day.toLowerCase() === lower);
+  return weekday || raw;
+};
+const expandScheduleDays = (value = '') => {
+  const normalized = normalizeScheduleDay(value);
+  if (normalized === 'All') return WEEKDAY_NAMES;
+  return WEEKDAY_NAMES.includes(normalized) ? [normalized] : [normalized];
+};
+const scheduleDaysOverlap = (dayA = '', dayB = '') => {
+  const daySetA = new Set(expandScheduleDays(dayA).map((day) => String(day).toLowerCase()));
+  return expandScheduleDays(dayB).some((day) => daySetA.has(String(day).toLowerCase()));
+};
 
 const syncClassesFromSectionsForSchoolYear = async (schoolYearId) => {
   if (!schoolYearId) return { inserted: 0, skipped: 0 };
@@ -1059,7 +1081,7 @@ const assignSubjectTeacher = async (req, res) => {
     const { classId } = req.params;
     const { teacher_id, teacher_name, subject, day, start_time, end_time } = req.body;
     const targetSy = await resolveSchoolYear(req);
-    const assignmentDay = day || 'Monday';
+    const assignmentDay = normalizeScheduleDay(day || 'Monday');
     const assignmentStart = start_time || '08:00';
     const assignmentEnd = end_time || '09:00';
 
@@ -1144,15 +1166,15 @@ const assignSubjectTeacher = async (req, res) => {
       console.log('subject_teachers school_year_id check skipped:', columnError.message);
     }
 
-    // Check for class-level schedule conflict on the same day/time
+    // Check for class-level schedule conflict on overlapping day/time.
     const classConflictSql = `SELECT st.teacher_name, st.subject, st.day, st.start_time, st.end_time
        FROM subject_teachers st
        WHERE LOWER(REPLACE(TRIM(st.class_id), ' ', '-')) IN (${classPlaceholders})
-         AND st.day = ?
          AND st.school_year_id = ?
          AND NOT (st.end_time <= ? OR st.start_time >= ?)`;
-    const classConflictParams = [...classIdentifierList, assignmentDay, targetSy.id, assignmentStart, assignmentEnd];
-    const [classConflicts] = await pool.query(classConflictSql, classConflictParams);
+    const classConflictParams = [...classIdentifierList, targetSy.id, assignmentStart, assignmentEnd];
+    const [classConflictRows] = await pool.query(classConflictSql, classConflictParams);
+    const classConflicts = (classConflictRows || []).filter((row) => scheduleDaysOverlap(row?.day, assignmentDay));
 
     if (classConflicts.length > 0) {
       const conflict = classConflicts[0];
@@ -1162,15 +1184,15 @@ const assignSubjectTeacher = async (req, res) => {
       });
     }
 
-    // Check for teacher-level schedule conflict on the same day/time across any class
+    // Check for teacher-level schedule conflict on overlapping day/time across any class.
     const teacherConflictSql = `SELECT st.class_id, st.subject, st.day, st.start_time, st.end_time
        FROM subject_teachers st
        WHERE st.teacher_id = ?
-         AND st.day = ?
          AND st.school_year_id = ?
          AND NOT (st.end_time <= ? OR st.start_time >= ?)`;
-    const teacherConflictParams = [teacher_id, assignmentDay, targetSy.id, assignmentStart, assignmentEnd];
-    const [teacherConflicts] = await pool.query(teacherConflictSql, teacherConflictParams);
+    const teacherConflictParams = [teacher_id, targetSy.id, assignmentStart, assignmentEnd];
+    const [teacherConflictRows] = await pool.query(teacherConflictSql, teacherConflictParams);
+    const teacherConflicts = (teacherConflictRows || []).filter((row) => scheduleDaysOverlap(row?.day, assignmentDay));
 
     if (teacherConflicts.length > 0) {
       const conflict = teacherConflicts[0];

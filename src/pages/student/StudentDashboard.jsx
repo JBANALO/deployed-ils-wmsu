@@ -179,6 +179,22 @@ const StudentPortal = () => {
     return 'bg-blue-100 text-blue-800';
   };
 
+  const scheduleDayBuckets = ['All', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  const normalizeScheduleDay = (value = '') => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    const lower = raw.toLowerCase();
+    if (['all', 'monday-friday', 'monday - friday', 'monday to friday', 'weekdays', 'weekday'].includes(lower)) {
+      return 'All';
+    }
+
+    const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const matched = weekdays.find((day) => day.toLowerCase() === lower);
+    return matched || raw;
+  };
+  const scheduleDayLabel = (value = '') => normalizeScheduleDay(value) === 'All' ? 'All (Mon-Fri)' : normalizeScheduleDay(value);
+
   // Report card preview function
   const previewReportCard = () => {
     setShowReportCardModal(true);
@@ -1286,13 +1302,13 @@ const StudentPortal = () => {
                 {data.schedule && data.schedule.length > 0 ? (
                   <div className="grid gap-4">
                     {/* Group by day */}
-                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => {
-                      const daySchedule = data.schedule.filter(s => s.day === day);
+                    {scheduleDayBuckets.map(day => {
+                      const daySchedule = data.schedule.filter(s => normalizeScheduleDay(s.day) === day);
                       if (daySchedule.length === 0) return null;
                       
                       return (
                         <div key={day} className="border rounded-lg overflow-hidden">
-                          <div className="bg-red-900 text-white px-4 py-2 font-semibold">{day}</div>
+                          <div className="bg-red-900 text-white px-4 py-2 font-semibold">{scheduleDayLabel(day)}</div>
                           <div className="divide-y">
                             {daySchedule.map((item, i) => (
                               <div key={i} className="flex items-center px-4 py-3 hover:bg-gray-50">

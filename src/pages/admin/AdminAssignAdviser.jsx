@@ -20,7 +20,7 @@ export default function AdminAssignAdviser() {
   const [selectedClassForSubject, setSelectedClassForSubject] = useState(null);
   const [selectedSubjectTeacher, setSelectedSubjectTeacher] = useState("");
   const [selectedSubject, setSelectedSubject] = useState("");
-  const [selectedDay, setSelectedDay] = useState("Monday");
+  const [selectedDay, setSelectedDay] = useState("All");
   const [startTime, setStartTime] = useState("08:00");
   const [endTime, setEndTime] = useState("09:00");
   const [classSubjects, setClassSubjects] = useState([]); // subjects for selected class (from admin DB)
@@ -79,6 +79,27 @@ export default function AdminAssignAdviser() {
   }, [activeSchoolYearId]);
 
   const normalizeId = (value) => String(value ?? "");
+  const weekdayOptions = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  const normalizeScheduleDay = (value = '') => {
+    const raw = String(value || '').trim();
+    if (!raw) return 'Monday';
+    const lower = raw.toLowerCase();
+    if (['all', 'monday-friday', 'monday - friday', 'monday to friday', 'weekdays', 'weekday'].includes(lower)) {
+      return 'All';
+    }
+
+    const matched = weekdayOptions.find((day) => day.toLowerCase() === lower);
+    return matched || raw;
+  };
+  const expandScheduleDays = (value = '') => {
+    const normalized = normalizeScheduleDay(value);
+    if (normalized === 'All') return weekdayOptions;
+    return weekdayOptions.includes(normalized) ? [normalized] : [normalized];
+  };
+  const scheduleDaysOverlap = (dayA, dayB) => {
+    const daySetA = new Set(expandScheduleDays(dayA).map((day) => String(day).toLowerCase()));
+    return expandScheduleDays(dayB).some((day) => daySetA.has(String(day).toLowerCase()));
+  };
   const dedupeSubjectTeachers = (rows = []) => {
     const seen = new Set();
     return rows.filter((row) => {
@@ -519,7 +540,7 @@ export default function AdminAssignAdviser() {
                 for (let i = 0; i < selectedAdviserSubjects.length; i++) {
                   for (let j = i+1; j < selectedAdviserSubjects.length; j++) {
                     const a = selectedAdviserSubjects[i], b = selectedAdviserSubjects[j];
-                    if (a.day === b.day) {
+                    if (scheduleDaysOverlap(a.day, b.day)) {
                       const aStart=toMinutes(a.startTime), aEnd=toMinutes(a.endTime);
                       const bStart=toMinutes(b.startTime), bEnd=toMinutes(b.endTime);
                       if (aStart < bEnd && bStart < aEnd) {
@@ -534,7 +555,7 @@ export default function AdminAssignAdviser() {
                 const existingConflicts = new Set();
                 for (const entry of selectedAdviserSubjects) {
                   for (const st of existingSTs) {
-                    if (st.day === entry.day) {
+                    if (scheduleDaysOverlap(st.day, entry.day)) {
                       const eStart=toMinutes(entry.startTime), eEnd=toMinutes(entry.endTime);
                       const sStart=toMinutes(st.start_time), sEnd=toMinutes(st.end_time);
                       if (eStart < sEnd && sStart < eEnd) {
@@ -574,7 +595,7 @@ export default function AdminAssignAdviser() {
                               checked={checked}
                               onChange={(e) => {
                                 if (e.target.checked) {
-                                  setSelectedAdviserSubjects(prev => [...prev, { subject: sub, day: 'Monday', startTime: '08:00', endTime: '09:00' }]);
+                                  setSelectedAdviserSubjects(prev => [...prev, { subject: sub, day: 'All', startTime: '08:00', endTime: '09:00' }]);
                                 } else {
                                   setSelectedAdviserSubjects(prev => prev.filter(x => x.subject !== sub));
                                 }
@@ -593,7 +614,8 @@ export default function AdminAssignAdviser() {
                                 )}
                                 className={`text-xs p-1.5 border rounded focus:ring-1 focus:ring-red-400 ${hasConflict ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                               >
-                                {['Monday','Tuesday','Wednesday','Thursday','Friday'].map(d => (
+                                <option value="All">All (Mon-Fri)</option>
+                                {weekdayOptions.map(d => (
                                   <option key={d} value={d}>{d}</option>
                                 ))}
                               </select>
@@ -638,8 +660,8 @@ export default function AdminAssignAdviser() {
                   for (let i=0;i<selectedAdviserSubjects.length;i++) {
                     for (let j=i+1;j<selectedAdviserSubjects.length;j++) {
                       const a=selectedAdviserSubjects[i], b=selectedAdviserSubjects[j];
-                      if (a.day===b.day && toMinutes(a.startTime)<toMinutes(b.endTime) && toMinutes(b.startTime)<toMinutes(a.endTime)) {
-                        setMessage(`⚠️ Schedule conflict: "${a.subject}" and "${b.subject}" overlap on ${a.day}. Please fix before saving.`);
+                      if (scheduleDaysOverlap(a.day, b.day) && toMinutes(a.startTime)<toMinutes(b.endTime) && toMinutes(b.startTime)<toMinutes(a.endTime)) {
+                        setMessage(`⚠️ Schedule conflict: "${a.subject}" and "${b.subject}" overlap on selected day(s). Please fix before saving.`);
                         setMessageType('error');
                         return;
                       }
@@ -715,7 +737,8 @@ export default function AdminAssignAdviser() {
                     onChange={(e) => setSelectedDay(e.target.value)}
                     className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
                   >
-                    {["Monday","Tuesday","Wednesday","Thursday","Friday"].map(d => (
+                    <option value="All">All (Mon-Fri)</option>
+                    {weekdayOptions.map(d => (
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
