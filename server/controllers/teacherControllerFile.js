@@ -308,6 +308,25 @@ const parseSubjects = (subjects) => {
   return [];
 };
 
+const parseEnumValuesFromColumnType = (columnType = '') => {
+  const raw = String(columnType || '').trim();
+  const match = raw.match(/^enum\((.*)\)$/i);
+  if (!match) return [];
+  return match[1]
+    .split(',')
+    .map((entry) => entry.trim().replace(/^'/, '').replace(/'$/, '').trim())
+    .filter(Boolean);
+};
+
+const resolveTeacherArchiveStatusValue = (columnDef = null) => {
+  const defaultCandidates = ['inactive', 'archived', 'declined', 'rejected'];
+  if (!columnDef || !columnDef.Type) return 'inactive';
+  const enumValues = parseEnumValuesFromColumnType(columnDef.Type).map((v) => String(v).toLowerCase());
+  if (enumValues.length === 0) return 'inactive';
+  const matched = defaultCandidates.find((candidate) => enumValues.includes(candidate));
+  return matched || enumValues[0];
+};
+
 const toTimeValue = (value) => {
   const date = value ? new Date(value) : null;
   if (!date || Number.isNaN(date.getTime())) return 0;
@@ -1102,6 +1121,10 @@ const archiveTeacher = async (req, res) => {
       try {
         const teacherCols = await query('SHOW COLUMNS FROM teachers');
         const teacherFieldSet = new Set(teacherCols.map((col) => col.Field));
+        const teacherStatusColumnDef = teacherCols.find((col) => col.Field === 'verification_status')
+          || teacherCols.find((col) => col.Field === 'status')
+          || null;
+        const teacherArchiveStatusValue = resolveTeacherArchiveStatusValue(teacherStatusColumnDef);
         const teacherStatusCol = teacherFieldSet.has('verification_status')
           ? 'verification_status'
           : (teacherFieldSet.has('status') ? 'status' : null);
@@ -1112,7 +1135,7 @@ const archiveTeacher = async (req, res) => {
         let teacherUpdated = false;
         if (teacherStatusCol) {
           const updateClauses = [`${teacherStatusCol} = ?`];
-          const updateParams = ['inactive'];
+          const updateParams = [teacherArchiveStatusValue];
           if (teacherUpdatedCol) updateClauses.push(`${teacherUpdatedCol} = CURRENT_TIMESTAMP`);
 
           let updateResult = await query(
@@ -1333,9 +1356,28 @@ const archiveTeacher = async (req, res) => {
         // Best-effort sync for mirrored teachers row.
         let teachersSynced = false;
         try {
+          const teacherCols = await query('SHOW COLUMNS FROM teachers');
+          const teacherStatusColumnDef = teacherCols.find((col) => col.Field === 'verification_status')
+            || teacherCols.find((col) => col.Field === 'status')
+            || null;
+          const teacherArchiveStatusValue = resolveTeacherArchiveStatusValue(teacherStatusColumnDef);
+          const teacherFieldSet = new Set(teacherCols.map((col) => col.Field));
+          const teacherStatusCol = teacherFieldSet.has('verification_status')
+            ? 'verification_status'
+            : (teacherFieldSet.has('status') ? 'status' : null);
+          const teacherUpdatedCol = teacherFieldSet.has('updated_at')
+            ? 'updated_at'
+            : (teacherFieldSet.has('updatedAt') ? 'updatedAt' : null);
+
+          if (!teacherStatusCol) throw new Error('No teachers status column for sync');
+
+          const teacherSetParts = [`${teacherStatusCol} = ?`];
+          const teacherSetParams = [teacherArchiveStatusValue];
+          if (teacherUpdatedCol) teacherSetParts.push(`${teacherUpdatedCol} = CURRENT_TIMESTAMP`);
+
           const syncResult = await query(
-            'UPDATE teachers SET verification_status = ?, updated_at = CURRENT_TIMESTAMP WHERE CAST(id AS CHAR) = ? OR LOWER(email) = LOWER(?)',
-            ['inactive', targetId, teacher.email || '']
+            `UPDATE teachers SET ${teacherSetParts.join(', ')} WHERE CAST(id AS CHAR) = ? OR LOWER(email) = LOWER(?)`,
+            [...teacherSetParams, targetId, teacher.email || '']
           );
           teachersSynced = Number(syncResult?.affectedRows || 0) > 0;
         } catch (teachersSyncErr) {
@@ -2002,7 +2044,7 @@ const updateTeacher = async (req, res) => {
         const normalizedRequestedStatus = String(requestedStatus || 'approved').trim().toLowerCase();
         const shouldArchiveRecord = normalizedRequestedStatus === 'inactive' || normalizedRequestedStatus === 'archived';
         const status = shouldArchiveRecord
-          ? 'archived'
+          ? 'inactive'
           : (normalizedRequestedStatus === 'active' ? 'approved' : requestedStatus);
 
         await query(
@@ -2220,7 +2262,7 @@ const updateTeacher = async (req, res) => {
         ...users[teacherIndex],
         ...updateData,
         status: shouldArchiveFileRecord ? 'inactive' : (normalizedFileStatus === 'active' ? 'approved' : requestedFileStatus),
-        verification_status: shouldArchiveFileRecord ? 'archived' : (normalizedFileStatus === 'active' ? 'approved' : requestedFileStatus),
+        verification_status: shouldArchiveFileRecord ? 'inactive' : (normalizedFileStatus === 'active' ? 'approved' : requestedFileStatus),
         archived: shouldArchiveFileRecord,
         archivedAt: shouldArchiveFileRecord ? new Date().toISOString() : null,
         updatedAt: new Date().toISOString()

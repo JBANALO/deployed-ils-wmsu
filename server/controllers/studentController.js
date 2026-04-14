@@ -11,6 +11,7 @@ let gradesSyEnsured = false;
 let studentBirthDateEnsured = false;
 let studentArchiveColumnsEnsured = false;
 let studentLrnScopeEnsured = false;
+let studentProfileColumnsEnsured = false;
 
 const HISTORICAL_SOURCE_EXISTS_CLAUSE = `(
   EXISTS (
@@ -280,6 +281,74 @@ async function ensureStudentBirthDateColumn() {
     await query('ALTER TABLE students ADD COLUMN birth_date DATE NULL');
   }
   studentBirthDateEnsured = true;
+}
+
+async function ensureStudentProfileColumns() {
+  if (studentProfileColumnsEnsured) return;
+
+  const cols = await query('SHOW COLUMNS FROM students');
+  const columnLookup = new Map();
+
+  for (const col of cols) {
+    const name = String(col.Field || '').trim();
+    if (!name) continue;
+    columnLookup.set(name.toLowerCase(), name);
+  }
+
+  const hasColumn = (name) => columnLookup.has(String(name || '').toLowerCase());
+  const getColumn = (name) => columnLookup.get(String(name || '').toLowerCase());
+
+  const addColumnIfMissing = async (columnName, definition) => {
+    if (hasColumn(columnName)) return;
+    await query(`ALTER TABLE students ADD COLUMN ${definition}`);
+    columnLookup.set(String(columnName).toLowerCase(), columnName);
+  };
+
+  await addColumnIfMissing('parent_first_name', 'parent_first_name VARCHAR(255) NULL');
+  await addColumnIfMissing('parent_last_name', 'parent_last_name VARCHAR(255) NULL');
+  await addColumnIfMissing('parent_email', 'parent_email VARCHAR(255) NULL');
+  await addColumnIfMissing('parent_contact', 'parent_contact VARCHAR(50) NULL');
+  await addColumnIfMissing('student_email', 'student_email VARCHAR(255) NULL');
+
+  if (!hasColumn('updated_at')) {
+    await query('ALTER TABLE students ADD COLUMN updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
+    columnLookup.set('updated_at', 'updated_at');
+  }
+
+  const legacyParentEmailColumn = getColumn('parentemail');
+  if (legacyParentEmailColumn) {
+    await query(
+      `UPDATE students
+       SET parent_email = COALESCE(NULLIF(parent_email, ''), \`${legacyParentEmailColumn}\`)
+       WHERE (parent_email IS NULL OR parent_email = '')
+         AND \`${legacyParentEmailColumn}\` IS NOT NULL
+         AND \`${legacyParentEmailColumn}\` <> ''`
+    );
+  }
+
+  const legacyParentContactColumn = getColumn('contact');
+  if (legacyParentContactColumn) {
+    await query(
+      `UPDATE students
+       SET parent_contact = COALESCE(NULLIF(parent_contact, ''), \`${legacyParentContactColumn}\`)
+       WHERE (parent_contact IS NULL OR parent_contact = '')
+         AND \`${legacyParentContactColumn}\` IS NOT NULL
+         AND \`${legacyParentContactColumn}\` <> ''`
+    );
+  }
+
+  const legacyStudentEmailColumn = getColumn('wmsu_email');
+  if (legacyStudentEmailColumn) {
+    await query(
+      `UPDATE students
+       SET student_email = COALESCE(NULLIF(student_email, ''), \`${legacyStudentEmailColumn}\`)
+       WHERE (student_email IS NULL OR student_email = '')
+         AND \`${legacyStudentEmailColumn}\` IS NOT NULL
+         AND \`${legacyStudentEmailColumn}\` <> ''`
+    );
+  }
+
+  studentProfileColumnsEnsured = true;
 }
 
 async function ensureStudentArchiveColumns() {
@@ -2389,6 +2458,7 @@ exports.updateStudent = async (req, res) => {
 
     await ensureStudentSchoolYearColumn();
     await ensureStudentBirthDateColumn();
+    await ensureStudentProfileColumns();
     await ensureStudentArchiveColumns();
 
     // Check if student exists
@@ -2408,9 +2478,6 @@ exports.updateStudent = async (req, res) => {
     const normalizedActorId = String(actorId || '').trim();
     const currentStatus = String(existingStudents[0].status || '').trim().toLowerCase();
     const nextStatus = String(status || '').trim().toLowerCase();
-    const normalizedStatusValue = status === undefined
-      ? undefined
-      : (nextStatus === 'inactive' ? 'inactive' : nextStatus === 'active' || nextStatus === 'approved' ? 'Active' : status);
 
     if (isTeacherActor && !isAdminActor) {
       if (!normalizedActorId) {
@@ -2452,6 +2519,63 @@ exports.updateStudent = async (req, res) => {
     const updates = [];
     const params = [];
 
+    const studentCols = await query('SHOW COLUMNS FROM students');
+    const studentColumnLookup = new Map();
+    for (const col of studentCols) {
+      const name = String(col.Field || '').trim();
+      if (!name) continue;
+      studentColumnLookup.set(name.toLowerCase(), name);
+    }
+    const resolveColumn = (...candidates) => {
+      for (const candidate of candidates) {
+        const found = studentColumnLookup.get(String(candidate || '').toLowerCase());
+        if (found) return found;
+      }
+      return null;
+    };
+
+    const parseEnumValues = (columnType = '') => {
+      const match = String(columnType || '').match(/^enum\((.*)\)$/i);
+      if (!match) return [];
+      return match[1]
+        .split(',')
+        .map((entry) => entry.trim().replace(/^'/, '').replace(/'$/, '').trim())
+        .filter(Boolean);
+    };
+
+    const statusColumnName = resolveColumn('status');
+    const statusColumnDef = studentCols.find((col) => String(col.Field || '').toLowerCase() === String(statusColumnName || '').toLowerCase());
+    const statusEnumValues = parseEnumValues(statusColumnDef?.Type);
+    const normalizeToAllowedStatus = (desiredStatus, fallbackStatus) => {
+      const desired = String(desiredStatus || '').trim();
+      const fallback = String(fallbackStatus || '').trim();
+      if (statusEnumValues.length === 0) return desired || fallback;
+
+      const desiredMatch = statusEnumValues.find((value) => value.toLowerCase() === desired.toLowerCase());
+      if (desiredMatch) return desiredMatch;
+      const fallbackMatch = statusEnumValues.find((value) => value.toLowerCase() === fallback.toLowerCase());
+      if (fallbackMatch) return fallbackMatch;
+      return statusEnumValues[0];
+    };
+
+    const shouldPreserveAcademicStatus = new Set(['accelerated', 'promoted', 'retained', 'graduated', 'graduate']);
+    const normalizedStatusValue = (() => {
+      if (status === undefined) return undefined;
+
+      if (nextStatus === 'inactive') {
+        return normalizeToAllowedStatus('inactive', currentStatus || 'inactive');
+      }
+
+      if (nextStatus === 'active' || nextStatus === 'approved') {
+        if (shouldPreserveAcademicStatus.has(currentStatus)) {
+          return normalizeToAllowedStatus(existingStudents[0].status, currentStatus);
+        }
+        return normalizeToAllowedStatus('active', 'approved');
+      }
+
+      return normalizeToAllowedStatus(status, currentStatus);
+    })();
+
     if (lrn !== undefined) { updates.push('lrn = ?'); params.push(lrn); }
     if (firstName !== undefined) { updates.push('first_name = ?'); params.push(firstName); }
     if (middleName !== undefined) { updates.push('middle_name = ?'); params.push(middleName); }
@@ -2461,11 +2585,41 @@ exports.updateStudent = async (req, res) => {
     if (sex !== undefined) { updates.push('sex = ?'); params.push(sex); }
     if (gradeLevel !== undefined) { updates.push('grade_level = ?'); params.push(gradeLevel); }
     if (section !== undefined) { updates.push('section = ?'); params.push(section); }
-    if (parentFirstName !== undefined) { updates.push('parent_first_name = ?'); params.push(parentFirstName); }
-    if (parentLastName !== undefined) { updates.push('parent_last_name = ?'); params.push(parentLastName); }
-    if (parentEmail !== undefined) { updates.push('parent_email = ?'); params.push(parentEmail); }
-    if (parentContact !== undefined) { updates.push('parent_contact = ?'); params.push(parentContact); }
-    if (studentEmail !== undefined) { updates.push('student_email = ?'); params.push(studentEmail); }
+    if (parentFirstName !== undefined) {
+      const parentFirstNameColumn = resolveColumn('parent_first_name');
+      if (parentFirstNameColumn) {
+        updates.push(`\`${parentFirstNameColumn}\` = ?`);
+        params.push(parentFirstName);
+      }
+    }
+    if (parentLastName !== undefined) {
+      const parentLastNameColumn = resolveColumn('parent_last_name');
+      if (parentLastNameColumn) {
+        updates.push(`\`${parentLastNameColumn}\` = ?`);
+        params.push(parentLastName);
+      }
+    }
+    if (parentEmail !== undefined) {
+      const parentEmailColumn = resolveColumn('parent_email', 'parentEmail');
+      if (parentEmailColumn) {
+        updates.push(`\`${parentEmailColumn}\` = ?`);
+        params.push(parentEmail);
+      }
+    }
+    if (parentContact !== undefined) {
+      const parentContactColumn = resolveColumn('parent_contact', 'contact');
+      if (parentContactColumn) {
+        updates.push(`\`${parentContactColumn}\` = ?`);
+        params.push(parentContact);
+      }
+    }
+    if (studentEmail !== undefined) {
+      const studentEmailColumn = resolveColumn('student_email', 'wmsu_email');
+      if (studentEmailColumn) {
+        updates.push(`\`${studentEmailColumn}\` = ?`);
+        params.push(studentEmail);
+      }
+    }
     if (normalizedStatusValue !== undefined) {
       updates.push('status = ?');
       params.push(normalizedStatusValue);
@@ -2476,11 +2630,13 @@ exports.updateStudent = async (req, res) => {
       }
     }
 
-    // Always update the updated_at timestamp
-    updates.push('updated_at = NOW()');
+    // Update timestamp only when the column exists (legacy schemas may not have it).
+    const updatedAtColumn = resolveColumn('updated_at', 'updatedAt');
+    if (updatedAtColumn) {
+      updates.push(`\`${updatedAtColumn}\` = NOW()`);
+    }
 
-    if (updates.length === 1) {
-      // Only updated_at, no real changes
+    if (updates.length === 0) {
       return res.status(400).json({ status: 'fail', message: 'No fields to update' });
     }
 

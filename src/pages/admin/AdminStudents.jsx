@@ -520,6 +520,7 @@ export default function AdminStudents() {
     setEditFormData({
       ...student,
       status: statusForEdit,
+      originalStatus: student.status,
       birthDate: birthDateValue,
       age: computedAge !== '' ? computedAge : (student.age || '')
     });
@@ -531,9 +532,14 @@ export default function AdminStudents() {
       const actor = JSON.parse(localStorage.getItem('user') || '{}');
       const actorRole = String(actor?.role || 'admin').toLowerCase();
       const actorId = actor?.id ? String(actor.id) : null;
-      const statusPayload = String(editFormData.status || 'Active').trim().toLowerCase() === 'inactive'
+      const selectedStatus = String(editFormData.status || 'Active').trim().toLowerCase();
+      const originalStatus = String(editFormData.originalStatus || selectedStudent?.status || '').trim().toLowerCase();
+      const preserveAcademicStatuses = new Set(['accelerated', 'promoted', 'retained', 'graduated', 'graduate']);
+      const statusPayload = selectedStatus === 'inactive'
         ? 'inactive'
-        : 'Active';
+        : (preserveAcademicStatuses.has(originalStatus)
+            ? (editFormData.originalStatus || selectedStudent?.status || 'active')
+            : 'active');
 
       // Create the update data object with all fields
       const updateData = {
@@ -550,9 +556,7 @@ export default function AdminStudents() {
         parentLastName: editFormData.parentLastName,
         parentEmail: editFormData.parentEmail,
         parentContact: editFormData.parentContact,
-        // Include other existing fields that might be needed
-        email: editFormData.email,
-        username: editFormData.username,
+        studentEmail: editFormData.studentEmail || editFormData.email || null,
         status: statusPayload,
         actorRole,
         actorId
@@ -571,11 +575,12 @@ export default function AdminStudents() {
         fetchStudents(); // Refresh list
         setShowEditModal(false);
       } else {
-        toast.error('Failed to update student: ' + response.statusText);
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData?.message || errorData?.error || `Request failed (${response.status})`;
+        toast.error('Failed to update student: ' + errorMessage);
       }
     } catch (error) {
-      toast.error('Error updating student: ' + error.message);
-      toast.error('Failed to update student');
+      toast.error('Failed to update student: ' + error.message);
     }
   };
 
