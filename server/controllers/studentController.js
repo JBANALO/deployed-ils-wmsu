@@ -2474,6 +2474,24 @@ function normalizeSectionName(value = '') {
   return String(value || '').trim().toLowerCase();
 }
 
+function normalizeLrn(value = '') {
+  return String(value || '').trim();
+}
+
+function normalizePromotionStatus(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'accelerated') return 'promoted';
+  return normalized;
+}
+
+function getPromotionStatusPriority(status = '') {
+  const normalized = normalizePromotionStatus(status);
+  if (normalized === 'promoted') return 3;
+  if (normalized === 'retained') return 2;
+  if (normalized === 'historical') return 1;
+  return 0;
+}
+
 function isGraduateGrade(value = '') {
   return String(value || '').trim().toLowerCase() === 'graduate';
 }
@@ -2484,7 +2502,7 @@ function isGraduatedStatus(value = '') {
 
 function isGraduateCandidate(promo = {}, sourceStudent = null) {
   if (isGraduateGrade(promo?.from_grade) || isGraduateGrade(promo?.to_grade)) return true;
-  if (isGraduatedStatus(promo?.status)) return true;
+  if (isGraduatedStatus(normalizePromotionStatus(promo?.status))) return true;
   if (!sourceStudent) return false;
   if (isGraduateGrade(sourceStudent.grade_level)) return true;
   if (isGraduatedStatus(sourceStudent.status)) return true;
@@ -2644,14 +2662,6 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       ? req.body.ids.map((id) => String(id || '').trim()).filter(Boolean)
       : [];
 
-    const statusPriority = (status = '') => {
-      const normalized = String(status || '').toLowerCase();
-      if (normalized === 'promoted') return 3;
-      if (normalized === 'retained') return 2;
-      if (normalized === 'historical') return 1;
-      return 0;
-    };
-
     const toTimestamp = (value) => {
       const date = value ? new Date(value) : null;
       const time = date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
@@ -2670,20 +2680,26 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     );
     const globallyArchivedLrns = new Set(
       archivedLrnRows
-        .map((row) => String(row?.lrn || '').trim())
+        .map((row) => normalizeLrn(row?.lrn))
         .filter(Boolean)
     );
 
     let promotionRows = await query(
-      `SELECT ph.student_id, ph.lrn, ph.to_grade, ph.to_section, ph.status, ph.reason, ph.created_at, ph.school_year_id
+      `SELECT ph.id, ph.student_id, ph.lrn, ph.to_grade, ph.to_section, ph.status, ph.reason, ph.created_at, ph.school_year_id
        FROM promotion_history ph
        WHERE ph.school_year_id IN (${sourcePlaceholders})
-         AND LOWER(ph.status) IN ('promoted', 'retained')
-         AND LOWER(COALESCE(ph.from_grade, '')) <> 'graduate'
-         AND LOWER(COALESCE(ph.to_grade, '')) <> 'graduate'
-       ORDER BY ph.created_at DESC`,
+         AND LOWER(TRIM(COALESCE(ph.status, ''))) IN ('promoted', 'retained', 'accelerated')
+         AND LOWER(TRIM(COALESCE(ph.from_grade, ''))) <> 'graduate'
+         AND LOWER(TRIM(COALESCE(ph.to_grade, ''))) <> 'graduate'
+       ORDER BY ph.created_at DESC, ph.id DESC`,
       sourceSchoolYearIds
     );
+
+    promotionRows = (promotionRows || []).map((row) => ({
+      ...row,
+      status: normalizePromotionStatus(row?.status),
+      lrn: normalizeLrn(row?.lrn)
+    }));
 
     if (!promotionRows.length) {
       // Fallback for returnees/transfers: allow latest historical records even without promotion logs.
@@ -2710,7 +2726,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
 
     if (globallyArchivedLrns.size > 0) {
       promotionRows = promotionRows.filter((row) => {
-        const lrn = String(row?.lrn || '').trim();
+        const lrn = normalizeLrn(row?.lrn);
         return !lrn || !globallyArchivedLrns.has(lrn);
       });
     }
@@ -2732,7 +2748,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
 
     if (globallyArchivedLrns.size > 0) {
       sourceRows = sourceRows.filter((row) => {
-        const lrn = String(row?.lrn || '').trim();
+        const lrn = normalizeLrn(row?.lrn);
         return !lrn || !globallyArchivedLrns.has(lrn);
       });
     }
@@ -2744,8 +2760,9 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       if (rowId && !sourceById.has(rowId)) {
         sourceById.set(rowId, row);
       }
-      if (row.lrn && !sourceByLrn.has(String(row.lrn))) {
-        sourceByLrn.set(String(row.lrn), row);
+      const rowLrn = normalizeLrn(row.lrn);
+      if (rowLrn && !sourceByLrn.has(rowLrn)) {
+        sourceByLrn.set(rowLrn, row);
       }
     });
 
@@ -2754,11 +2771,12 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     const derivedEligibilityCache = new Map();
     const destinationSectionCache = new Map();
     for (const promo of promotionRows) {
-      const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
+      const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(normalizeLrn(promo.lrn));
       if (!sourceStudent || !sourceStudent.lrn) continue;
       if (isGraduateCandidate(promo, sourceStudent)) continue;
 
-      const canonicalLrn = String(sourceStudent.lrn);
+      const canonicalLrn = normalizeLrn(sourceStudent.lrn || promo.lrn);
+      if (!canonicalLrn) continue;
       const baseCandidate = {
         ...promo,
         canonical_student_id: String(sourceStudent.id || promo.student_id || ''),
@@ -2780,8 +2798,8 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
         continue;
       }
 
-      const existingPriority = statusPriority(existing.status);
-      const candidatePriority = statusPriority(candidate.status);
+      const existingPriority = getPromotionStatusPriority(existing.status);
+      const candidatePriority = getPromotionStatusPriority(candidate.status);
       if (candidatePriority > existingPriority) {
         latestByLrn.set(canonicalLrn, candidate);
         continue;
@@ -2796,7 +2814,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     for (const row of sourceRows) {
       if (!row?.id || !row?.lrn) continue;
       if (isGraduateGrade(row.grade_level) || isGraduatedStatus(row.status)) continue;
-      const canonicalLrn = String(row.lrn);
+      const canonicalLrn = normalizeLrn(row.lrn);
       if (latestByLrn.has(canonicalLrn)) continue;
 
       latestByLrn.set(canonicalLrn, {
@@ -2864,12 +2882,13 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
     const sourceLrns = new Set();
 
     for (const promo of normalizedPromotionRows) {
-      const sourceStudent = promo.sourceStudent || sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
+      const sourceStudent = promo.sourceStudent || sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(normalizeLrn(promo.lrn));
       if (!sourceStudent || !sourceStudent.lrn) {
         skipped += 1;
         continue;
       }
-      if (globallyArchivedLrns.has(String(sourceStudent.lrn || '').trim())) {
+      const sourceLrn = normalizeLrn(sourceStudent.lrn);
+      if (globallyArchivedLrns.has(sourceLrn)) {
         archivedSkipped += 1;
         skipped += 1;
         continue;
@@ -2879,11 +2898,11 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
         continue;
       }
 
-      sourceLrns.add(String(sourceStudent.lrn));
+      sourceLrns.add(sourceLrn);
 
       const nextGradeLevel = promo.to_grade || sourceStudent.grade_level;
       let nextSection = promo.to_section || sourceStudent.section;
-      if (String(promo.status || '').toLowerCase() === 'promoted' && nextGradeLevel) {
+      if (normalizePromotionStatus(promo.status) === 'promoted' && nextGradeLevel) {
         const resolvedSection = await resolveDestinationSectionForGrade(
           targetSy.id,
           nextGradeLevel,
@@ -2921,7 +2940,7 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
 
       const duplicateInTarget = await query(
         'SELECT id, status, stopped_year FROM students WHERE lrn = ? AND school_year_id = ? LIMIT 1',
-        [sourceStudent.lrn, targetSy.id]
+        [sourceLrn, targetSy.id]
       );
 
       if (duplicateInTarget.length > 0) {
@@ -2965,8 +2984,8 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
         );
 
         updated += 1;
-        if (String(promo.status).toLowerCase() === 'promoted') promotedInserted += 1;
-        if (String(promo.status).toLowerCase() === 'retained') retainedInserted += 1;
+        if (normalizePromotionStatus(promo.status) === 'promoted') promotedInserted += 1;
+        if (normalizePromotionStatus(promo.status) === 'retained') retainedInserted += 1;
         continue;
       }
 
@@ -3011,8 +3030,8 @@ exports.fetchStudentsFromPreviousYear = async (req, res) => {
       }
 
       inserted += 1;
-      if (String(promo.status).toLowerCase() === 'promoted') promotedInserted += 1;
-      if (String(promo.status).toLowerCase() === 'retained') retainedInserted += 1;
+      if (normalizePromotionStatus(promo.status) === 'promoted') promotedInserted += 1;
+      if (normalizePromotionStatus(promo.status) === 'retained') retainedInserted += 1;
     }
 
     // Fresh-start rule: after fetch, remove active-year grades for all matching LRNs
@@ -3123,14 +3142,6 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       });
     }
 
-    const statusPriority = (status = '') => {
-      const normalized = String(status || '').toLowerCase();
-      if (normalized === 'promoted') return 3;
-      if (normalized === 'retained') return 2;
-      if (normalized === 'historical') return 1;
-      return 0;
-    };
-
     const toTimestamp = (value) => {
       const date = value ? new Date(value) : null;
       const time = date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
@@ -3138,15 +3149,21 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
     };
 
     let promotionRows = await query(
-      `SELECT ph.student_id, ph.lrn, ph.from_grade, ph.from_section, ph.to_grade, ph.to_section, ph.status, ph.reason, ph.created_at, ph.school_year_id
+      `SELECT ph.id, ph.student_id, ph.lrn, ph.from_grade, ph.from_section, ph.to_grade, ph.to_section, ph.status, ph.reason, ph.created_at, ph.school_year_id
        FROM promotion_history ph
        WHERE ph.school_year_id IN (${sourcePlaceholders})
-         AND LOWER(ph.status) IN ('promoted', 'retained')
-         AND LOWER(COALESCE(ph.from_grade, '')) <> 'graduate'
-         AND LOWER(COALESCE(ph.to_grade, '')) <> 'graduate'
-       ORDER BY ph.created_at DESC`,
+         AND LOWER(TRIM(COALESCE(ph.status, ''))) IN ('promoted', 'retained', 'accelerated')
+         AND LOWER(TRIM(COALESCE(ph.from_grade, ''))) <> 'graduate'
+         AND LOWER(TRIM(COALESCE(ph.to_grade, ''))) <> 'graduate'
+       ORDER BY ph.created_at DESC, ph.id DESC`,
       sourceSchoolYearIds
     );
+
+    promotionRows = (promotionRows || []).map((row) => ({
+      ...row,
+      status: normalizePromotionStatus(row?.status),
+      lrn: normalizeLrn(row?.lrn)
+    }));
 
     if (globallyArchivedLrns.size > 0) {
       promotionRows = promotionRows.filter((row) => {
@@ -3162,8 +3179,9 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       if (rowId && !sourceById.has(rowId)) {
         sourceById.set(rowId, row);
       }
-      if (row.lrn && !sourceByLrn.has(String(row.lrn))) {
-        sourceByLrn.set(String(row.lrn), row);
+      const rowLrn = normalizeLrn(row.lrn);
+      if (rowLrn && !sourceByLrn.has(rowLrn)) {
+        sourceByLrn.set(rowLrn, row);
       }
     });
 
@@ -3172,11 +3190,12 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
     const derivedEligibilityCache = new Map();
     const destinationSectionCache = new Map();
     for (const promo of promotionRows) {
-      const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
+      const sourceStudent = sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(normalizeLrn(promo.lrn));
       if (!sourceStudent || !sourceStudent.lrn) continue;
       if (isGraduateCandidate(promo, sourceStudent)) continue;
 
-      const canonicalLrn = String(sourceStudent.lrn);
+      const canonicalLrn = normalizeLrn(sourceStudent.lrn || promo.lrn);
+      if (!canonicalLrn) continue;
       const baseCandidate = {
         ...promo,
         canonical_student_id: String(sourceStudent.id || promo.student_id || ''),
@@ -3198,8 +3217,8 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
         continue;
       }
 
-      const existingPriority = statusPriority(existing.status);
-      const candidatePriority = statusPriority(candidate.status);
+      const existingPriority = getPromotionStatusPriority(existing.status);
+      const candidatePriority = getPromotionStatusPriority(candidate.status);
       if (candidatePriority > existingPriority) {
         latestByLrn.set(canonicalLrn, candidate);
         continue;
@@ -3214,7 +3233,7 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
     for (const row of sourceRows) {
       if (!row?.id || !row?.lrn) continue;
       if (isGraduateGrade(row.grade_level) || isGraduatedStatus(row.status)) continue;
-      const canonicalLrn = String(row.lrn);
+      const canonicalLrn = normalizeLrn(row.lrn);
       if (latestByLrn.has(canonicalLrn)) continue;
 
       latestByLrn.set(canonicalLrn, {
@@ -3239,7 +3258,7 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
         .map((row) => ({
           student_id: row.id,
           canonical_student_id: String(row.id),
-          canonical_lrn: String(row.lrn),
+          canonical_lrn: normalizeLrn(row.lrn),
           lrn: row.lrn,
           from_grade: row.grade_level,
           from_section: row.section,
@@ -3261,7 +3280,7 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
         [targetSy.id, ...lrns]
       );
       existingRows.forEach((row) => {
-        if (row?.lrn) existingLrnsInTarget.add(String(row.lrn));
+        if (row?.lrn) existingLrnsInTarget.add(normalizeLrn(row.lrn));
       });
     }
 
@@ -3270,10 +3289,10 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
 
     const candidates = [];
     for (const promo of sortedRows) {
-      const sourceStudent = promo.sourceStudent || sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(String(promo.lrn || ''));
+      const sourceStudent = promo.sourceStudent || sourceById.get(String(promo.student_id || '')) || sourceByLrn.get(normalizeLrn(promo.lrn));
       if (isGraduateCandidate(promo, sourceStudent)) continue;
 
-      const lrn = sourceStudent?.lrn || promo.lrn || null;
+      const lrn = normalizeLrn(sourceStudent?.lrn || promo.lrn || '');
       const firstName = sourceStudent?.first_name || '';
       const middleName = sourceStudent?.middle_name || '';
       const lastName = sourceStudent?.last_name || '';
@@ -3297,9 +3316,9 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
         fromSection: promo.from_section || sourceStudent?.section || null,
         toGrade,
         toSection,
-        status: promo.status,
+        status: normalizePromotionStatus(promo.status),
         promotedAt: promo.created_at,
-        alreadyFetched: lrn ? existingLrnsInTarget.has(String(lrn)) : false,
+        alreadyFetched: lrn ? existingLrnsInTarget.has(normalizeLrn(lrn)) : false,
         needsSectionSetup: Boolean(toGrade) && !toSection
       };
 
