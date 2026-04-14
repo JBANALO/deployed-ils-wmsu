@@ -913,12 +913,59 @@ async function ensurePromotionHistoryTable(conn) {
       average DECIMAL(5,2) NULL,
       status VARCHAR(30) NOT NULL,
       reason VARCHAR(255) NULL,
-      details_json JSON NULL,
+      details_json LONGTEXT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_student_id (student_id),
       INDEX idx_created_at (created_at)
     )
   `);
+
+  // Backward compatibility: older deployments may have a partial schema.
+  // Ensure all insert-target columns exist before promotion runs.
+  const requiredColumns = [
+    { name: 'school_year_id', ddl: 'INT NULL' },
+    { name: 'school_year_label', ddl: 'VARCHAR(50) NULL' },
+    { name: 'student_id', ddl: 'VARCHAR(100) NOT NULL' },
+    { name: 'lrn', ddl: 'VARCHAR(50) NULL' },
+    { name: 'student_name', ddl: "VARCHAR(255) NOT NULL DEFAULT ''" },
+    { name: 'from_grade', ddl: "VARCHAR(50) NOT NULL DEFAULT ''" },
+    { name: 'from_section', ddl: 'VARCHAR(100) NULL' },
+    { name: 'to_grade', ddl: 'VARCHAR(50) NULL' },
+    { name: 'to_section', ddl: 'VARCHAR(100) NULL' },
+    { name: 'average', ddl: 'DECIMAL(5,2) NULL' },
+    { name: 'status', ddl: "VARCHAR(30) NOT NULL DEFAULT 'retained'" },
+    { name: 'reason', ddl: 'VARCHAR(255) NULL' },
+    { name: 'details_json', ddl: 'LONGTEXT NULL' },
+    { name: 'created_at', ddl: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP' }
+  ];
+
+  let columnRows = [];
+  try {
+    const [rows] = await conn.query(
+      `SELECT COLUMN_NAME, DATA_TYPE
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'promotion_history'`
+    );
+    columnRows = rows || [];
+  } catch (columnErr) {
+    console.error('Failed to inspect promotion_history columns:', columnErr.message);
+  }
+
+  const existingColumns = new Map(
+    columnRows.map((col) => [String(col.COLUMN_NAME || '').toLowerCase(), String(col.DATA_TYPE || '').toLowerCase()])
+  );
+
+  for (const col of requiredColumns) {
+    if (!existingColumns.has(col.name)) {
+      try {
+        await conn.query(`ALTER TABLE promotion_history ADD COLUMN ${col.name} ${col.ddl}`);
+      } catch (addErr) {
+        // Avoid blocking promotion for non-critical migration race/errors.
+        console.error(`Promotion history add-column warning (${col.name}):`, addErr.message);
+      }
+    }
+  }
 
   // Backward compatibility: older deployments created student_id as INT.
   // Promotion now supports UUID/string student IDs as well.
@@ -932,16 +979,31 @@ async function ensurePromotionHistoryTable(conn) {
        LIMIT 1`
     );
     const dataType = String(cols?.[0]?.DATA_TYPE || '').toLowerCase();
-    if (dataType && dataType !== 'varchar') {
+    if (dataType && dataType !== 'varchar' && dataType !== 'text' && dataType !== 'longtext') {
       await conn.query('ALTER TABLE promotion_history MODIFY COLUMN student_id VARCHAR(100) NOT NULL');
     }
   } catch (migrationErr) {
     console.error('Promotion history student_id migration warning:', migrationErr.message);
   }
+
+  try {
+    const [indexRows] = await conn.query('SHOW INDEX FROM promotion_history');
+    const indexNames = new Set((indexRows || []).map((row) => row.Key_name));
+
+    if (!indexNames.has('idx_student_id')) {
+      await conn.query('ALTER TABLE promotion_history ADD INDEX idx_student_id (student_id)');
+    }
+    if (!indexNames.has('idx_created_at')) {
+      await conn.query('ALTER TABLE promotion_history ADD INDEX idx_created_at (created_at)');
+    }
+  } catch (indexErr) {
+    console.error('Promotion history index migration warning:', indexErr.message);
+  }
 }
 
 async function getActiveSchoolYearMeta(conn) {
-  const [rows] = await conn.query(
+  const db = conn || pool;
+  const [rows] = await db.query(
     'SELECT id, label FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1'
   );
   return rows[0] || null;
@@ -1161,6 +1223,11 @@ exports.promoteStudents = async (req, res) => {
     await ensurePromotionHistoryTable(connection);
     const selectedSY = await getSchoolYearMetaById(connection, requestedSchoolYearId);
     const activeSY = selectedSY || await getActiveSchoolYearMeta(connection);
+
+    if (!activeSY?.id) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: 'No active school year found for promotion.' });
+    }
 
     const students = await getStudentsForPromotion(
       connection,
