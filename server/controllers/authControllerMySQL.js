@@ -43,6 +43,24 @@ const buildLoginCandidates = (rawLogin = '') => {
   return out;
 };
 
+const resolveAccountAccessState = (user = {}) => {
+  const normalizedStatus = String(
+    user.status || user.verification_status || user.verificationStatus || ''
+  ).trim().toLowerCase();
+  const archivedFlag =
+    user.archived === true ||
+    String(user.archived || '').trim().toLowerCase() === 'true' ||
+    normalizedStatus === 'archived';
+
+  const blockedStatuses = new Set(['inactive', 'archived', 'declined', 'rejected']);
+  const blocked = archivedFlag || blockedStatuses.has(normalizedStatus);
+
+  return {
+    status: normalizedStatus || (archivedFlag ? 'archived' : ''),
+    blocked
+  };
+};
+
 // Protect middleware - verify token
 exports.protect = async (req, res, next) => {
   try {
@@ -68,7 +86,7 @@ exports.protect = async (req, res, next) => {
     // First check if database is available
     if (isDatabaseAvailable()) {
       // Check users table (for admin accounts)
-      let users = await query('SELECT id, first_name, last_name, username, email, role, created_at FROM users WHERE id = ?', [decoded.id]);
+      let users = await query('SELECT id, first_name, last_name, username, email, role, status, created_at FROM users WHERE id = ?', [decoded.id]);
 
       if (users.length > 0) {
         user = {
@@ -78,6 +96,7 @@ exports.protect = async (req, res, next) => {
           username: users[0].username || '',
           email: users[0].email,
           role: users[0].role || '',
+          status: users[0].status || '',
           createdAt: users[0].created_at,
           source: 'database'
         };
@@ -106,6 +125,7 @@ exports.protect = async (req, res, next) => {
             bio: teachers[0].bio,
             profilePic: teachers[0].profile_pic,
             verificationStatus: teachers[0].verification_status,
+            verification_status: teachers[0].verification_status,
             createdAt: teachers[0].created_at,
             source: 'database'
           };
@@ -132,6 +152,9 @@ exports.protect = async (req, res, next) => {
             subjects: jsonUser.subjects,
             bio: jsonUser.bio,
             profilePic: jsonUser.profilePic,
+            status: jsonUser.status || '',
+            verification_status: jsonUser.verification_status || '',
+            archived: jsonUser.archived,
             createdAt: jsonUser.createdAt,
             source: 'json'
           };
@@ -146,6 +169,14 @@ exports.protect = async (req, res, next) => {
       return res.status(401).json({
         status: 'fail',
         message: 'The user belonging to this token no longer exists.',
+      });
+    }
+
+    const accountState = resolveAccountAccessState(user);
+    if (accountState.blocked) {
+      return res.status(401).json({
+        status: 'fail',
+        message: `Your account is ${accountState.status || 'inactive'}. Please contact admin.`
       });
     }
 
@@ -393,7 +424,8 @@ exports.login = async (req, res) => {
     }
 
     // FINAL TEMP OVERRIDE: allow any student with Active/approved status to login once found
-    const normalizedAccountStatus = String(user.status || '').trim().toLowerCase();
+    const accountState = resolveAccountAccessState(user);
+    const normalizedAccountStatus = accountState.status;
 
     if (!passwordMatch && user.lrn && (normalizedAccountStatus === 'active' || normalizedAccountStatus === 'approved')) {
       passwordMatch = true;
@@ -402,6 +434,14 @@ exports.login = async (req, res) => {
 
     if (!passwordMatch) {
       return res.status(401).json({ status: 'fail', message: 'Incorrect email or password' });
+    }
+
+    if (accountState.blocked) {
+      console.log('Login blocked - account state:', accountState.status || 'inactive');
+      return res.status(401).json({
+        status: 'fail',
+        message: `Your account is ${accountState.status || 'inactive'}. Please contact admin.`
+      });
     }
 
     // Check student status - only approved students can login

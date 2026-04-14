@@ -478,7 +478,11 @@ const getAllTeachers = async (req, res) => {
       const resolveClassInfo = (classId) => classByIdOrSlug.get(normalizeClassId(classId)) || null;
 
       const dbFormatted = dbTeachers
-        .filter((teacher) => belongsToSchoolYear(teacher, targetSy, isExplicitSchoolYearScope))
+        .filter((teacher) => {
+          const verificationStatus = String(teacher?.verification_status || 'approved').trim().toLowerCase();
+          const isVisible = !['archived', 'inactive', 'declined', 'rejected'].includes(verificationStatus);
+          return belongsToSchoolYear(teacher, targetSy, isExplicitSchoolYearScope) && isVisible;
+        })
         .map((teacher) => {
         const fullName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim();
         const normalizedFullName = normalizeName(fullName);
@@ -810,17 +814,16 @@ const getAllTeachers = async (req, res) => {
 };
 
 // Get archived teachers
-const getArchivedTeachers = (req, res) => {
+const getArchivedTeachers = async (req, res) => {
   try {
     const users = readUsers();
-    
-    // Filter for archived teachers
-    const archivedTeachers = users
+
+    const fileArchivedTeachers = users
       .filter(u => 
         (u.role === 'adviser' || 
         u.role === 'teacher' || 
         u.role === 'subject_teacher') &&
-        u.archived
+        (u.archived || String(u.status || '').trim().toLowerCase() === 'inactive' || String(u.verification_status || '').trim().toLowerCase() === 'archived')
       )
       .map(u => ({
         id: u.id,
@@ -841,6 +844,62 @@ const getArchivedTeachers = (req, res) => {
         archivedAt: u.archivedAt || u.archived_date,
         createdAt: u.createdAt
       }));
+
+    let dbArchivedTeachers = [];
+    try {
+      const rows = await query(
+        `SELECT id, first_name, middle_name, last_name, username, email, role,
+                grade_level, section, subjects, bio, profile_pic, verification_status,
+                sex, contact_number, created_at, updated_at, school_year_id
+         FROM teachers
+         WHERE LOWER(COALESCE(verification_status, '')) IN ('archived', 'inactive')
+         ORDER BY updated_at DESC`
+      );
+
+      dbArchivedTeachers = rows.map((teacher) => ({
+        id: teacher.id,
+        firstName: teacher.first_name || '',
+        middleName: teacher.middle_name || '',
+        lastName: teacher.last_name || '',
+        fullName: `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim(),
+        username: teacher.username || '',
+        email: teacher.email || '',
+        role: teacher.role || 'teacher',
+        gradeLevel: teacher.grade_level || '',
+        section: teacher.section || '',
+        subjectsHandled: parseSubjects(teacher.subjects),
+        subjects: parseSubjects(teacher.subjects),
+        bio: teacher.bio || '',
+        profilePic: teacher.profile_pic || '',
+        sex: teacher.sex || '',
+        contactNumber: teacher.contact_number || '',
+        status: 'inactive',
+        archivedAt: teacher.updated_at || teacher.created_at || null,
+        createdAt: teacher.created_at || null,
+        school_year_id: teacher.school_year_id || null
+      }));
+    } catch (dbArchiveError) {
+      console.log('getArchivedTeachers DB query skipped:', dbArchiveError.message);
+    }
+
+    const byId = new Map();
+    [...dbArchivedTeachers, ...fileArchivedTeachers].forEach((teacher) => {
+      const key = String(teacher?.id || '').trim() || `${String(teacher?.email || '').trim().toLowerCase()}::${String(teacher?.username || '').trim().toLowerCase()}`;
+      if (!key) return;
+      if (!byId.has(key)) {
+        byId.set(key, teacher);
+        return;
+      }
+      const existing = byId.get(key);
+      byId.set(key, {
+        ...existing,
+        ...teacher,
+        subjects: Array.from(new Set([...(existing.subjects || []), ...(teacher.subjects || [])].filter(Boolean))),
+        subjectsHandled: Array.from(new Set([...(existing.subjectsHandled || []), ...(teacher.subjectsHandled || [])].filter(Boolean)))
+      });
+    });
+
+    const archivedTeachers = Array.from(byId.values());
     
     console.log(`getArchivedTeachers: Found ${archivedTeachers.length} archived teachers`);
     
@@ -983,6 +1042,8 @@ const archiveTeacher = async (req, res) => {
       // Update file storage
       users[teacherIndex] = {
         ...teacher,
+        status: 'inactive',
+        archived: true,
         verification_status: 'archived',
         archivedAt: new Date().toISOString()
       };
@@ -1009,6 +1070,16 @@ const archiveTeacher = async (req, res) => {
           'UPDATE teachers SET verification_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
           ['archived', id]
         );
+
+        try {
+          await query(
+            'UPDATE users SET status = ?, updatedAt = NOW() WHERE id = ?',
+            ['inactive', id]
+          );
+        } catch (usersUpdateErr) {
+          console.log('archiveTeacher users status update skipped:', usersUpdateErr.message);
+        }
+
         console.log(`Teacher ${teacher.firstName} ${teacher.lastName} archived successfully in database`);
         res.json({
           success: true,
@@ -1623,7 +1694,12 @@ const updateTeacher = async (req, res) => {
         const bio = updateData.bio ?? current.bio ?? '';
         const sex = updateData.sex ?? current.sex ?? '';
         const contactNumber = updateData.contactNumber ?? updateData.contact_number ?? current.contact_number ?? '';
-        const status = updateData.status ?? updateData.verification_status ?? current.verification_status ?? 'approved';
+        const requestedStatus = updateData.status ?? updateData.verification_status ?? current.verification_status ?? 'approved';
+        const normalizedRequestedStatus = String(requestedStatus || 'approved').trim().toLowerCase();
+        const shouldArchiveRecord = normalizedRequestedStatus === 'inactive' || normalizedRequestedStatus === 'archived';
+        const status = shouldArchiveRecord
+          ? 'archived'
+          : (normalizedRequestedStatus === 'active' ? 'approved' : requestedStatus);
 
         await query(
           `UPDATE teachers
@@ -1674,7 +1750,7 @@ const updateTeacher = async (req, res) => {
           bio,
           sex,
           contactNumber,
-          status
+          status: shouldArchiveRecord ? 'inactive' : status
         };
       }
     } catch (dbError) {
@@ -1735,7 +1811,12 @@ const updateTeacher = async (req, res) => {
             const bio = updateData.bio ?? currentUser.bio ?? '';
             const sex = updateData.sex ?? currentUser.sex ?? '';
             const contactNumber = updateData.contactNumber ?? updateData.contact_number ?? currentUser.contactNumber ?? '';
-            const status = updateData.status ?? updateData.verification_status ?? currentUser.status ?? 'approved';
+            const requestedStatus = updateData.status ?? updateData.verification_status ?? currentUser.status ?? 'approved';
+            const normalizedRequestedStatus = String(requestedStatus || 'approved').trim().toLowerCase();
+            const shouldArchiveRecord = normalizedRequestedStatus === 'inactive' || normalizedRequestedStatus === 'archived';
+            const status = shouldArchiveRecord
+              ? 'inactive'
+              : (normalizedRequestedStatus === 'active' ? 'approved' : requestedStatus);
 
             const serializedSubjects = typeof subjects === 'string' ? subjects : JSON.stringify(subjects || []);
 
@@ -1788,7 +1869,7 @@ const updateTeacher = async (req, res) => {
               bio,
               sex,
               contactNumber,
-              status
+              status: shouldArchiveRecord ? 'inactive' : status
             };
           }
         }
@@ -1823,9 +1904,16 @@ const updateTeacher = async (req, res) => {
     let fileSaved = true;
 
     if (teacherIndex !== -1) {
+      const requestedFileStatus = updateData.status ?? updateData.verification_status ?? users[teacherIndex]?.status ?? 'approved';
+      const normalizedFileStatus = String(requestedFileStatus || 'approved').trim().toLowerCase();
+      const shouldArchiveFileRecord = normalizedFileStatus === 'inactive' || normalizedFileStatus === 'archived';
       const merged = {
         ...users[teacherIndex],
         ...updateData,
+        status: shouldArchiveFileRecord ? 'inactive' : (normalizedFileStatus === 'active' ? 'approved' : requestedFileStatus),
+        verification_status: shouldArchiveFileRecord ? 'archived' : (normalizedFileStatus === 'active' ? 'approved' : requestedFileStatus),
+        archived: shouldArchiveFileRecord,
+        archivedAt: shouldArchiveFileRecord ? new Date().toISOString() : null,
         updatedAt: new Date().toISOString()
       };
       users[teacherIndex] = merged;
