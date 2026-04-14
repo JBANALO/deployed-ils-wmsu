@@ -6,6 +6,7 @@ import {
   ViewColumnsIcon,
   UserCircleIcon,
   ArrowDownTrayIcon,
+  PrinterIcon,
 } from "@heroicons/react/24/outline";
 import QRCode from "qrcode";
 import axios from "../../api/axiosConfig";
@@ -234,61 +235,172 @@ export default function ClassList() {
     return matchesSearch && matchesGrade && matchesSection && matchesStatus;
   });
 
-  const toCsvValue = (value) => {
-    const raw = String(value ?? '');
-    if (/[",\n]/.test(raw)) {
-      return `"${raw.replace(/"/g, '""')}"`;
-    }
-    return raw;
+  const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const getFilterLabel = () => {
+    const gradeLabel = gradeFilter === 'All Grades' ? 'All Grades' : gradeFilter;
+    const sectionLabel = sectionFilter === 'All Sections' ? 'All Sections' : sectionFilter;
+    return `${gradeLabel} - ${sectionLabel}`;
   };
 
-  const downloadClassListByGrade = () => {
-    if (gradeFilter === 'All Grades') {
-      toast.error('Select a specific grade first to download class list.');
-      return;
-    }
+  const getExportRows = () => {
+    return [...filteredStudents].sort((a, b) => {
+      const sectionA = String(a?.section || '');
+      const sectionB = String(b?.section || '');
+      if (sectionA !== sectionB) return sectionA.localeCompare(sectionB, undefined, { sensitivity: 'base' });
 
-    const gradeRows = students
-      .filter((student) => String(student?.gradeLevel || '') === String(gradeFilter))
-      .sort((a, b) => {
-        const sectionA = String(a?.section || '');
-        const sectionB = String(b?.section || '');
-        if (sectionA !== sectionB) return sectionA.localeCompare(sectionB, undefined, { sensitivity: 'base' });
+      const nameA = String(a?.fullName || `${a?.lastName || ''}, ${a?.firstName || ''}`);
+      const nameB = String(b?.fullName || `${b?.lastName || ''}, ${b?.firstName || ''}`);
+      return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+    });
+  };
 
-        const nameA = String(a?.fullName || `${a?.lastName || ''}, ${a?.firstName || ''}`);
-        const nameB = String(b?.fullName || `${b?.lastName || ''}, ${b?.firstName || ''}`);
-        return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
-      });
+  const getClassListDocumentHtml = (rowsToExport = []) => {
+    const generatedAt = new Date().toLocaleString();
+    const statusLabel = statusFilter === 'All Status' ? 'All Statuses' : statusFilter;
+    const gradeLabel = gradeFilter === 'All Grades' ? 'All Grades' : gradeFilter;
+    const sectionLabel = sectionFilter === 'All Sections' ? 'All Sections' : sectionFilter;
+    const classLabel = gradeFilter !== 'All Grades' && sectionFilter !== 'All Sections'
+      ? `${gradeLabel} - ${sectionLabel}`
+      : getFilterLabel();
 
-    if (gradeRows.length === 0) {
-      toast.error(`No students found for ${gradeFilter}.`);
-      return;
-    }
+    const rowsHtml = rowsToExport.map((student, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${escapeHtml(student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim())}</td>
+        <td>${escapeHtml(student.lrn || '')}</td>
+        <td>${escapeHtml(student.gradeLevel || '')}</td>
+        <td>${escapeHtml(student.section || '')}</td>
+        <td>${escapeHtml(student.age || '')}</td>
+        <td>${escapeHtml(student.sex || '')}</td>
+        <td>${escapeHtml(student.status || '')}</td>
+      </tr>
+    `).join('');
 
-    const headers = ['No.', 'Student Name', 'LRN', 'Grade Level', 'Section', 'Age', 'Sex', 'Status'];
-    const rows = gradeRows.map((student, index) => ([
-      index + 1,
-      student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim(),
-      student.lrn || '',
-      student.gradeLevel || gradeFilter,
-      student.section || '',
-      student.age || '',
-      student.sex || '',
-      student.status || ''
-    ]));
+    return `
+      <html>
+        <head>
+          <title>Class List - ${escapeHtml(classLabel)}</title>
+          <style>
+            body {
+              font-family: 'Montserrat', Arial, sans-serif;
+              margin: 0;
+              padding: 20px;
+              color: #333;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 20px;
+            }
+            .logo {
+              width: 80px;
+              height: 80px;
+              margin-bottom: 12px;
+            }
+            .school-name {
+              font-size: 18px;
+              font-weight: bold;
+              color: #7f1d1d;
+              margin-bottom: 4px;
+            }
+            .system-name {
+              font-size: 13px;
+              color: #666;
+              margin-bottom: 14px;
+            }
+            .class-info {
+              font-size: 26px;
+              font-weight: bold;
+              margin-bottom: 10px;
+            }
+            .meta {
+              font-size: 13px;
+              color: #4b5563;
+              margin-bottom: 3px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 18px;
+            }
+            th, td {
+              padding: 10px;
+              border: 1px solid #ddd;
+              text-align: left;
+              font-size: 12px;
+            }
+            th {
+              background-color: #f5f5f5;
+              font-weight: bold;
+              color: #333;
+            }
+            tr:nth-child(even) {
+              background-color: #f9f9f9;
+            }
+            .no-students {
+              text-align: center;
+              padding: 30px;
+              color: #666;
+              font-style: italic;
+            }
+            @media print {
+              body { margin: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <img src="${window.location.origin}/wmsu-logo.jpg" alt="WMSU Logo" class="logo" />
+            <div class="school-name">WMSU ILS-Elementary Department</div>
+            <div class="system-name">Automated Grades Portal and Students Attendance using QR Code</div>
+            <div class="class-info">${escapeHtml(classLabel)} Class List</div>
+            <div class="meta"><strong>Status:</strong> ${escapeHtml(statusLabel)}</div>
+            <div class="meta"><strong>Total Students:</strong> ${rowsToExport.length}</div>
+            <div class="meta"><strong>Generated:</strong> ${escapeHtml(generatedAt)}</div>
+          </div>
+          ${rowsToExport.length > 0 ? `
+            <table>
+              <thead>
+                <tr>
+                  <th>No.</th>
+                  <th>Student Name</th>
+                  <th>LRN</th>
+                  <th>Grade</th>
+                  <th>Section</th>
+                  <th>Age</th>
+                  <th>Sex</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>${rowsHtml}</tbody>
+            </table>
+          ` : '<div class="no-students">No students in this class yet.</div>'}
+        </body>
+      </html>
+    `;
+  };
 
-    const csv = [headers, ...rows]
-      .map((row) => row.map(toCsvValue).join(','))
-      .join('\n');
+  const downloadClassList = () => {
+    const rowsToExport = getExportRows();
+    const html = getClassListDocumentHtml(rowsToExport);
 
     const gradeSlug = String(gradeFilter)
       .toLowerCase()
       .replace(/\s+/g, '-')
       .replace(/[^a-z0-9-]/g, '');
+    const sectionSlug = String(sectionFilter)
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
     const schoolYearPart = selectedSchoolYearId ? `-sy-${selectedSchoolYearId}` : '';
-    const fileName = `class-list-${gradeSlug}${schoolYearPart}.csv`;
+    const fileName = `class-list-${gradeSlug}-${sectionSlug}${schoolYearPart}.html`;
 
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -298,7 +410,24 @@ export default function ClassList() {
     anchor.remove();
     window.URL.revokeObjectURL(url);
 
-    toast.success(`Downloaded ${gradeRows.length} students for ${gradeFilter}.`);
+    toast.success(`Downloaded class list view for ${getFilterLabel()}.`);
+  };
+
+  const printClassList = () => {
+    const rowsToExport = getExportRows();
+    const printHtml = getClassListDocumentHtml(rowsToExport);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error('Pop-up blocked. Please allow pop-ups to print class list.');
+      return;
+    }
+
+    printWindow.document.write(printHtml);
+
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
   };
 
   const handleView = (student) => {
@@ -558,14 +687,25 @@ export default function ClassList() {
           </div>
         </div>
 
-        <button
-          onClick={downloadClassListByGrade}
-          className="w-full md:w-auto flex items-center justify-center gap-2 bg-red-800 text-white px-4 py-3 rounded-xl font-semibold hover:bg-red-700 transition"
-          title="Download class list for selected grade"
-        >
-          <ArrowDownTrayIcon className="w-5 h-5" />
-          Download Grade Class List
-        </button>
+        <div className="w-full md:w-auto flex items-center gap-2">
+          <button
+            onClick={printClassList}
+            className="w-full md:w-auto flex items-center justify-center gap-2 bg-gray-700 text-white px-4 py-3 rounded-xl font-semibold hover:bg-gray-600 transition"
+            title="Print class list for selected filters"
+          >
+            <PrinterIcon className="w-5 h-5" />
+            Print Class List
+          </button>
+
+          <button
+            onClick={downloadClassList}
+            className="w-full md:w-auto flex items-center justify-center gap-2 bg-red-800 text-white px-4 py-3 rounded-xl font-semibold hover:bg-red-700 transition"
+            title="Download class list for selected filters"
+          >
+            <ArrowDownTrayIcon className="w-5 h-5" />
+            Download Class List
+          </button>
+        </div>
       </div>
 
 {/* === Clean, No-Scroll Table (Fits Perfectly on One Page) === */}
