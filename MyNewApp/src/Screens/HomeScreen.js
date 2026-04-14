@@ -146,7 +146,7 @@ export default function HomeScreen() {
     const todayShort = todayName.slice(0, 3);
 
     if (!dayText) return false;
-    if (dayText.includes('monday - friday') || dayText.includes('mon-fri') || dayText.includes('weekdays')) {
+    if (dayText === 'all' || dayText.includes('monday - friday') || dayText.includes('monday-friday') || dayText.includes('mon-fri') || dayText.includes('weekdays') || dayText.includes('weekday')) {
       const day = nowDate.getDay();
       return day >= 1 && day <= 5;
     }
@@ -355,10 +355,6 @@ export default function HomeScreen() {
         return gradeNorm === schedGradeNorm && sectionNorm === schedSectionNorm;
       });
 
-      const endMinutes = toMinutes(schedule.end_time);
-      // If no schedule time is available, don't auto-mark as absent in UI.
-      const cutoffPassed = endMinutes !== null ? nowMinutes >= endMinutes : false;
-
       let present = 0;
       let late = 0;
       let absent = 0;
@@ -379,7 +375,6 @@ export default function HomeScreen() {
         if (status === 'present') present += 1;
         else if (status === 'late') late += 1;
         else if (status === 'absent') absent += 1;
-        else if (cutoffPassed) absent += 1;
       });
 
       return {
@@ -469,21 +464,13 @@ export default function HomeScreen() {
       };
     });
 
-    const nowHour = new Date().getHours();
-    const morningCutoffPassed = nowHour >= 10;   // 10:00 AM
-    const afternoonCutoffPassed = nowHour >= 14;  // 2:00 PM
-
     const morningPresent = studentsWithAttendance.filter(s => s.morningLog?.status === 'present' || s.morningLog?.status === 'Present').length;
     const morningLate = studentsWithAttendance.filter(s => s.morningLog?.status === 'late' || s.morningLog?.status === 'Late').length;
-    const morningAbsent = morningCutoffPassed
-      ? studentsWithAttendance.filter(s => !s.morningLog || s.morningLog?.status === 'absent' || s.morningLog?.status === 'Absent').length
-      : studentsWithAttendance.filter(s => s.morningLog?.status === 'absent' || s.morningLog?.status === 'Absent').length;
+    const morningAbsent = studentsWithAttendance.filter(s => s.morningLog?.status === 'absent' || s.morningLog?.status === 'Absent').length;
     
     const afternoonPresent = studentsWithAttendance.filter(s => s.afternoonLog?.status === 'present' || s.afternoonLog?.status === 'Present').length;
     const afternoonLate = studentsWithAttendance.filter(s => s.afternoonLog?.status === 'late' || s.afternoonLog?.status === 'Late').length;
-    const afternoonAbsent = afternoonCutoffPassed
-      ? studentsWithAttendance.filter(s => !s.afternoonLog || s.afternoonLog?.status === 'absent' || s.afternoonLog?.status === 'Absent').length
-      : studentsWithAttendance.filter(s => s.afternoonLog?.status === 'absent' || s.afternoonLog?.status === 'Absent').length;
+    const afternoonAbsent = studentsWithAttendance.filter(s => s.afternoonLog?.status === 'absent' || s.afternoonLog?.status === 'Absent').length;
 
     return {
       students: studentsWithAttendance,

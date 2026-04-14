@@ -82,7 +82,7 @@ export default function ScanQRScreen() {
     const todayShort = todayName.slice(0, 3);
 
     if (!dayText) return false;
-    if (dayText.includes('monday - friday') || dayText.includes('mon-fri') || dayText.includes('weekdays')) {
+    if (dayText === 'all' || dayText.includes('monday - friday') || dayText.includes('monday-friday') || dayText.includes('mon-fri') || dayText.includes('weekdays') || dayText.includes('weekday')) {
       const day = nowDate.getDay();
       return day >= 1 && day <= 5;
     }
