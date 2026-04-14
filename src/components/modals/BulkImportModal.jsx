@@ -16,9 +16,9 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
 
   const handleDownloadTemplate = () => {
     const csvTemplate = [
-      'firstName,lastName,sex,gradeLevel,section',
-      'Juan,Dela Cruz,Male,Grade 3,Wisdom',
-      'Maria,Santos,Female,Grade 4,Knowledge'
+      'lrn,firstName,lastName,sex,gradeLevel,section',
+      '123456789012,Juan,Dela Cruz,Male,Grade 3,Wisdom',
+      '123456789013,Maria,Santos,Female,Grade 4,Knowledge'
     ].join('\r\n');
 
     // Add UTF-8 BOM so Excel reads encoding correctly.
@@ -67,16 +67,19 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
     for (let i = 0; i < csvData.length; i++) {
       const student = csvData[i];
       try {
-        // Generate LRN (Learning Record Number) - must be max 12 chars
+        // Use CSV LRN when provided; fallback to generated LRN for backward compatibility.
+        const csvLrn = String(student.lrn || '').trim();
+
+        // Generate fallback LRN (Learning Record Number) - max 12 chars
         // Format: YYMMDDHHXXXX (8 chars timestamp + 4-digit index = 12 chars)
-        // Supports up to 9999 students without overflow
         const now = new Date();
         const yy = String(now.getFullYear()).slice(-2);
         const mm = String(now.getMonth() + 1).padStart(2, '0');
         const dd = String(now.getDate()).padStart(2, '0');
         const hh = String(now.getHours()).padStart(2, '0');
         const idx = String(i).padStart(4, '0');
-        const lrn = `${yy}${mm}${dd}${hh}${idx}`; // Total: exactly 12 chars
+        const generatedLrn = `${yy}${mm}${dd}${hh}${idx}`;
+        const lrn = csvLrn || generatedLrn;
 
         // First, try to create user account via auth service
         // But skip if user already exists
@@ -259,12 +262,13 @@ export default function BulkImportModal({ isOpen, onClose, onSuccess }) {
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <h3 className="font-semibold text-blue-900 mb-2">CSV Format - Email & Username AUTO-GENERATED:</h3>
                 <pre className="text-sm bg-white p-2 rounded border border-blue-100 overflow-x-auto">
-{`firstName,lastName,sex,gradeLevel,section
-Juan,Dela Cruz,Male,Grade 3,Wisdom
-Maria,Santos,Female,Grade 4,Knowledge
+{`lrn,firstName,lastName,sex,gradeLevel,section
+123456789012,Juan,Dela Cruz,Male,Grade 3,Wisdom
+123456789013,Maria,Santos,Female,Grade 4,Knowledge
 
 NOTE:
 - Sex: Male or Female
+- LRN: optional (if blank, system auto-generates)
 - Email & Username are auto-generated
 - Email: firstname.lastname@wmsu.edu.ph
 - Username: firstname.lastname`}
@@ -337,6 +341,7 @@ NOTE:
                 <table className="w-full text-sm">
                   <thead className="bg-gray-100 border-b">
                     <tr>
+                      <th className="p-2 text-left">LRN</th>
                       <th className="p-2 text-left">First Name</th>
                       <th className="p-2 text-left">Last Name</th>
                       <th className="p-2 text-left">Sex</th>
@@ -348,6 +353,7 @@ NOTE:
                   <tbody>
                     {csvData.map((student, i) => (
                       <tr key={i} className="border-b hover:bg-gray-50">
+                        <td className="p-2 text-xs font-mono">{student.lrn || 'Auto'}</td>
                         <td className="p-2">{student.firstName}</td>
                         <td className="p-2">{student.lastName}</td>
                         <td className="p-2">{student.sex || '-'}</td>

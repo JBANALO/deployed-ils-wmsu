@@ -85,6 +85,9 @@ export const parseCSVFile = (file) => {
         }
 
         const headerMapping = {
+          'LRN': 'lrn',
+          'Lrn': 'lrn',
+          'lrn': 'lrn',
           'First Name': 'firstName',
           'Middle Name': 'middleName',
           'Last Name': 'lastName',
@@ -190,6 +193,7 @@ export const generateUsername = (firstName, lastName) => {
 export const processStudentData = (students) => {
   return students.map(student => ({
     ...student,
+    lrn: student.lrn?.trim() || '',
     // Auto-generate email if not provided or empty
     email: student.email?.trim() 
       ? student.email 

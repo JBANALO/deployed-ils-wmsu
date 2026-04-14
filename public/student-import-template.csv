@@ -1,8 +1,8 @@
-firstName,lastName,sex,gradeLevel,section,parentEmail,parentContact
-Juan,Dela Cruz,Male,Grade 3,Wisdom,parent.delacruz@gmail.com,09171234567
-Maria,Santos,Female,Grade 4,Knowledge,parent.santos@gmail.com,09181234567
-Carlos,Reyes,Male,Grade 5,Excellence,,09191234567
-Rosa,Garcia,Female,Grade 6,Leadership,parent.garcia@yahoo.com,
-Pedro,Morales,Male,Kindergarten,Rainbow,pedro.parent@gmail.com,09211234567
-Ana,Fernandez,Female,Grade 1,Sunshine,,
-Luis,Gonzalez,Male,Grade 2,Stars,luis.guardian@gmail.com,09231234567
+lrn,firstName,lastName,sex,gradeLevel,section,parentEmail,parentContact
+123456789012,Juan,Dela Cruz,Male,Grade 3,Wisdom,parent.delacruz@gmail.com,09171234567
+123456789013,Maria,Santos,Female,Grade 4,Knowledge,parent.santos@gmail.com,09181234567
+123456789014,Carlos,Reyes,Male,Grade 5,Excellence,,09191234567
+123456789015,Rosa,Garcia,Female,Grade 6,Leadership,parent.garcia@yahoo.com,
+123456789016,Pedro,Morales,Male,Kindergarten,Rainbow,pedro.parent@gmail.com,09211234567
+123456789017,Ana,Fernandez,Female,Grade 1,Sunshine,,
+123456789018,Luis,Gonzalez,Male,Grade 2,Stars,luis.guardian@gmail.com,09231234567
