@@ -91,7 +91,7 @@ api.interceptors.response.use(
       // Handle 500 Server Error - don't logout, just show error
       if (error.response.status >= 500) {
         console.error('Server error detected, not logging out user');
-        return Promise.reject(new Error('Server error - Please try again later'));
+        return Promise.reject(new Error(errorMessage || 'Server error - Please try again later'));
       }
       
       return Promise.reject(new Error(errorMessage));

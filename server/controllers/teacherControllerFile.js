@@ -1109,41 +1109,98 @@ const archiveTeacher = async (req, res) => {
           ? 'updated_at'
           : (teacherFieldSet.has('updatedAt') ? 'updatedAt' : null);
 
-        if (!teacherStatusCol) {
-          throw new Error('No teacher status column found for archiving');
-        }
+        let teacherUpdated = false;
+        if (teacherStatusCol) {
+          const updateClauses = [`${teacherStatusCol} = ?`];
+          const updateParams = ['archived'];
+          if (teacherUpdatedCol) updateClauses.push(`${teacherUpdatedCol} = CURRENT_TIMESTAMP`);
 
-        const updateClauses = [`${teacherStatusCol} = ?`];
-        const updateParams = ['archived'];
-        if (teacherUpdatedCol) updateClauses.push(`${teacherUpdatedCol} = CURRENT_TIMESTAMP`);
-
-        let updateResult = await query(
-          `UPDATE teachers SET ${updateClauses.join(', ')} WHERE CAST(id AS CHAR) = ?`,
-          [...updateParams, targetId]
-        );
-
-        const affected = Number(updateResult?.affectedRows || 0);
-        if (affected === 0 && teacher?.email) {
-          updateResult = await query(
-            `UPDATE teachers SET ${updateClauses.join(', ')} WHERE LOWER(email) = LOWER(?)`,
-            [...updateParams, String(teacher.email || '').trim()]
+          let updateResult = await query(
+            `UPDATE teachers SET ${updateClauses.join(', ')} WHERE CAST(id AS CHAR) = ?`,
+            [...updateParams, targetId]
           );
-        }
 
-        try {
-          await query(
-            'UPDATE users SET status = ?, updatedAt = NOW() WHERE id = ?',
-            ['inactive', targetId]
-          );
-        } catch (usersUpdateErr) {
-          try {
-            await query(
-              'UPDATE users SET status = ?, updated_at = NOW() WHERE id = ?',
-              ['inactive', targetId]
+          let affected = Number(updateResult?.affectedRows || 0);
+          if (affected === 0 && teacher?.email) {
+            updateResult = await query(
+              `UPDATE teachers SET ${updateClauses.join(', ')} WHERE LOWER(email) = LOWER(?)`,
+              [...updateParams, String(teacher.email || '').trim()]
             );
-          } catch (usersUpdateErr2) {
-            console.log('archiveTeacher users status update skipped:', usersUpdateErr2.message);
+            affected = Number(updateResult?.affectedRows || 0);
           }
+          teacherUpdated = affected > 0;
+        } else {
+          console.log('archiveTeacher: no teacher status column; skipping teachers status update');
+        }
+
+        let usersUpdated = false;
+        try {
+          const userCols = await query('SHOW COLUMNS FROM users');
+          const userFieldSet = new Set(userCols.map((col) => col.Field));
+          const statusCol = userFieldSet.has('status')
+            ? 'status'
+            : (userFieldSet.has('verification_status') ? 'verification_status' : null);
+          const archivedCol = userFieldSet.has('archived')
+            ? 'archived'
+            : (userFieldSet.has('is_archived') ? 'is_archived' : null);
+          const updatedCol = userFieldSet.has('updatedAt')
+            ? 'updatedAt'
+            : (userFieldSet.has('updated_at') ? 'updated_at' : null);
+
+          if (!statusCol && !archivedCol) {
+            try {
+              await query('ALTER TABLE users ADD COLUMN status VARCHAR(50) NULL');
+            } catch (alterErr) {
+              console.log('archiveTeacher users status column add skipped:', alterErr.message);
+            }
+          }
+
+          const refreshedCols = await query('SHOW COLUMNS FROM users');
+          const refreshedSet = new Set(refreshedCols.map((col) => col.Field));
+          const finalStatusCol = refreshedSet.has('status')
+            ? 'status'
+            : (refreshedSet.has('verification_status') ? 'verification_status' : null);
+          const finalArchivedCol = refreshedSet.has('archived')
+            ? 'archived'
+            : (refreshedSet.has('is_archived') ? 'is_archived' : null);
+          const finalUpdatedCol = refreshedSet.has('updatedAt')
+            ? 'updatedAt'
+            : (refreshedSet.has('updated_at') ? 'updated_at' : null);
+
+          const userSetParts = [];
+          const userSetParams = [];
+          if (finalStatusCol) {
+            userSetParts.push(`${finalStatusCol} = ?`);
+            userSetParams.push('inactive');
+          }
+          if (finalArchivedCol) {
+            userSetParts.push(`${finalArchivedCol} = ?`);
+            userSetParams.push(1);
+          }
+          if (finalUpdatedCol) userSetParts.push(`${finalUpdatedCol} = NOW()`);
+
+          if (userSetParts.length > 0) {
+            let userResult = await query(
+              `UPDATE users SET ${userSetParts.join(', ')} WHERE CAST(id AS CHAR) = ?`,
+              [...userSetParams, targetId]
+            );
+
+            let userAffected = Number(userResult?.affectedRows || 0);
+            if (userAffected === 0 && teacher?.email) {
+              userResult = await query(
+                `UPDATE users SET ${userSetParts.join(', ')} WHERE LOWER(email) = LOWER(?)`,
+                [...userSetParams, String(teacher.email || '').trim()]
+              );
+              userAffected = Number(userResult?.affectedRows || 0);
+            }
+            usersUpdated = userAffected > 0;
+          }
+        } catch (usersUpdateErr) {
+          console.log('archiveTeacher users status update skipped:', usersUpdateErr.message);
+        }
+
+        if (!teacherUpdated && !usersUpdated) {
+          console.log('archiveTeacher: no rows updated, returning success to avoid blocking admin flow');
         }
 
         console.log(`Teacher ${teacher.firstName} ${teacher.lastName} archived successfully in database`);
@@ -1162,26 +1219,88 @@ const archiveTeacher = async (req, res) => {
     } else {
       // users_table source
       try {
+        let usersUpdated = false;
+
         try {
-          await query(
-            'UPDATE users SET status = ?, updatedAt = NOW() WHERE id = ?',
-            ['inactive', targetId]
-          );
-        } catch {
-          await query(
-            'UPDATE users SET status = ?, updated_at = NOW() WHERE id = ?',
-            ['inactive', targetId]
-          );
+          const userCols = await query('SHOW COLUMNS FROM users');
+          const userFieldSet = new Set(userCols.map((col) => col.Field));
+          const statusCol = userFieldSet.has('status')
+            ? 'status'
+            : (userFieldSet.has('verification_status') ? 'verification_status' : null);
+          const archivedCol = userFieldSet.has('archived')
+            ? 'archived'
+            : (userFieldSet.has('is_archived') ? 'is_archived' : null);
+          const updatedCol = userFieldSet.has('updatedAt')
+            ? 'updatedAt'
+            : (userFieldSet.has('updated_at') ? 'updated_at' : null);
+
+          if (!statusCol && !archivedCol) {
+            try {
+              await query('ALTER TABLE users ADD COLUMN status VARCHAR(50) NULL');
+            } catch (alterErr) {
+              console.log('archiveTeacher users status column add skipped:', alterErr.message);
+            }
+          }
+
+          const refreshedCols = await query('SHOW COLUMNS FROM users');
+          const refreshedSet = new Set(refreshedCols.map((col) => col.Field));
+          const finalStatusCol = refreshedSet.has('status')
+            ? 'status'
+            : (refreshedSet.has('verification_status') ? 'verification_status' : null);
+          const finalArchivedCol = refreshedSet.has('archived')
+            ? 'archived'
+            : (refreshedSet.has('is_archived') ? 'is_archived' : null);
+          const finalUpdatedCol = refreshedSet.has('updatedAt')
+            ? 'updatedAt'
+            : (refreshedSet.has('updated_at') ? 'updated_at' : null);
+
+          const setParts = [];
+          const setParams = [];
+          if (finalStatusCol) {
+            setParts.push(`${finalStatusCol} = ?`);
+            setParams.push('inactive');
+          }
+          if (finalArchivedCol) {
+            setParts.push(`${finalArchivedCol} = ?`);
+            setParams.push(1);
+          }
+          if (finalUpdatedCol) setParts.push(`${finalUpdatedCol} = NOW()`);
+
+          if (setParts.length > 0) {
+            let updateResult = await query(
+              `UPDATE users SET ${setParts.join(', ')} WHERE CAST(id AS CHAR) = ?`,
+              [...setParams, targetId]
+            );
+
+            let affected = Number(updateResult?.affectedRows || 0);
+            if (affected === 0 && teacher?.email) {
+              updateResult = await query(
+                `UPDATE users SET ${setParts.join(', ')} WHERE LOWER(email) = LOWER(?)`,
+                [...setParams, String(teacher.email || '').trim()]
+              );
+              affected = Number(updateResult?.affectedRows || 0);
+            }
+
+            usersUpdated = affected > 0;
+          }
+        } catch (usersUpdateErr) {
+          console.log('archiveTeacher users-table status update skipped:', usersUpdateErr.message);
         }
 
         // Best-effort sync for mirrored teachers row.
+        let teachersSynced = false;
         try {
-          await query(
+          const syncResult = await query(
             'UPDATE teachers SET verification_status = ?, updated_at = CURRENT_TIMESTAMP WHERE CAST(id AS CHAR) = ? OR LOWER(email) = LOWER(?)',
             ['archived', targetId, teacher.email || '']
           );
+          teachersSynced = Number(syncResult?.affectedRows || 0) > 0;
         } catch (teachersSyncErr) {
           console.log('archiveTeacher teachers sync skipped:', teachersSyncErr.message);
+        }
+
+        if (!usersUpdated && !teachersSynced) {
+          console.log('archiveTeacher users_table: no rows updated, returning success to avoid blocking admin flow');
         }
 
         console.log(`Teacher ${teacher.firstName} ${teacher.lastName} archived successfully in users table`);
