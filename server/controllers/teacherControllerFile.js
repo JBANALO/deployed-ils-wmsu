@@ -1112,7 +1112,7 @@ const archiveTeacher = async (req, res) => {
         let teacherUpdated = false;
         if (teacherStatusCol) {
           const updateClauses = [`${teacherStatusCol} = ?`];
-          const updateParams = ['archived'];
+          const updateParams = ['inactive'];
           if (teacherUpdatedCol) updateClauses.push(`${teacherUpdatedCol} = CURRENT_TIMESTAMP`);
 
           let updateResult = await query(
@@ -1335,7 +1335,7 @@ const archiveTeacher = async (req, res) => {
         try {
           const syncResult = await query(
             'UPDATE teachers SET verification_status = ?, updated_at = CURRENT_TIMESTAMP WHERE CAST(id AS CHAR) = ? OR LOWER(email) = LOWER(?)',
-            ['archived', targetId, teacher.email || '']
+            ['inactive', targetId, teacher.email || '']
           );
           teachersSynced = Number(syncResult?.affectedRows || 0) > 0;
         } catch (teachersSyncErr) {
