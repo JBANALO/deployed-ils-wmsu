@@ -110,68 +110,44 @@ const getPreviousSchoolYear = async (activeStartDate) => {
   return rows[0] || null;
 };
 
-const getNearestSectionSourceSchoolYear = async (targetSy) => {
-  if (!targetSy?.id) return null;
+const extractSchoolYearStart = (schoolYear) => {
+  if (!schoolYear) return null;
 
-  const baseExistsClause = `(
-      EXISTS (
-        SELECT 1
-        FROM sections s
-        WHERE s.school_year_id = sy.id
-          AND IFNULL(s.is_archived, 0) = 0
-        LIMIT 1
-      )
-      OR EXISTS (
-        SELECT 1
-        FROM classes c
-        WHERE c.school_year_id = sy.id
-          AND c.section IS NOT NULL
-          AND TRIM(c.section) <> ''
-        LIMIT 1
-      )
-    )`;
-
-  if (targetSy.start_date) {
-    const previousRows = await query(
-      `SELECT sy.id, sy.label, sy.start_date
-       FROM school_years sy
-       WHERE sy.is_archived = 0
-         AND sy.id <> ?
-         AND sy.start_date < ?
-         AND ${baseExistsClause}
-       ORDER BY sy.start_date DESC
-       LIMIT 1`,
-      [targetSy.id, targetSy.start_date]
-    );
-
-    if (previousRows.length > 0) return previousRows[0];
-
-    const nearestRows = await query(
-      `SELECT sy.id, sy.label, sy.start_date
-       FROM school_years sy
-       WHERE sy.is_archived = 0
-         AND sy.id <> ?
-         AND ${baseExistsClause}
-       ORDER BY ABS(DATEDIFF(sy.start_date, ?)) ASC, sy.start_date DESC
-       LIMIT 1`,
-      [targetSy.id, targetSy.start_date]
-    );
-
-    return nearestRows[0] || null;
+  const label = String(schoolYear.label || '').trim();
+  const labelMatch = label.match(/((?:19|20)\d{2})\s*[-/]\s*(?:19|20)\d{2}/);
+  if (labelMatch) {
+    const parsed = Number(labelMatch[1]);
+    if (Number.isInteger(parsed)) return parsed;
   }
 
-  const fallbackRows = await query(
-    `SELECT sy.id, sy.label, sy.start_date
-     FROM school_years sy
-     WHERE sy.is_archived = 0
-       AND sy.id <> ?
-       AND ${baseExistsClause}
-     ORDER BY sy.id DESC
-     LIMIT 1`,
-    [targetSy.id]
-  );
+  const startDate = schoolYear.start_date ? new Date(schoolYear.start_date) : null;
+  if (startDate && !Number.isNaN(startDate.getTime())) {
+    return startDate.getFullYear();
+  }
 
-  return fallbackRows[0] || null;
+  return null;
+};
+
+const sortSchoolYearsDesc = (schoolYears = []) => {
+  return [...schoolYears].sort((a, b) => {
+    const aYear = extractSchoolYearStart(a);
+    const bYear = extractSchoolYearStart(b);
+
+    if (aYear != null && bYear != null && aYear !== bYear) {
+      return bYear - aYear;
+    }
+
+    const aDate = a?.start_date ? new Date(a.start_date).getTime() : 0;
+    const bDate = b?.start_date ? new Date(b.start_date).getTime() : 0;
+    if (aDate !== bDate) return bDate - aDate;
+
+    return Number(b?.id || 0) - Number(a?.id || 0);
+  });
+};
+
+const getNearestSectionSourceSchoolYear = async (targetSy) => {
+  const sourceSchoolYears = await getSectionSourceSchoolYears(targetSy);
+  return sourceSchoolYears[0] || null;
 };
 
 const getSectionSourceSchoolYears = async (targetSy) => {
@@ -195,34 +171,7 @@ const getSectionSourceSchoolYears = async (targetSy) => {
       )
     )`;
 
-  if (targetSy.start_date) {
-    const previousRows = await query(
-      `SELECT sy.id, sy.label, sy.start_date
-       FROM school_years sy
-       WHERE sy.is_archived = 0
-         AND sy.id <> ?
-         AND sy.start_date < ?
-         AND ${baseExistsClause}
-       ORDER BY sy.start_date DESC, sy.id DESC`,
-      [targetSy.id, targetSy.start_date]
-    );
-
-    if (previousRows.length > 0) return previousRows;
-
-    const nearestRows = await query(
-      `SELECT sy.id, sy.label, sy.start_date
-       FROM school_years sy
-       WHERE sy.is_archived = 0
-         AND sy.id <> ?
-         AND ${baseExistsClause}
-       ORDER BY ABS(DATEDIFF(sy.start_date, ?)) ASC, sy.start_date DESC, sy.id DESC`,
-      [targetSy.id, targetSy.start_date]
-    );
-
-    return nearestRows;
-  }
-
-  const fallbackRows = await query(
+  const allSourceRows = await query(
     `SELECT sy.id, sy.label, sy.start_date
      FROM school_years sy
      WHERE sy.is_archived = 0
@@ -232,7 +181,34 @@ const getSectionSourceSchoolYears = async (targetSy) => {
     [targetSy.id]
   );
 
-  return fallbackRows;
+  if (!allSourceRows.length) return [];
+
+  const targetYear = extractSchoolYearStart(targetSy);
+  let historicalRows = [];
+
+  if (targetYear != null) {
+    historicalRows = allSourceRows.filter((row) => {
+      const rowYear = extractSchoolYearStart(row);
+      return rowYear != null && rowYear < targetYear;
+    });
+  }
+
+  if (!historicalRows.length && targetSy.start_date) {
+    const targetDate = new Date(targetSy.start_date);
+    if (!Number.isNaN(targetDate.getTime())) {
+      historicalRows = allSourceRows.filter((row) => {
+        const rowDate = row?.start_date ? new Date(row.start_date) : null;
+        return rowDate && !Number.isNaN(rowDate.getTime()) && rowDate.getTime() < targetDate.getTime();
+      });
+    }
+  }
+
+  if (historicalRows.length > 0) {
+    return sortSchoolYearsDesc(historicalRows);
+  }
+
+  // Fallback: if school-year metadata is inconsistent, still return available source years.
+  return sortSchoolYearsDesc(allSourceRows);
 };
 
 const buildSectionFetchCandidates = async (targetSy) => {
