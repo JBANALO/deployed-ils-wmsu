@@ -3326,6 +3326,104 @@ exports.getPreviousYearPromotionCandidates = async (req, res) => {
       return res.json({ success: true, data: [], meta: { sourceSchoolYearId: null } });
     }
     console.error('Error listing previous year promotion candidates:', error);
-    return res.status(500).json({ success: false, message: 'Failed to load previous year students' });
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to load previous year students' 
+    });
+  }
+};
+
+// Get student rankings for dashboard
+const getStudentRankings = async (req, res) => {
+  try {
+    const { limit = 5, sortBy = 'average', sortOrder = 'desc', schoolYearId, gradeLevel, section } = req.query;
+    // Get active school year if not specified
+    let targetSchoolYearId = schoolYearId;
+    if (!targetSchoolYearId) {
+      const activeSy = await query('SELECT id, label FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+      if (activeSy.length > 0) {
+        targetSchoolYearId = activeSy[0].id;
+      }
+    }
+
+    if (!targetSchoolYearId) {
+      return res.status(400).json({ success: false, message: 'No active school year found' });
+    }
+
+    // Build query with optional filters
+    let studentsQuery = `
+      SELECT s.id, s.lrn, s.first_name, s.last_name, s.grade_level, s.section,
+             AVG(g.score) as average_score, COUNT(g.id) as grade_count
+      FROM students s
+      LEFT JOIN grades g ON s.id = g.student_id AND g.school_year_id = ?
+      WHERE s.school_year_id = ? AND s.verification_status = 'approved'
+    `;
+    
+    let queryParams = [targetSchoolYearId, targetSchoolYearId];
+    
+    // Add optional filters
+    if (gradeLevel) {
+      studentsQuery += ` AND s.grade_level = ?`;
+      queryParams.push(gradeLevel);
+    }
+    
+    if (section) {
+      studentsQuery += ` AND s.section = ?`;
+      queryParams.push(section);
+    }
+    
+    studentsQuery += `
+      GROUP BY s.id, s.lrn, s.first_name, s.last_name, s.grade_level, s.section
+      HAVING grade_count > 0
+    `;
+    
+    // Add sorting
+    if (sortBy === 'average') {
+      studentsQuery += ` ORDER BY average_score ${sortOrder.toUpperCase()}`;
+    } else if (sortBy === 'name') {
+      studentsQuery += ` ORDER BY s.first_name ${sortOrder.toUpperCase()}, s.last_name ${sortOrder.toUpperCase()}`;
+    }
+    
+    // Add limit
+    studentsQuery += ` LIMIT ?`;
+    queryParams.push(parseInt(limit));
+
+    const [students] = await query(studentsQuery, queryParams);
+    
+    // Format response to match admin dashboard expectations
+    const formattedStudents = students.map(student => ({
+      id: student.id,
+      lrn: student.lrn,
+      name: `${student.lastName}, ${student.firstName}`, // Admin dashboard expects "LastName, FirstName"
+      firstName: student.first_name,
+      lastName: student.last_name,
+      gradeLevel: student.grade_level,
+      section: student.section,
+      average: parseFloat(student.average_score || 0).toFixed(2),
+      avg: parseFloat(student.average_score || 0).toFixed(2), // Admin dashboard uses 'avg' field
+      gradeCount: parseInt(student.grade_count)
+    }));
+
+    res.json({
+      success: true,
+      data: formattedStudents,
+      meta: {
+        limit: parseInt(limit),
+        sortBy,
+        sortOrder,
+        schoolYearId: targetSchoolYearId,
+        gradeLevel: gradeLevel || null,
+        section: section || null,
+        total: formattedStudents.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching student rankings:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch student rankings',
+      error: error.message 
+    });
   }
 };
