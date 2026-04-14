@@ -99,6 +99,13 @@ export default function TeacherProfile() {
                   cls.adviser_name.includes(user.firstName) &&
                   cls.adviser_name.includes(user.lastName)
                 );
+                const isTeacherNameMatch = (teacherName) => (
+                  user.firstName &&
+                  user.lastName &&
+                  teacherName &&
+                  String(teacherName).includes(user.firstName) &&
+                  String(teacherName).includes(user.lastName)
+                );
                 const dedupeClassesById = (classes = []) => {
                   const map = new Map();
                   classes.forEach((cls) => {
@@ -166,46 +173,79 @@ export default function TeacherProfile() {
                     console.error('Name-based adviser fallback failed:', nameFallbackErr);
                   }
                 }
+
+                // Keep a single class entry even if backend returns adviser + subject_teacher
+                // rows for the same class.
+                visibleClasses = dedupeClassesById(visibleClasses);
                 
                 console.log(`✓ Fetched ${visibleClasses.length} classes for teacher ${user.id}`);
                 
                 // Convert 24-hour time to 12-hour format
                 const convertTime = (time24) => {
                   if (!time24) return '8:00 AM';
+                  if (/am|pm/i.test(String(time24))) return String(time24);
                   const [hours, minutes] = time24.split(':');
                   const hour = parseInt(hours);
                   const ampm = hour >= 12 ? 'PM' : 'AM';
                   const hour12 = hour % 12 || 12;
                   return `${hour12}:${minutes} ${ampm}`;
                 };
+
+                const normalizeScheduleDayDisplay = (value) => {
+                  const raw = String(value || '').trim();
+                  const normalized = raw.toLowerCase();
+                  if (!raw) return 'Monday - Friday';
+                  if (['all', 'monday-friday', 'monday - friday', 'monday to friday', 'weekdays', 'weekday'].includes(normalized)) {
+                    return 'Monday - Friday';
+                  }
+                  return raw;
+                };
+
+                const scheduleSeen = new Set();
+                const pushUniqueSchedule = (entry) => {
+                  const key = [
+                    entry.gradeSection,
+                    entry.subject,
+                    entry.day,
+                    entry.time
+                  ].map((part) => String(part || '').trim().toLowerCase()).join('|');
+
+                  if (scheduleSeen.has(key)) return;
+                  scheduleSeen.add(key);
+                  scheduleData.push(entry);
+                };
                 
                 // Process each visible class
                 visibleClasses.forEach(cls => {
                   const adviserForClass = cls.role_in_class === 'adviser' || isSameTeacher(cls.adviser_id, user.id) || isAdviserNameMatch(cls);
+                  const gradeSection = `${cls.grade || 'Grade'} - ${cls.section || 'Section'}`;
+
+                  const mySubjectRows = Array.isArray(cls.subject_teachers)
+                    ? cls.subject_teachers.filter((st) => isSameTeacher(st.teacher_id, user.id) || isTeacherNameMatch(st.teacher_name))
+                    : [];
 
                   // If user is adviser of this class
                   if (adviserForClass) {
-                    scheduleData.push({
+                    pushUniqueSchedule({
                       id: `adviser-${cls.id}`,
                       day: "Monday - Friday",
                       time: "8:00 AM - 3:00 PM",
                       subject: "Advisory Class",
-                      gradeSection: `${cls.grade || 'Grade'} - ${cls.section || 'Section'}`
+                      gradeSection
                     });
                   }
                   
-                  // If user is subject teacher in this class
-                  if ((cls.role_in_class === 'subject_teacher' || cls.subjects_teaching) && Array.isArray(cls.subject_teachers)) {
-                    cls.subject_teachers.forEach(st => {
-                      if (isSameTeacher(st.teacher_id, user.id)) {
-                        scheduleData.push({
-                          id: `${cls.id}-${st.subject}`,
-                          day: st.day || "Monday - Friday",
-                          time: `${convertTime(st.start_time)} - ${convertTime(st.end_time)}`,
-                          subject: st.subject || "",
-                          gradeSection: `${cls.grade || 'Grade'} - ${cls.section || 'Section'}`
-                        });
-                      }
+                  // Always include subject-teacher schedule rows for this teacher, even if
+                  // backend marks the class role as adviser.
+                  if (mySubjectRows.length > 0) {
+                    mySubjectRows.forEach((st, index) => {
+                      pushUniqueSchedule({
+                        id: `${cls.id}-${st.subject}-${st.day || ''}-${st.start_time || ''}-${index}`,
+                        day: normalizeScheduleDayDisplay(st.day),
+                        time: `${convertTime(st.start_time)} - ${convertTime(st.end_time)}`,
+                        subject: st.subject || "",
+                        gradeSection
+                      });
                     });
                   }
 
@@ -217,12 +257,12 @@ export default function TeacherProfile() {
                       .filter(Boolean);
 
                     subjects.forEach((subject, idx) => {
-                      scheduleData.push({
+                      pushUniqueSchedule({
                         id: `${cls.id}-fallback-${idx}-${subject}`,
                         day: "Monday - Friday",
                         time: "8:00 AM - 3:00 PM",
                         subject,
-                        gradeSection: `${cls.grade || 'Grade'} - ${cls.section || 'Section'}`
+                        gradeSection
                       });
                     });
                   }
