@@ -46,6 +46,7 @@ export default function QRCodePortal() {
   const [attendanceRecords, setAttendanceRecords] = useState([]); // Store all attendance records
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [lastSyncAt, setLastSyncAt] = useState(null);
   const [activeSchoolYearId, setActiveSchoolYearId] = useState(() => getTeacherActiveSchoolYearId());
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
   const isViewOnlyMode = isTeacherViewOnlyMode(selectedSchoolYearId, activeSchoolYearId);
@@ -56,6 +57,42 @@ export default function QRCodePortal() {
     absentStudents: 0
   });
   const options = ["All Status", "Present", "Late", "Absent", "Not Scanned"];
+
+  const getRecordDateTime = (record = {}) => {
+    const ts = record.timestamp ? new Date(record.timestamp) : null;
+    if (ts && !Number.isNaN(ts.getTime())) return ts;
+
+    const dateRaw = String(record.date || '').trim();
+    const datePart = dateRaw.includes('T') ? dateRaw.split('T')[0] : dateRaw.split(' ')[0];
+    const timePart = String(record.time || '00:00:00').slice(0, 8) || '00:00:00';
+    const combined = datePart ? new Date(`${datePart}T${timePart}`) : new Date(dateRaw);
+    return Number.isNaN(combined.getTime()) ? null : combined;
+  };
+
+  const formatTimeAgo = (dateValue) => {
+    if (!dateValue) return 'Just now';
+    const diffMs = Date.now() - dateValue.getTime();
+    if (diffMs <= 0) return 'Just now';
+
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins} min ago`;
+
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} hr ago`;
+
+    const days = Math.floor(hours / 24);
+    return `${days} day${days > 1 ? 's' : ''} ago`;
+  };
+
+  const formatSyncTime = (dateValue) => {
+    if (!dateValue) return 'Not synced yet';
+    return dateValue.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
 
   useEffect(() => {
     const fetchActiveSchoolYear = async () => {
@@ -126,6 +163,7 @@ export default function QRCodePortal() {
       const dateAttendance = allAttendance.filter(record => normalizeDate(record.date) === String(date));
       console.log(`Attendance records for ${date}:`, dateAttendance.length, dateAttendance);
       setAttendanceRecords(dateAttendance);
+      setLastSyncAt(new Date());
       
       // Calculate statistics
       const presentCount = dateAttendance.filter(r => r.status?.toLowerCase() === 'present').length;
@@ -198,6 +236,13 @@ export default function QRCodePortal() {
     return filtered;
   };
   const filteredStudents = getFilteredStudents();
+  const attendanceRate = students.length > 0
+    ? Math.round(((attendanceStats.presentStudents + attendanceStats.lateStudents) / students.length) * 1000) / 10
+    : 0;
+  const recentActivity = [...attendanceRecords]
+    .map((record) => ({ ...record, _dt: getRecordDateTime(record) }))
+    .sort((a, b) => (b._dt?.getTime() || 0) - (a._dt?.getTime() || 0))
+    .slice(0, 5);
 
   const loadStudents = async () => {
     try {
@@ -771,8 +816,8 @@ export default function QRCodePortal() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="text-sm text-gray-500 uppercase tracking-wide">Attendance Rate</h4>
-                    <p className="text-3xl font-bold text-gray-900">95.1%</p>
-                    <p className="text-sm text-green-600 mt-1">This week</p>
+                    <p className="text-3xl font-bold text-gray-900">{attendanceRate}%</p>
+                    <p className="text-sm text-green-600 mt-1">For selected date scans</p>
                   </div>
                   <div className="bg-green-100 p-3 rounded-lg">
                     <ClockIcon className="w-8 h-8 text-green-600" />
@@ -826,38 +871,57 @@ export default function QRCodePortal() {
             <div className="bg-white rounded-lg shadow-lg p-6 border border-gray-200">
               <h4 className="text-xl font-bold text-gray-900 mb-6">Recent Activity</h4>
               <div className="space-y-4">
-                <div className="flex items-center gap-4 p-4 bg-green-50 rounded-lg border border-green-200">
-                  <div className="bg-green-100 p-2 rounded-lg">
-                    <QrCodeIcon className="w-6 h-6 text-green-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">Student check-in recorded</p>
-                    <p className="text-sm text-gray-600">Juan Dela Cruz - 7:30 AM</p>
-                  </div>
-                  <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">2 min ago</span>
-                </div>
+                {recentActivity.length > 0 ? recentActivity.map((activity, idx) => {
+                  const status = String(activity.status || '').toLowerCase();
+                  const when = activity._dt;
+                  const title = status === 'late'
+                    ? 'Late arrival noted'
+                    : status === 'absent'
+                    ? 'Student marked absent'
+                    : 'Student check-in recorded';
 
-                <div className="flex items-center gap-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <div className="bg-blue-100 p-2 rounded-lg">
-                    <IdentificationIcon className="w-6 h-6 text-blue-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">New ID card generated</p>
-                    <p className="text-sm text-gray-600">Maria Santos - Grade 3</p>
-                  </div>
-                  <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">5 min ago</span>
-                </div>
+                  const tone = status === 'late'
+                    ? {
+                        row: 'bg-orange-50 border-orange-200',
+                        chip: 'text-orange-600 bg-orange-100',
+                        iconWrap: 'bg-orange-100',
+                        iconColor: 'text-orange-600',
+                      }
+                    : status === 'absent'
+                    ? {
+                        row: 'bg-red-50 border-red-200',
+                        chip: 'text-red-600 bg-red-100',
+                        iconWrap: 'bg-red-100',
+                        iconColor: 'text-red-600',
+                      }
+                    : {
+                        row: 'bg-green-50 border-green-200',
+                        chip: 'text-green-600 bg-green-100',
+                        iconWrap: 'bg-green-100',
+                        iconColor: 'text-green-600',
+                      };
 
-                <div className="flex items-center gap-4 p-4 bg-orange-50 rounded-lg border border-orange-200">
-                  <div className="bg-orange-100 p-2 rounded-lg">
-                    <ExclamationTriangleIcon className="w-6 h-6 text-orange-600" />
+                  return (
+                    <div key={`${activity.id || activity.studentId || idx}-${idx}`} className={`flex items-center gap-4 p-4 rounded-lg border ${tone.row}`}>
+                      <div className={`p-2 rounded-lg ${tone.iconWrap}`}>
+                        {status === 'late' || status === 'absent' ? (
+                          <ExclamationTriangleIcon className={`w-6 h-6 ${tone.iconColor}`} />
+                        ) : (
+                          <QrCodeIcon className={`w-6 h-6 ${tone.iconColor}`} />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900">{title}</p>
+                        <p className="text-sm text-gray-600">{activity.studentName || activity.name || 'Unknown Student'} - {activity.time || (when ? when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--')}</p>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded ${tone.chip}`}>{formatTimeAgo(when)}</span>
+                    </div>
+                  );
+                }) : (
+                  <div className="text-center py-10 text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
+                    No attendance activity yet for this date.
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">Late arrival noted</p>
-                    <p className="text-sm text-gray-600">Pedro Rodriguez - 8:15 AM</p>
-                  </div>
-                  <span className="text-xs text-orange-600 bg-orange-100 px-2 py-1 rounded">10 min ago</span>
-                </div>
+                )}
               </div>
             </div>
 
@@ -869,20 +933,20 @@ export default function QRCodePortal() {
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">QR Scanner</span>
                     <span className="flex items-center gap-2 text-green-600">
-                      <div className="w-2 h-2 bg-green-600 rounded-full"></div>
-                      Active
+                      <div className={`w-2 h-2 rounded-full ${scannerActive ? 'bg-green-600' : 'bg-gray-400'}`}></div>
+                      {scannerActive ? 'Active' : 'Inactive'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Database</span>
                     <span className="flex items-center gap-2 text-green-600">
-                      <div className="w-2 h-2 bg-green-600 rounded-full"></div>
-                      Connected
+                      <div className={`w-2 h-2 rounded-full ${lastSyncAt ? 'bg-green-600' : 'bg-gray-400'}`}></div>
+                      {lastSyncAt ? 'Connected' : 'Waiting sync'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Last Sync</span>
-                    <span className="text-gray-500">Just now</span>
+                    <span className="text-gray-500">{formatSyncTime(lastSyncAt)}</span>
                   </div>
                 </div>
               </div>
