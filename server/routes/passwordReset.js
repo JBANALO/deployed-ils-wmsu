@@ -22,8 +22,68 @@ if (!process.env.SENDGRID_API_KEY) {
   console.log('✅ API Key length:', process.env.SENDGRID_API_KEY.length);
 }
 
-// Store reset tokens (in production, use Redis or database)
-const resetTokens = new Map();
+// Store reset tokens with persistence
+const fs = require('fs');
+const path = require('path');
+
+const tokensFile = path.join(__dirname, '../data/resetTokens.json');
+
+// Ensure tokens file exists
+if (!fs.existsSync(path.dirname(tokensFile))) {
+  fs.mkdirSync(path.dirname(tokensFile), { recursive: true });
+}
+
+if (!fs.existsSync(tokensFile)) {
+  fs.writeFileSync(tokensFile, JSON.stringify({}), 'utf8');
+}
+
+// Token storage functions
+const readTokens = () => {
+  try {
+    const data = fs.readFileSync(tokensFile, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    console.error('Error reading tokens:', error);
+    return {};
+  }
+};
+
+const writeTokens = (tokens) => {
+  try {
+    fs.writeFileSync(tokensFile, JSON.stringify(tokens), 'utf8');
+  } catch (error) {
+    console.error('Error writing tokens:', error);
+  }
+};
+
+const resetTokens = {
+  get: (token) => {
+    const tokens = readTokens();
+    const tokenData = tokens[token];
+    
+    // Check if token exists and is not expired
+    if (!tokenData || new Date(tokenData.expiry) < new Date()) {
+      // Remove expired token
+      delete tokens[token];
+      writeTokens(tokens);
+      return null;
+    }
+    
+    return tokenData;
+  },
+  
+  set: (token, data) => {
+    const tokens = readTokens();
+    tokens[token] = data;
+    writeTokens(tokens);
+  },
+  
+  delete: (token) => {
+    const tokens = readTokens();
+    delete tokens[token];
+    writeTokens(tokens);
+  }
+};
 
 // Forgot password route
 router.post('/forgot-password', async (req, res) => {

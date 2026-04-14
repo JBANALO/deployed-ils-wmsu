@@ -81,11 +81,21 @@ export default function ForgotPasswordPage() {
             </form>
 
             <div className="flex justify-center text-sm mt-5 text-gray-600">
-              <Link to="/login" className="w-[150px] bg-gray-600 hover:bg-gray-400 text-white font-semibold py-4 px-6 rounded-md transition duration-200 transform hover:scale-105">
+              <button
+                onClick={() => window.location.href = '/login'}
+                className="w-[150px] bg-gray-600 hover:bg-gray-400 text-white font-semibold py-4 px-6 rounded-md transition duration-200 transform hover:scale-105"
+              >
                 Login
-              </Link>
+              </button>
             </div>
           </>
+        ) : error ? (
+          <div className="space-y-4">
+            <h2 className="text-gray-800 font-semibold mb-2 text-red-600">Error!</h2>
+            <p className="text-red-800 font-medium mb-4">
+              {error}
+            </p>
+          </div>
         ) : (
           <div className="space-y-4">
             <h2 className="text-gray-800 font-semibold mb-2">Success!</h2>
@@ -94,12 +104,12 @@ export default function ForgotPasswordPage() {
               <span className="font-medium">{email}</span>
             </p>
 
-            <Link
-              to="/login"
+            <button
+              onClick={() => window.location.href = '/login'}
               className="w-full inline-block bg-gray-400 hover:bg-gray-500 text-white font-semibold py-4 px-6 rounded-md transition text-center"
             >
               Login
-            </Link>
+            </button>
           </div>
         )}
       </div>

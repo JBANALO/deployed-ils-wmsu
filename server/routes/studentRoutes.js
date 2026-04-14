@@ -1174,6 +1174,7 @@ router.get('/previous-year-promotion-candidates', studentController.getPreviousY
 router.post('/fetch-from-previous', studentController.fetchStudentsFromPreviousYear);
 router.post('/regenerate-qr', studentController.regenerateQRCodes); // fix all QR codes to JSON format
 router.get('/portal', studentController.getStudent); // Alias for student portal dashboard
+router.get('/ranking', studentController.getStudentRankings); // Get student rankings
 router.get('/:id', studentController.getStudent);
 router.put('/:id', studentController.updateStudent); // Update student
 router.delete('/:id', studentController.deleteStudent); // Delete student

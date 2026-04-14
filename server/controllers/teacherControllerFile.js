@@ -936,16 +936,37 @@ const archiveTeacher = async (req, res) => {
     const { id } = req.params;
     const users = readUsers();
     
-    const teacherIndex = users.findIndex(u => u.id === id);
+    // First try to find teacher in file storage
+    let teacherIndex = users.findIndex(u => u.id === id);
+    let teacher = null;
+    let source = 'file';
     
-    if (teacherIndex === -1) {
-      return res.status(404).json({
-        success: false,
-        message: 'Teacher not found'
-      });
+    if (teacherIndex !== -1) {
+      teacher = users[teacherIndex];
+    } else {
+      // If not found in file, check database
+      try {
+        const [teachers] = await query(
+          'SELECT id, username, first_name as firstName, last_name as lastName, email, role FROM teachers WHERE id = ?',
+          [id]
+        );
+        
+        if (teachers && teachers.length > 0) {
+          teacher = teachers[0];
+          source = 'database';
+          console.log('Found teacher in database for archiving:', id);
+        }
+      } catch (dbError) {
+        console.error('Database error while finding teacher for archive:', dbError);
+      }
     }
     
-    const teacher = users[teacherIndex];
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Teacher not found in file storage or database'
+      });
+    }
 
     await assertTeacherEditableInActiveSchoolYear(id, teacher);
     
@@ -957,26 +978,50 @@ const archiveTeacher = async (req, res) => {
       });
     }
     
-    // Archive the teacher
-    users[teacherIndex] = {
-      ...teacher,
-      verification_status: 'archived',
-      archivedAt: new Date().toISOString()
-    };
-    
-    const success = writeUsers(users);
-    
-    if (success) {
-      console.log(`Teacher ${teacher.firstName} ${teacher.lastName} archived successfully`);
-      res.json({
-        success: true,
-        message: 'Teacher archived successfully'
-      });
+    // Archive the teacher based on source
+    if (source === 'file') {
+      // Update file storage
+      users[teacherIndex] = {
+        ...teacher,
+        verification_status: 'archived',
+        archivedAt: new Date().toISOString()
+      };
+      
+      const success = writeUsers(users);
+      
+      if (success) {
+        console.log(`Teacher ${teacher.firstName} ${teacher.lastName} archived successfully in file storage`);
+        res.json({
+          success: true,
+          message: 'Teacher archived successfully',
+          source: 'file'
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: 'Failed to archive teacher in file storage'
+        });
+      }
     } else {
-      res.status(500).json({
-        success: false,
-        message: 'Failed to archive teacher'
-      });
+      // Update database
+      try {
+        await query(
+          'UPDATE teachers SET verification_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          ['archived', id]
+        );
+        console.log(`Teacher ${teacher.firstName} ${teacher.lastName} archived successfully in database`);
+        res.json({
+          success: true,
+          message: 'Teacher archived successfully',
+          source: 'database'
+        });
+      } catch (dbError) {
+        console.error('Database error while archiving teacher:', dbError);
+        res.status(500).json({
+          success: false,
+          message: 'Failed to archive teacher in database'
+        });
+      }
     }
   } catch (error) {
     console.error('Error in archiveTeacher:', error);
