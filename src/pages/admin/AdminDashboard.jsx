@@ -39,9 +39,9 @@ export default function AdminDashboard() {
     activeStudents: 0,
     responseTime: 0
   });
-  const [pendingApprovals, setPendingApprovals] = useState({
-    pendingTeachers: 0,
-    pendingStudents: 0
+  const [performanceBands, setPerformanceBands] = useState({
+    topPerformers: [],
+    lowestPerformers: []
   });
   const [recentActivity, setRecentActivity] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
@@ -257,10 +257,18 @@ export default function AdminDashboard() {
       const response = await axios.get('/students/ranking', { params });
       
       const topStudentsData = response.data?.data || [];
-      const formattedTopStudents = topStudentsData.map((student, index) => ({
+      const formattedTopStudents = topStudentsData
+        .map((student) => ({
+          id: student.id,
+          name: `${student.lastName}, ${student.firstName}`,
+          avg: Number(student.average || student.avg || 0)
+        }))
+        .filter((student) => student.avg >= 90)
+        .slice(0, 5)
+        .map((student, index) => ({
         id: student.id,
-        name: `${student.lastName}, ${student.firstName}`,
-        avg: student.average || student.avg || 0,
+        name: student.name,
+        avg: student.avg,
         rank: index + 1
       }));
       
@@ -411,31 +419,49 @@ const loadDashboardStats = async (overrideSyId) => {
       );
     }
 
-    // =========================
-    // FETCH PENDING APPROVALS
-    // =========================
-    let pendingTeachers = [];
-    let pendingStudents = [];
+    const getStudentAverage = (student) => {
+      const raw = Number(student?.average ?? student?.live_average ?? 0);
+      return Number.isFinite(raw) ? raw : 0;
+    };
 
-    try {
-      console.log('Fetching pending teachers...');
-      const pendingTeachersRes = await axios.get('/users/pending-teachers');
-      pendingTeachers = pendingTeachersRes.data?.data?.teachers || [];
-      console.log('Pending teachers fetched:', pendingTeachers);
-    } catch (err) {
-      console.error('Error fetching pending teachers:', err);
-      pendingTeachers = [];
-    }
+    const getStudentDisplayName = (student) => {
+      const fullName = [student?.firstName, student?.lastName].filter(Boolean).join(' ').trim();
+      return fullName || student?.fullName || student?.name || student?.lrn || 'Unknown Student';
+    };
 
-    try {
-      console.log('Fetching pending students...');
-      const pendingStudentsRes = await axios.get('/users/pending-students');
-      pendingStudents = pendingStudentsRes.data?.data?.students || [];
-      console.log('Pending students fetched:', pendingStudents);
-    } catch (err) {
-      console.error('Error fetching pending students:', err);
-      pendingStudents = [];
-    }
+    const getStudentClassLabel = (student) => {
+      const grade = student?.gradeLevel || student?.grade || '';
+      const section = student?.section || '';
+      return [grade, section].filter(Boolean).join(' - ');
+    };
+
+    const performanceEligibleStudents = studentsList.filter((student) => {
+      const status = String(student?.status || '').toLowerCase();
+      const average = getStudentAverage(student);
+      return average > 0 && status !== 'inactive' && status !== 'graduated' && status !== 'archived';
+    });
+
+    const topPerformers = [...performanceEligibleStudents]
+      .filter((student) => getStudentAverage(student) >= 90)
+      .sort((a, b) => getStudentAverage(b) - getStudentAverage(a))
+      .slice(0, 5)
+      .map((student) => ({
+        id: student?.id,
+        name: getStudentDisplayName(student),
+        average: getStudentAverage(student),
+        classLabel: getStudentClassLabel(student)
+      }));
+
+    const lowestPerformers = [...performanceEligibleStudents]
+      .filter((student) => getStudentAverage(student) <= 75)
+      .sort((a, b) => getStudentAverage(a) - getStudentAverage(b))
+      .slice(0, 5)
+      .map((student) => ({
+        id: student?.id,
+        name: getStudentDisplayName(student),
+        average: getStudentAverage(student),
+        classLabel: getStudentClassLabel(student)
+      }));
 
     // =========================
     // CALCULATE UNIQUE CLASSES
@@ -565,17 +591,17 @@ const loadDashboardStats = async (overrideSyId) => {
       responseTime: 1.2
     });
 
-    setPendingApprovals({
-      pendingTeachers: pendingTeachers.length,
-      pendingStudents: pendingStudents.length
+    setPerformanceBands({
+      topPerformers,
+      lowestPerformers
     });
 
     // Log real-time activities based on actual data
-    if (pendingTeachers.length > 0) {
+    if (topPerformers.length > 0) {
       logActivity(
-        'teacher_registration',
-        'New teacher registration',
-        `${pendingTeachers[0]?.firstName} ${pendingTeachers[0]?.lastName} - ${getTimeAgo(pendingTeachers[0]?.createdAt)}`,
+        'performance',
+        'Top performer updated',
+        `${topPerformers[0]?.name} now has ${Number(topPerformers[0]?.average || 0).toFixed(2)} average`,
         'green'
       );
     }
@@ -750,15 +776,15 @@ const loadDashboardStats = async (overrideSyId) => {
 
       yPosition += Math.ceil(performanceData.length / 2) * 20 + 20;
 
-      // Pending Approvals Section
+      // Performance Bands Section
       pdf.setFontSize(16);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('Pending Approvals', margin, yPosition);
+      pdf.text('Performance Bands', margin, yPosition);
       yPosition += 12;
 
       const approvalData = [
-        { label: 'Pending Teachers', value: pendingApprovals.pendingTeachers.toString() },
-        { label: 'Pending Students', value: pendingApprovals.pendingStudents.toString() }
+        { label: 'Top 5 Performers (>=90)', value: performanceBands.topPerformers.length.toString() },
+        { label: 'Lowest Performers (<=75)', value: performanceBands.lowestPerformers.length.toString() }
       ];
 
       pdf.setFontSize(11);
@@ -789,7 +815,7 @@ const loadDashboardStats = async (overrideSyId) => {
     toast.info('Exporting dashboard data...');
     toast.info('Current stats: ' + JSON.stringify(stats));
     toast.info('Current performance metrics: ' + JSON.stringify(performanceMetrics));
-    toast.info('Current pending approvals: ' + JSON.stringify(pendingApprovals));
+    toast.info('Current performance bands: ' + JSON.stringify(performanceBands));
     
     try {
       // Create CSV content for dashboard data
@@ -806,8 +832,8 @@ const loadDashboardStats = async (overrideSyId) => {
         ['Active Teachers', performanceMetrics.activeTeachers],
         ['Active Students', performanceMetrics.activeStudents],
         ['Response Time', `${performanceMetrics.responseTime}s`],
-        ['Pending Teachers', pendingApprovals.pendingTeachers],
-        ['Pending Students', pendingApprovals.pendingStudents]
+        ['Top 5 Performers (>=90)', performanceBands.topPerformers.length],
+        ['Lowest Performers (<=75)', performanceBands.lowestPerformers.length]
       ].map(row => row.join(',')).join('\n');
 
       // Create download link
@@ -931,7 +957,7 @@ const loadDashboardStats = async (overrideSyId) => {
                   {/* Top Performing Students */}
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-3">
-                      <h4 className="font-medium text-green-800">Top Performing Students</h4>
+                      <h4 className="font-medium text-green-800">Top Performing Students (90+)</h4>
                       <div className="flex items-center gap-2">
                         <select
                           value={selectedGradeLevelForTop}

@@ -12,8 +12,9 @@ const QUARTER_LABELS = {
   q3: 'Q3',
   q4: 'Q4'
 };
-const TOP_PERFORMER_MIN_GRADE = 95;
+const TOP_PERFORMER_MIN_GRADE = 90;
 const TOP_PERFORMER_LIMIT_PER_GRADE = 5;
+const RANKING_MIN_GRADE = 90;
 
 // DepEd K-12 Subjects
 const DEPED_SUBJECTS = {
@@ -338,18 +339,21 @@ export default function AdminGrades() {
         rankingValue: getRankingValue(student)
       }));
 
-      // Rank by selected basis (Final/Q1/Q2/Q3/Q4). Students without grades in selected basis stay unranked.
+      const isRankingQualified = (student) => Number(student?.rankingValue || 0) >= RANKING_MIN_GRADE;
+
+      // Rank by selected basis (Final/Q1/Q2/Q3/Q4).
+      // Only students at 90+ are ranked; everyone else stays unranked.
       const sortedStudents = studentsWithRankingValue
-        .filter(s => s.rankingValue > 0)
+        .filter((student) => isRankingQualified(student))
         .sort((a, b) => (b.rankingValue || 0) - (a.rankingValue || 0))
         .map((student, index) => ({
           ...student,
           rank: index + 1
         }));
 
-      // Include students without grades for the selected ranking basis at the end
+      // Include non-qualified students at the end as unranked.
       const studentsWithoutGrades = studentsWithRankingValue
-        .filter(s => !(s.rankingValue > 0))
+        .filter((student) => !isRankingQualified(student))
         .map(student => ({ ...student, rank: '-' }));
 
       // Combine: students with grades first, then students without
@@ -691,7 +695,7 @@ export default function AdminGrades() {
 
         ) : topPerformersByGrade.length === 0 ? (
 
-          <p className="text-gray-500">No students with 95+ grades found.</p>
+          <p className="text-gray-500">No students with {TOP_PERFORMER_MIN_GRADE}+ grades found.</p>
 
         ) : (
 
