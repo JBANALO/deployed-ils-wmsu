@@ -31,6 +31,87 @@ const HISTORICAL_STUDENTS_ONLY_EXISTS_CLAUSE = `(
   )
 )`;
 
+function extractSchoolYearStart(schoolYear) {
+  if (!schoolYear) return null;
+
+  const label = String(schoolYear.label || '').trim();
+  const labelMatch = label.match(/((?:19|20)\d{2})\s*[-/]\s*(?:19|20)\d{2}/);
+  if (labelMatch) {
+    const parsed = Number(labelMatch[1]);
+    if (Number.isInteger(parsed)) return parsed;
+  }
+
+  const startDate = schoolYear.start_date ? new Date(schoolYear.start_date) : null;
+  if (startDate && !Number.isNaN(startDate.getTime())) {
+    return startDate.getFullYear();
+  }
+
+  return null;
+}
+
+function getSchoolYearStartTimestamp(schoolYear) {
+  const startDate = schoolYear?.start_date ? new Date(schoolYear.start_date) : null;
+  const timestamp = startDate && !Number.isNaN(startDate.getTime()) ? startDate.getTime() : null;
+  return timestamp;
+}
+
+function sortSchoolYearsDesc(schoolYears = []) {
+  return [...schoolYears].sort((a, b) => {
+    const aYear = extractSchoolYearStart(a);
+    const bYear = extractSchoolYearStart(b);
+
+    if (aYear != null && bYear != null && aYear !== bYear) {
+      return bYear - aYear;
+    }
+
+    const aTs = getSchoolYearStartTimestamp(a) || 0;
+    const bTs = getSchoolYearStartTimestamp(b) || 0;
+    if (aTs !== bTs) return bTs - aTs;
+
+    return Number(b?.id || 0) - Number(a?.id || 0);
+  });
+}
+
+function filterHistoricalSchoolYears(candidates = [], targetSy = null) {
+  const targetYear = extractSchoolYearStart(targetSy);
+  if (targetYear != null) {
+    const byYear = candidates.filter((row) => {
+      const rowYear = extractSchoolYearStart(row);
+      return rowYear != null && rowYear < targetYear;
+    });
+    if (byYear.length > 0) return sortSchoolYearsDesc(byYear);
+  }
+
+  const targetTs = getSchoolYearStartTimestamp(targetSy);
+  if (targetTs != null) {
+    const byDate = candidates.filter((row) => {
+      const rowTs = getSchoolYearStartTimestamp(row);
+      return rowTs != null && rowTs < targetTs;
+    });
+    if (byDate.length > 0) return sortSchoolYearsDesc(byDate);
+  }
+
+  return sortSchoolYearsDesc(candidates);
+}
+
+async function queryHistoricalSourceSchoolYears(targetSy, includePromotionHistory = true) {
+  if (!targetSy?.id) return [];
+
+  const existsClause = includePromotionHistory
+    ? HISTORICAL_SOURCE_EXISTS_CLAUSE
+    : HISTORICAL_STUDENTS_ONLY_EXISTS_CLAUSE;
+
+  return query(
+    `SELECT sy.id, sy.label, sy.start_date
+     FROM school_years sy
+     WHERE sy.is_archived = 0
+       AND sy.id <> ?
+       AND ${existsClause}
+     ORDER BY sy.id DESC`,
+    [targetSy.id]
+  );
+}
+
 async function getActiveSchoolYear() {
   const rows = await query('SELECT id, label, start_date FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
   return rows[0] || null;
@@ -78,62 +159,16 @@ async function getLatestHistoricalStudentSchoolYear(targetSy) {
   if (!targetSy?.id) return null;
 
   try {
-    if (targetSy.start_date) {
-      const byDate = await query(
-        `SELECT sy.id, sy.label, sy.start_date
-         FROM school_years sy
-         WHERE sy.is_archived = 0
-           AND sy.id <> ?
-           AND sy.start_date < ?
-           AND ${HISTORICAL_SOURCE_EXISTS_CLAUSE}
-         ORDER BY sy.start_date DESC
-         LIMIT 1`,
-        [targetSy.id, targetSy.start_date]
-      );
-      if (byDate[0]) return byDate[0];
-    }
-
-    const byId = await query(
-      `SELECT sy.id, sy.label, sy.start_date
-       FROM school_years sy
-       WHERE sy.is_archived = 0
-         AND sy.id < ?
-         AND ${HISTORICAL_SOURCE_EXISTS_CLAUSE}
-       ORDER BY sy.id DESC
-       LIMIT 1`,
-      [targetSy.id]
-    );
-    if (byId[0]) return byId[0];
+    const candidates = await queryHistoricalSourceSchoolYears(targetSy, true);
+    const historical = filterHistoricalSchoolYears(candidates, targetSy);
+    if (historical[0]) return historical[0];
   } catch (err) {
     console.log('getLatestHistoricalStudentSchoolYear fallback:', err.message);
 
     try {
-      if (targetSy.start_date) {
-        const byDateStudentsOnly = await query(
-          `SELECT sy.id, sy.label, sy.start_date
-           FROM school_years sy
-           WHERE sy.is_archived = 0
-             AND sy.id <> ?
-             AND sy.start_date < ?
-             AND ${HISTORICAL_STUDENTS_ONLY_EXISTS_CLAUSE}
-           ORDER BY sy.start_date DESC
-           LIMIT 1`,
-          [targetSy.id, targetSy.start_date]
-        );
-        if (byDateStudentsOnly[0]) return byDateStudentsOnly[0];
-      }
-
-      const byIdStudentsOnly = await query(
-        `SELECT sy.id, sy.label, sy.start_date
-         FROM school_years sy
-         WHERE sy.is_archived = 0
-           AND sy.id < ?
-           AND ${HISTORICAL_STUDENTS_ONLY_EXISTS_CLAUSE}
-         ORDER BY sy.id DESC
-         LIMIT 1`,
-        [targetSy.id]
-      );
-      if (byIdStudentsOnly[0]) return byIdStudentsOnly[0];
+      const candidates = await queryHistoricalSourceSchoolYears(targetSy, false);
+      const historical = filterHistoricalSchoolYears(candidates, targetSy);
+      if (historical[0]) return historical[0];
     } catch (fallbackErr) {
       console.log('getLatestHistoricalStudentSchoolYear students-only fallback:', fallbackErr.message);
     }
@@ -146,58 +181,15 @@ async function getHistoricalStudentSchoolYears(targetSy) {
   if (!targetSy?.id) return [];
 
   try {
-    if (targetSy.start_date) {
-      const rowsByDate = await query(
-        `SELECT sy.id, sy.label, sy.start_date
-         FROM school_years sy
-         WHERE sy.is_archived = 0
-           AND sy.id <> ?
-           AND sy.start_date < ?
-           AND ${HISTORICAL_SOURCE_EXISTS_CLAUSE}
-         ORDER BY sy.start_date DESC`,
-        [targetSy.id, targetSy.start_date]
-      );
-      if (rowsByDate.length > 0) return rowsByDate;
-    }
-
-    const rowsById = await query(
-      `SELECT sy.id, sy.label, sy.start_date
-       FROM school_years sy
-       WHERE sy.is_archived = 0
-         AND sy.id < ?
-         AND ${HISTORICAL_SOURCE_EXISTS_CLAUSE}
-       ORDER BY sy.id DESC`,
-      [targetSy.id]
-    );
-    return rowsById;
+    const candidates = await queryHistoricalSourceSchoolYears(targetSy, true);
+    return filterHistoricalSchoolYears(candidates, targetSy);
   } catch (err) {
     console.log('getHistoricalStudentSchoolYears fallback:', err.message);
 
     try {
-      if (targetSy.start_date) {
-        const rowsByDateStudentsOnly = await query(
-          `SELECT sy.id, sy.label, sy.start_date
-           FROM school_years sy
-           WHERE sy.is_archived = 0
-             AND sy.id <> ?
-             AND sy.start_date < ?
-             AND ${HISTORICAL_STUDENTS_ONLY_EXISTS_CLAUSE}
-           ORDER BY sy.start_date DESC`,
-          [targetSy.id, targetSy.start_date]
-        );
-        if (rowsByDateStudentsOnly.length > 0) return rowsByDateStudentsOnly;
-      }
-
-      const rowsByIdStudentsOnly = await query(
-        `SELECT sy.id, sy.label, sy.start_date
-         FROM school_years sy
-         WHERE sy.is_archived = 0
-           AND sy.id < ?
-           AND ${HISTORICAL_STUDENTS_ONLY_EXISTS_CLAUSE}
-         ORDER BY sy.id DESC`,
-        [targetSy.id]
-      );
-      if (rowsByIdStudentsOnly.length > 0) return rowsByIdStudentsOnly;
+      const candidates = await queryHistoricalSourceSchoolYears(targetSy, false);
+      const historical = filterHistoricalSchoolYears(candidates, targetSy);
+      if (historical.length > 0) return historical;
     } catch (fallbackErr) {
       console.log('getHistoricalStudentSchoolYears students-only fallback:', fallbackErr.message);
     }
@@ -211,33 +203,19 @@ async function getNearestStudentSchoolYearWithData(targetSy) {
   if (!targetSy?.id) return null;
 
   try {
-    if (targetSy.start_date) {
-      const byDateDistance = await query(
-        `SELECT sy.id, sy.label, sy.start_date
-         FROM school_years sy
-         WHERE sy.is_archived = 0
-           AND sy.id <> ?
-           AND ${HISTORICAL_SOURCE_EXISTS_CLAUSE}
-         ORDER BY ABS(DATEDIFF(sy.start_date, ?)) ASC, sy.start_date DESC
-         LIMIT 1`,
-        [targetSy.id, targetSy.start_date]
-      );
-      if (byDateDistance[0]) return byDateDistance[0];
-    }
-
-    const byIdDistance = await query(
-      `SELECT sy.id, sy.label, sy.start_date
-       FROM school_years sy
-       WHERE sy.is_archived = 0
-         AND sy.id <> ?
-         AND ${HISTORICAL_SOURCE_EXISTS_CLAUSE}
-       ORDER BY ABS(sy.id - ?) ASC, sy.id DESC
-       LIMIT 1`,
-      [targetSy.id, targetSy.id]
-    );
-    if (byIdDistance[0]) return byIdDistance[0];
+    const candidates = await queryHistoricalSourceSchoolYears(targetSy, true);
+    const sorted = sortSchoolYearsDesc(candidates);
+    if (sorted[0]) return sorted[0];
   } catch (err) {
     console.log('getNearestStudentSchoolYearWithData fallback:', err.message);
+
+    try {
+      const candidates = await queryHistoricalSourceSchoolYears(targetSy, false);
+      const sorted = sortSchoolYearsDesc(candidates);
+      if (sorted[0]) return sorted[0];
+    } catch (fallbackErr) {
+      console.log('getNearestStudentSchoolYearWithData students-only fallback:', fallbackErr.message);
+    }
   }
 
   return null;
