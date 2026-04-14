@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useLocation } from "react-router-dom";
-import { UsersIcon, MagnifyingGlassIcon, PrinterIcon } from "@heroicons/react/24/solid";
+import { UsersIcon, MagnifyingGlassIcon, PrinterIcon, ArrowDownTrayIcon } from "@heroicons/react/24/solid";
 import axios from "../../api/axiosConfig";
 
 export default function AdminClassList() {
@@ -31,9 +31,8 @@ export default function AdminClassList() {
     return fullName.includes(query) || lrn.includes(query);
   });
 
-  // Print class list function
-  const handlePrintClassList = () => {
-    const printContent = `
+  const buildClassListHtml = () => {
+    return `
       <html>
         <head>
           <title>Class List - ${classInfo.grade} ${classInfo.section}</title>
@@ -140,6 +139,11 @@ export default function AdminClassList() {
         </body>
       </html>
     `;
+  };
+
+  // Print class list function
+  const handlePrintClassList = () => {
+    const printContent = buildClassListHtml();
 
     const printWindow = window.open('', '_blank');
     printWindow.document.write(printContent);
@@ -147,6 +151,28 @@ export default function AdminClassList() {
     printWindow.focus();
     printWindow.print();
     printWindow.close();
+  };
+
+  const handleDownloadClassList = () => {
+    const html = buildClassListHtml();
+    const gradeSlug = String(classInfo.grade || 'class')
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
+    const sectionSlug = String(classInfo.section || 'list')
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `class-list-${gradeSlug}-${sectionSlug}.html`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(url);
   };
 
   // Resolve class and fetch students in that class for the selected school year.
@@ -245,13 +271,23 @@ export default function AdminClassList() {
               )}
             </div>
           </div>
-          <button
-            onClick={handlePrintClassList}
-            className="flex items-center gap-2 bg-red-800 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
-          >
-            <PrinterIcon className="w-5 h-5" />
-            Print Class List
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadClassList}
+              className="flex items-center gap-2 bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors"
+            >
+              <ArrowDownTrayIcon className="w-5 h-5" />
+              Download Class List
+            </button>
+
+            <button
+              onClick={handlePrintClassList}
+              className="flex items-center gap-2 bg-red-800 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+            >
+              <PrinterIcon className="w-5 h-5" />
+              Print Class List
+            </button>
+          </div>
         </div>
         <p className="text-gray-600">Showing all students enrolled in this class.</p>
       </div>
