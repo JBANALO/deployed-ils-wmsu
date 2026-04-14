@@ -994,29 +994,58 @@ const archiveTeacher = async (req, res) => {
   try {
     const { id } = req.params;
     const users = readUsers();
+    const targetId = String(id || '').trim();
     
     // First try to find teacher in file storage
-    let teacherIndex = users.findIndex(u => u.id === id);
+    let teacherIndex = users.findIndex((u) => String(u?.id || '').trim() === targetId);
     let teacher = null;
     let source = 'file';
     
     if (teacherIndex !== -1) {
       teacher = users[teacherIndex];
     } else {
-      // If not found in file, check database
+      // If not found in file, check teachers table.
       try {
-        const [teachers] = await query(
-          'SELECT id, username, first_name as firstName, last_name as lastName, email, role FROM teachers WHERE id = ?',
-          [id]
+        const teacherRows = await query(
+          `SELECT id, username, first_name as firstName, last_name as lastName, email, role, school_year_id
+           FROM teachers
+           WHERE CAST(id AS CHAR) = ?
+           LIMIT 1`,
+          [targetId]
         );
         
-        if (teachers && teachers.length > 0) {
-          teacher = teachers[0];
-          source = 'database';
+        if (Array.isArray(teacherRows) && teacherRows.length > 0) {
+          teacher = teacherRows[0];
+          source = 'teachers_table';
           console.log('Found teacher in database for archiving:', id);
         }
       } catch (dbError) {
         console.error('Database error while finding teacher for archive:', dbError);
+      }
+
+      // Fallback: some teacher accounts are stored in users table.
+      if (!teacher) {
+        try {
+          const userRows = await query(
+            `SELECT id, username,
+                    COALESCE(firstName, first_name) as firstName,
+                    COALESCE(lastName, last_name) as lastName,
+                    email, role, school_year_id
+             FROM users
+             WHERE CAST(id AS CHAR) = ?
+               AND role IN ('teacher', 'adviser', 'subject_teacher')
+             LIMIT 1`,
+            [targetId]
+          );
+
+          if (Array.isArray(userRows) && userRows.length > 0) {
+            teacher = userRows[0];
+            source = 'users_table';
+            console.log('Found teacher in users table for archiving:', id);
+          }
+        } catch (userDbError) {
+          console.error('Users table error while finding teacher for archive:', userDbError);
+        }
       }
     }
     
@@ -1027,7 +1056,7 @@ const archiveTeacher = async (req, res) => {
       });
     }
 
-    await assertTeacherEditableInActiveSchoolYear(id, teacher);
+    await assertTeacherEditableInActiveSchoolYear(targetId, teacher);
     
     // Check if it's a teacher role
     if (!['adviser', 'teacher', 'subject_teacher'].includes(teacher.role)) {
@@ -1063,34 +1092,79 @@ const archiveTeacher = async (req, res) => {
           message: 'Failed to archive teacher in file storage'
         });
       }
-    } else {
-      // Update database
+    } else if (source === 'teachers_table') {
+      // Update teachers table and sync users status if linked.
       try {
         await query(
           'UPDATE teachers SET verification_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-          ['archived', id]
+          ['archived', targetId]
         );
 
         try {
           await query(
             'UPDATE users SET status = ?, updatedAt = NOW() WHERE id = ?',
-            ['inactive', id]
+            ['inactive', targetId]
           );
         } catch (usersUpdateErr) {
-          console.log('archiveTeacher users status update skipped:', usersUpdateErr.message);
+          try {
+            await query(
+              'UPDATE users SET status = ?, updated_at = NOW() WHERE id = ?',
+              ['inactive', targetId]
+            );
+          } catch (usersUpdateErr2) {
+            console.log('archiveTeacher users status update skipped:', usersUpdateErr2.message);
+          }
         }
 
         console.log(`Teacher ${teacher.firstName} ${teacher.lastName} archived successfully in database`);
         res.json({
           success: true,
           message: 'Teacher archived successfully',
-          source: 'database'
+          source: 'teachers_table'
         });
       } catch (dbError) {
         console.error('Database error while archiving teacher:', dbError);
         res.status(500).json({
           success: false,
           message: 'Failed to archive teacher in database'
+        });
+      }
+    } else {
+      // users_table source
+      try {
+        try {
+          await query(
+            'UPDATE users SET status = ?, updatedAt = NOW() WHERE id = ?',
+            ['inactive', targetId]
+          );
+        } catch {
+          await query(
+            'UPDATE users SET status = ?, updated_at = NOW() WHERE id = ?',
+            ['inactive', targetId]
+          );
+        }
+
+        // Best-effort sync for mirrored teachers row.
+        try {
+          await query(
+            'UPDATE teachers SET verification_status = ?, updated_at = CURRENT_TIMESTAMP WHERE CAST(id AS CHAR) = ? OR LOWER(email) = LOWER(?)',
+            ['archived', targetId, teacher.email || '']
+          );
+        } catch (teachersSyncErr) {
+          console.log('archiveTeacher teachers sync skipped:', teachersSyncErr.message);
+        }
+
+        console.log(`Teacher ${teacher.firstName} ${teacher.lastName} archived successfully in users table`);
+        res.json({
+          success: true,
+          message: 'Teacher archived successfully',
+          source: 'users_table'
+        });
+      } catch (usersDbError) {
+        console.error('Users table error while archiving teacher:', usersDbError);
+        res.status(500).json({
+          success: false,
+          message: 'Failed to archive teacher in users table'
         });
       }
     }
