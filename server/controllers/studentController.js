@@ -1477,15 +1477,46 @@ exports.getStudent = async (req, res) => {
     }
     
     // ======== FETCH ATTENDANCE ========
-    // Mobile app uses LRN as studentId, so we search by both LRN and student ID
-    const attendanceRaw = await query(
-      `SELECT date, status, time, period 
-       FROM attendance 
-       WHERE studentId = ? OR studentId = ?
-       ORDER BY date DESC 
-       LIMIT 100`,
-      [studentLRN, studentId]
-    );
+    // Attendance may store either current student ID, LRN, or sibling-row IDs.
+    const attendanceCandidateIds = Array.from(new Set([
+      studentLRN,
+      studentId,
+      ...siblingStudentRows.map((row) => row?.id)
+    ]
+      .filter(Boolean)
+      .map((value) => String(value).trim())
+      .filter(Boolean)));
+
+    let attendanceRaw = [];
+    if (attendanceCandidateIds.length > 0) {
+      const idPlaceholders = attendanceCandidateIds.map(() => '?').join(',');
+
+      try {
+        attendanceRaw = await query(
+          `SELECT date, status, time, period
+           FROM attendance
+           WHERE school_year_id = ?
+             AND TRIM(CAST(studentId AS CHAR)) IN (${idPlaceholders})
+           ORDER BY date DESC
+           LIMIT 100`,
+          [portalSyId, ...attendanceCandidateIds]
+        );
+      } catch (attendanceScopeErr) {
+        console.log('attendance school-year scoped query fallback:', attendanceScopeErr.message);
+      }
+
+      // Legacy rows may be missing school_year_id; fallback to ID-only scope when needed.
+      if (!Array.isArray(attendanceRaw) || attendanceRaw.length === 0) {
+        attendanceRaw = await query(
+          `SELECT date, status, time, period
+           FROM attendance
+           WHERE TRIM(CAST(studentId AS CHAR)) IN (${idPlaceholders})
+           ORDER BY date DESC
+           LIMIT 100`,
+          attendanceCandidateIds
+        );
+      }
+    }
     
     // Group attendance by month for report card format
     const months = ['Aug', 'Sept', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];

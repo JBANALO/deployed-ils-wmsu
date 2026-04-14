@@ -244,12 +244,6 @@ export default function ReportsPage() {
 
   useEffect(() => {
     fetchActiveSchoolYear();
-
-    const interval = setInterval(() => {
-      fetchActiveSchoolYear();
-    }, 15000);
-
-    return () => clearInterval(interval);
   }, [selectedSchoolYearId]);
 
   useEffect(() => {
@@ -344,6 +338,26 @@ export default function ReportsPage() {
 
       // Filter students to only those in assigned classes
       const normalize = str => (str || '').toString().trim().toLowerCase();
+      const normalizeName = (str) => normalize((str || '').toString().replace(/\s+/g, ' '));
+      const buildStudentIdentityKeys = (student) => {
+        const keys = new Set(
+          [student.id, student.lrn, student.studentId]
+            .filter(Boolean)
+            .map(v => String(v).trim())
+        );
+
+        const fullName =
+          student.fullName ||
+          `${student.firstName || ''} ${student.middleName || ''} ${student.lastName || ''}`.trim();
+        const shortName = `${student.firstName || ''} ${student.lastName || ''}`.trim();
+
+        [fullName, shortName]
+          .map(normalizeName)
+          .filter(Boolean)
+          .forEach(nameKey => keys.add(`name:${nameKey}`));
+
+        return keys;
+      };
       studentsData = studentsData.filter(student => {
         return uniqueClasses.some(c => 
           normalize(c.grade) === normalize(student.gradeLevel) && 
@@ -469,13 +483,24 @@ export default function ReportsPage() {
       // Group by student for monthly summary
       const studentMonthlyData = {};
       studentsData.forEach(student => {
-        const candidateIds = new Set(
-          [student.id, student.lrn, student.studentId]
-            .filter(Boolean)
-            .map(v => String(v))
-        );
+        const candidateKeys = buildStudentIdentityKeys(student);
+        const studentGrade = normalize(student.gradeLevel);
+        const studentSection = normalize(student.section);
         const studentRecords = subjectScopedAttendance.filter(r => 
-          candidateIds.has(String(r.studentId))
+          (() => {
+            const recordStudentId = String(r.studentId || '').trim();
+            const recordName = normalizeName(r.studentName || '');
+            const idMatch = recordStudentId && candidateKeys.has(recordStudentId);
+            const nameMatch = recordName && candidateKeys.has(`name:${recordName}`);
+
+            if (!idMatch && !nameMatch) return false;
+
+            // Keep fallback matching safe inside the same class section.
+            if (studentGrade && normalize(r.gradeLevel) !== studentGrade) return false;
+            if (studentSection && normalize(r.section) !== studentSection) return false;
+
+            return true;
+          })()
         );
         
         const presentDays = studentRecords.filter(r => r.status?.toLowerCase() === 'present').length;
