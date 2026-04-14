@@ -84,22 +84,30 @@ export const parseCSVFile = (file) => {
           return;
         }
 
-        const headerMapping = {
-          'LRN': 'lrn',
-          'Lrn': 'lrn',
-          'lrn': 'lrn',
-          'First Name': 'firstName',
-          'Middle Name': 'middleName',
-          'Last Name': 'lastName',
-          'Username': 'username',
-          'Email': 'email',
-          'Password': 'password',
-          'Role': 'role',
-          'Subjects': 'subjects',
-          'Grade Level': 'gradeLevel',
-          'Section': 'section',
-          'Created At': 'createdAt',
-          'Updated At': 'updatedAt'
+        const normalizeHeaderKey = (header = '') => (
+          cleanCSVValue(header)
+            .replace(/^\uFEFF/, '')
+            .toLowerCase()
+            .replace(/[\s_-]+/g, '')
+            .trim()
+        );
+
+        const headerAliasMapping = {
+          lrn: 'lrn',
+          firstname: 'firstName',
+          middlename: 'middleName',
+          lastname: 'lastName',
+          username: 'username',
+          email: 'email',
+          password: 'password',
+          role: 'role',
+          subjects: 'subjects',
+          sex: 'sex',
+          gradelevel: 'gradeLevel',
+          gradeleve: 'gradeLevel',
+          section: 'section',
+          createdat: 'createdAt',
+          updatedat: 'updatedAt'
         };
 
         const data = [];
@@ -126,7 +134,7 @@ export const parseCSVFile = (file) => {
           const row = {};
 
           headers.forEach((header, index) => {
-            const fieldName = headerMapping[header] || header;
+            const fieldName = headerAliasMapping[normalizeHeaderKey(header)] || cleanCSVValue(header);
             row[fieldName] = values[index] || '';
           });
 
