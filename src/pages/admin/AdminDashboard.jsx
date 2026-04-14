@@ -496,15 +496,16 @@ const loadDashboardStats = async (overrideSyId, options = {}) => {
 
     const quarterSubmittedCount = quarterEligibleStudents.filter((student) => {
       const completionStatus = String(student?.[quarterMeta.status] || '').toLowerCase();
+      const gradedCount = Number(student?.[quarterMeta.graded] || 0);
       const quarterAverage = Number(student?.[quarterMeta.avg] || 0);
-      return completionStatus === 'complete' || quarterAverage > 0;
+      return completionStatus === 'complete' || completionStatus === 'in_progress' || gradedCount > 0 || quarterAverage > 0;
     }).length;
 
     const quarterNoGradesCount = quarterEligibleStudents.filter((student) => {
       const completionStatus = String(student?.[quarterMeta.status] || '').toLowerCase();
       const gradedCount = Number(student?.[quarterMeta.graded] || 0);
       const quarterAverage = Number(student?.[quarterMeta.avg] || 0);
-      return completionStatus === 'incomplete' && gradedCount <= 0 && quarterAverage <= 0;
+      return completionStatus !== 'complete' && completionStatus !== 'in_progress' && gradedCount <= 0 && quarterAverage <= 0;
     }).length;
 
     const weekAgo = new Date();
