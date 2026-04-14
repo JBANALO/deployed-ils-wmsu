@@ -54,16 +54,16 @@ router.post('/forgot-password', async (req, res) => {
         userSource = 'database';
         console.log('Found user in users table:', email, 'Role:', users[0].role);
       } else {
-        // Check teachers table (for teachers)
+        // Check teachers table (for teachers) - use correct field names
         const [teachers] = await query(
-          'SELECT id, teacher_id as teacherId, first_name as firstName, last_name as lastName, email, "teacher" as role FROM teachers WHERE email = ?',
+          'SELECT id, username, first_name as firstName, last_name as lastName, email, role FROM teachers WHERE email = ?',
           [email]
         );
         
         if (teachers && teachers.length > 0) {
           user = teachers[0];
           userSource = 'database';
-          console.log('Found teacher in teachers table:', email);
+          console.log('Found teacher in teachers table:', email, 'Role:', teachers[0].role);
         } else {
           // Check students table as fallback (if you still use it)
           const [students] = await query(

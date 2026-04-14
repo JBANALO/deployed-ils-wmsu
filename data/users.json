@@ -2295,5 +2295,17 @@
     "status": "approved",
     "archived": false,
     "createdAt": "2026-03-10T13:34:28.834Z"
+  },
+  {
+    "id": "hz202300368",
+    "firstName": "User",
+    "lastName": "Account",
+    "username": "hz202300368",
+    "role": "admin",
+    "email": "hz202300368@wmsu.edu.ph",
+    "password": "WMSU123456",
+    "status": "approved",
+    "createdAt": "2026-04-14T00:00:00.000Z",
+    "updatedAt": "2026-04-14T00:00:00.000Z"
   }
 ]
