@@ -367,6 +367,16 @@ export default function AdminClasses() {
 
   };
 
+  const getClassStudentCount = (cls) => {
+    const directCount = Number(cls?.students);
+    if (Number.isFinite(directCount)) return directCount;
+
+    if (Array.isArray(cls?.studentList)) return cls.studentList.length;
+
+    const listLength = Number(cls?.studentList?.length);
+    return Number.isFinite(listLength) ? listLength : 0;
+  };
+
 
 
   const sortedClasses = [...classesData].sort(compareClassRows);
@@ -476,7 +486,7 @@ export default function AdminClasses() {
 
 
 
-  const totalStudents = classesData.reduce((sum, cls) => sum + cls.students, 0);
+  const totalStudents = classesData.reduce((sum, cls) => sum + getClassStudentCount(cls), 0);
 
   const uniqueGrades = [...new Set(classesData.map(cls => cls.grade))].sort((a, b) => {
     const orderA = getGradeSortOrder(a);
@@ -694,7 +704,7 @@ export default function AdminClasses() {
 
                         <UserGroupIcon className="w-5 h-5 text-gray-600" />
 
-                        Students Enrolled: <span className="font-semibold">{cls.students || cls.studentList?.length || 0}</span>
+                        Students Enrolled: <span className="font-semibold">{getClassStudentCount(cls)}</span>
 
                       </p>
 
