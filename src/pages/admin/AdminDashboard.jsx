@@ -257,10 +257,18 @@ export default function AdminDashboard() {
       const response = await axios.get('/students/ranking', { params });
       
       const topStudentsData = response.data?.data || [];
-      const formattedTopStudents = topStudentsData.map((student, index) => ({
+      const formattedTopStudents = topStudentsData
+        .map((student) => ({
+          id: student.id,
+          name: `${student.lastName}, ${student.firstName}`,
+          avg: Number(student.average || student.avg || 0)
+        }))
+        .filter((student) => student.avg >= 90)
+        .slice(0, 5)
+        .map((student, index) => ({
         id: student.id,
-        name: `${student.lastName}, ${student.firstName}`,
-        avg: student.average || student.avg || 0,
+        name: student.name,
+        avg: student.avg,
         rank: index + 1
       }));
       
@@ -434,7 +442,7 @@ const loadDashboardStats = async (overrideSyId) => {
     });
 
     const topPerformers = [...performanceEligibleStudents]
-      .filter((student) => getStudentAverage(student) >= 95)
+      .filter((student) => getStudentAverage(student) >= 90)
       .sort((a, b) => getStudentAverage(b) - getStudentAverage(a))
       .slice(0, 5)
       .map((student) => ({
@@ -775,7 +783,7 @@ const loadDashboardStats = async (overrideSyId) => {
       yPosition += 12;
 
       const approvalData = [
-        { label: 'Top 5 Performers (>=95)', value: performanceBands.topPerformers.length.toString() },
+        { label: 'Top 5 Performers (>=90)', value: performanceBands.topPerformers.length.toString() },
         { label: 'Lowest Performers (<=75)', value: performanceBands.lowestPerformers.length.toString() }
       ];
 
@@ -824,7 +832,7 @@ const loadDashboardStats = async (overrideSyId) => {
         ['Active Teachers', performanceMetrics.activeTeachers],
         ['Active Students', performanceMetrics.activeStudents],
         ['Response Time', `${performanceMetrics.responseTime}s`],
-        ['Top 5 Performers (>=95)', performanceBands.topPerformers.length],
+        ['Top 5 Performers (>=90)', performanceBands.topPerformers.length],
         ['Lowest Performers (<=75)', performanceBands.lowestPerformers.length]
       ].map(row => row.join(',')).join('\n');
 
@@ -949,7 +957,7 @@ const loadDashboardStats = async (overrideSyId) => {
                   {/* Top Performing Students */}
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-3">
-                      <h4 className="font-medium text-green-800">Top Performing Students</h4>
+                      <h4 className="font-medium text-green-800">Top Performing Students (90+)</h4>
                       <div className="flex items-center gap-2">
                         <select
                           value={selectedGradeLevelForTop}
