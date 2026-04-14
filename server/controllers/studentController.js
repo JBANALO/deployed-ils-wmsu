@@ -1507,7 +1507,7 @@ exports.getStudent = async (req, res) => {
 
       try {
         attendanceRaw = await query(
-          `SELECT date, status, time, period
+          `SELECT studentId, studentName, gradeLevel, section, school_year_id, date, status, time, period
            FROM attendance
            WHERE school_year_id = ?
              AND TRIM(CAST(studentId AS CHAR)) IN (${idPlaceholders})
@@ -1522,7 +1522,7 @@ exports.getStudent = async (req, res) => {
       // Legacy rows may be missing school_year_id; fallback to ID-only scope when needed.
       if (!Array.isArray(attendanceRaw) || attendanceRaw.length === 0) {
         attendanceRaw = await query(
-          `SELECT date, status, time, period
+          `SELECT studentId, studentName, gradeLevel, section, school_year_id, date, status, time, period
            FROM attendance
            WHERE TRIM(CAST(studentId AS CHAR)) IN (${idPlaceholders})
            ORDER BY date DESC
