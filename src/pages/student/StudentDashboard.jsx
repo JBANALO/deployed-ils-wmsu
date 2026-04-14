@@ -128,6 +128,11 @@ const StudentPortal = () => {
     };
 
     fetchPortalData();
+    const interval = setInterval(() => {
+      fetchPortalData(true);
+    }, 15000);
+
+    return () => clearInterval(interval);
   }, [studentId, currentSchoolYearId]);
 
   // ← SHOW THIS WHILE LOADING

@@ -131,6 +131,16 @@ export default function QRCodePortal() {
     loadAttendanceForDate(selectedDate);
   }, [selectedDate, selectedSchoolYearId]);
 
+  useEffect(() => {
+    if (!selectedSchoolYearId) return;
+
+    const interval = setInterval(() => {
+      loadAttendanceForDate(selectedDate);
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [selectedDate, selectedSchoolYearId]);
+
   // Load attendance records for a specific date
   const loadAttendanceForDate = async (date) => {
     try {

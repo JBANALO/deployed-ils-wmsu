@@ -45,6 +45,17 @@ export default function TeacherDashboard() {
     }
   }, [selectedSchoolYearId]);
 
+  useEffect(() => {
+    if (!selectedSchoolYearId) return;
+
+    const interval = setInterval(() => {
+      loadDashboardData(selectedSchoolYearId);
+      fetchActiveSchoolYear();
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [selectedSchoolYearId]);
+
   const fetchSchoolYears = async () => {
     try {
       const res = await axios.get('/school-years');
