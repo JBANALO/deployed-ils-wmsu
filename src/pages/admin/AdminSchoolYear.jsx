@@ -689,7 +689,7 @@ export default function AdminSchoolYear() {
             {schoolYears.length === 0 ? (
               <p className="text-gray-500 text-center py-4">No school years found</p>
             ) : (
-              schoolYears.map((sy, idx) => {
+              schoolYears.map((sy) => {
                 const isActive = sy.is_active === 1;
                 const isViewing = viewingSchoolYear && viewingSchoolYear.id === sy.id;
                 const canActivate = !isActive;
@@ -1044,105 +1044,121 @@ export default function AdminSchoolYear() {
 
       {/* Add School Year Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Add School Year</h3>
-              <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 sm:p-6">
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl border border-gray-100 overflow-hidden">
+            <div className="flex items-start justify-between px-5 sm:px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-red-50 to-white">
+              <div>
+                <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Add School Year</h3>
+                <p className="text-xs sm:text-sm text-gray-600 mt-1">Create a new academic year and set key quarter deadlines.</p>
+              </div>
+              <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
                 <XMarkIcon className="w-6 h-6" />
               </button>
             </div>
-            <form onSubmit={handleAddSchoolYear} className="space-y-4">
+            <form onSubmit={handleAddSchoolYear} className="max-h-[80vh] overflow-y-auto px-5 sm:px-6 py-5 space-y-5">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Label (e.g., 2025-2026)</label>
+                <label className="block text-sm font-medium text-gray-800 mb-1">School Year Label</label>
+                <p className="text-xs text-gray-500 mb-2">Format example: 2025-2026</p>
                 <input
                   type="text"
                   value={formData.label}
                   onChange={(e) => setFormData({ ...formData, label: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
                   placeholder="2025-2026"
                   required
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                <input
-                  type="date"
-                  value={formData.start_date}
-                  onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                <input
-                  type="date"
-                  value={formData.end_date}
-                  onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Q1 End Date</label>
+                  <label className="block text-sm font-medium text-gray-800 mb-1">Start Date</label>
                   <input
                     type="date"
-                    value={formData.q1_end_date}
-                    onChange={(e) => setFormData({ ...formData, q1_end_date: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    value={formData.start_date}
+                    onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Q2 End Date</label>
+                  <label className="block text-sm font-medium text-gray-800 mb-1">End Date</label>
                   <input
                     type="date"
-                    value={formData.q2_end_date}
-                    onChange={(e) => setFormData({ ...formData, q2_end_date: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    value={formData.end_date}
+                    onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-red-100 bg-red-50/40 p-3 sm:p-4">
+                <h4 className="text-sm font-semibold text-red-900 mb-3">Quarter End Dates</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-red-900/90 mb-1">Q1 End Date</label>
+                    <input
+                      type="date"
+                      value={formData.q1_end_date}
+                      onChange={(e) => setFormData({ ...formData, q1_end_date: e.target.value })}
+                      className="w-full px-3 py-2.5 border border-red-200 bg-white rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-red-900/90 mb-1">Q2 End Date</label>
+                    <input
+                      type="date"
+                      value={formData.q2_end_date}
+                      onChange={(e) => setFormData({ ...formData, q2_end_date: e.target.value })}
+                      className="w-full px-3 py-2.5 border border-red-200 bg-white rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-red-900/90 mb-1">Q3 End Date</label>
+                    <input
+                      type="date"
+                      value={formData.q3_end_date}
+                      onChange={(e) => setFormData({ ...formData, q3_end_date: e.target.value })}
+                      className="w-full px-3 py-2.5 border border-red-200 bg-white rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-red-900/90 mb-1">Q4 End Date</label>
+                    <input
+                      type="date"
+                      value={formData.q4_end_date}
+                      onChange={(e) => setFormData({ ...formData, q4_end_date: e.target.value })}
+                      className="w-full px-3 py-2.5 border border-red-200 bg-white rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4 space-y-3">
+                <h4 className="text-sm font-semibold text-gray-900">Leadership</h4>
+                <div>
+                  <label className="block text-sm font-medium text-gray-800 mb-1">Principal Name</label>
+                  <input
+                    type="text"
+                    value={formData.principal_name}
+                    onChange={(e) => setFormData({ ...formData, principal_name: e.target.value })}
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    placeholder="e.g., MA. NORA D. LAI, Ed.D, JD"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Q3 End Date</label>
+                  <label className="block text-sm font-medium text-gray-800 mb-1">Assistant Principal Name</label>
                   <input
-                    type="date"
-                    value={formData.q3_end_date}
-                    onChange={(e) => setFormData({ ...formData, q3_end_date: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Q4 End Date</label>
-                  <input
-                    type="date"
-                    value={formData.q4_end_date}
-                    onChange={(e) => setFormData({ ...formData, q4_end_date: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    type="text"
+                    value={formData.assistant_principal_name}
+                    onChange={(e) => setFormData({ ...formData, assistant_principal_name: e.target.value })}
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    placeholder="e.g., Assistant Principal"
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Principal Name</label>
-                <input
-                  type="text"
-                  value={formData.principal_name}
-                  onChange={(e) => setFormData({ ...formData, principal_name: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  placeholder="e.g., MA. NORA D. LAI, Ed.D, JD"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Assistant Principal Name</label>
-                <input
-                  type="text"
-                  value={formData.assistant_principal_name}
-                  onChange={(e) => setFormData({ ...formData, assistant_principal_name: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  placeholder="e.g., Assistant Principal"
-                />
-              </div>
-              <div className="flex items-center gap-2">
+
+              <div className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2.5 bg-white">
                 <input
                   type="checkbox"
                   id="is_active"
@@ -1150,20 +1166,21 @@ export default function AdminSchoolYear() {
                   onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                   className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
                 />
-                <label htmlFor="is_active" className="text-sm text-gray-700">Set as active school year</label>
+                <label htmlFor="is_active" className="text-sm text-gray-700">Set as active school year immediately</label>
               </div>
-              <div className="flex gap-3 pt-2">
+
+              <div className="flex flex-col sm:flex-row gap-3 pt-1">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                  className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 px-4 py-2 bg-red-800 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+                  className="flex-1 px-4 py-2.5 bg-red-800 text-white font-semibold rounded-lg hover:bg-red-700 shadow-sm transition disabled:opacity-50"
                 >
                   {isSubmitting ? 'Creating...' : 'Create'}
                 </button>
