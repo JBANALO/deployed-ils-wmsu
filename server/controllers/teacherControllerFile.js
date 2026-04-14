@@ -327,6 +327,18 @@ const resolveTeacherArchiveStatusValue = (columnDef = null) => {
   return matched || enumValues[0];
 };
 
+const normalizeAccountStatus = (value = '') => String(value || '').trim().toLowerCase();
+
+const isTruthyArchiveFlag = (value) => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return value === true || value === 1 || normalized === '1' || normalized === 'true' || normalized === 'yes';
+};
+
+const isBlockedAccountStatus = (statusValue = '') => {
+  const normalized = normalizeAccountStatus(statusValue);
+  return ['inactive', 'archived', 'declined', 'rejected'].includes(normalized);
+};
+
 const toTimeValue = (value) => {
   const date = value ? new Date(value) : null;
   if (!date || Number.isNaN(date.getTime())) return 0;
@@ -496,10 +508,58 @@ const getAllTeachers = async (req, res) => {
 
       const resolveClassInfo = (classId) => classByIdOrSlug.get(normalizeClassId(classId)) || null;
 
+      const usersStatusById = new Map();
+      const usersStatusByEmail = new Map();
+      try {
+        const userCols = await query('SHOW COLUMNS FROM users');
+        const userFieldSet = new Set(userCols.map((col) => String(col.Field || '').trim()));
+        const hasRole = userFieldSet.has('role');
+        const hasEmail = userFieldSet.has('email');
+        const statusCol = userFieldSet.has('status')
+          ? 'status'
+          : (userFieldSet.has('verification_status') ? 'verification_status' : (userFieldSet.has('approval_status') ? 'approval_status' : null));
+        const archivedCol = userFieldSet.has('archived')
+          ? 'archived'
+          : (userFieldSet.has('is_archived') ? 'is_archived' : null);
+
+        const selectParts = [
+          'id',
+          hasEmail ? 'email' : 'NULL AS email',
+          hasRole ? 'role' : 'NULL AS role',
+          statusCol ? `${statusCol} AS account_status` : 'NULL AS account_status',
+          archivedCol ? `${archivedCol} AS account_archived` : 'NULL AS account_archived'
+        ];
+
+        const whereClause = hasRole
+          ? `WHERE role IN ('teacher', 'adviser', 'subject_teacher')`
+          : '';
+
+        const userStatusRows = await query(
+          `SELECT ${selectParts.join(', ')} FROM users ${whereClause}`
+        );
+
+        userStatusRows.forEach((row) => {
+          const idKey = String(row?.id || '').trim();
+          const emailKey = String(row?.email || '').trim().toLowerCase();
+          if (idKey) usersStatusById.set(idKey, row);
+          if (emailKey) usersStatusByEmail.set(emailKey, row);
+        });
+      } catch (userStatusErr) {
+        console.log('getAllTeachers users status lookup skipped:', userStatusErr.message);
+      }
+
       const dbFormatted = dbTeachers
         .filter((teacher) => {
+          const teacherIdKey = String(teacher?.id || '').trim();
+          const teacherEmailKey = String(teacher?.email || '').trim().toLowerCase();
+          const linkedAccount = usersStatusById.get(teacherIdKey) || usersStatusByEmail.get(teacherEmailKey);
+          const linkedStatus = normalizeAccountStatus(linkedAccount?.account_status);
+          const linkedArchived = isTruthyArchiveFlag(linkedAccount?.account_archived);
+
           const verificationStatus = String(teacher?.verification_status || 'approved').trim().toLowerCase();
-          const isVisible = !['archived', 'inactive', 'declined', 'rejected'].includes(verificationStatus);
+          const isVisible = !['archived', 'inactive', 'declined', 'rejected'].includes(verificationStatus)
+            && !linkedArchived
+            && !isBlockedAccountStatus(linkedStatus);
           return belongsToSchoolYear(teacher, targetSy, isExplicitSchoolYearScope) && isVisible;
         })
         .map((teacher) => {
@@ -517,6 +577,12 @@ const getAllTeachers = async (req, res) => {
         const subjectMatches = subjectTeachers.filter((item) =>
           String(item.teacher_id) === String(teacher.id) || normalizeName(item.teacher_name) === normalizedFullName
         );
+
+        const teacherIdKey = String(teacher?.id || '').trim();
+        const teacherEmailKey = String(teacher?.email || '').trim().toLowerCase();
+        const linkedAccount = usersStatusById.get(teacherIdKey) || usersStatusByEmail.get(teacherEmailKey);
+        const linkedStatus = normalizeAccountStatus(linkedAccount?.account_status);
+        const linkedArchived = isTruthyArchiveFlag(linkedAccount?.account_archived);
 
         const subjectClassInfos = subjectMatches
           .map((item) => resolveClassInfo(item.class_id))
@@ -559,7 +625,9 @@ const getAllTeachers = async (req, res) => {
           profilePic: teacher.profile_pic || '',
           sex: teacher.sex || '',
           contactNumber: teacher.contact_number || '',
-          status: teacher.verification_status || 'approved',
+          status: linkedArchived || isBlockedAccountStatus(linkedStatus)
+            ? 'inactive'
+            : (teacher.verification_status || linkedAccount?.account_status || 'approved'),
           createdAt: teacher.created_at,
           school_year_id: teacher.school_year_id || null
         };
@@ -871,7 +939,7 @@ const getArchivedTeachers = async (req, res) => {
                 grade_level, section, subjects, bio, profile_pic, verification_status,
                 sex, contact_number, created_at, updated_at, school_year_id
          FROM teachers
-         WHERE LOWER(COALESCE(verification_status, '')) IN ('archived', 'inactive')
+        WHERE LOWER(COALESCE(verification_status, '')) IN ('archived', 'inactive', 'declined', 'rejected')
          ORDER BY updated_at DESC`
       );
 
@@ -901,8 +969,104 @@ const getArchivedTeachers = async (req, res) => {
       console.log('getArchivedTeachers DB query skipped:', dbArchiveError.message);
     }
 
+    let usersArchivedTeachers = [];
+    try {
+      const userCols = await query('SHOW COLUMNS FROM users');
+      const userFieldSet = new Set(userCols.map((col) => String(col.Field || '').trim()));
+      const hasRole = userFieldSet.has('role');
+      const hasEmail = userFieldSet.has('email');
+
+      const firstNameExpr = userFieldSet.has('firstName')
+        ? 'firstName'
+        : (userFieldSet.has('first_name') ? 'first_name' : "''");
+      const middleNameExpr = userFieldSet.has('middleName')
+        ? 'middleName'
+        : (userFieldSet.has('middle_name') ? 'middle_name' : "''");
+      const lastNameExpr = userFieldSet.has('lastName')
+        ? 'lastName'
+        : (userFieldSet.has('last_name') ? 'last_name' : "''");
+      const usernameExpr = userFieldSet.has('username') ? 'username' : "''";
+      const roleExpr = hasRole ? 'role' : "'teacher'";
+      const gradeExpr = userFieldSet.has('gradeLevel')
+        ? 'gradeLevel'
+        : (userFieldSet.has('grade_level') ? 'grade_level' : "''");
+      const sectionExpr = userFieldSet.has('section') ? 'section' : "''";
+      const subjectsExpr = userFieldSet.has('subjects') ? 'subjects' : "''";
+      const bioExpr = userFieldSet.has('bio') ? 'bio' : "''";
+      const profileExpr = userFieldSet.has('profile_pic')
+        ? 'profile_pic'
+        : (userFieldSet.has('profilePic') ? 'profilePic' : "''");
+      const sexExpr = userFieldSet.has('sex') ? 'sex' : "''";
+      const contactExpr = userFieldSet.has('contactNumber')
+        ? 'contactNumber'
+        : (userFieldSet.has('contact_number') ? 'contact_number' : "''");
+      const statusExpr = userFieldSet.has('status')
+        ? 'status'
+        : (userFieldSet.has('verification_status') ? 'verification_status' : (userFieldSet.has('approval_status') ? 'approval_status' : 'NULL'));
+      const archivedExpr = userFieldSet.has('archived')
+        ? 'archived'
+        : (userFieldSet.has('is_archived') ? 'is_archived' : 'NULL');
+      const createdExpr = userFieldSet.has('createdAt')
+        ? 'createdAt'
+        : (userFieldSet.has('created_at') ? 'created_at' : 'NULL');
+      const updatedExpr = userFieldSet.has('updatedAt')
+        ? 'updatedAt'
+        : (userFieldSet.has('updated_at') ? 'updated_at' : 'NULL');
+
+      const whereParts = [];
+      if (hasRole) whereParts.push(`role IN ('teacher', 'adviser', 'subject_teacher')`);
+      whereParts.push(`LOWER(COALESCE(${statusExpr}, '')) IN ('inactive', 'archived', 'declined', 'rejected') OR COALESCE(${archivedExpr}, 0) = 1`);
+
+      const userRows = await query(
+        `SELECT id,
+                ${firstNameExpr} AS firstName,
+                ${middleNameExpr} AS middleName,
+                ${lastNameExpr} AS lastName,
+                ${usernameExpr} AS username,
+                ${hasEmail ? 'email' : "''"} AS email,
+                ${roleExpr} AS role,
+                ${gradeExpr} AS gradeLevel,
+                ${sectionExpr} AS section,
+                ${subjectsExpr} AS subjects,
+                ${bioExpr} AS bio,
+                ${profileExpr} AS profilePic,
+                ${sexExpr} AS sex,
+                ${contactExpr} AS contactNumber,
+                ${statusExpr} AS account_status,
+                ${archivedExpr} AS account_archived,
+                ${createdExpr} AS createdAt,
+                ${updatedExpr} AS updatedAt
+         FROM users
+         WHERE ${whereParts.join(' AND ')}`
+      );
+
+      usersArchivedTeachers = userRows.map((row) => ({
+        id: row.id,
+        firstName: row.firstName || '',
+        middleName: row.middleName || '',
+        lastName: row.lastName || '',
+        fullName: `${row.firstName || ''} ${row.lastName || ''}`.trim(),
+        username: row.username || '',
+        email: row.email || '',
+        role: row.role || 'teacher',
+        gradeLevel: row.gradeLevel || '',
+        section: row.section || '',
+        subjectsHandled: parseSubjects(row.subjects),
+        subjects: parseSubjects(row.subjects),
+        bio: row.bio || '',
+        profilePic: row.profilePic || '',
+        sex: row.sex || '',
+        contactNumber: row.contactNumber || '',
+        status: normalizeAccountStatus(row.account_status) || 'inactive',
+        archivedAt: row.updatedAt || row.createdAt || null,
+        createdAt: row.createdAt || null
+      }));
+    } catch (usersArchiveErr) {
+      console.log('getArchivedTeachers users query skipped:', usersArchiveErr.message);
+    }
+
     const byId = new Map();
-    [...dbArchivedTeachers, ...fileArchivedTeachers].forEach((teacher) => {
+    [...dbArchivedTeachers, ...usersArchivedTeachers, ...fileArchivedTeachers].forEach((teacher) => {
       const key = String(teacher?.id || '').trim() || `${String(teacher?.email || '').trim().toLowerCase()}::${String(teacher?.username || '').trim().toLowerCase()}`;
       if (!key) return;
       if (!byId.has(key)) {
