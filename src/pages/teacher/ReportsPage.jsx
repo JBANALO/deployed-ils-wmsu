@@ -73,6 +73,8 @@ export default function ReportsPage() {
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState(() => getTeacherViewingSchoolYearId());
   const [publishingRanking, setPublishingRanking] = useState(false);
   const [publishStatus, setPublishStatus] = useState(null);
+  const [individualPublishLimit, setIndividualPublishLimit] = useState('5');
+  const [fullListPublishLimit, setFullListPublishLimit] = useState('all');
   const lastKnownActiveSchoolYearIdRef = useRef(null);
 
   const isPassingGradeValue = (value) => {
@@ -165,6 +167,34 @@ export default function ReportsPage() {
   const isInactiveStudent = (student) => {
     const status = String(student?.status || '').trim().toLowerCase();
     return status === 'inactive';
+  };
+
+  const rankingPublishCountOptions = [
+    { value: '3', label: 'Top 3' },
+    { value: '5', label: 'Top 5' },
+    { value: '10', label: 'Top 10' },
+    { value: '15', label: 'Top 15' },
+    { value: '20', label: 'Top 20' },
+    { value: 'all', label: 'All Students' }
+  ];
+
+  const resolveRankingPublishLimit = (value) => {
+    if (String(value || '').toLowerCase() === 'all') {
+      return Number.POSITIVE_INFINITY;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : Number.POSITIVE_INFINITY;
+  };
+
+  const getPublishLimitValueByScope = (publishScope = 'individual') => (
+    publishScope === 'full_list' ? fullListPublishLimit : individualPublishLimit
+  );
+
+  const getPublishLimitLabelByScope = (publishScope = 'individual') => {
+    const selectedValue = String(getPublishLimitValueByScope(publishScope) || 'all');
+    const matchedOption = rankingPublishCountOptions.find((option) => option.value === selectedValue);
+    return matchedOption?.label || 'All Students';
   };
 
   const months = [
@@ -655,6 +685,13 @@ export default function ReportsPage() {
       ? [selectedSubjectForRanking]
       : allSubjects;
 
+    const applyPublishLimit = (rows) => {
+      const safeRows = Array.isArray(rows) ? rows : [];
+      const limit = resolveRankingPublishLimit(getPublishLimitValueByScope(publishScope));
+      if (!Number.isFinite(limit)) return safeRows;
+      return safeRows.slice(0, limit);
+    };
+
     const completeStudents = activeStudents.filter((student) =>
       isStudentRankingComplete(student, rankingQuarterForReadiness, readinessSubjects)
     );
@@ -694,6 +731,11 @@ export default function ReportsPage() {
         totalStudents: sorted.length
       }));
 
+      const limitedRankings = applyPublishLimit(rankings);
+      if (limitedRankings.length === 0) {
+        return { error: 'No overall averages available to publish.' };
+      }
+
       return {
         payload: {
           schoolYearId: selectedSchoolYearId,
@@ -703,7 +745,11 @@ export default function ReportsPage() {
           publishScope,
           quarter: rankingQuarterForReadiness === 'all' ? '' : rankingQuarterForReadiness,
           subject: '',
-          rankings
+          rankings: limitedRankings
+        },
+        meta: {
+          limitLabel: getPublishLimitLabelByScope(publishScope),
+          publishedCount: limitedRankings.length
         }
       };
     }
@@ -744,6 +790,11 @@ export default function ReportsPage() {
         totalStudents: sorted.length
       }));
 
+      const limitedRankings = applyPublishLimit(rankings);
+      if (limitedRankings.length === 0) {
+        return { error: `No grades found for ${selectedSubjectForRanking}.` };
+      }
+
       return {
         payload: {
           schoolYearId: selectedSchoolYearId,
@@ -753,7 +804,11 @@ export default function ReportsPage() {
           publishScope,
           quarter: selectedQuarterForView === 'all' ? '' : selectedQuarterForView,
           subject: selectedSubjectForRanking,
-          rankings
+          rankings: limitedRankings
+        },
+        meta: {
+          limitLabel: getPublishLimitLabelByScope(publishScope),
+          publishedCount: limitedRankings.length
         }
       };
     }
@@ -791,6 +846,11 @@ export default function ReportsPage() {
         totalStudents: sorted.length
       }));
 
+      const limitedRankings = applyPublishLimit(rankings);
+      if (limitedRankings.length === 0) {
+        return { error: `No quarter averages found for ${quarter.toUpperCase()}.` };
+      }
+
       return {
         payload: {
           schoolYearId: selectedSchoolYearId,
@@ -800,7 +860,11 @@ export default function ReportsPage() {
           publishScope,
           quarter,
           subject: '',
-          rankings
+          rankings: limitedRankings
+        },
+        meta: {
+          limitLabel: getPublishLimitLabelByScope(publishScope),
+          publishedCount: limitedRankings.length
         }
       };
     }
@@ -809,7 +873,7 @@ export default function ReportsPage() {
   };
 
   const publishRankingByScope = async (publishScope = 'individual') => {
-    const { payload, error } = buildRankingPublicationPayload(publishScope);
+    const { payload, error, meta } = buildRankingPublicationPayload(publishScope);
     if (error) {
       setPublishStatus({ type: 'error', message: error });
       return;
@@ -819,14 +883,12 @@ export default function ReportsPage() {
     setPublishStatus(null);
 
     try {
-      const response = await axios.post('/students/ranking-publications', payload);
+      await axios.post('/students/ranking-publications', payload);
       setPublishStatus({
         type: 'success',
-        message:
-          response?.data?.message ||
-          (publishScope === 'full_list'
-            ? 'Full class ranking list posted to student dashboard.'
-            : 'Individual ranking posted to student dashboard.')
+        message: publishScope === 'full_list'
+          ? `Full class ranking list (${meta?.limitLabel || 'All Students'}) posted to student dashboard.${meta?.publishedCount ? ` Published ${meta.publishedCount} row${meta.publishedCount === 1 ? '' : 's'}.` : ''}`
+          : `Individual ranking (${meta?.limitLabel || 'All Students'}) posted to student dashboard.${meta?.publishedCount ? ` Published ${meta.publishedCount} row${meta.publishedCount === 1 ? '' : 's'}.` : ''}`
       });
     } catch (err) {
       setPublishStatus({
@@ -1365,8 +1427,19 @@ export default function ReportsPage() {
               ))}
             </div>
 
-            <div className="mt-3 flex justify-end">
-              <div className="flex flex-wrap gap-2 justify-end">
+            <div className="mt-3 flex flex-wrap gap-2 justify-end">
+              <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-green-50 border border-green-200">
+                <span className="text-xs font-semibold uppercase tracking-wide text-green-700">Individual</span>
+                <select
+                  value={individualPublishLimit}
+                  onChange={(e) => setIndividualPublishLimit(e.target.value)}
+                  disabled={publishingRanking}
+                  className="px-3 py-2 rounded-lg border border-green-300 bg-white text-sm font-medium text-green-800 focus:outline-none focus:ring-2 focus:ring-green-200 disabled:opacity-60"
+                >
+                  {rankingPublishCountOptions.map((option) => (
+                    <option key={`individual-${option.value}`} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
                 <button
                   onClick={() => publishRankingByScope('individual')}
                   disabled={publishingRanking}
@@ -1374,6 +1447,20 @@ export default function ReportsPage() {
                 >
                   {publishingRanking ? 'Posting...' : 'Post Individual Ranking to Dashboard'}
                 </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 border border-blue-200">
+                <span className="text-xs font-semibold uppercase tracking-wide text-blue-700">Full List</span>
+                <select
+                  value={fullListPublishLimit}
+                  onChange={(e) => setFullListPublishLimit(e.target.value)}
+                  disabled={publishingRanking}
+                  className="px-3 py-2 rounded-lg border border-blue-300 bg-white text-sm font-medium text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-60"
+                >
+                  {rankingPublishCountOptions.map((option) => (
+                    <option key={`full-list-${option.value}`} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
                 <button
                   onClick={() => publishRankingByScope('full_list')}
                   disabled={publishingRanking}
