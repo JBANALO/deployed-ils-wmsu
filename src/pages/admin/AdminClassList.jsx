@@ -1,27 +1,38 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import { UsersIcon, MagnifyingGlassIcon, PrinterIcon } from "@heroicons/react/24/solid";
-import { API_BASE_URL } from "../../api/config";
+import axios from "../../api/axiosConfig";
 
 export default function AdminClassList() {
   const { id } = useParams();
-  const navigate = useNavigate();
+  const location = useLocation();
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [classInfo, setClassInfo] = useState({ grade: "", section: "" });
-  const [allClasses, setAllClasses] = useState([]);
+  const [classInfo, setClassInfo] = useState({ id: "", grade: "", section: "", adviserName: "" });
   const [searchQuery, setSearchQuery] = useState("");
-  const [teacher, setTeacher] = useState(null);
+
+  const searchParams = new URLSearchParams(location.search || '');
+  const selectedSchoolYearId = String(searchParams.get('schoolYearId') || '').trim();
+  const queryGrade = String(searchParams.get('grade') || '').trim();
+  const querySection = String(searchParams.get('section') || '').trim();
+
+  const normalizeText = (value) => String(value || '').trim().toLowerCase();
+  const matchesGradeSection = (row, grade, section) => (
+    normalizeText(row?.grade || row?.gradeLevel || row?.grade_level) === normalizeText(grade)
+      && normalizeText(row?.section) === normalizeText(section)
+  );
+
+  const filteredStudents = students.filter((student) => {
+    const fullName = String(student.fullName || `${student.firstName || ''} ${student.lastName || ''}`)
+      .trim()
+      .toLowerCase();
+    const lrn = String(student.lrn || '').toLowerCase();
+    const query = searchQuery.toLowerCase();
+    return fullName.includes(query) || lrn.includes(query);
+  });
 
   // Print class list function
   const handlePrintClassList = () => {
-    const filteredStudents = students.filter((student) => {
-      const fullName = (student.fullName || `${student.firstName} ${student.lastName}`).toLowerCase();
-      const lrn = (student.lrn || "").toLowerCase();
-      const query = searchQuery.toLowerCase();
-      return fullName.includes(query) || lrn.includes(query);
-    });
-
     const printContent = `
       <html>
         <head>
@@ -99,7 +110,7 @@ export default function AdminClassList() {
             <div class="school-name">WMSU ILS-Elementary Department</div>
             <div class="system-name">Automated Grades Portal and Students Attendance using QR Code</div>
             <div class="class-info">${classInfo.grade} - ${classInfo.section} Class List</div>
-            ${teacher ? `<div class="teacher-info">Adviser: ${teacher.firstName} ${teacher.lastName}</div>` : ''}
+            ${classInfo.adviserName ? `<div class="teacher-info">Adviser: ${classInfo.adviserName}</div>` : ''}
           </div>
           
           ${filteredStudents.length > 0 ? `
@@ -138,107 +149,86 @@ export default function AdminClassList() {
     printWindow.close();
   };
 
-  // Fetch all students and teachers
+  // Resolve class and fetch students in that class for the selected school year.
   useEffect(() => {
     const fetchClassData = async () => {
       try {
-        // Fetch students
-        const response = await fetch(`${API_BASE_URL}/students`);
-        if (response.ok) {
-          const result = await response.json();
-          const allStudents = result.data ? result.data : (Array.isArray(result) ? result : []);
-          
-          // Organize by grade and section
-          const gradeOrder = ['Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6'];
-          const sectionOrder = ['Wisdom', 'Kindness', 'Humility', 'Diligence'];
-          const grouped = {};
+        setLoading(true);
 
-          allStudents.forEach(student => {
-            const key = `${student.gradeLevel}-${student.section}`;
-            if (!grouped[key]) {
-              grouped[key] = {
-                grade: student.gradeLevel,
-                section: student.section,
-                studentList: []
-              };
-            }
-            grouped[key].studentList.push(student);
-          });
+        const requestParams = selectedSchoolYearId
+          ? { schoolYearId: selectedSchoolYearId }
+          : {};
 
-          const classes = Object.values(grouped)
-            .sort((a, b) => {
-              const gradeCompare = gradeOrder.indexOf(a.grade) - gradeOrder.indexOf(b.grade);
-              if (gradeCompare !== 0) return gradeCompare;
-              return sectionOrder.indexOf(a.section) - sectionOrder.indexOf(b.section);
-            });
+        const classResponse = await axios.get('/classes', { params: requestParams });
+        const classRows = Array.isArray(classResponse.data)
+          ? classResponse.data
+          : (Array.isArray(classResponse.data?.data) ? classResponse.data.data : []);
 
-          setAllClasses(classes);
-          
-          // Get the specific class by index
-          const classIndex = parseInt(id) || 0;
-          if (classIndex < classes.length) {
-            const selectedClass = classes[classIndex];
-            setClassInfo({ grade: selectedClass.grade, section: selectedClass.section });
-            setStudents(selectedClass.studentList || []);
+        const decodedClassRef = decodeURIComponent(String(id || '')).trim();
+        let selectedClass = classRows.find((row) => String(row?.id || '').trim() === decodedClassRef) || null;
+
+        // Backward compatibility for legacy links that still pass index.
+        if (!selectedClass && /^\d+$/.test(decodedClassRef)) {
+          const legacyIndex = Number(decodedClassRef);
+          if (legacyIndex >= 0 && legacyIndex < classRows.length) {
+            selectedClass = classRows[legacyIndex];
           }
         }
 
-        // Fetch teachers
-        const teachersResponse = await fetch(`${API_BASE_URL}/users`);
-        if (teachersResponse.ok) {
-          const data = await teachersResponse.json();
-          const allUsers = data.data?.users || data.users || [];
-          const teachersList = Array.isArray(allUsers) 
-            ? allUsers.filter(user => ['teacher', 'subject_teacher', 'adviser'].includes(user.role))
-            : [];
-          
-          // Find teacher for this class
-          const classIndex = parseInt(id) || 0;
-          if (classIndex < setAllClasses.length || setAllClasses.length > 0) {
-            // This will be set after classInfo is determined
-            const foundTeacher = teachersList.find(t => {
-              // Will be checked after classInfo state is updated
-              return true;
-            });
-          }
+        let resolvedGrade = queryGrade;
+        let resolvedSection = querySection;
+
+        if (!selectedClass && decodedClassRef.toLowerCase().startsWith('gs:')) {
+          const rawPair = decodedClassRef.slice(3);
+          const pairSplit = rawPair.split('::');
+          resolvedGrade = pairSplit[0] || resolvedGrade;
+          resolvedSection = pairSplit.slice(1).join('::') || resolvedSection;
         }
+
+        if (!selectedClass && resolvedGrade && resolvedSection) {
+          selectedClass = classRows.find((row) => matchesGradeSection(row, resolvedGrade, resolvedSection)) || null;
+        }
+
+        resolvedGrade = String(selectedClass?.grade || selectedClass?.gradeLevel || resolvedGrade || '').trim();
+        resolvedSection = String(selectedClass?.section || resolvedSection || '').trim();
+
+        setClassInfo({
+          id: String(selectedClass?.id || decodedClassRef || ''),
+          grade: resolvedGrade,
+          section: resolvedSection,
+          adviserName: String(selectedClass?.adviser_name || '').trim()
+        });
+
+        if (!resolvedGrade || !resolvedSection) {
+          setStudents([]);
+          return;
+        }
+
+        const studentResponse = await axios.get('/students', { params: requestParams });
+        const studentRows = Array.isArray(studentResponse.data)
+          ? studentResponse.data
+          : (Array.isArray(studentResponse.data?.data) ? studentResponse.data.data : []);
+
+        const classStudents = studentRows.filter((student) =>
+          matchesGradeSection(
+            { grade: student?.gradeLevel || student?.grade_level, section: student?.section },
+            resolvedGrade,
+            resolvedSection
+          )
+        );
+
+        setStudents(classStudents);
       } catch (error) {
         console.error('Error fetching class data:', error);
         setStudents([]);
+        setClassInfo({ id: '', grade: queryGrade, section: querySection, adviserName: '' });
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchClassData();
-  }, [id]);
-
-  // Fetch teacher for the current class
-  useEffect(() => {
-    const fetchTeacher = async () => {
-      if (!classInfo.grade || !classInfo.section) return;
-      
-      try {
-        const response = await fetch(`${API_BASE_URL}/users`);
-        if (response.ok) {
-          const data = await response.json();
-          const allUsers = data.data?.users || data.users || [];
-          const teachersList = Array.isArray(allUsers) 
-            ? allUsers.filter(user => ['teacher', 'subject_teacher', 'adviser'].includes(user.role))
-            : [];
-          
-          const foundTeacher = teachersList.find(t => 
-            t.gradeLevel === classInfo.grade && t.section === classInfo.section
-          );
-          setTeacher(foundTeacher || null);
-        }
-      } catch (error) {
-        console.error('Error fetching teacher:', error);
-        setTeacher(null);
-      }
-    };
-
-    fetchTeacher();
-  }, [classInfo]);
+  }, [id, selectedSchoolYearId, queryGrade, querySection]);
 
   return (
     <div className="space-y-8">
@@ -250,8 +240,8 @@ export default function AdminClassList() {
               <h2 className="text-4xl font-bold text-gray-900">
                 {classInfo.grade} - {classInfo.section} Class List
               </h2>
-              {teacher && (
-                <p className="text-gray-600 mt-2">Adviser: <span className="font-semibold">{teacher.firstName} {teacher.lastName}</span></p>
+              {classInfo.adviserName && (
+                <p className="text-gray-600 mt-2">Adviser: <span className="font-semibold">{classInfo.adviserName}</span></p>
               )}
             </div>
           </div>
@@ -298,14 +288,7 @@ export default function AdminClassList() {
             </thead>
 
             <tbody>
-              {students
-                .filter((student) => {
-                  const fullName = (student.fullName || `${student.firstName} ${student.lastName}`).toLowerCase();
-                  const lrn = (student.lrn || "").toLowerCase();
-                  const query = searchQuery.toLowerCase();
-                  return fullName.includes(query) || lrn.includes(query);
-                })
-                .map((student) => (
+              {filteredStudents.map((student) => (
                 <tr key={student.id} className="hover:bg-gray-50">
                   <td className="p-3 border-b font-semibold">{student.fullName || `${student.firstName} ${student.lastName}`}</td>
                   <td className="p-3 border-b">{student.lrn}</td>

@@ -808,7 +808,15 @@ export default function AdminClasses() {
 
                       <button
 
-                        onClick={() => navigate(`/admin/admin/classlist/${idx}`)}
+                        onClick={() => {
+                          const classRef = cls?.id ? String(cls.id) : `gs:${cls?.grade || ''}::${cls?.section || ''}`;
+                          const params = new URLSearchParams({
+                            schoolYearId: String(selectedSchoolYearId || ''),
+                            grade: String(cls?.grade || ''),
+                            section: String(cls?.section || '')
+                          });
+                          navigate(`/admin/admin/classlist/${encodeURIComponent(classRef)}?${params.toString()}`);
+                        }}
 
                         className="mt-4 w-full bg-red-800 text-white py-2 rounded-lg hover:bg-red-700 transition"
 

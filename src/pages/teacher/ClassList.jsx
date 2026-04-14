@@ -5,6 +5,7 @@ import {
   TrashIcon,
   ViewColumnsIcon,
   UserCircleIcon,
+  ArrowDownTrayIcon,
 } from "@heroicons/react/24/outline";
 import QRCode from "qrcode";
 import axios from "../../api/axiosConfig";
@@ -233,6 +234,74 @@ export default function ClassList() {
 
     return matchesSearch && matchesGrade && matchesSection && matchesStatus;
   });
+
+  const toCsvValue = (value) => {
+    const raw = String(value ?? '');
+    if (/[",\n]/.test(raw)) {
+      return `"${raw.replace(/"/g, '""')}"`;
+    }
+    return raw;
+  };
+
+  const downloadClassListByGrade = () => {
+    if (gradeFilter === 'All Grades') {
+      toast.error('Select a specific grade first to download class list.');
+      return;
+    }
+
+    const gradeRows = students
+      .filter((student) => String(student?.gradeLevel || '') === String(gradeFilter))
+      .sort((a, b) => {
+        const sectionA = String(a?.section || '');
+        const sectionB = String(b?.section || '');
+        if (sectionA !== sectionB) return sectionA.localeCompare(sectionB, undefined, { sensitivity: 'base' });
+
+        const nameA = String(a?.fullName || `${a?.lastName || ''}, ${a?.firstName || ''}`);
+        const nameB = String(b?.fullName || `${b?.lastName || ''}, ${b?.firstName || ''}`);
+        return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+      });
+
+    if (gradeRows.length === 0) {
+      toast.error(`No students found for ${gradeFilter}.`);
+      return;
+    }
+
+    const headers = ['No.', 'Student Name', 'LRN', 'Grade Level', 'Section', 'Age', 'Sex', 'Status', 'WMSU Email'];
+    const rows = gradeRows.map((student, index) => ([
+      index + 1,
+      student.fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim(),
+      student.lrn || '',
+      student.gradeLevel || gradeFilter,
+      student.section || '',
+      student.age || '',
+      student.sex || '',
+      student.status || '',
+      student.wmsuEmail || ''
+    ]));
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map(toCsvValue).join(','))
+      .join('\n');
+
+    const gradeSlug = String(gradeFilter)
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
+    const schoolYearPart = selectedSchoolYearId ? `-sy-${selectedSchoolYearId}` : '';
+    const fileName = `class-list-${gradeSlug}${schoolYearPart}.csv`;
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(url);
+
+    toast.success(`Downloaded ${gradeRows.length} students for ${gradeFilter}.`);
+  };
 
   const handleView = (student) => {
     setSelectedStudent(student);
@@ -490,6 +559,15 @@ export default function ClassList() {
             </svg>
           </div>
         </div>
+
+        <button
+          onClick={downloadClassListByGrade}
+          className="w-full md:w-auto flex items-center justify-center gap-2 bg-red-800 text-white px-4 py-3 rounded-xl font-semibold hover:bg-red-700 transition"
+          title="Download class list for selected grade"
+        >
+          <ArrowDownTrayIcon className="w-5 h-5" />
+          Download Grade Class List
+        </button>
       </div>
 
 {/* === Clean, No-Scroll Table (Fits Perfectly on One Page) === */}
