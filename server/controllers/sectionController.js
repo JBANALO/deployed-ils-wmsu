@@ -73,12 +73,14 @@ const assertActiveTargetSchoolYear = async (targetSy) => {
 const getSectionFallbackFromClasses = async (schoolYearId) => {
   const classColumns = await query('SHOW COLUMNS FROM classes');
   const hasClassSchoolYear = classColumns.some((c) => c.Field === 'school_year_id');
+  const hasArchived = classColumns.some((c) => c.Field === 'is_archived');
 
   const classRows = hasClassSchoolYear
     ? await query(
         `SELECT MIN(id) AS id, TRIM(section) AS section_name, MIN(grade) AS grade_level
          FROM classes
          WHERE school_year_id = ? AND section IS NOT NULL AND TRIM(section) <> ''
+         ${hasArchived ? 'AND is_archived = 0' : ''}
          GROUP BY TRIM(section)
          ORDER BY section_name`,
         [schoolYearId]
@@ -87,6 +89,7 @@ const getSectionFallbackFromClasses = async (schoolYearId) => {
         `SELECT MIN(id) AS id, TRIM(section) AS section_name, MIN(grade) AS grade_level
          FROM classes
          WHERE section IS NOT NULL AND TRIM(section) <> ''
+         ${hasArchived ? 'AND is_archived = 0' : ''}
          GROUP BY TRIM(section)
          ORDER BY section_name`
       );
@@ -397,13 +400,15 @@ const getAllSections = async (req, res) => {
     await ensureSectionColumns();
     const targetSy = await resolveSchoolYear(req);
     let sections = await query(
-      'SELECT * FROM sections WHERE is_archived = FALSE AND school_year_id = ? ORDER BY name',
+      'SELECT * FROM sections WHERE is_archived = 0 AND school_year_id = ? ORDER BY name',
       [targetSy.id]
     );
+    console.log('getAllSections - fetched sections:', sections.map(s => `${s.grade_level || s.grade} - ${s.name || s.section}`));
 
     // Some historical years only have section names in classes; expose them in view-only mode.
     if (sections.length === 0) {
       sections = await getSectionFallbackFromClasses(targetSy.id);
+      console.log('getAllSections - using fallback from classes:', sections.map(s => `${s.grade_level || s.grade} - ${s.name || s.section}`));
     }
 
     res.json({ success: true, data: sections });
@@ -576,18 +581,33 @@ const archiveSection = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const existing = await query('SELECT id, name FROM sections WHERE id = ?', [id]);
+    const existing = await query('SELECT id, name, grade_level, school_year_id FROM sections WHERE id = ?', [id]);
     if (existing.length === 0) {
       return res.status(404).json({ success: false, message: 'Section not found' });
     }
 
     const activeSy = await getActiveSchoolYear();
-    const sectionSy = await query('SELECT school_year_id FROM sections WHERE id = ?', [id]);
-    if (sectionSy[0]?.school_year_id !== activeSy.id) {
+    if (existing[0]?.school_year_id !== activeSy.id) {
       return res.status(403).json({ success: false, message: 'Cannot archive sections from previous school years (view only).' });
     }
 
-    await query('UPDATE sections SET is_archived = TRUE WHERE id = ?', [id]);
+    // Ensure classes table has is_archived column
+    const classColumns = await query('SHOW COLUMNS FROM classes');
+    const hasArchived = classColumns.some((c) => c.Field === 'is_archived');
+    if (!hasArchived) {
+      await query('ALTER TABLE classes ADD COLUMN is_archived TINYINT(1) DEFAULT 0');
+    }
+
+    // Archive the section
+    await query('UPDATE sections SET is_archived = 1 WHERE id = ?', [id]);
+
+    // Delete corresponding classes (like delete behavior)
+    const section = existing[0];
+    const deleteResult = await query(
+      'DELETE FROM classes WHERE grade = ? AND section = ? AND school_year_id = ?',
+      [section.grade_level, section.name, section.school_year_id]
+    );
+    console.log('Deleted classes result:', deleteResult);
 
     res.json({ success: true, message: `Section "${existing[0].name}" archived successfully` });
   } catch (error) {
@@ -601,18 +621,43 @@ const restoreSection = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const existing = await query('SELECT id, name FROM sections WHERE id = ?', [id]);
+    const existing = await query('SELECT id, name, grade_level, school_year_id FROM sections WHERE id = ?', [id]);
     if (existing.length === 0) {
       return res.status(404).json({ success: false, message: 'Section not found' });
     }
 
     const activeSy = await getActiveSchoolYear();
-    const sectionSy = await query('SELECT school_year_id FROM sections WHERE id = ?', [id]);
-    if (sectionSy[0]?.school_year_id !== activeSy.id) {
+    if (existing[0]?.school_year_id !== activeSy.id) {
       return res.status(403).json({ success: false, message: 'Cannot restore sections from previous school years (view only).' });
     }
 
-    await query('UPDATE sections SET is_archived = FALSE WHERE id = ?', [id]);
+    // Ensure classes table has is_archived column
+    const classColumns = await query('SHOW COLUMNS FROM classes');
+    const hasArchived = classColumns.some((c) => c.Field === 'is_archived');
+    if (!hasArchived) {
+      await query('ALTER TABLE classes ADD COLUMN is_archived TINYINT(1) DEFAULT 0');
+    }
+
+    // Restore the section
+    await query('UPDATE sections SET is_archived = 0 WHERE id = ?', [id]);
+
+    // Recreate corresponding classes
+    const section = existing[0];
+    const { v4: uuidv4 } = require('uuid');
+    const classId = uuidv4();
+    try {
+      await query(
+        'INSERT INTO classes (id, grade, section, adviser_id, adviser_name, school_year_id, createdAt) VALUES (?, ?, ?, NULL, NULL, ?, NOW())',
+        [classId, section.grade_level, section.name, section.school_year_id]
+      );
+      console.log('Recreated class:', classId);
+    } catch (insertErr) {
+      if (insertErr?.code === 'ER_DUP_ENTRY') {
+        console.log('Class already exists, skipping creation');
+      } else {
+        console.log('Failed to recreate class:', insertErr.message);
+      }
+    }
 
     res.json({ success: true, message: `Section "${existing[0].name}" restored successfully` });
   } catch (error) {

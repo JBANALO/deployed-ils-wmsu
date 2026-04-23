@@ -14,6 +14,12 @@ const ensureClassSchoolYearColumn = async () => {
     await query('CREATE INDEX idx_classes_school_year ON classes (school_year_id)');
   }
 
+  // Ensure is_archived column exists
+  const hasArchived = columns.some((c) => c.Field === 'is_archived');
+  if (!hasArchived) {
+    await query('ALTER TABLE classes ADD COLUMN is_archived TINYINT(1) DEFAULT 0');
+  }
+
   try {
     const indexRows = await query('SHOW INDEX FROM classes');
     const uniqueByName = new Map();
@@ -237,7 +243,9 @@ exports.getAllClasses = async (req, res) => {
       console.log('Active-year class backfill from sections skipped:', syncErr.message);
     }
 
-    const classes = await query('SELECT * FROM classes WHERE school_year_id = ? ORDER BY grade, section', [targetSy.id]);
+    const classes = await query('SELECT * FROM classes WHERE school_year_id = ? AND is_archived = 0 ORDER BY grade, section', [targetSy.id]);
+    console.log('getAllClasses - fetched classes count:', classes.length);
+    console.log('getAllClasses - school_year_id:', targetSy.id);
 
     const classAssignments = await runFirstSuccessfulQuery([
       {
