@@ -18,12 +18,12 @@ export default function AdminSections() {
   const { viewingSchoolYear, activeSchoolYear } = useSchoolYear();
   const [sections, setSections] = useState([]);
   const [archivedSections, setArchivedSections] = useState([]);
-  const [sectionStats, setSectionStats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showArchivedList, setShowArchivedList] = useState(false);
   const [selectedSection, setSelectedSection] = useState(null);
@@ -65,20 +65,16 @@ export default function AdminSections() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [activeRes, archivedRes, statsRes] = await Promise.all([
+      const [activeRes, archivedRes] = await Promise.all([
         axios.get('/sections', {
           params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
         }),
         axios.get('/sections/archived', {
           params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
-        }),
-        axios.get('/sections/stats', {
-          params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
         })
       ]);
       setSections(activeRes.data?.data || []);
       setArchivedSections(archivedRes.data?.data || []);
-      setSectionStats(statsRes.data?.data || []);
     } catch (error) {
       console.error('Error loading sections:', error);
       toast.error('Failed to load sections');
@@ -143,13 +139,18 @@ export default function AdminSections() {
     }
   };
 
-  const handleRestore = async (id) => {
+  const handleRestore = async () => {
+    setIsSubmitting(true);
     try {
-      await axios.put(`/sections/${id}/restore`);
+      await axios.put(`/sections/${selectedSection.id}/restore`);
       toast.success('Section restored successfully!');
+      setShowRestoreModal(false);
+      setSelectedSection(null);
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to restore section');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -181,6 +182,11 @@ export default function AdminSections() {
   const openArchiveModal = (section) => {
     setSelectedSection(section);
     setShowArchiveModal(true);
+  };
+
+  const openRestoreModal = (section) => {
+    setSelectedSection(section);
+    setShowRestoreModal(true);
   };
 
   const openDeleteModal = (section) => {
@@ -236,12 +242,6 @@ export default function AdminSections() {
     } finally {
       setSyncLoading(false);
     }
-  };
-
-  // Get class count for a section
-  const getClassCount = (sectionName) => {
-    const stat = sectionStats.find(s => s.name === sectionName);
-    return stat?.class_count || 0;
   };
 
   // Filter sections based on search
@@ -354,12 +354,6 @@ export default function AdminSections() {
                     )}
                   </div>
                 </div>
-                {getClassCount(section.name) > 0 && (
-                  <div className="flex items-center gap-1 bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full text-xs">
-                    <UserGroupIcon className="w-3 h-3" />
-                    {getClassCount(section.name)} {getClassCount(section.name) === 1 ? 'class' : 'classes'}
-                  </div>
-                )}
               </div>
               <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100">
                 <button
@@ -407,7 +401,7 @@ export default function AdminSections() {
                   </div>
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => handleRestore(section.id)}
+                      onClick={() => openRestoreModal(section)}
                       className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition"
                       title="Restore"
                     >
@@ -693,6 +687,39 @@ export default function AdminSections() {
                   className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition disabled:opacity-50"
                 >
                   {isSubmitting ? 'Archiving...' : 'Archive'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore Confirmation Modal */}
+      {showRestoreModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+            <div className="text-center">
+              <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                <ArrowPathIcon className="w-8 h-8 text-green-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-800 mb-2">Restore Section?</h3>
+              <p className="text-gray-600 mb-6">
+                Are you sure you want to restore <span className="font-semibold">{selectedSection?.name}</span>?
+                It will appear again in the active sections list.
+              </p>
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={() => setShowRestoreModal(false)}
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRestore}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Restoring...' : 'Restore'}
                 </button>
               </div>
             </div>
