@@ -130,8 +130,8 @@ export default function AdminSchoolYear() {
 
       if (syRes.status === 'fulfilled') {
         const list = syRes.value.data?.data || [];
-        // Sort newest to oldest by start_date
-        const sorted = [...list].sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+        // Sort in ascending order by label
+        const sorted = [...list].sort((a, b) => a.label.localeCompare(b.label));
         setSchoolYears(sorted.map((sy) => ({ ...sy, label: formatSchoolYearLabel(sy.label) })));
       }
 
@@ -149,7 +149,9 @@ export default function AdminSchoolYear() {
       if (previewRes.status === 'fulfilled') setPromotionPreview(previewRes.value.data?.data || []);
       if (archivedRes.status === 'fulfilled') {
         const archived = archivedRes.value.data?.data || [];
-        setArchivedSchoolYears(archived.map((sy) => ({ ...sy, label: formatSchoolYearLabel(sy.label) })));
+        // Sort in ascending order by label
+        const sortedArchived = archived.sort((a, b) => a.label.localeCompare(b.label));
+        setArchivedSchoolYears(sortedArchived.map((sy) => ({ ...sy, label: formatSchoolYearLabel(sy.label) })));
       }
       if (historyRes.status === 'fulfilled') setPromotionHistory(historyRes.value.data?.data || []);
       if (candidatesRes.status === 'fulfilled') setPromotionCandidates(candidatesRes.value.data?.data || []);

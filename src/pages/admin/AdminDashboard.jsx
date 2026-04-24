@@ -160,9 +160,11 @@ export default function AdminDashboard() {
       const res = await axios.get('/school-years');
       const list = res.data?.data || [];
       const normalized = list.map((sy) => ({ ...sy, label: formatSchoolYearLabel(sy.label) }));
-      setSchoolYears(normalized);
+      // Sort school years in ascending order
+      const sorted = normalized.sort((a, b) => a.label.localeCompare(b.label));
+      setSchoolYears(sorted);
 
-      const activeFromList = normalized.find((sy) => Number(sy.is_active) === 1) || null;
+      const activeFromList = sorted.find((sy) => Number(sy.is_active) === 1) || null;
       if (activeFromList) {
         setActiveSchoolYear((prev) => prev || activeFromList);
         setContextActiveSchoolYear(activeFromList);

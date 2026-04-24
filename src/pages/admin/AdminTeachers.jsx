@@ -121,8 +121,9 @@ export default function AdminTeachers() {
     try {
       const res = await api.get('/school-years');
       const list = res.data?.data || res.data || [];
-      setSchoolYears(Array.isArray(list) ? list : []);
-      const active = Array.isArray(list) ? list.find((sy) => sy.is_active) : null;
+      const sorted = Array.isArray(list) ? list.sort((a, b) => a.label.localeCompare(b.label)) : [];
+      setSchoolYears(sorted);
+      const active = sorted.find((sy) => sy.is_active) || null;
       if (active) {
         setActiveSchoolYear(active);
         setContextActiveSchoolYear(active);
