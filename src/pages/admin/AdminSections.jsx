@@ -20,6 +20,7 @@ export default function AdminSections() {
   const [archivedSections, setArchivedSections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [gradeFilter, setGradeFilter] = useState('All');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
@@ -244,11 +245,16 @@ export default function AdminSections() {
     }
   };
 
-  // Filter sections based on search
-  const filteredSections = sections.filter(section =>
-    section.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (section.description && section.description.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Filter sections based on search and grade
+  const filteredSections = sections.filter(section => {
+    const matchesSearch = section.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (section.description && section.description.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesGrade = gradeFilter === 'All' || section.grade_level === gradeFilter;
+    return matchesSearch && matchesGrade;
+  });
+
+  // Extract unique grades from sections
+  const uniqueGrades = [...new Set(sections.map(s => s.grade_level).filter(Boolean))].sort();
 
   if (loading) {
     return (
@@ -315,6 +321,16 @@ export default function AdminSections() {
               className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
             />
           </div>
+          <select
+            value={gradeFilter}
+            onChange={(e) => setGradeFilter(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          >
+            <option value="All">All Grades</option>
+            {uniqueGrades.map(grade => (
+              <option key={grade} value={grade}>{grade}</option>
+            ))}
+          </select>
           <button
             onClick={() => setShowArchivedList(!showArchivedList)}
             className="flex items-center gap-2 text-gray-600 hover:text-emerald-800 px-4 py-2 rounded-lg border border-gray-200 hover:border-emerald-300 transition"
