@@ -214,10 +214,14 @@ export default function AdminClasses() {
 
         // Build union of sections, students, backend (no filtering so new sections always show)
         const union = mergeClasses([baseClasses, studentPlusAdviser, backendClasses]);
-        setClassesData(union);
+        // Filter union by fetched sections to match sections count
+        const filteredUnion = filterBySections(union);
+        setClassesData(filteredUnion);
       } else {
         const union = mergeClasses([baseClasses, backendClasses]);
-        setClassesData(union);
+        // Filter union by fetched sections to match sections count
+        const filteredUnion = filterBySections(union);
+        setClassesData(filteredUnion);
         setAllStudents([]);
       }
 
