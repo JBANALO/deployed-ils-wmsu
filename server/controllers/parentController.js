@@ -80,22 +80,33 @@ const verifyParentOTP = async (req, res) => {
     // Check OTP in database - handle both string and number student_id
     console.log('🔍 Querying parent_verifications table for:', { studentId, otp, studentIdType: typeof studentId });
     
+    // Test database connection first
+    try {
+      const testResult = await query('SELECT COUNT(*) as count FROM parent_verifications');
+      console.log('🔍 Database connection test - total records:', testResult);
+    } catch (testError) {
+      console.error('🔍 Database connection failed:', testError);
+      return res.status(500).json({ error: 'Database connection failed' });
+    }
+    
     // Try without time check first to see if record exists
     let rows;
     try {
+      console.log('🔍 Executing query with params:', [String(studentId), otp]);
       const result = await query(
         `SELECT * FROM parent_verifications 
          WHERE student_id = ? AND otp = ? AND verified = 0`,
         [String(studentId), otp]
       );
-      rows = result[0] || [];
-      console.log('🔍 Query executed successfully');
+      console.log('🔍 Raw query result:', result);
+      rows = result || [];
+      console.log('🔍 Processed rows:', rows);
     } catch (error) {
       console.error('🔍 Query failed:', error);
       rows = [];
     }
     
-    console.log('🔍 Query result:', rows.length, 'rows found');
+    console.log('🔍 Final query result:', rows.length, 'rows found');
     console.log('🔍 First row:', rows[0]);
 
     if (!rows || rows.length === 0) {
