@@ -1991,7 +1991,7 @@ export default function EditGrades() {
                   <div className="space-y-1 max-h-32 overflow-y-auto">
                     {auditLog.map((entry, i) => (
                       <div key={i} className="text-xs text-gray-600 flex justify-between">
-                        <span><span className="font-medium">{entry.performed_by_name || 'Unknown'}</span> â€” {entry.action === 'save_draft' ? 'Saved draft' : entry.action === 'post' ? 'Posted grades' : entry.action === 'unlock_request' ? 'Requested unlock' : entry.action}</span>
+                        <span><span className="font-medium">{entry.performed_by_name || 'Unknown'}</span> - {entry.action === 'save_draft' ? 'Saved draft' : entry.action === 'post' ? 'Posted grades' : entry.action === 'unlock_request' ? 'Requested unlock' : entry.action}</span>
                         <span className="text-gray-400 ml-3">{new Date(entry.created_at).toLocaleString()}</span>
                       </div>
                     ))}
