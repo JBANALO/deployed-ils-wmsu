@@ -110,21 +110,19 @@ const sendParentOTPEmail = async ({ to, parentName, studentName, otp, studentId,
   try {
     console.log('📧 Sending parent OTP email via SendGrid to', to);
     
+    const htmlContent = buildParentOTPEmailHtml({ parentName, studentName, otp, studentId, parentEmail });
+    const verificationUrl = `${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu-production.up.railway.app'}/parent-verification?studentId=${studentId}&studentName=${encodeURIComponent(studentName)}&parentEmail=${encodeURIComponent(parentEmail)}`;
+    
     const payload = {
       personalizations: [{
-        to: [{ email: to, name: parentName || 'Parent' }],
+        to: [{ email: to }],
         subject: 'WMSU ILS - Parent Verification Code'
       }],
-      from: {
-        email: FROM_EMAIL,
-        name: FROM_NAME
-      },
-      content: [
-        { 
-          type: 'text/plain', 
-          value: `Your verification code is: ${otp}` 
-        }
-      ]
+      from: { email: FROM_EMAIL, name: FROM_NAME },
+      content: [{
+        type: 'text/html',
+        value: htmlContent
+      }]
     };
     
     console.log('📧 SendGrid payload:', JSON.stringify(payload, null, 2));
@@ -144,26 +142,7 @@ const sendParentOTPEmail = async ({ to, parentName, studentName, otp, studentId,
         console.error('SendGrid error details:', error.response.data.errors);
       }
     }
-    
-    // Use Brevo directly since SendGrid API key has permission issues
-    try {
-      const { sendBrevoEmail } = require('./emailService');
-      const verificationUrl = `${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu-production.up.railway.app'}/parent-verification?studentId=${studentId}&studentName=${encodeURIComponent(studentName)}&parentEmail=${encodeURIComponent(parentEmail)}`;
-      const htmlContent = buildParentOTPEmailHtml({ parentName, studentName, otp, studentId, parentEmail });
-      
-      const brevoResult = await sendBrevoEmail({
-        to: [{ email: to, name: parentName || 'Parent' }],
-        subject: 'WMSU ILS - Parent Verification Code',
-        htmlContent: htmlContent,
-        textContent: `Your verification code is: ${otp}\n\nVerification link: ${verificationUrl}`
-      });
-      
-      console.log('📧 Brevo fallback email sent successfully');
-      return { success: true, data: brevoResult, service: 'brevo' };
-    } catch (brevoError) {
-      console.error('Brevo fallback also failed:', brevoError.message);
-      return { success: false, error: `SendGrid: ${error.message}, Brevo: ${brevoError.message}` };
-    }
+    return { success: false, error: error.message };
   }
 };
 

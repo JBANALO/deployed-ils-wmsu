@@ -67,9 +67,13 @@ const sendParentOTP = async (req, res) => {
 // Verify parent OTP
 const verifyParentOTP = async (req, res) => {
   try {
+    console.log('🔍 Received verification request body:', req.body);
     const { studentId, otp } = req.body;
 
+    console.log('🔍 Extracted values:', { studentId, otp });
+
     if (!studentId || !otp) {
+      console.log('🔍 Missing required fields:', { studentId: !!studentId, otp: !!otp });
       return res.status(400).json({ error: 'Student ID and OTP are required' });
     }
 
