@@ -74,6 +74,7 @@ export default function AdminGrades() {
   const [showForm137Modal, setShowForm137Modal] = useState(false);
   const [form137Records, setForm137Records] = useState([]);
   const [preparingPrint, setPreparingPrint] = useState(false);
+  const [gradeStatuses, setGradeStatuses] = useState({});
   const targetSchoolYearId = viewingSchoolYear?.id || activeSchoolYear?.id || '';
   const rankingLabelMap = {
     final: 'Final Average',
@@ -378,6 +379,14 @@ export default function AdminGrades() {
       // Combine: students with grades first, then students without
       const allStudents = [...sortedStudents, ...studentsWithoutGrades];
       setStudents(allStudents);
+
+      // Fetch draft/posted status for all students
+      try {
+        const statusRes = await axios.get('/students/grade-publish-statuses', {
+          params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
+        });
+        if (statusRes.data?.success) setGradeStatuses(statusRes.data.data || {});
+      } catch (e) { console.warn('Could not fetch grade statuses:', e.message); }
 
       // Load subjects configured by admin for each grade present in students list
       const uniqueGrades = [...new Set(allStudents.map(s => s.gradeLevel).filter(Boolean))];
@@ -889,6 +898,8 @@ export default function AdminGrades() {
 
                 <th className="p-4">Rank ({rankingLabelMap[rankingBasis] || 'Final Average'})</th>
 
+                <th className="p-4 text-center">Status</th>
+
                 <th className="p-4 text-center">Actions</th>
 
               </tr>
@@ -903,7 +914,7 @@ export default function AdminGrades() {
 
                 <tr>
 
-                  <td colSpan="7" className="p-4 text-center text-gray-500">Loading grades data...</td>
+                  <td colSpan="8" className="p-4 text-center text-gray-500">Loading grades data...</td>
 
                 </tr>
 
@@ -911,7 +922,7 @@ export default function AdminGrades() {
 
                 <tr>
 
-                  <td colSpan="7" className="p-4 text-center text-gray-500">No students found</td>
+                  <td colSpan="8" className="p-4 text-center text-gray-500">No students found</td>
 
                 </tr>
 
@@ -966,6 +977,15 @@ export default function AdminGrades() {
 
                       ) : '-'}
 
+                    </td>
+
+                    <td className="p-4 text-center">
+                      {(() => {
+                        const st = gradeStatuses[String(student.id)];
+                        if (st === 'posted') return <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">Posted</span>;
+                        if (st === 'draft') return <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">Draft</span>;
+                        return <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-400">—</span>;
+                      })()}
                     </td>
 
                     <td className="p-4 flex justify-center gap-4">

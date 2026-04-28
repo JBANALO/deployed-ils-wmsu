@@ -1240,14 +1240,28 @@ exports.getStudent = async (req, res) => {
     };
 
     // ======== FETCH GRADES ========
-    const gradesRaw = await query(
+    // Check publish status: if draft, hide grades from student portal (only show posted)
+    let gradesVisibleToStudent = true; // default true for backward compat (no record = show)
+    try {
+      const [psRow] = await query(
+        'SELECT status FROM grade_publish_status WHERE student_id = ? AND school_year_id = ?',
+        [studentId, portalSyId]
+      );
+      if (psRow) {
+        gradesVisibleToStudent = psRow.status === 'posted';
+      }
+    } catch (psErr) {
+      // Table may not exist yet; fall through and show grades
+    }
+
+    const gradesRaw = gradesVisibleToStudent ? await query(
       `SELECT subject, quarter, grade, created_at
        FROM grades
        WHERE student_id = ?
          AND school_year_id = ?
        ORDER BY subject, quarter`,
       [studentId, portalSyId]
-    );
+    ) : [];
     
     // Group grades by subject with quarters
     // Helpers to build grade maps with optional date filtering (per promotion snapshot)

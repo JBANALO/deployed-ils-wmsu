@@ -12,6 +12,9 @@ let studentSyEnsured = false;
 let notificationsEnsured = false;
 let schoolYearQuarterColumnsEnsured = false;
 let rankingPublicationsEnsured = false;
+let publishStatusEnsured = false;
+let auditLogEnsured = false;
+let unlockRequestsEnsured = false;
 
 const normalizeRole = (value = '') => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 
@@ -24,6 +27,83 @@ const ensureGradesSchoolYearColumn = async () => {
     await query('CREATE INDEX idx_grades_school_year ON grades (school_year_id)');
   }
   gradesSyEnsured = true;
+};
+
+const ensureGradePublishStatusTable = async () => {
+  if (publishStatusEnsured) return;
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS grade_publish_status (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        student_id VARCHAR(255) NOT NULL,
+        school_year_id INT NOT NULL,
+        status ENUM('draft', 'posted') NOT NULL DEFAULT 'draft',
+        published_at DATETIME NULL,
+        published_by INT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_grade_publish_student_sy (student_id, school_year_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+  } catch (err) {
+    console.warn('grade_publish_status table creation warning:', err.message);
+  }
+  publishStatusEnsured = true;
+};
+
+const ensureAuditLogTable = async () => {
+  if (auditLogEnsured) return;
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS grade_audit_log (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        student_id VARCHAR(255) NOT NULL,
+        school_year_id INT NOT NULL,
+        action ENUM('save_draft','post','unlock_request','unlock_approved','unlock_rejected') NOT NULL,
+        performed_by_id INT,
+        performed_by_name VARCHAR(255),
+        details TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_audit_student_sy (student_id, school_year_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+  } catch (err) { console.warn('grade_audit_log table warning:', err.message); }
+  auditLogEnsured = true;
+};
+
+const ensureUnlockRequestsTable = async () => {
+  if (unlockRequestsEnsured) return;
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS grade_unlock_requests (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        student_id VARCHAR(255) NOT NULL,
+        school_year_id INT NOT NULL,
+        teacher_id INT NOT NULL,
+        teacher_name VARCHAR(255),
+        reason TEXT NOT NULL,
+        status ENUM('pending','approved','rejected') DEFAULT 'pending',
+        admin_note TEXT,
+        approved_by INT NULL,
+        expires_at DATETIME NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_unlock_student_sy (student_id, school_year_id),
+        INDEX idx_unlock_teacher (teacher_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+  } catch (err) { console.warn('grade_unlock_requests table warning:', err.message); }
+  unlockRequestsEnsured = true;
+};
+
+const logAuditEntry = async (studentId, syId, action, userId, userName, details) => {
+  try {
+    await ensureAuditLogTable();
+    await query(
+      'INSERT INTO grade_audit_log (student_id, school_year_id, action, performed_by_id, performed_by_name, details) VALUES (?, ?, ?, ?, ?, ?)',
+      [studentId, syId, action, userId || null, userName || null, details || null]
+    );
+  } catch (err) { console.warn('Audit log insert warning:', err.message); }
 };
 
 const ensureStudentSchoolYearColumn = async () => {
@@ -409,6 +489,26 @@ const canEnterGrade = async (user, student, subject, schoolYearId) => {
   console.log('canEnterGrade - Not authorized');
   return false;
 };
+
+// GET /grade-publish-statuses - Return publish status map for all students
+router.get('/grade-publish-statuses', verifyUserForGrades, async (req, res) => {
+  try {
+    await ensureGradePublishStatusTable();
+    const { schoolYearId } = req.query;
+    const [activeSy] = await query('SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+    const targetSyId = schoolYearId || activeSy?.id;
+    if (!targetSyId) return res.json({ success: true, data: {} });
+    const rows = await query(
+      'SELECT student_id, status FROM grade_publish_status WHERE school_year_id = ?',
+      [targetSyId]
+    );
+    const statusMap = {};
+    rows.forEach(row => { statusMap[String(row.student_id)] = row.status; });
+    res.json({ success: true, data: statusMap });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed', message: err.message });
+  }
+});
 
 // PUT /:id/grades - Update grades for a student - MUST be before /:id route
 router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
@@ -853,10 +953,157 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
       }
     }
 
+    // Auto-save: upsert draft status whenever grades are saved
+    try {
+      await ensureGradePublishStatusTable();
+      await query(
+        `INSERT INTO grade_publish_status (student_id, school_year_id, status)
+         VALUES (?, ?, 'draft')
+         ON DUPLICATE KEY UPDATE status = 'draft', updated_at = NOW()`,
+        [id, targetSyId]
+      );
+    } catch (draftErr) {
+      console.warn('Draft status upsert warning:', draftErr.message);
+    }
+
+    const userName = user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}`.trim() : (user?.email || user?.username || 'Teacher');
+    await logAuditEntry(id, targetSyId, 'save_draft', user?.id, userName, `Quarter: ${quarter || 'Q1'}`);
+
     res.json({ success: true, message: `${quarter || 'Q1'} grades updated`, average });
   } catch (err) {
     console.error('Error saving grades:', err);
     res.status(500).json({ success: false, error: 'Failed', message: err.message });
+  }
+});
+
+// POST /:id/grades/publish - Publish grades (make visible to admin and students)
+router.post('/:id/grades/publish', verifyUserForGrades, async (req, res) => {
+  try {
+    await ensureGradePublishStatusTable();
+    const { id } = req.params;
+    const { schoolYearId } = req.body;
+    const user = req.user;
+    const [activeSy] = await query('SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+    const targetSyId = schoolYearId || activeSy?.id;
+    if (!targetSyId) return res.status(400).json({ success: false, message: 'No active school year' });
+    const students = await query('SELECT id FROM students WHERE id = ?', [id]);
+    if (!students?.length) return res.status(404).json({ success: false, message: 'Student not found' });
+    await query(
+      `INSERT INTO grade_publish_status (student_id, school_year_id, status, published_at, published_by)
+       VALUES (?, ?, 'posted', NOW(), ?)
+       ON DUPLICATE KEY UPDATE status = 'posted', published_at = NOW(), published_by = ?, updated_at = NOW()`,
+      [id, targetSyId, user.id, user.id]
+    );
+    const userName2 = user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}`.trim() : (user?.email || user?.username || 'Teacher');
+    await logAuditEntry(id, targetSyId, 'post', user?.id, userName2, null);
+    res.json({ success: true, message: 'Grades posted successfully' });
+  } catch (err) {
+    console.error('Error publishing grades:', err);
+    res.status(500).json({ success: false, error: 'Failed', message: err.message });
+  }
+});
+
+// GET /:id/grades/audit-log - Get audit log entries for a student's grades
+router.get('/:id/grades/audit-log', verifyUserForGrades, async (req, res) => {
+  try {
+    await ensureAuditLogTable();
+    const { id } = req.params;
+    const { schoolYearId } = req.query;
+    const [activeSy] = await query('SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+    const targetSyId = schoolYearId || activeSy?.id;
+    if (!targetSyId) return res.json({ success: true, data: [] });
+    const rows = await query(
+      'SELECT * FROM grade_audit_log WHERE student_id = ? AND school_year_id = ? ORDER BY created_at DESC LIMIT 50',
+      [id, targetSyId]
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /:id/grades/unlock-request - Teacher requests unlock of posted grades
+router.post('/:id/grades/unlock-request', verifyUserForGrades, async (req, res) => {
+  try {
+    await ensureUnlockRequestsTable();
+    const { id } = req.params;
+    const { reason, schoolYearId } = req.body;
+    const user = req.user;
+    if (!reason?.trim()) return res.status(400).json({ success: false, message: 'Reason is required' });
+    const [activeSy] = await query('SELECT id FROM school_years WHERE is_active = 1 AND is_archived = 0 LIMIT 1');
+    const targetSyId = schoolYearId || activeSy?.id;
+    if (!targetSyId) return res.status(400).json({ success: false, message: 'No active school year' });
+    const teacherName = user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}`.trim() : (user?.email || 'Teacher');
+    await query(
+      'INSERT INTO grade_unlock_requests (student_id, school_year_id, teacher_id, teacher_name, reason, status) VALUES (?, ?, ?, ?, ?, "pending")',
+      [id, targetSyId, user.id, teacherName, reason.trim()]
+    );
+    await logAuditEntry(id, targetSyId, 'unlock_request', user?.id, teacherName, reason.trim());
+    res.json({ success: true, message: 'Unlock request submitted' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /grade-unlock-requests - Admin: view all pending unlock requests
+router.get('/grade-unlock-requests', verifyUserForGrades, async (req, res) => {
+  try {
+    await ensureUnlockRequestsTable();
+    const { status } = req.query;
+    const whereClause = status ? 'WHERE status = ?' : '';
+    const params = status ? [status] : [];
+    const rows = await query(
+      `SELECT r.*, s.fullName AS student_name FROM grade_unlock_requests r LEFT JOIN students s ON s.id = r.student_id ${whereClause} ORDER BY r.created_at DESC`,
+      params
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PUT /grade-unlock-requests/:requestId/approve - Admin approves unlock
+router.put('/grade-unlock-requests/:requestId/approve', verifyUserForGrades, async (req, res) => {
+  try {
+    await ensureUnlockRequestsTable();
+    const { requestId } = req.params;
+    const { adminNote } = req.body;
+    const user = req.user;
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const [reqRow] = await query('SELECT * FROM grade_unlock_requests WHERE id = ?', [requestId]);
+    if (!reqRow) return res.status(404).json({ success: false, message: 'Request not found' });
+    await query(
+      'UPDATE grade_unlock_requests SET status = "approved", admin_note = ?, approved_by = ?, expires_at = ?, updated_at = NOW() WHERE id = ?',
+      [adminNote || null, user?.id, expiresAt, requestId]
+    );
+    await query(
+      'INSERT INTO grade_publish_status (student_id, school_year_id, status) VALUES (?, ?, "draft") ON DUPLICATE KEY UPDATE status = "draft", updated_at = NOW()',
+      [reqRow.student_id, reqRow.school_year_id]
+    );
+    await logAuditEntry(reqRow.student_id, reqRow.school_year_id, 'unlock_approved', user?.id, 'Admin', adminNote || null);
+    res.json({ success: true, message: 'Unlock approved. Teacher has 24 hours to edit.' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PUT /grade-unlock-requests/:requestId/reject - Admin rejects unlock
+router.put('/grade-unlock-requests/:requestId/reject', verifyUserForGrades, async (req, res) => {
+  try {
+    await ensureUnlockRequestsTable();
+    const { requestId } = req.params;
+    const { adminNote } = req.body;
+    const user = req.user;
+    const [reqRow] = await query('SELECT * FROM grade_unlock_requests WHERE id = ?', [requestId]);
+    if (!reqRow) return res.status(404).json({ success: false, message: 'Request not found' });
+    await query(
+      'UPDATE grade_unlock_requests SET status = "rejected", admin_note = ?, updated_at = NOW() WHERE id = ?',
+      [adminNote || null, requestId]
+    );
+    await logAuditEntry(reqRow.student_id, reqRow.school_year_id, 'unlock_rejected', user?.id, 'Admin', adminNote || null);
+    res.json({ success: true, message: 'Unlock request rejected.' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -927,17 +1174,30 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
       }
     }
 
+    let publishStatus = null;
+    try {
+      await ensureGradePublishStatusTable();
+      const [psRow] = await query(
+        'SELECT status FROM grade_publish_status WHERE student_id = ? AND school_year_id = ?',
+        [id, targetSyId]
+      );
+      publishStatus = psRow?.status || null;
+    } catch (psErr) {
+      console.warn('publish status fetch warning:', psErr.message);
+    }
+
     if (includeEditWindowLocks) {
       return res.json({
         ...result,
         __meta: {
           editWindowHours: EDIT_WINDOW_HOURS,
-          editWindowLocks
+          editWindowLocks,
+          publishStatus
         }
       });
     }
 
-    res.json(result);
+    res.json({ ...result, __meta: { publishStatus } });
   } catch (err) {
     res.status(500).json({ error: 'Failed', details: err.message });
   }

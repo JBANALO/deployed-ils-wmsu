@@ -92,6 +92,14 @@ export default function EditGrades() {
   const [newComputationSubject, setNewComputationSubject] = useState('');
   const [selectedComputationGradeLevel, setSelectedComputationGradeLevel] = useState('');
   const lastKnownActiveSchoolYearIdRef = useRef(null);
+  const [gradeStatuses, setGradeStatuses] = useState({});
+  const [autoSaveStatus, setAutoSaveStatus] = useState('idle');
+  const [modalPublishStatus, setModalPublishStatus] = useState(null);
+  const [auditLog, setAuditLog] = useState([]);
+  const [showUnlockModal, setShowUnlockModal] = useState(false);
+  const [unlockReason, setUnlockReason] = useState('');
+  const autoSaveTimerRef = useRef(null);
+  const pendingGradeDataRef = useRef(null);
   const isViewOnlyMode = isTeacherViewOnlyMode(selectedSchoolYearId, activeSchoolYearId);
 
   const buildComputationGradeLevelOptions = () => {
@@ -554,6 +562,7 @@ export default function EditGrades() {
 
       console.log('EditGrades - scoped students:', Array.isArray(scopedStudents) ? scopedStudents.length : 0);
       setStudents(Array.isArray(scopedStudents) ? scopedStudents : []);
+      fetchGradeStatuses();
 
       // Fetch subjects for each assigned grade level from DB (replaces hard-coded list)
       const uniqueGrades = [...new Set(uniqueClasses.map(c => c.grade).filter(Boolean))];
@@ -601,6 +610,23 @@ export default function EditGrades() {
     }
   };
 
+  const fetchGradeStatuses = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const sy = selectedSchoolYearId || activeSchoolYearId;
+      const resp = await api.get('/students/grade-publish-statuses', { params: sy ? { schoolYearId: sy } : {} });
+      if (resp.data?.success) setGradeStatuses(resp.data.data || {});
+    } catch (err) { console.warn('Could not fetch grade statuses:', err.message); }
+  };
+
+  const fetchAuditLog = async (studentId) => {
+    try {
+      const sy = selectedSchoolYearId || activeSchoolYearId;
+      const resp = await api.get(`/students/${studentId}/grades/audit-log`, { params: sy ? { schoolYearId: sy } : {} });
+      if (resp.data?.success) setAuditLog(resp.data.data || []);
+    } catch (err) { setAuditLog([]); }
+  };
   // Open grade modal for a student
   const openGradeModal = async (student) => {
     setSelectedStudent(student);
@@ -734,6 +760,8 @@ export default function EditGrades() {
       const gradesResponse = await api.get(`/students/${student.id}/grades`, { params: gradeParams });
       const payload = gradesResponse.data || {};
       setGradeEditLocks(payload.__meta?.editWindowLocks || {});
+      setModalPublishStatus(payload.__meta?.publishStatus || null);
+      fetchAuditLog(student.id);
       studentGrades = Object.fromEntries(
         Object.entries(payload).filter(([key]) => key !== '__meta')
       );
@@ -976,25 +1004,22 @@ export default function EditGrades() {
 
   // Handle grade input change
   const handleGradeChange = (subject, quarter, value) => {
-    // Allow empty value (for clearing)
     if (value === '') {
-      setGradeData(prev => ({
-        ...prev,
-        [subject]: {
-          ...prev[subject],
-          [quarter]: ''
-        }
-      }));
-      return;
+      setGradeData(prev => {
+        const next = { ...prev, [subject]: { ...prev[subject], [quarter]: '' } };
+        pendingGradeDataRef.current = next;
+        return next;
+      });
+    } else {
+      const numValue = Math.min(100, Math.max(0, parseInt(value) || 0));
+      setGradeData(prev => {
+        const next = { ...prev, [subject]: { ...prev[subject], [quarter]: numValue } };
+        pendingGradeDataRef.current = next;
+        return next;
+      });
     }
-    const numValue = Math.min(100, Math.max(0, parseInt(value) || 0));
-    setGradeData(prev => ({
-      ...prev,
-      [subject]: {
-        ...prev[subject],
-        [quarter]: numValue
-      }
-    }));
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => saveAsDraftSilent(pendingGradeDataRef.current), 1500);
   };
 
   // Clear grade value
@@ -1008,6 +1033,70 @@ export default function EditGrades() {
     }));
   };
 
+  const saveAsDraftSilent = async (currentData) => {
+    if (!selectedStudent || !currentData) return;
+    const token = localStorage.getItem('token');
+    if (!token || isGradeLocked || isViewOnlyMode) return;
+    setAutoSaveStatus('saving');
+    const isSTMode = (userRole === 'subject_teacher' || userRole === 'teacher') && availableSubjects.length > 0;
+    const quarterGrades = {};
+    Object.entries(currentData).forEach(([subject, values]) => {
+      if (isSTMode && !availableSubjects.includes(subject)) return;
+      if (selectedQuarter === 'all') {
+        const payload = {};
+        ['q1','q2','q3','q4'].forEach(q => { if (values[q] !== undefined && values[q] !== '') payload[q] = values[q] || 0; });
+        if (Object.keys(payload).length > 0) quarterGrades[subject] = payload;
+      } else {
+        if (values[selectedQuarter] !== undefined && values[selectedQuarter] !== '') quarterGrades[subject] = values[selectedQuarter] || 0;
+      }
+    });
+    if (Object.keys(quarterGrades).length === 0) { setAutoSaveStatus('idle'); return; }
+    try {
+      const subjectAvgs = Object.keys(currentData).map(s => {
+        const vals = ['q1','q2','q3','q4'].map(q => parseFloat(currentData[s]?.[q] || 0)).filter(v => v > 0);
+        return vals.length > 0 ? vals.reduce((a,b)=>a+b,0)/vals.length : 0;
+      }).filter(v => v > 0);
+      const avgValue = subjectAvgs.length > 0 ? subjectAvgs.reduce((a,b)=>a+b,0)/subjectAvgs.length : 0;
+      await api.put(`/students/${selectedStudent.id}/grades`, { grades: quarterGrades, average: parseFloat(avgValue.toFixed(2)), quarter: selectedQuarter, lastGradeEditTime: new Date().toISOString(), ...(selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}) });
+      setAutoSaveStatus('saved');
+      setModalPublishStatus('draft');
+      setGradeStatuses(prev => ({ ...prev, [String(selectedStudent.id)]: 'draft' }));
+      fetchAuditLog(selectedStudent.id);
+      setTimeout(() => setAutoSaveStatus('idle'), 2000);
+    } catch (err) {
+      setAutoSaveStatus('error');
+      setTimeout(() => setAutoSaveStatus('idle'), 3000);
+    }
+  };
+
+  const postGrades = async () => {
+    if (!selectedStudent) return;
+    const token = localStorage.getItem('token');
+    if (!token) { toast.error('Session expired. Please login again.'); return; }
+    try {
+      await saveAsDraftSilent(gradeData);
+      const resp = await api.post(`/students/${selectedStudent.id}/grades/publish`, { ...(selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}) });
+      if (resp.data?.success) {
+        toast.success('Grades posted! Now visible to admin and students.');
+        setModalPublishStatus('posted');
+        setGradeStatuses(prev => ({ ...prev, [String(selectedStudent.id)]: 'posted' }));
+        fetchAuditLog(selectedStudent.id);
+      } else { toast.error(resp.data?.message || 'Failed to post grades'); }
+    } catch (err) { toast.error(err.response?.data?.message || err.message); }
+  };
+
+  const submitUnlockRequest = async () => {
+    if (!selectedStudent || !unlockReason.trim()) return;
+    try {
+      const resp = await api.post(`/students/${selectedStudent.id}/grades/unlock-request`, { reason: unlockReason.trim(), ...(selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}) });
+      if (resp.data?.success) {
+        toast.success('Unlock request submitted. Awaiting admin approval.');
+        setShowUnlockModal(false);
+        setUnlockReason('');
+        fetchAuditLog(selectedStudent.id);
+      } else { toast.error(resp.data?.message || 'Failed to submit request'); }
+    } catch (err) { toast.error(err.response?.data?.message || err.message); }
+  };
   // Save grades to backend
   const saveGrades = async () => {
     // Check if token exists
@@ -1111,7 +1200,10 @@ export default function EditGrades() {
       });
 
       if (response.data?.success) {
-        toast.success('Grades saved successfully! You have 24 hours to edit them again.');
+        toast.success('Grades saved as draft! You have 24 hours to edit them again.');
+        setModalPublishStatus('draft');
+        setGradeStatuses(prev => ({ ...prev, [String(selectedStudent?.id || '')]: 'draft' }));
+        fetchAuditLog(selectedStudent?.id);
         const currentStudentId = String(selectedStudent?.id || '');
         const currentIndex = orderedFilteredStudents.findIndex((student) => String(student.id) === currentStudentId);
         const nextStudent = currentIndex >= 0 ? orderedFilteredStudents[currentIndex + 1] : null;
@@ -1465,19 +1557,20 @@ export default function EditGrades() {
                 <th className="px-6 py-4">Grade & Section</th>
                 <th className="px-6 py-4 text-center">{averageColumnLabel}</th>
                 <th className="px-6 py-4">{remarksColumnLabel}</th>
+                <th className="px-6 py-4 text-center">Status</th>
                 <th className="px-6 py-4 text-center">Report Card</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan="8" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="9" className="px-6 py-8 text-center text-gray-500">
                     Loading students...
                   </td>
                 </tr>
               ) : filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="9" className="px-6 py-8 text-center text-gray-500">
                     No students found
                   </td>
                 </tr>
@@ -1527,6 +1620,14 @@ export default function EditGrades() {
                               {badge.label}
                             </span>
                           );
+                        })()}
+                      </td>
+                      <td className="px-6 py-5 text-center">
+                        {(() => {
+                          const st = gradeStatuses[String(student.id)];
+                          if (st === 'posted') return <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">Posted</span>;
+                          if (st === 'draft') return <span className="px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">Draft</span>;
+                          return <span className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-400">â€”</span>;
                         })()}
                       </td>
                       <td className="px-6 py-5 text-center">
@@ -1878,31 +1979,91 @@ export default function EditGrades() {
                 })()}
               </div>
 
+              {/* Edit History */}
+              {auditLog.length > 0 && (
+                <div className="mt-6 border-t pt-4">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Edit History</h4>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {auditLog.map((entry, i) => (
+                      <div key={i} className="text-xs text-gray-600 flex justify-between">
+                        <span><span className="font-medium">{entry.performed_by_name || 'Unknown'}</span> â€” {entry.action === 'save_draft' ? 'Saved draft' : entry.action === 'post' ? 'Posted grades' : entry.action === 'unlock_request' ? 'Requested unlock' : entry.action}</span>
+                        <span className="text-gray-400 ml-3">{new Date(entry.created_at).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {/* Action Buttons */}
-              <div className="flex gap-4 mt-8">
-                <button
-                  onClick={saveGrades}
-                  disabled={isGradeLocked || isViewOnlyMode}
-                  className={`flex-1 py-4 rounded-xl font-bold text-lg transition shadow-lg ${
-                    (isGradeLocked || isViewOnlyMode)
-                      ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
-                      : 'bg-green-600 hover:bg-green-700 text-white'
-                  }`}
-                >
-                  Save Grades
-                </button>
-                <button
-                  onClick={() => setShowGradeModal(false)}
-                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-4 rounded-xl font-bold text-lg transition shadow-lg"
-                >
-                  Cancel
-                </button>
+              <div className="mt-6 space-y-3">
+                <div className="flex items-center min-h-[20px] text-sm">
+                  {autoSaveStatus === 'saving' && <span className="text-gray-500 italic">Auto-saving draft...</span>}
+                  {autoSaveStatus === 'saved' && <span className="text-green-600 font-medium">&#10003; Draft auto-saved</span>}
+                  {autoSaveStatus === 'error' && <span className="text-red-500">Auto-save failed</span>}
+                  {autoSaveStatus === 'idle' && (
+                    modalPublishStatus === 'posted'
+                      ? <span className="text-green-600 font-medium">&#9679; Posted &#8212; visible to admin &amp; students</span>
+                      : modalPublishStatus === 'draft'
+                        ? <span className="text-yellow-600 font-medium">&#9679; Draft &#8212; visible to teacher only</span>
+                        : <span className="text-gray-400">Not yet saved</span>
+                  )}
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={saveGrades}
+                    disabled={isGradeLocked || isViewOnlyMode}
+                    className={isGradeLocked || isViewOnlyMode ? 'flex-1 py-4 rounded-xl font-bold text-lg transition shadow-lg bg-gray-400 text-gray-600 cursor-not-allowed' : 'flex-1 py-4 rounded-xl font-bold text-lg transition shadow-lg bg-green-600 hover:bg-green-700 text-white'}
+                  >
+                    Save Draft
+                  </button>
+                  {modalPublishStatus === 'posted' ? (
+                    <button
+                      onClick={() => setShowUnlockModal(true)}
+                      className="flex-1 py-4 rounded-xl font-bold text-lg transition shadow-lg bg-orange-500 hover:bg-orange-600 text-white"
+                    >
+                      Request Unlock
+                    </button>
+                  ) : (
+                    <button
+                      onClick={postGrades}
+                      disabled={isGradeLocked || isViewOnlyMode}
+                      className={isGradeLocked || isViewOnlyMode ? 'flex-1 py-4 rounded-xl font-bold text-lg transition shadow-lg bg-gray-400 text-gray-600 cursor-not-allowed' : 'flex-1 py-4 rounded-xl font-bold text-lg transition shadow-lg bg-blue-600 hover:bg-blue-700 text-white'}
+                    >
+                      Post Grades
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowGradeModal(false)}
+                    className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-4 rounded-xl font-bold text-lg transition shadow-lg"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
       )}
 
+      {/* Unlock Request Modal */}
+      {showUnlockModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Unlock Request</h3>
+            <p className="text-sm text-gray-500 mb-4">State the reason for requesting to edit posted grades.</p>
+            <textarea
+              value={unlockReason}
+              onChange={(e) => setUnlockReason(e.target.value)}
+              rows={4}
+              placeholder="e.g. Data entry error in Q2 Hekasi grade..."
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none"
+            />
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => { setShowUnlockModal(false); setUnlockReason(''); }} className="flex-1 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition">Cancel</button>
+              <button onClick={submitUnlockRequest} disabled={!unlockReason.trim()} className="flex-1 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">Submit request</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Report Card Modal */}
       {showReportCard && (
         <GradesReportCard 
