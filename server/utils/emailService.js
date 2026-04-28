@@ -434,4 +434,55 @@ const sendAdviserGradeSubmissionEmail = async ({
   );
 };
 
-module.exports = { sendAttendanceEmail, sendGradeReportEmail, sendAdviserGradeSubmissionEmail };
+const sendUnlockDecisionEmail = async ({ teacherEmail, teacherName, studentName, decision, adminNote }) => {
+  if (!teacherEmail) return { success: false, error: 'No teacher email provided' };
+
+  const isApproved = decision === 'approved';
+  const statusColor = isApproved ? '#16a34a' : '#dc2626';
+  const statusLabel = isApproved ? 'APPROVED' : 'REJECTED';
+  const statusIcon = isApproved ? '✅' : '❌';
+  const bodyText = isApproved
+    ? `Your request to unlock grades for <strong>${studentName}</strong> has been <strong style="color:${statusColor};">approved</strong>. You now have <strong>24 hours</strong> to edit the grades.`
+    : `Your request to unlock grades for <strong>${studentName}</strong> has been <strong style="color:${statusColor};">rejected</strong> by the admin.`;
+
+  const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',sans-serif;background:#f5f5f5;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#fff;">
+  <tr><td style="background:#8B0000;padding:24px;text-align:center;">
+    <h1 style="color:#fff;margin:0;font-size:21px;">WMSU ILS – Grade Unlock Request</h1>
+    <p style="color:#fecaca;margin:6px 0 0;font-size:13px;">Elementary Department</p>
+  </td></tr>
+  <tr><td style="background:${statusColor};padding:14px;text-align:center;">
+    <span style="color:#fff;font-size:28px;">${statusIcon}</span>
+    <span style="display:block;color:#fff;font-size:18px;font-weight:bold;margin-top:4px;">Request ${statusLabel}</span>
+  </td></tr>
+  <tr><td style="padding:28px 24px;">
+    <p style="font-size:15px;color:#111827;margin:0 0 14px;">Dear <strong>${teacherName || 'Teacher'}</strong>,</p>
+    <p style="font-size:14px;color:#374151;line-height:1.7;margin:0 0 14px;">${bodyText}</p>
+    ${adminNote ? `<div style="background:#f9fafb;border-left:4px solid ${statusColor};padding:12px 16px;margin:0 0 14px;border-radius:4px;"><p style="margin:0;font-size:13px;color:#374151;"><strong>Admin note:</strong> ${adminNote}</p></div>` : ''}
+    <p style="font-size:12px;color:#6b7280;margin:0;">This is an automated notification from WMSU ILS. Please do not reply.</p>
+  </td></tr>
+</table></body></html>`;
+
+  const textContent = [
+    `WMSU ILS – Grade Unlock Request ${statusLabel}`,
+    '',
+    `Dear ${teacherName || 'Teacher'},`,
+    '',
+    isApproved
+      ? `Your unlock request for ${studentName} was approved. You have 24 hours to edit grades.`
+      : `Your unlock request for ${studentName} was rejected.`,
+    adminNote ? `Admin note: ${adminNote}` : '',
+    '',
+    'WMSU ILS – Elementary Department'
+  ].filter(l => l !== undefined).join('\n');
+
+  return sendViaBrevo(
+    teacherEmail,
+    `Grade Unlock Request ${statusLabel} – ${studentName}`,
+    htmlContent,
+    textContent
+  );
+};
+
+module.exports = { sendAttendanceEmail, sendGradeReportEmail, sendAdviserGradeSubmissionEmail, sendUnlockDecisionEmail };

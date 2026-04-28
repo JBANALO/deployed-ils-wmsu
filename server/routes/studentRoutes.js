@@ -4,7 +4,7 @@ const studentController = require('../controllers/studentController');
 const { query } = require('../config/database');
 const jwt = require('jsonwebtoken');
 const { readUsers } = require('../utils/fileStorage');
-const { sendGradeReportEmail, sendAdviserGradeSubmissionEmail } = require('../utils/emailService');
+const { sendGradeReportEmail, sendAdviserGradeSubmissionEmail, sendUnlockDecisionEmail } = require('../utils/emailService');
 
 // Ensure grades and students are school-year scoped
 let gradesSyEnsured = false;
@@ -1066,6 +1066,7 @@ router.get('/grade-unlock-requests', verifyUserForGrades, async (req, res) => {
 router.put('/grade-unlock-requests/:requestId/approve', verifyUserForGrades, async (req, res) => {
   try {
     await ensureUnlockRequestsTable();
+    await ensureGradePublishStatusTable();
     const { requestId } = req.params;
     const { adminNote } = req.body;
     const user = req.user;
@@ -1081,6 +1082,20 @@ router.put('/grade-unlock-requests/:requestId/approve', verifyUserForGrades, asy
       [reqRow.student_id, reqRow.school_year_id]
     );
     await logAuditEntry(reqRow.student_id, reqRow.school_year_id, 'unlock_approved', user?.id, 'Admin', adminNote || null);
+    // Send email notification to teacher
+    try {
+      const [teacherUser] = await query('SELECT email FROM users WHERE id = ?', [reqRow.teacher_id]);
+      const [studentRow] = await query('SELECT CONCAT(COALESCE(first_name,\'\'),\' \',COALESCE(last_name,\'\')) AS full_name FROM students WHERE id = ?', [reqRow.student_id]);
+      if (teacherUser?.email) {
+        await sendUnlockDecisionEmail({
+          teacherEmail: teacherUser.email,
+          teacherName: reqRow.teacher_name,
+          studentName: String(studentRow?.full_name || '').trim() || reqRow.student_id,
+          decision: 'approved',
+          adminNote: adminNote || null
+        });
+      }
+    } catch (emailErr) { console.warn('Approve email error:', emailErr.message); }
     res.json({ success: true, message: 'Unlock approved. Teacher has 24 hours to edit.' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -1101,6 +1116,20 @@ router.put('/grade-unlock-requests/:requestId/reject', verifyUserForGrades, asyn
       [adminNote || null, requestId]
     );
     await logAuditEntry(reqRow.student_id, reqRow.school_year_id, 'unlock_rejected', user?.id, 'Admin', adminNote || null);
+    // Send email notification to teacher
+    try {
+      const [teacherUser] = await query('SELECT email FROM users WHERE id = ?', [reqRow.teacher_id]);
+      const [studentRow] = await query('SELECT CONCAT(COALESCE(first_name,\'\'),\' \',COALESCE(last_name,\'\')) AS full_name FROM students WHERE id = ?', [reqRow.student_id]);
+      if (teacherUser?.email) {
+        await sendUnlockDecisionEmail({
+          teacherEmail: teacherUser.email,
+          teacherName: reqRow.teacher_name,
+          studentName: String(studentRow?.full_name || '').trim() || reqRow.student_id,
+          decision: 'rejected',
+          adminNote: adminNote || null
+        });
+      }
+    } catch (emailErr) { console.warn('Reject email error:', emailErr.message); }
     res.json({ success: true, message: 'Unlock request rejected.' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
