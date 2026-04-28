@@ -68,17 +68,28 @@ const buildParentOTPEmailHtml = ({ parentName, studentName, otp }) => {
 };
 
 const sendParentOTPEmail = async ({ to, parentName, studentName, otp }) => {
+  console.log('📧 SendGrid Configuration Check:');
+  console.log('- SENDGRID_API_KEY exists:', !!SENDGRID_API_KEY);
+  console.log('- SENDGRID_API_KEY length:', SENDGRID_API_KEY?.length || 0);
+  console.log('- FROM_EMAIL:', FROM_EMAIL);
+  console.log('- TO email:', to);
+  
   if (!SENDGRID_API_KEY) {
     console.warn('SENDGRID_API_KEY not configured. Parent OTP email not sent.');
     return { success: false, error: 'SendGrid service not configured' };
   }
 
+  if (!SENDGRID_API_KEY.startsWith('SG.')) {
+    console.warn('SENDGRID_API_KEY format invalid. Should start with "SG."');
+    return { success: false, error: 'Invalid SendGrid API key format' };
+  }
+
   try {
     console.log('📧 Sending parent OTP email via SendGrid to', to);
     
-    const response = await postJson('https://api.sendgrid.com/v3/mail/send', {
+    const payload = {
       personalizations: [{
-        to: [{ email: to, name: parentName }],
+        to: [{ email: to, name: parentName || 'Parent' }],
         subject: 'WMSU ILS - Parent Verification Code'
       }],
       from: {
@@ -95,7 +106,11 @@ const sendParentOTPEmail = async ({ to, parentName, studentName, otp }) => {
           value: `Your verification code is: ${otp}` 
         }
       ]
-    }, {
+    };
+    
+    console.log('📧 SendGrid payload:', JSON.stringify(payload, null, 2));
+    
+    const response = await postJson('https://api.sendgrid.com/v3/mail/send', payload, {
       'Authorization': `Bearer ${SENDGRID_API_KEY}`
     });
 
@@ -103,6 +118,10 @@ const sendParentOTPEmail = async ({ to, parentName, studentName, otp }) => {
     return { success: true, data: response };
   } catch (error) {
     console.error('Failed to send parent OTP email:', error.message);
+    console.error('Full error:', error);
+    if (error.response) {
+      console.error('SendGrid error response:', error.response);
+    }
     return { success: false, error: error.message };
   }
 };
