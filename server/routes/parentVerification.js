@@ -95,16 +95,13 @@ const verifyUser = async (req, res, next) => {
   }
 };
 
-// Apply auth middleware to all routes
-router.use(verifyUser);
+// Apply auth middleware only to send-otp route
+router.post('/send-otp', verifyUser, sendParentOTP);
 
-// Send OTP to parent email
-router.post('/send-otp', sendParentOTP);
-
-// Verify OTP
+// Verify OTP - NO AUTH required (public route)
 router.post('/verify-otp', verifyParentOTP);
 
-// Check verification status
+// Check verification status - NO AUTH required (public route)
 router.get('/status/:studentId', checkParentVerificationStatus);
 
 module.exports = router;

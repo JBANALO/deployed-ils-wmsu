@@ -4,7 +4,7 @@
 const https = require('https');
 
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
-const FROM_EMAIL = process.env.SENDGRID_EMAIL_FROM || 'studtech1234@gmail.com';
+const FROM_EMAIL = process.env.SENDGRID_EMAIL_FROM || 'hz202300368@wmsu.edu.ph';
 const FROM_NAME = 'WMSU ILS Portal';
 
 const postJson = (url, payload, headers = {}) =>
@@ -50,7 +50,7 @@ const postJson = (url, payload, headers = {}) =>
   });
 
 const buildParentOTPEmailHtml = ({ parentName, studentName, otp, studentId, parentEmail }) => {
-  const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/parent-verification?studentId=${studentId}&studentName=${encodeURIComponent(studentName)}&parentEmail=${encodeURIComponent(parentEmail)}`;
+  const verificationUrl = `${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu.onrender.com'}/parent-verification?studentId=${studentId}&studentName=${encodeURIComponent(studentName)}&parentEmail=${encodeURIComponent(parentEmail)}`;
   
   return `
     <!DOCTYPE html>
