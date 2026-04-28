@@ -15,25 +15,32 @@ const verifyUser = async (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
+    console.log('🔍 Parent Verification - No token provided');
     return res.status(401).json({ status: 'error', message: 'Access token required' });
   }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    console.log('🔍 Parent Verification - Decoded token:', decoded);
     
     // JWT token has id field
     const userId = decoded.userId || decoded.id;
+    console.log('🔍 Parent Verification - User ID:', userId);
     
     // Fetch user from database to get role
     const [users] = await query('SELECT id, role FROM users WHERE id = ?', [userId]);
+    console.log('🔍 Parent Verification - User query result:', users);
     
     if (!users || users.length === 0) {
+      console.log('🔍 Parent Verification - User not found');
       return res.status(401).json({ status: 'error', message: 'User not found' });
     }
     
     req.user = users[0];
+    console.log('🔍 Parent Verification - User verified:', req.user);
     next();
   } catch (err) {
+    console.log('🔍 Parent Verification - Token error:', err.message);
     return res.status(403).json({ status: 'error', message: 'Invalid or expired token' });
   }
 };

@@ -11,6 +11,9 @@ const generateOTP = () => {
 // Send OTP to parent email
 const sendParentOTP = async (req, res) => {
   try {
+    console.log('🔍 Parent OTP Request - Body:', req.body);
+    console.log('🔍 Parent OTP Request - User:', req.user);
+    
     const { studentId, parentEmail, parentFirstName, parentLastName, studentName } = req.body;
 
     if (!studentId || !parentEmail || !parentFirstName || !studentName) {
