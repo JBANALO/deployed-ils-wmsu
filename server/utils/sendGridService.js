@@ -84,6 +84,18 @@ const sendParentOTPEmail = async ({ to, parentName, studentName, otp }) => {
     return { success: false, error: 'Invalid SendGrid API key format' };
   }
 
+  // Test API key validity first
+  try {
+    console.log('🔑 Testing SendGrid API key...');
+    const testResponse = await postJson('https://api.sendgrid.com/v3/user/account', {}, {
+      'Authorization': `Bearer ${SENDGRID_API_KEY}`
+    });
+    console.log('✅ SendGrid API key is valid');
+  } catch (testError) {
+    console.error('❌ SendGrid API key invalid:', testError.message);
+    return { success: false, error: 'Invalid SendGrid API key: ' + testError.message };
+  }
+
   try {
     console.log('📧 Sending parent OTP email via SendGrid to', to);
     
@@ -97,10 +109,6 @@ const sendParentOTPEmail = async ({ to, parentName, studentName, otp }) => {
         name: FROM_NAME
       },
       content: [
-        { 
-          type: 'text/html', 
-          value: buildParentOTPEmailHtml({ parentName, studentName, otp }) 
-        },
         { 
           type: 'text/plain', 
           value: `Your verification code is: ${otp}` 
