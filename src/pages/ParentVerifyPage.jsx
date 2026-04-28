@@ -20,7 +20,7 @@ const ParentVerifyPage = () => {
     setIsVerifying(true);
 
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'https://deployed-ils-wmsu.onrender.com/api'}/parent-verification/verify-otp`, {
+      const response = await fetch(`${process.env.REACT_APP_API_URL || 'https://deployed-ils-wmsu-production.up.railway.app/api'}/parent-verification/verify-otp`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

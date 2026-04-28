@@ -50,7 +50,7 @@ const postJson = (url, payload, headers = {}) =>
   });
 
 const buildParentOTPEmailHtml = ({ parentName, studentName, otp, studentId, parentEmail }) => {
-  const verificationUrl = `${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu.onrender.com'}/parent-verification?studentId=${studentId}&studentName=${encodeURIComponent(studentName)}&parentEmail=${encodeURIComponent(parentEmail)}`;
+  const verificationUrl = `${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu-production.up.railway.app'}/parent-verification?studentId=${studentId}&studentName=${encodeURIComponent(studentName)}&parentEmail=${encodeURIComponent(parentEmail)}`;
   
   return `
     <!DOCTYPE html>
@@ -62,18 +62,24 @@ const buildParentOTPEmailHtml = ({ parentName, studentName, otp, studentId, pare
         <div style="background: #f0f0f0; padding: 20px; text-align: center; margin: 20px 0;">
           <span style="font-size: 24px; font-weight: bold; letter-spacing: 3px;">${otp}</span>
         </div>
-        <p style="text-align: center; margin: 30px 0;">
+        <div style="text-align: center; margin: 30px 0; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+          <h3 style="color: #333; margin-bottom: 15px;">Click the button below to verify:</h3>
           <a href="${verificationUrl}" style="
             background: #8B0000;
             color: white;
-            padding: 12px 30px;
+            padding: 15px 40px;
             text-decoration: none;
             border-radius: 6px;
             font-weight: bold;
+            font-size: 16px;
             display: inline-block;
-          ">Verify Here</a>
+            border: 2px solid #8B0000;
+          ">🔗 VERIFY EMAIL NOW</a>
+        </div>
+        <p style="text-align: center; margin: 20px 0; font-size: 14px;">
+          <strong>Or copy this link:</strong><br>
+          <a href="${verificationUrl}" style="color: #8B0000; word-break: break-all;">${verificationUrl}</a>
         </p>
-        <p>Or click this link: <a href="${verificationUrl}">${verificationUrl}</a></p>
         <p>This code will expire in 15 minutes. If you didn't request this, please ignore this email.</p>
         <p style="margin-top: 24px;">Regards,<br/>WMSU ILS - Elementary Department</p>
       </body>
@@ -142,13 +148,14 @@ const sendParentOTPEmail = async ({ to, parentName, studentName, otp, studentId,
     // Use Brevo directly since SendGrid API key has permission issues
     try {
       const { sendBrevoEmail } = require('./emailService');
+      const verificationUrl = `${process.env.FRONTEND_URL || 'https://deployed-ils-wmsu-production.up.railway.app'}/parent-verification?studentId=${studentId}&studentName=${encodeURIComponent(studentName)}&parentEmail=${encodeURIComponent(parentEmail)}`;
       const htmlContent = buildParentOTPEmailHtml({ parentName, studentName, otp, studentId, parentEmail });
       
       const brevoResult = await sendBrevoEmail({
         to: [{ email: to, name: parentName || 'Parent' }],
         subject: 'WMSU ILS - Parent Verification Code',
         htmlContent: htmlContent,
-        textContent: `Your verification code is: ${otp}`
+        textContent: `Your verification code is: ${otp}\n\nVerification link: ${verificationUrl}`
       });
       
       console.log('📧 Brevo fallback email sent successfully');
