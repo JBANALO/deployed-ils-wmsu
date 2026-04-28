@@ -205,12 +205,21 @@ const handleSubmit = async (e) => {
           })
         });
 
-        const otpResult = await otpResponse.json();
-        
         if (otpResponse.ok) {
-          toast.success(`OTP sent to ${formData.parentEmail}`);
+          console.log('✅ Parent OTP sent successfully');
         } else {
-          toast.warning('Student created but parent OTP email failed. Please resend manually.');
+          const errorData = await otpResponse.json().catch(() => ({}));
+          console.error('❌ Failed to send parent OTP:', errorData);
+          
+          if (errorData.requiresReauth) {
+            toast.error('Session expired. Please log out and log in again.');
+            // Optionally redirect to login after delay
+            setTimeout(() => {
+              window.location.href = '/admin/login';
+            }, 3000);
+          } else {
+            toast.warning('Student created! But parent OTP email failed. Please resend manually.');
+          }
         }
       } catch (otpError) {
         console.error('Error sending parent OTP:', otpError);

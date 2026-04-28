@@ -594,16 +594,24 @@ export default function AdminStudents() {
               })
             });
 
-            const otpResult = await otpResponse.json();
-            
             if (otpResponse.ok) {
-              toast.success(`Student updated! OTP sent to new parent email: ${newParentEmail}`);
+              console.log('✅ Parent OTP sent successfully');
             } else {
-              toast.success('Student updated! But parent OTP email failed. Please resend manually.');
+              const errorData = await otpResponse.json().catch(() => ({}));
+              console.error('❌ Failed to send parent OTP:', errorData);
+              
+              if (errorData.requiresReauth) {
+                toast.error('Session expired. Please log out and log in again.');
+                setTimeout(() => {
+                  window.location.href = '/admin/login';
+                }, 3000);
+              } else {
+                toast.warning('Student updated! But parent OTP email failed. Please resend manually.');
+              }
             }
           } catch (otpError) {
             console.error('Error sending parent OTP after update:', otpError);
-            toast.success('Student updated! But parent OTP email failed. Please resend manually.');
+            toast.warning('Student updated! But parent OTP email failed. Please resend manually.');
           }
         } else {
           toast.success('Student updated successfully!');
