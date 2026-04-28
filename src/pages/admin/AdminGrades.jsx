@@ -148,6 +148,7 @@ export default function AdminGrades() {
 
   useEffect(() => {
     loadGradesData();
+    fetchUnlockRequests();
   }, [targetSchoolYearId, rankingBasis]);
 
   const computationGradeLevelOptions = dedupeSubjects([

@@ -1053,7 +1053,7 @@ router.get('/grade-unlock-requests', verifyUserForGrades, async (req, res) => {
     const whereClause = status ? 'WHERE status = ?' : '';
     const params = status ? [status] : [];
     const rows = await query(
-      `SELECT r.*, s.fullName AS student_name, s.section, s.gradeLevel FROM grade_unlock_requests r LEFT JOIN students s ON s.id = r.student_id ${whereClause} ORDER BY r.created_at DESC`,
+      `SELECT r.*, CONCAT(COALESCE(s.first_name,''),' ',COALESCE(s.last_name,'')) AS student_name, s.section, s.grade_level AS gradeLevel FROM grade_unlock_requests r LEFT JOIN students s ON s.id = r.student_id ${whereClause} ORDER BY r.created_at DESC`,
       params
     );
     res.json({ success: true, data: rows });
