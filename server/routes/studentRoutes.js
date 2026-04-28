@@ -337,7 +337,7 @@ const verifyUserForGrades = async (req, res, next) => {
     console.log('verifyUserForGrades - Looking for user with ID:', userId);
     
     // Fetch user from database to get role (check users table first, then teachers)
-    let users = await query('SELECT id, role, firstName, lastName, email FROM users WHERE id = ?', [userId]);
+    let users = await query('SELECT id, role, first_name AS firstName, last_name AS lastName, email FROM users WHERE id = ?', [userId]);
     
     if (!users || users.length === 0) {
       users = await query('SELECT id, role, first_name AS firstName, last_name AS lastName, email FROM teachers WHERE id = ?', [userId]);
