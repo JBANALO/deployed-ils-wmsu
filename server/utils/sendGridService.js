@@ -49,7 +49,9 @@ const postJson = (url, payload, headers = {}) =>
     req.end();
   });
 
-const buildParentOTPEmailHtml = ({ parentName, studentName, otp }) => {
+const buildParentOTPEmailHtml = ({ parentName, studentName, otp, studentId, parentEmail }) => {
+  const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/parent-verification?studentId=${studentId}&studentName=${encodeURIComponent(studentName)}&parentEmail=${encodeURIComponent(parentEmail)}`;
+  
   return `
     <!DOCTYPE html>
     <html>
@@ -60,6 +62,18 @@ const buildParentOTPEmailHtml = ({ parentName, studentName, otp }) => {
         <div style="background: #f0f0f0; padding: 20px; text-align: center; margin: 20px 0;">
           <span style="font-size: 24px; font-weight: bold; letter-spacing: 3px;">${otp}</span>
         </div>
+        <p style="text-align: center; margin: 30px 0;">
+          <a href="${verificationUrl}" style="
+            background: #8B0000;
+            color: white;
+            padding: 12px 30px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+            display: inline-block;
+          ">Verify Here</a>
+        </p>
+        <p>Or click this link: <a href="${verificationUrl}">${verificationUrl}</a></p>
         <p>This code will expire in 15 minutes. If you didn't request this, please ignore this email.</p>
         <p style="margin-top: 24px;">Regards,<br/>WMSU ILS - Elementary Department</p>
       </body>
@@ -67,7 +81,7 @@ const buildParentOTPEmailHtml = ({ parentName, studentName, otp }) => {
   `;
 };
 
-const sendParentOTPEmail = async ({ to, parentName, studentName, otp }) => {
+const sendParentOTPEmail = async ({ to, parentName, studentName, otp, studentId, parentEmail }) => {
   console.log('📧 SendGrid Configuration Check:');
   console.log('- SENDGRID_API_KEY exists:', !!SENDGRID_API_KEY);
   console.log('- SENDGRID_API_KEY length:', SENDGRID_API_KEY?.length || 0);
@@ -125,11 +139,10 @@ const sendParentOTPEmail = async ({ to, parentName, studentName, otp }) => {
       }
     }
     
-    // Fallback to Brevo email service
-    console.log('🔄 Falling back to Brevo email service...');
+    // Use Brevo directly since SendGrid API key has permission issues
     try {
       const { sendBrevoEmail } = require('./emailService');
-      const htmlContent = buildParentOTPEmailHtml({ parentName, studentName, otp });
+      const htmlContent = buildParentOTPEmailHtml({ parentName, studentName, otp, studentId, parentEmail });
       
       const brevoResult = await sendBrevoEmail({
         to: [{ email: to, name: parentName || 'Parent' }],

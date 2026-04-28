@@ -51,6 +51,7 @@ import TeacherAccounts from "./pages/superadmin/TeacherAccounts.jsx";
 import StudentAccounts from "./pages/superadmin/StudentAccounts.jsx";
 import SuperAdminSettings from "./pages/superadmin/Settings.jsx";
 import SuperAdminProfile from "./pages/superadmin/SuperAdminProfile.jsx";
+import ParentVerification from "./pages/ParentVerification";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
 import { Toaster } from 'react-hot-toast';  
@@ -104,6 +105,7 @@ function App() {
             <Route path="/auth/google-callback" element={<GoogleCallbackPage />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
+            <Route path="/parent-verification" element={<ParentVerification />} />
 
             {/* Admin-only standalone pages */}
             <Route element={<ProtectedRoute allowedRoles={['admin', 'super_admin', 'superadmin']} />}>

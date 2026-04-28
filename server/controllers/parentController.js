@@ -40,7 +40,9 @@ const sendParentOTP = async (req, res) => {
       to: parentEmail,
       parentName: `${parentFirstName} ${parentLastName}`,
       studentName: studentName,
-      otp: otp
+      otp: otp,
+      studentId: studentId,
+      parentEmail: parentEmail
     });
 
     if (emailResult.success) {
