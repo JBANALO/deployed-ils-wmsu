@@ -80,12 +80,17 @@ const verifyParentOTP = async (req, res) => {
     // Check OTP in database - handle both string and number student_id
     console.log('🔍 Querying parent_verifications table for:', { studentId, otp, studentIdType: typeof studentId });
     
-    // Try as string first (since parent_verifications stores student_id as string)
+    // Try exact match first
     const [rows] = await query(
       `SELECT * FROM parent_verifications 
-       WHERE student_id = ? AND otp = ? AND expires_at > NOW() AND verified = FALSE`,
+       WHERE student_id = ? AND otp = ? AND expires_at > NOW() AND verified = 0`,
       [String(studentId), otp]
     );
+    
+    console.log('🔍 Query executed:', {
+      sql: `SELECT * FROM parent_verifications WHERE student_id = '${String(studentId)}' AND otp = '${otp}' AND expires_at > NOW() AND verified = 0`,
+      params: [String(studentId), otp]
+    });
 
     console.log('🔍 Query result:', rows.length, 'rows found');
     console.log('🔍 First row:', rows[0]);
@@ -97,7 +102,23 @@ const verifyParentOTP = async (req, res) => {
         [String(studentId)]
       );
       console.log('🔍 Recent records for student:', allRows);
-      return res.status(400).json({ error: 'Invalid or expired OTP' });
+      
+      // Check if student exists in students table
+      const [studentRows] = await query(
+        `SELECT id, first_name, last_name, parent_email FROM students WHERE id = ?`,
+        [String(studentId)]
+      );
+      console.log('🔍 Student record check:', studentRows);
+      
+      return res.status(400).json({ 
+        error: 'Invalid or expired OTP',
+        debug: {
+          studentId,
+          otp,
+          foundRecords: allRows.length,
+          studentExists: studentRows.length > 0
+        }
+      });
     }
 
     const verification = rows[0];
@@ -105,14 +126,14 @@ const verifyParentOTP = async (req, res) => {
     // Mark as verified
     await query(
       `UPDATE parent_verifications 
-       SET verified = TRUE, verified_at = NOW() 
+       SET verified = 1, verified_at = NOW() 
        WHERE id = ?`,
       [verification.id]
     );
 
     // Update student table to mark parent as verified
     await query(
-      `UPDATE students SET parent_verified = TRUE WHERE id = ?`,
+      `UPDATE students SET parent_verified = 1 WHERE id = ?`,
       [String(studentId)]
     );
 
