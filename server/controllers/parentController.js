@@ -80,16 +80,30 @@ const verifyParentOTP = async (req, res) => {
     // Check OTP in database - handle both string and number student_id
     console.log('🔍 Querying parent_verifications table for:', { studentId, otp, studentIdType: typeof studentId });
     
-    // Try exact match first
+    // Try without time check first to see if record exists
     const [rows] = await query(
       `SELECT * FROM parent_verifications 
-       WHERE student_id = ? AND otp = ? AND expires_at > NOW() AND verified = 0`,
+       WHERE student_id = ? AND otp = ? AND verified = 0`,
       [String(studentId), otp]
     );
     
     console.log('🔍 Query executed:', {
-      sql: `SELECT * FROM parent_verifications WHERE student_id = '${String(studentId)}' AND otp = '${otp}' AND expires_at > NOW() AND verified = 0`,
+      sql: `SELECT * FROM parent_verifications WHERE student_id = '${String(studentId)}' AND otp = '${otp}' AND verified = 0`,
       params: [String(studentId), otp]
+    });
+    
+    // Also check with time condition to see if expired
+    const [rowsWithTime] = await query(
+      `SELECT *, expires_at > NOW() as is_not_expired FROM parent_verifications 
+       WHERE student_id = ? AND otp = ? AND verified = 0`,
+      [String(studentId), otp]
+    );
+    
+    console.log('🔍 Time check result:', {
+      withoutTime: rows.length,
+      withTime: rowsWithTime.length,
+      record: rowsWithTime[0],
+      currentTime: new Date().toISOString()
     });
 
     console.log('🔍 Query result:', rows.length, 'rows found');
