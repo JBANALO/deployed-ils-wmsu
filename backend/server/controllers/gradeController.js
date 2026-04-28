@@ -310,9 +310,9 @@ const getStudentGrades = async (req, res) => {
     if (!quarter) {
       Object.keys(result).forEach((subject) => {
         const values = ['q1', 'q2', 'q3', 'q4']
-          .map((key) => Number(result[subject][key]) || 0)
-          .filter((value) => value > 0);
-        result[subject].average = values.length > 0
+          .map((key) => Number(result[subject][key]) || 0);
+        const hasCompleteQuarters = values.every((value) => value > 0);
+        result[subject].average = hasCompleteQuarters
           ? (values.reduce((sum, value) => sum + value, 0) / values.length)
           : 0;
       });

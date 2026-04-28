@@ -329,10 +329,11 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
             };
 
             const quarterKeys = ['q1', 'q2', 'q3', 'q4'];
+            const isValidGradeValue = (value) => Number.isFinite(value) && value > 0;
             const quarterAverages = quarterKeys.reduce((acc, quarterKey) => {
               const quarterValues = studentSubjects
                 .map((subject) => Number(findGrade(subject)?.[quarterKey]))
-                .filter((value) => Number.isFinite(value) && value > 0);
+                .filter((value) => isValidGradeValue(value));
 
               acc[quarterKey] = quarterValues.length > 0
                 ? Math.round(quarterValues.reduce((sum, value) => sum + value, 0) / quarterValues.length)
@@ -340,22 +341,32 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
               return acc;
             }, {});
 
-            const computedFinalAverage = (() => {
-              const availableQuarterAverages = quarterKeys
-                .map((quarterKey) => quarterAverages[quarterKey])
-                .filter((value) => Number.isFinite(value) && value > 0);
+            const subjectFinalRatings = studentSubjects.reduce((acc, subject) => {
+              const gradeData = findGrade(subject);
+              const qValues = ['q1', 'q2', 'q3', 'q4'].map((key) => Number(gradeData?.[key]));
+              const hasCompleteQuarters = qValues.every((value) => isValidGradeValue(value));
 
-              if (availableQuarterAverages.length > 0) {
+              acc[subject] = hasCompleteQuarters
+                ? Math.round(qValues.reduce((sum, value) => sum + value, 0) / qValues.length)
+                : '';
+              return acc;
+            }, {});
+
+            const computedFinalAverage = (() => {
+              const finalRatings = studentSubjects
+                .map((subject) => subjectFinalRatings[subject])
+                .filter((value) => isValidGradeValue(value));
+
+              const hasCompleteFinalRatings =
+                studentSubjects.length > 0 && finalRatings.length === studentSubjects.length;
+
+              if (hasCompleteFinalRatings) {
                 return Math.round(
-                  availableQuarterAverages.reduce((sum, value) => sum + value, 0) /
-                    availableQuarterAverages.length
+                  finalRatings.reduce((sum, value) => sum + value, 0) / finalRatings.length
                 );
               }
 
-              const fallbackAverage = Number(student.average);
-              return Number.isFinite(fallbackAverage) && fallbackAverage > 0
-                ? Math.round(fallbackAverage)
-                : '';
+              return '';
             })();
             
             return (
@@ -421,14 +432,7 @@ export default function GradesReportCard({ students, quarter, gradeLevel, sectio
                         const q3Val = gradeData?.q3 || '';
                         const q4Val = gradeData?.q4 || '';
                         
-                        // Calculate final rating from all available quarters
-                        const allGrades = [q1Val, q2Val, q3Val, q4Val]
-                          .map(g => parseFloat(g))
-                          .filter(g => !isNaN(g) && g > 0);
-                        
-                        const finalRating = allGrades.length > 0 
-                          ? Math.round(allGrades.reduce((a, b) => a + b, 0) / allGrades.length)
-                          : '';
+                        const finalRating = subjectFinalRatings[subject] || '';
 
                         return (
                           <tr key={idx}>
