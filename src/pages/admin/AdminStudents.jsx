@@ -571,7 +571,44 @@ export default function AdminStudents() {
       });
 
       if (response.ok) {
-        toast.success('Student updated successfully!');
+        // Check if parent email was changed
+        const originalParentEmail = selectedStudent.parentEmail || '';
+        const newParentEmail = editFormData.parentEmail || '';
+        
+        if (originalParentEmail !== newParentEmail && newParentEmail) {
+          // Send OTP to new parent email
+          try {
+            const otpResponse = await fetch(`${API_BASE_URL}/parent-verification/send-otp`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              },
+              body: JSON.stringify({
+                studentId: selectedStudent.id,
+                parentEmail: newParentEmail.trim(),
+                parentFirstName: editFormData.parentFirstName?.trim() || selectedStudent.parentFirstName,
+                parentLastName: editFormData.parentLastName?.trim() || selectedStudent.parentLastName,
+                studentName: `${editFormData.firstName} ${editFormData.lastName}`
+              })
+            });
+
+            const otpResult = await otpResponse.json();
+            
+            if (otpResponse.ok) {
+              toast.success(`Student updated! OTP sent to new parent email: ${newParentEmail}`);
+            } else {
+              toast.success('Student updated! But parent OTP email failed. Please resend manually.');
+            }
+          } catch (otpError) {
+            console.error('Error sending parent OTP after update:', otpError);
+            toast.success('Student updated! But parent OTP email failed. Please resend manually.');
+          }
+        } else {
+          toast.success('Student updated successfully!');
+        }
+        
         fetchStudents(); // Refresh list
         setShowEditModal(false);
       } else {

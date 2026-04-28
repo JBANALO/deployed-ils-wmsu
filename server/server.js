@@ -2551,6 +2551,8 @@ app.use('/api/subjects', subjectRoutes);
 
 app.use('/api/sections', sectionRoutes);
 
+app.use('/api/parent-verification', require('./routes/parentVerification'));
+
 // ==========================================
 
 

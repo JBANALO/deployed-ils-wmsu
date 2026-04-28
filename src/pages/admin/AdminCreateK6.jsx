@@ -185,6 +185,38 @@ const handleSubmit = async (e) => {
     const result = await response.json();
 
     if (response.ok) {
+      const createdStudent = result.data || result;
+      
+      // Send parent OTP verification email
+      try {
+        const otpResponse = await fetch(`${API_BASE_URL}/parent-verification/send-otp`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            studentId: createdStudent.id || createdStudent.student?.id,
+            parentEmail: formData.parentEmail.trim(),
+            parentFirstName: formData.parentFirstName.trim(),
+            parentLastName: formData.parentLastName.trim(),
+            studentName: `${formData.firstName} ${formData.lastName}`
+          })
+        });
+
+        const otpResult = await otpResponse.json();
+        
+        if (otpResponse.ok) {
+          toast.success(`OTP sent to ${formData.parentEmail}`);
+        } else {
+          toast.warning('Student created but parent OTP email failed. Please resend manually.');
+        }
+      } catch (otpError) {
+        console.error('Error sending parent OTP:', otpError);
+        toast.warning('Student created but parent OTP email failed. Please resend manually.');
+      }
+
       // Success modal
       setCreatedStudentEmail(formData.wmsuEmail);
       setCreatedStudentPassword(formData.password);
