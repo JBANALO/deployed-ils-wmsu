@@ -829,7 +829,7 @@ export default function AdminGrades() {
         </div>
       </div>
 
-      {activeTab === 'students' ? (
+      {activeTab === 'students' && (
       <div className="bg-white shadow rounded-lg border border-gray-200 mt-6">
 
         <div className="flex justify-between items-center p-4 border-b flex-wrap gap-4">
@@ -1075,7 +1075,9 @@ export default function AdminGrades() {
           Showing {filteredStudents.length} of {students.length} students • Selected: {selectedStudentIds.size}
         </div>
       </div>
-      ) : (
+      )}
+
+      {activeTab === 'computation' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
           <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200 space-y-6">
             <div className="bg-white border border-gray-200 rounded-xl p-4">
