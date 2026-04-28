@@ -774,34 +774,50 @@ export default function EditGrades() {
 
     // Adviser sees ALL subjects; subject teacher sees only their assigned subjects
     // Always prefer admin-configured subjects as the source of truth
+    // Helper: normalize subject name for fuzzy matching (strip grade suffix, lowercase)
+    const normSub = (s) => String(s || '').replace(/\s*\(Grade\s+\d+\)\s*$/i, '').replace(/\s*\(Kindergarten\)\s*$/i, '').trim().toLowerCase();
+
     let subjectsToShow;
     if (shouldRestrictToAssignedSubjectsOnly) {
-      // Teacher mode: show only subjects assigned to this teacher for this class.
+      // Subject teacher: show assigned subjects + match against admin-configured list via fuzzy name
       if (gradeSubjectList.length > 0) {
-        subjectsToShow = editableSubjectsForClass.filter(s => gradeSubjectList.includes(s));
+        // Prefer the admin-configured name when it matches (fuzzy), otherwise keep teacher's name
+        const matched = editableSubjectsForClass.map(ts => {
+          const adminMatch = gradeSubjectList.find(as => normSub(as) === normSub(ts));
+          return adminMatch || ts;
+        });
+        subjectsToShow = dedupeSubjects(matched);
         if (subjectsToShow.length === 0) subjectsToShow = editableSubjectsForClass;
       } else {
         subjectsToShow = editableSubjectsForClass;
       }
     } else if (isAdviserForClass) {
-      // Adviser sees all admin-configured subjects for the grade level
-      subjectsToShow = gradeSubjectList;
+      // Adviser sees all admin-configured subjects + any subjects that already have saved grades
+      const gradedSubjects = Object.keys(studentGrades).filter(k => k !== '__meta');
+      subjectsToShow = dedupeSubjects([...gradeSubjectList, ...gradedSubjects]);
+      if (subjectsToShow.length === 0) subjectsToShow = gradedSubjects;
     } else if (gradeSubjectList.length > 0) {
-      // Subject teacher: only show their assigned subjects that admin has configured for this grade
-      subjectsToShow = editableSubjectsForClass.filter(s => gradeSubjectList.includes(s));
-      // If nothing intersects (edge case), fall back to their assigned subjects
+      // Fallback: fuzzy match teacher subjects against admin list
+      const matched = editableSubjectsForClass.map(ts => {
+        const adminMatch = gradeSubjectList.find(as => normSub(as) === normSub(ts));
+        return adminMatch || ts;
+      });
+      subjectsToShow = dedupeSubjects(matched);
       if (subjectsToShow.length === 0) subjectsToShow = editableSubjectsForClass;
     } else {
-      // Admin hasn't configured subjects for this grade yet — fall back to teacher's assigned subjects
       subjectsToShow = editableSubjectsForClass;
     }
     const initialGrades = {};
     subjectsToShow.forEach(subject => {
+      // Try exact match first, then fuzzy match (handles "Mathematics" vs "Math (Grade 3)")
+      const exactData = studentGrades[subject];
+      const fuzzyData = exactData ? null : Object.entries(studentGrades).find(([k]) => normSub(k) === normSub(subject))?.[1];
+      const gradeEntry = exactData || fuzzyData || {};
       initialGrades[subject] = {
-        q1: studentGrades[subject]?.q1 || 0,
-        q2: studentGrades[subject]?.q2 || 0,
-        q3: studentGrades[subject]?.q3 || 0,
-        q4: studentGrades[subject]?.q4 || 0,
+        q1: gradeEntry.q1 || 0,
+        q2: gradeEntry.q2 || 0,
+        q3: gradeEntry.q3 || 0,
+        q4: gradeEntry.q4 || 0,
       };
     });
     
