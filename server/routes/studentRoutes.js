@@ -1113,7 +1113,7 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
     await ensureStudentSchoolYearColumn();
     await ensureGradesSchoolYearColumn();
     const { id } = req.params;
-    const { schoolYearId, includeLocks } = req.query;
+    const { schoolYearId, includeLocks, adviserView } = req.query;
     const [studentRow] = await query('SELECT id, school_year_id, grade_level, section FROM students WHERE id = ?', [id]);
     const targetSyId = schoolYearId || studentRow?.school_year_id || (await getActiveSchoolYear())?.id;
     const allGrades = await query(
@@ -1128,7 +1128,7 @@ router.get('/:id/grades', verifyUserForGrades, async (req, res) => {
     const normalizedRole = normalizeRole(user.role || '');
     let grades = allGrades;
 
-    if ((normalizedRole === 'teacher' || normalizedRole === 'subject_teacher') && studentRow) {
+    if ((normalizedRole === 'teacher' || normalizedRole === 'subject_teacher') && studentRow && !adviserView) {
       const uniqueSubjects = [...new Set(allGrades.map((g) => g.subject).filter(Boolean))];
       const allowed = new Set();
 

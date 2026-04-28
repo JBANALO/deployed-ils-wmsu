@@ -746,7 +746,7 @@ export default function EditGrades() {
     console.log(isAdviserForClass ? 'Adviser' : 'Subject teacher', '- editable subjects:', editableSubjectsForClass);
 
     // Track whether adviser is viewing their own class (to show full read-only view)
-    setIsAdviserViewingClass(isAdviserForClass && !shouldRestrictToAssignedSubjectsOnly);
+    setIsAdviserViewingClass(isAdviserForClass);
 
     // Update availableSubjects (controls which inputs are enabled)
     // Both advisers and subject teachers can only edit their specifically assigned subjects
@@ -757,7 +757,8 @@ export default function EditGrades() {
     try {
       const gradeParams = {
         ...(selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}),
-        includeLocks: 1
+        includeLocks: 1,
+        ...(isAdviserForClass ? { adviserView: 1 } : {})
       };
       const gradesResponse = await api.get(`/students/${student.id}/grades`, { params: gradeParams });
       const payload = gradesResponse.data || {};
@@ -778,7 +779,12 @@ export default function EditGrades() {
     const normSub = (s) => String(s || '').replace(/\s*\(Grade\s+\d+\)\s*$/i, '').replace(/\s*\(Kindergarten\)\s*$/i, '').trim().toLowerCase();
 
     let subjectsToShow;
-    if (shouldRestrictToAssignedSubjectsOnly) {
+    if (isAdviserForClass) {
+      // Adviser sees all admin-configured subjects + any subjects that already have saved grades
+      const gradedSubjects = Object.keys(studentGrades).filter(k => k !== '__meta');
+      subjectsToShow = dedupeSubjects([...gradeSubjectList, ...gradedSubjects]);
+      if (subjectsToShow.length === 0) subjectsToShow = gradedSubjects;
+    } else if (shouldRestrictToAssignedSubjectsOnly) {
       // Subject teacher: show assigned subjects + match against admin-configured list via fuzzy name
       if (gradeSubjectList.length > 0) {
         // Prefer the admin-configured name when it matches (fuzzy), otherwise keep teacher's name
@@ -791,11 +797,6 @@ export default function EditGrades() {
       } else {
         subjectsToShow = editableSubjectsForClass;
       }
-    } else if (isAdviserForClass) {
-      // Adviser sees all admin-configured subjects + any subjects that already have saved grades
-      const gradedSubjects = Object.keys(studentGrades).filter(k => k !== '__meta');
-      subjectsToShow = dedupeSubjects([...gradeSubjectList, ...gradedSubjects]);
-      if (subjectsToShow.length === 0) subjectsToShow = gradedSubjects;
     } else if (gradeSubjectList.length > 0) {
       // Fallback: fuzzy match teacher subjects against admin list
       const matched = editableSubjectsForClass.map(ts => {
