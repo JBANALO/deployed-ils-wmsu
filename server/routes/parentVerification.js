@@ -27,12 +27,17 @@ const verifyUser = async (req, res, next) => {
     const userId = decoded.userId || decoded.id;
     console.log('🔍 Parent Verification - User ID:', userId);
     
-    // Fetch user from database to get role
-    const [users] = await query('SELECT id, role FROM users WHERE id = ?', [userId]);
-    console.log('🔍 Parent Verification - User query result:', users);
+    // Fetch user from database to get role (check users table first, then teachers)
+    let users = await query('SELECT id, role FROM users WHERE id = ?', [userId]);
+    console.log('🔍 Parent Verification - Users table result:', users);
     
     if (!users || users.length === 0) {
-      console.log('🔍 Parent Verification - User not found');
+      users = await query('SELECT id, role FROM teachers WHERE id = ?', [userId]);
+      console.log('🔍 Parent Verification - Teachers table result:', users);
+    }
+    
+    if (!users || users.length === 0) {
+      console.log('🔍 Parent Verification - User not found in any table');
       return res.status(401).json({ status: 'error', message: 'User not found' });
     }
     
