@@ -81,48 +81,49 @@ const verifyParentOTP = async (req, res) => {
     console.log('🔍 Querying parent_verifications table for:', { studentId, otp, studentIdType: typeof studentId });
     
     // Try without time check first to see if record exists
-    const [rows] = await query(
-      `SELECT * FROM parent_verifications 
-       WHERE student_id = ? AND otp = ? AND verified = 0`,
-      [String(studentId), otp]
-    );
+    let rows;
+    try {
+      const result = await query(
+        `SELECT * FROM parent_verifications 
+         WHERE student_id = ? AND otp = ? AND verified = 0`,
+        [String(studentId), otp]
+      );
+      rows = result[0] || [];
+      console.log('🔍 Query executed successfully');
+    } catch (error) {
+      console.error('🔍 Query failed:', error);
+      rows = [];
+    }
     
-    console.log('🔍 Query executed:', {
-      sql: `SELECT * FROM parent_verifications WHERE student_id = '${String(studentId)}' AND otp = '${otp}' AND verified = 0`,
-      params: [String(studentId), otp]
-    });
-    
-    // Also check with time condition to see if expired
-    const [rowsWithTime] = await query(
-      `SELECT *, expires_at > NOW() as is_not_expired FROM parent_verifications 
-       WHERE student_id = ? AND otp = ? AND verified = 0`,
-      [String(studentId), otp]
-    );
-    
-    console.log('🔍 Time check result:', {
-      withoutTime: rows.length,
-      withTime: rowsWithTime.length,
-      record: rowsWithTime[0],
-      currentTime: new Date().toISOString()
-    });
-
     console.log('🔍 Query result:', rows.length, 'rows found');
     console.log('🔍 First row:', rows[0]);
 
-    if (rows.length === 0) {
+    if (!rows || rows.length === 0) {
       console.log('🔍 No matching OTP found, checking if any record exists...');
-      const [allRows] = await query(
-        `SELECT * FROM parent_verifications WHERE student_id = ? ORDER BY created_at DESC LIMIT 5`,
-        [String(studentId)]
-      );
-      console.log('🔍 Recent records for student:', allRows);
+      let allRows = [];
+      let studentRows = [];
       
-      // Check if student exists in students table
-      const [studentRows] = await query(
-        `SELECT id, first_name, last_name, parent_email FROM students WHERE id = ?`,
-        [String(studentId)]
-      );
-      console.log('🔍 Student record check:', studentRows);
+      try {
+        const allResult = await query(
+          `SELECT * FROM parent_verifications WHERE student_id = ? ORDER BY created_at DESC LIMIT 5`,
+          [String(studentId)]
+        );
+        allRows = allResult[0] || [];
+        console.log('🔍 Recent records for student:', allRows);
+      } catch (error) {
+        console.error('🔍 Error checking recent records:', error);
+      }
+      
+      try {
+        const studentResult = await query(
+          `SELECT id, first_name, last_name, parent_email FROM students WHERE id = ?`,
+          [String(studentId)]
+        );
+        studentRows = studentResult[0] || [];
+        console.log('🔍 Student record check:', studentRows);
+      } catch (error) {
+        console.error('🔍 Error checking student record:', error);
+      }
       
       return res.status(400).json({ 
         error: 'Invalid or expired OTP',
@@ -136,25 +137,35 @@ const verifyParentOTP = async (req, res) => {
     }
 
     const verification = rows[0];
+    console.log('🔍 Verification record found:', verification);
 
-    // Mark as verified
-    await query(
-      `UPDATE parent_verifications 
-       SET verified = 1, verified_at = NOW() 
-       WHERE id = ?`,
-      [verification.id]
-    );
+    try {
+      // Mark as verified
+      await query(
+        `UPDATE parent_verifications 
+         SET verified = 1, verified_at = NOW() 
+         WHERE id = ?`,
+        [verification.id]
+      );
 
-    // Update student table to mark parent as verified
-    await query(
-      `UPDATE students SET parent_verified = 1 WHERE id = ?`,
-      [String(studentId)]
-    );
+      // Update student table to mark parent as verified
+      await query(
+        `UPDATE students SET parent_verified = 1 WHERE id = ?`,
+        [String(studentId)]
+      );
 
-    res.json({ 
-      success: true, 
-      message: 'Parent account verified successfully' 
-    });
+      console.log('🔍 Verification successful for student:', studentId);
+      res.json({ 
+        success: true, 
+        message: 'Parent account verified successfully' 
+      });
+    } catch (updateError) {
+      console.error('🔍 Error updating verification:', updateError);
+      res.status(500).json({ 
+        error: 'Failed to update verification status',
+        details: updateError.message
+      });
+    }
 
   } catch (error) {
     console.error('🔍 Error verifying parent OTP:', error);
