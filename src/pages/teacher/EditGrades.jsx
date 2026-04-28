@@ -95,6 +95,8 @@ export default function EditGrades() {
   const [gradeStatuses, setGradeStatuses] = useState({});
   const [autoSaveStatus, setAutoSaveStatus] = useState('idle');
   const [modalPublishStatus, setModalPublishStatus] = useState(null);
+  const modalPublishStatusRef = useRef(null);
+  const setModalPublishStatusSynced = (val) => { modalPublishStatusRef.current = val; setModalPublishStatus(val); };
   const [auditLog, setAuditLog] = useState([]);
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [unlockReason, setUnlockReason] = useState('');
@@ -760,7 +762,7 @@ export default function EditGrades() {
       const gradesResponse = await api.get(`/students/${student.id}/grades`, { params: gradeParams });
       const payload = gradesResponse.data || {};
       setGradeEditLocks(payload.__meta?.editWindowLocks || {});
-      setModalPublishStatus(payload.__meta?.publishStatus || null);
+      setModalPublishStatusSynced(payload.__meta?.publishStatus || null);
       fetchAuditLog(student.id);
       studentGrades = Object.fromEntries(
         Object.entries(payload).filter(([key]) => key !== '__meta')
@@ -1018,6 +1020,7 @@ export default function EditGrades() {
         return next;
       });
     }
+    if (modalPublishStatusRef.current === 'posted') return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => saveAsDraftSilent(pendingGradeDataRef.current), 1500);
   };
@@ -1035,6 +1038,7 @@ export default function EditGrades() {
 
   const saveAsDraftSilent = async (currentData) => {
     if (!selectedStudent || !currentData) return;
+    if (modalPublishStatusRef.current === 'posted') return;
     const token = localStorage.getItem('token');
     if (!token || isGradeLocked || isViewOnlyMode) return;
     setAutoSaveStatus('saving');
@@ -1059,7 +1063,7 @@ export default function EditGrades() {
       const avgValue = subjectAvgs.length > 0 ? subjectAvgs.reduce((a,b)=>a+b,0)/subjectAvgs.length : 0;
       await api.put(`/students/${selectedStudent.id}/grades`, { grades: quarterGrades, average: parseFloat(avgValue.toFixed(2)), quarter: selectedQuarter, lastGradeEditTime: new Date().toISOString(), ...(selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}) });
       setAutoSaveStatus('saved');
-      setModalPublishStatus('draft');
+      setModalPublishStatusSynced('draft');
       setGradeStatuses(prev => ({ ...prev, [String(selectedStudent.id)]: 'draft' }));
       fetchAuditLog(selectedStudent.id);
       setTimeout(() => setAutoSaveStatus('idle'), 2000);
@@ -1073,12 +1077,13 @@ export default function EditGrades() {
     if (!selectedStudent) return;
     const token = localStorage.getItem('token');
     if (!token) { toast.error('Session expired. Please login again.'); return; }
+    if (autoSaveTimerRef.current) { clearTimeout(autoSaveTimerRef.current); autoSaveTimerRef.current = null; }
     try {
       await saveAsDraftSilent(gradeData);
       const resp = await api.post(`/students/${selectedStudent.id}/grades/publish`, { ...(selectedSchoolYearId ? { schoolYearId: selectedSchoolYearId } : {}) });
       if (resp.data?.success) {
         toast.success('Grades posted! Now visible to admin and students.');
-        setModalPublishStatus('posted');
+        setModalPublishStatusSynced('posted');
         setGradeStatuses(prev => ({ ...prev, [String(selectedStudent.id)]: 'posted' }));
         fetchAuditLog(selectedStudent.id);
       } else { toast.error(resp.data?.message || 'Failed to post grades'); }
@@ -1201,7 +1206,7 @@ export default function EditGrades() {
 
       if (response.data?.success) {
         toast.success('Grades saved as draft! You have 24 hours to edit them again.');
-        setModalPublishStatus('draft');
+        setModalPublishStatusSynced('draft');
         setGradeStatuses(prev => ({ ...prev, [String(selectedStudent?.id || '')]: 'draft' }));
         fetchAuditLog(selectedStudent?.id);
         const currentStudentId = String(selectedStudent?.id || '');
