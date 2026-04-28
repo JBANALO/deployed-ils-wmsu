@@ -337,10 +337,10 @@ const verifyUserForGrades = async (req, res, next) => {
     console.log('verifyUserForGrades - Looking for user with ID:', userId);
     
     // Fetch user from database to get role (check users table first, then teachers)
-    let users = await query('SELECT id, role FROM users WHERE id = ?', [userId]);
+    let users = await query('SELECT id, role, firstName, lastName, email FROM users WHERE id = ?', [userId]);
     
     if (!users || users.length === 0) {
-      users = await query('SELECT id, role FROM teachers WHERE id = ?', [userId]);
+      users = await query('SELECT id, role, first_name AS firstName, last_name AS lastName, email FROM teachers WHERE id = ?', [userId]);
     }
     
     // If not found in DB, check JSON file (where teachers/advisers may be stored)
@@ -350,7 +350,7 @@ const verifyUserForGrades = async (req, res, next) => {
         const jsonUser = jsonUsers.find(u => u.id === userId);
         if (jsonUser) {
           console.log('verifyUserForGrades - Found user in JSON file:', jsonUser.firstName, jsonUser.lastName, jsonUser.role);
-          users = [{ id: jsonUser.id, role: jsonUser.role }];
+          users = [{ id: jsonUser.id, role: jsonUser.role, firstName: jsonUser.firstName, lastName: jsonUser.lastName, email: jsonUser.email }];
         }
       } catch (jsonError) {
         console.log('verifyUserForGrades - Error reading JSON file:', jsonError.message);
