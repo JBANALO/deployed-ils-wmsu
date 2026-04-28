@@ -75,6 +75,9 @@ export default function AdminGrades() {
   const [form137Records, setForm137Records] = useState([]);
   const [preparingPrint, setPreparingPrint] = useState(false);
   const [gradeStatuses, setGradeStatuses] = useState({});
+  const [selectedSection, setSelectedSection] = useState('All');
+  const [unlockRequests, setUnlockRequests] = useState([]);
+  const [unlockRequestsLoading, setUnlockRequestsLoading] = useState(false);
   const targetSchoolYearId = viewingSchoolYear?.id || activeSchoolYear?.id || '';
   const rankingLabelMap = {
     final: 'Final Average',
@@ -603,6 +606,10 @@ export default function AdminGrades() {
   };
 
   // Filter students
+  const availableSections = ['All', ...new Set(students
+    .filter(s => selectedGradeLevel === 'All' || s.gradeLevel === selectedGradeLevel)
+    .map(s => s.section).filter(Boolean))].sort((a, b) => a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b));
+
   const filteredStudents = students.filter(student => {
     const matchesSearch = !searchQuery || 
       student.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -613,8 +620,38 @@ export default function AdminGrades() {
     const matchesGradeLevel = selectedGradeLevel === 'All' || 
       student.gradeLevel === selectedGradeLevel;
 
-    return matchesSearch && matchesGradeLevel;
+    const matchesSection = selectedSection === 'All' ||
+      student.section === selectedSection;
+
+    return matchesSearch && matchesGradeLevel && matchesSection;
   });
+
+  const fetchUnlockRequests = async () => {
+    setUnlockRequestsLoading(true);
+    try {
+      const res = await axios.get('/students/grade-unlock-requests', {
+        params: targetSchoolYearId ? { schoolYearId: targetSchoolYearId } : {}
+      });
+      setUnlockRequests(res.data?.data || []);
+    } catch (e) { console.warn('Could not fetch unlock requests:', e.message); }
+    finally { setUnlockRequestsLoading(false); }
+  };
+
+  const handleApproveRequest = async (requestId) => {
+    try {
+      await axios.put(`/students/grade-unlock-requests/${requestId}/approve`);
+      toast.success('Unlock request approved. Teacher can now edit grades.');
+      fetchUnlockRequests();
+    } catch (e) { toast.error(e.response?.data?.message || 'Failed to approve'); }
+  };
+
+  const handleRejectRequest = async (requestId) => {
+    try {
+      await axios.put(`/students/grade-unlock-requests/${requestId}/reject`);
+      toast.info('Unlock request rejected.');
+      fetchUnlockRequests();
+    } catch (e) { toast.error(e.response?.data?.message || 'Failed to reject'); }
+  };
 
   const includedComputationSubjects = computationSubjects.filter((item) => item?.included);
   const includedSubjectCount = includedComputationSubjects.length;
@@ -773,6 +810,22 @@ export default function AdminGrades() {
           >
             Grade Computation Settings
           </button>
+          <button
+            type="button"
+            onClick={() => { setActiveTab('unlockRequests'); fetchUnlockRequests(); }}
+            className={`pb-3 text-xl font-semibold transition ${
+              activeTab === 'unlockRequests'
+                ? 'text-red-700 border-b-2 border-red-700'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            Unlock Requests
+            {unlockRequests.filter(r => r.status === 'pending').length > 0 && (
+              <span className="ml-2 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-red-600 rounded-full">
+                {unlockRequests.filter(r => r.status === 'pending').length}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -829,7 +882,7 @@ export default function AdminGrades() {
 
               value={selectedGradeLevel}
 
-              onChange={(e) => setSelectedGradeLevel(e.target.value)}
+              onChange={(e) => { setSelectedGradeLevel(e.target.value); setSelectedSection('All'); }}
 
               className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-red-800"
 
@@ -843,6 +896,16 @@ export default function AdminGrades() {
 
               ))}
 
+            </select>
+
+            <select
+              value={selectedSection}
+              onChange={(e) => setSelectedSection(e.target.value)}
+              className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-red-800"
+            >
+              {availableSections.map(sec => (
+                <option key={sec} value={sec}>{sec === 'All' ? 'All Sections' : sec}</option>
+              ))}
             </select>
 
             <div className="relative">
@@ -1160,6 +1223,85 @@ export default function AdminGrades() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'unlockRequests' && (
+        <div className="bg-white shadow rounded-lg border border-gray-200 mt-6">
+          <div className="flex justify-between items-center p-4 border-b flex-wrap gap-4">
+            <h3 className="text-lg font-semibold text-gray-800">Unlock Requests</h3>
+            <button
+              type="button"
+              onClick={fetchUnlockRequests}
+              className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-50 text-gray-600"
+            >
+              Refresh
+            </button>
+          </div>
+          {unlockRequestsLoading ? (
+            <p className="p-6 text-gray-500 text-center">Loading...</p>
+          ) : unlockRequests.length === 0 ? (
+            <p className="p-6 text-gray-500 text-center">No unlock requests found.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="p-4">Teacher</th>
+                    <th className="p-4">Student</th>
+                    <th className="p-4">Section</th>
+                    <th className="p-4">Reason</th>
+                    <th className="p-4">Requested At</th>
+                    <th className="p-4 text-center">Status</th>
+                    <th className="p-4 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unlockRequests.map((req) => (
+                    <tr key={req.id} className="border-b hover:bg-gray-50">
+                      <td className="p-4 font-medium">{req.teacher_name || req.performed_by_name || 'Unknown'}</td>
+                      <td className="p-4">{req.student_name || `Student #${req.student_id}`}</td>
+                      <td className="p-4">{req.section || '—'}</td>
+                      <td className="p-4 max-w-xs text-sm text-gray-600">{req.reason || '—'}</td>
+                      <td className="p-4 text-sm text-gray-500">{req.created_at ? new Date(req.created_at).toLocaleString() : '—'}</td>
+                      <td className="p-4 text-center">
+                        {req.status === 'pending' && (
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">Pending</span>
+                        )}
+                        {req.status === 'approved' && (
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">Approved</span>
+                        )}
+                        {req.status === 'rejected' && (
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">Rejected</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-center">
+                        {req.status === 'pending' && (
+                          <div className="flex gap-2 justify-center">
+                            <button
+                              onClick={() => handleApproveRequest(req.id)}
+                              className="px-3 py-1 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => handleRejectRequest(req.id)}
+                              className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        )}
+                        {req.status !== 'pending' && (
+                          <span className="text-gray-400 text-sm">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
