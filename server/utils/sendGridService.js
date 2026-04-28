@@ -120,9 +120,31 @@ const sendParentOTPEmail = async ({ to, parentName, studentName, otp }) => {
     console.error('Failed to send parent OTP email:', error.message);
     console.error('Full error:', error);
     if (error.response) {
-      console.error('SendGrid error response:', error.response);
+      console.error('SendGrid error response:', JSON.stringify(error.response, null, 2));
+      if (error.response.data && error.response.data.errors) {
+        console.error('SendGrid error details:', error.response.data.errors);
+      }
     }
-    return { success: false, error: error.message };
+    
+    // Fallback to Brevo email service
+    console.log('🔄 Falling back to Brevo email service...');
+    try {
+      const { sendBrevoEmail } = require('./emailService');
+      const htmlContent = buildParentOTPEmailHtml({ parentName, studentName, otp });
+      
+      const brevoResult = await sendBrevoEmail({
+        to: [{ email: to, name: parentName || 'Parent' }],
+        subject: 'WMSU ILS - Parent Verification Code',
+        htmlContent: htmlContent,
+        textContent: `Your verification code is: ${otp}`
+      });
+      
+      console.log('📧 Brevo fallback email sent successfully');
+      return { success: true, data: brevoResult, service: 'brevo' };
+    } catch (brevoError) {
+      console.error('Brevo fallback also failed:', brevoError.message);
+      return { success: false, error: `SendGrid: ${error.message}, Brevo: ${brevoError.message}` };
+    }
   }
 };
 
