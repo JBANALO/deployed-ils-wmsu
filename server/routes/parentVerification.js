@@ -27,13 +27,38 @@ const verifyUser = async (req, res, next) => {
     const userId = decoded.userId || decoded.id;
     console.log('🔍 Parent Verification - User ID:', userId);
     
-    // Fetch user from database to get role (check users table first, then teachers)
-    let users = await query('SELECT id, role FROM users WHERE id = ?', [userId]);
-    console.log('🔍 Parent Verification - Users table result:', users);
+    // Use the same lookup logic as main auth controller
+    let users = [];
     
-    if (!users || users.length === 0) {
-      users = await query('SELECT id, role FROM teachers WHERE id = ?', [userId]);
-      console.log('🔍 Parent Verification - Teachers table result:', users);
+    // 1️⃣ Priority lookup: MySQL users table first
+    try {
+      users = await query('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [userId, userId]);
+      console.log('🔍 Parent Verification - Users table result:', users);
+    } catch (dbError) {
+      console.log('Users DB login check failed:', dbError.message);
+      users = [];
+    }
+
+    // 2️⃣ If not found, try teachers table
+    if (users.length === 0) {
+      try {
+        users = await query('SELECT * FROM teachers WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [userId, userId]);
+        console.log('🔍 Parent Verification - Teachers table result:', users);
+      } catch (dbError) {
+        console.log('Teachers DB login check failed:', dbError.message);
+        users = [];
+      }
+    }
+    
+    // 3️⃣ If still not found, try direct ID lookup
+    if (users.length === 0) {
+      try {
+        users = await query('SELECT * FROM users WHERE id = ?', [userId]);
+        console.log('🔍 Parent Verification - Users table by ID result:', users);
+      } catch (dbError) {
+        console.log('Direct ID lookup failed:', dbError.message);
+        users = [];
+      }
     }
     
     if (!users || users.length === 0) {
