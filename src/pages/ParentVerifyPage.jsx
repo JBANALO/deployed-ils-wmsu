@@ -104,15 +104,6 @@ const ParentVerifyPage = () => {
                 {isVerifying ? 'Verifying...' : 'Verify Email'}
               </button>
             </form>
-
-            <div className="flex justify-center text-sm mt-5 text-gray-600">
-              <button
-                onClick={() => window.location.href = '/login'}
-                className="w-[150px] bg-gray-600 hover:bg-gray-400 text-white font-semibold py-4 px-6 rounded-md transition duration-200 transform hover:scale-105"
-              >
-                Back to Login
-              </button>
-            </div>
           </>
         ) : (
           <div className="space-y-4">
@@ -120,12 +111,6 @@ const ParentVerifyPage = () => {
             <p className="text-green-800 font-medium mb-4">
               Thank you! Your parent account for <span className="font-medium">{studentName}</span> has been successfully verified.
             </p>
-            <button
-              onClick={() => window.location.href = '/login'}
-              className="w-full inline-block bg-gray-400 hover:bg-gray-500 text-white font-semibold py-4 px-6 rounded-md transition text-center"
-            >
-              Back to Login
-            </button>
           </div>
         )}
       </div>
