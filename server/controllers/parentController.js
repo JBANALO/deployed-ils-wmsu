@@ -77,14 +77,26 @@ const verifyParentOTP = async (req, res) => {
       return res.status(400).json({ error: 'Student ID and OTP are required' });
     }
 
-    // Check OTP in database
+    // Check OTP in database - handle both string and number student_id
+    console.log('🔍 Querying parent_verifications table for:', { studentId, otp, studentIdType: typeof studentId });
+    
+    // Try as string first (since parent_verifications stores student_id as string)
     const [rows] = await query(
       `SELECT * FROM parent_verifications 
        WHERE student_id = ? AND otp = ? AND expires_at > NOW() AND verified = FALSE`,
-      [studentId, otp]
+      [String(studentId), otp]
     );
 
+    console.log('🔍 Query result:', rows.length, 'rows found');
+    console.log('🔍 First row:', rows[0]);
+
     if (rows.length === 0) {
+      console.log('🔍 No matching OTP found, checking if any record exists...');
+      const [allRows] = await query(
+        `SELECT * FROM parent_verifications WHERE student_id = ? ORDER BY created_at DESC LIMIT 5`,
+        [String(studentId)]
+      );
+      console.log('🔍 Recent records for student:', allRows);
       return res.status(400).json({ error: 'Invalid or expired OTP' });
     }
 
@@ -101,7 +113,7 @@ const verifyParentOTP = async (req, res) => {
     // Update student table to mark parent as verified
     await query(
       `UPDATE students SET parent_verified = TRUE WHERE id = ?`,
-      [studentId]
+      [String(studentId)]
     );
 
     res.json({ 
@@ -110,7 +122,15 @@ const verifyParentOTP = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error verifying parent OTP:', error);
+    console.error('🔍 Error verifying parent OTP:', error);
+    console.error('🔍 Error stack:', error.stack);
+    console.error('🔍 Error details:', {
+      message: error.message,
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
     res.status(500).json({ error: 'Failed to verify OTP', details: error.message });
   }
 };
