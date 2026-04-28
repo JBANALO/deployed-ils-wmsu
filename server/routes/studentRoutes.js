@@ -79,12 +79,12 @@ const ensureUnlockRequestsTable = async () => {
         id INT AUTO_INCREMENT PRIMARY KEY,
         student_id VARCHAR(255) NOT NULL,
         school_year_id INT NOT NULL,
-        teacher_id INT NOT NULL,
+        teacher_id VARCHAR(255) NOT NULL,
         teacher_name VARCHAR(255),
         reason TEXT NOT NULL,
         status ENUM('pending','approved','rejected') DEFAULT 'pending',
         admin_note TEXT,
-        approved_by INT NULL,
+        approved_by VARCHAR(255) NULL,
         expires_at DATETIME NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -92,6 +92,14 @@ const ensureUnlockRequestsTable = async () => {
         INDEX idx_unlock_teacher (teacher_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+    // Ensure columns exist in case table was created by an older schema
+    const cols = await query('SHOW COLUMNS FROM grade_unlock_requests');
+    const colNames = cols.map(c => c.Field);
+    if (!colNames.includes('admin_note')) await query('ALTER TABLE grade_unlock_requests ADD COLUMN admin_note TEXT NULL');
+    if (!colNames.includes('approved_by')) await query('ALTER TABLE grade_unlock_requests ADD COLUMN approved_by VARCHAR(255) NULL');
+    if (!colNames.includes('expires_at')) await query('ALTER TABLE grade_unlock_requests ADD COLUMN expires_at DATETIME NULL');
+    if (!colNames.includes('status')) await query("ALTER TABLE grade_unlock_requests ADD COLUMN status ENUM('pending','approved','rejected') DEFAULT 'pending'");
+    if (!colNames.includes('teacher_name')) await query('ALTER TABLE grade_unlock_requests ADD COLUMN teacher_name VARCHAR(255) NULL');
   } catch (err) { console.warn('grade_unlock_requests table warning:', err.message); }
   unlockRequestsEnsured = true;
 };

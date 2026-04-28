@@ -643,7 +643,7 @@ export default function AdminGrades() {
       await axios.put(`/students/grade-unlock-requests/${requestId}/approve`);
       toast.success('Unlock request approved. Teacher can now edit grades.');
       fetchUnlockRequests();
-    } catch (e) { toast.error(e.response?.data?.message || 'Failed to approve'); }
+    } catch (e) { toast.error(e.message || e.response?.data?.message || 'Failed to approve'); }
   };
 
   const handleRejectRequest = async (requestId) => {
@@ -651,7 +651,7 @@ export default function AdminGrades() {
       await axios.put(`/students/grade-unlock-requests/${requestId}/reject`);
       toast.info('Unlock request rejected.');
       fetchUnlockRequests();
-    } catch (e) { toast.error(e.response?.data?.message || 'Failed to reject'); }
+    } catch (e) { toast.error(e.message || e.response?.data?.message || 'Failed to reject'); }
   };
 
   const includedComputationSubjects = computationSubjects.filter((item) => item?.included);
