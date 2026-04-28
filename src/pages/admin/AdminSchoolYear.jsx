@@ -82,9 +82,13 @@ export default function AdminSchoolYear() {
     label: '',
     start_date: '',
     end_date: '',
+    q1_open_date: '',
     q1_end_date: '',
+    q2_open_date: '',
     q2_end_date: '',
+    q3_open_date: '',
     q3_end_date: '',
+    q4_open_date: '',
     q4_end_date: '',
     principal_name: '',
     assistant_principal_name: '',
@@ -198,9 +202,13 @@ export default function AdminSchoolYear() {
         label: '',
         start_date: '',
         end_date: '',
+        q1_open_date: '',
         q1_end_date: '',
+        q2_open_date: '',
         q2_end_date: '',
+        q3_open_date: '',
         q3_end_date: '',
+        q4_open_date: '',
         q4_end_date: '',
         principal_name: '',
         assistant_principal_name: '',
@@ -226,9 +234,13 @@ export default function AdminSchoolYear() {
         label: '',
         start_date: '',
         end_date: '',
+        q1_open_date: '',
         q1_end_date: '',
+        q2_open_date: '',
         q2_end_date: '',
+        q3_open_date: '',
         q3_end_date: '',
+        q4_open_date: '',
         q4_end_date: '',
         principal_name: '',
         assistant_principal_name: '',
@@ -408,9 +420,13 @@ export default function AdminSchoolYear() {
         label: '',
         start_date: '',
         end_date: '',
+        q1_open_date: '',
         q1_end_date: '',
+        q2_open_date: '',
         q2_end_date: '',
+        q3_open_date: '',
         q3_end_date: '',
+        q4_open_date: '',
         q4_end_date: '',
         principal_name: '',
         assistant_principal_name: '',
@@ -512,9 +528,13 @@ export default function AdminSchoolYear() {
       label: sy.label,
       start_date: sy.start_date?.split('T')[0] || '',
       end_date: sy.end_date?.split('T')[0] || '',
+      q1_open_date: sy.q1_open_date?.split('T')[0] || '',
       q1_end_date: sy.q1_end_date?.split('T')[0] || '',
+      q2_open_date: sy.q2_open_date?.split('T')[0] || '',
       q2_end_date: sy.q2_end_date?.split('T')[0] || '',
+      q3_open_date: sy.q3_open_date?.split('T')[0] || '',
       q3_end_date: sy.q3_end_date?.split('T')[0] || '',
+      q4_open_date: sy.q4_open_date?.split('T')[0] || '',
       q4_end_date: sy.q4_end_date?.split('T')[0] || '',
       principal_name: sy.principal_name || '',
       assistant_principal_name: sy.assistant_principal_name || '',
@@ -1241,44 +1261,24 @@ export default function AdminSchoolYear() {
               </div>
 
               <div className="rounded-xl border border-red-100 bg-red-50/40 p-3 sm:p-4">
-                <h4 className="text-sm font-semibold text-red-900 mb-3">Quarter End Dates</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-red-900/90 mb-1">Q1 End Date</label>
-                    <input
-                      type="date"
-                      value={formData.q1_end_date}
-                      onChange={(e) => setFormData({ ...formData, q1_end_date: e.target.value })}
-                      className="w-full px-3 py-2.5 border border-red-200 bg-white rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-red-900/90 mb-1">Q2 End Date</label>
-                    <input
-                      type="date"
-                      value={formData.q2_end_date}
-                      onChange={(e) => setFormData({ ...formData, q2_end_date: e.target.value })}
-                      className="w-full px-3 py-2.5 border border-red-200 bg-white rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-red-900/90 mb-1">Q3 End Date</label>
-                    <input
-                      type="date"
-                      value={formData.q3_end_date}
-                      onChange={(e) => setFormData({ ...formData, q3_end_date: e.target.value })}
-                      className="w-full px-3 py-2.5 border border-red-200 bg-white rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-red-900/90 mb-1">Q4 End Date</label>
-                    <input
-                      type="date"
-                      value={formData.q4_end_date}
-                      onChange={(e) => setFormData({ ...formData, q4_end_date: e.target.value })}
-                      className="w-full px-3 py-2.5 border border-red-200 bg-white rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                    />
-                  </div>
+                <h4 className="text-sm font-semibold text-red-900 mb-3">Grading schedule — per quarter</h4>
+                <div className="space-y-3">
+                  {[1,2,3,4].map(q => (
+                    <div key={q} className="grid grid-cols-2 gap-2 items-end">
+                      <div>
+                        <label className="block text-xs font-medium text-red-900/90 mb-1">Q{q} Opens</label>
+                        <input type="date" value={formData[`q${q}_open_date`]}
+                          onChange={(e) => setFormData({ ...formData, [`q${q}_open_date`]: e.target.value })}
+                          className="w-full px-3 py-2 border border-red-200 bg-white rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-red-900/90 mb-1">Q{q} Closes</label>
+                        <input type="date" value={formData[`q${q}_end_date`]}
+                          onChange={(e) => setFormData({ ...formData, [`q${q}_end_date`]: e.target.value })}
+                          className="w-full px-3 py-2 border border-red-200 bg-white rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -1379,43 +1379,24 @@ export default function AdminSchoolYear() {
                   required
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Q1 End Date</label>
-                  <input
-                    type="date"
-                    value={formData.q1_end_date}
-                    onChange={(e) => setFormData({ ...formData, q1_end_date: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Q2 End Date</label>
-                  <input
-                    type="date"
-                    value={formData.q2_end_date}
-                    onChange={(e) => setFormData({ ...formData, q2_end_date: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Q3 End Date</label>
-                  <input
-                    type="date"
-                    value={formData.q3_end_date}
-                    onChange={(e) => setFormData({ ...formData, q3_end_date: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Q4 End Date</label>
-                  <input
-                    type="date"
-                    value={formData.q4_end_date}
-                    onChange={(e) => setFormData({ ...formData, q4_end_date: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
+              <div className="rounded-xl border border-gray-200 bg-gray-50/50 p-3 space-y-3">
+                <h4 className="text-sm font-semibold text-gray-800">Grading schedule — per quarter</h4>
+                {[1,2,3,4].map(q => (
+                  <div key={q} className="grid grid-cols-2 gap-3 items-end">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Q{q} Opens</label>
+                      <input type="date" value={formData[`q${q}_open_date`]}
+                        onChange={(e) => setFormData({ ...formData, [`q${q}_open_date`]: e.target.value })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Q{q} Closes</label>
+                      <input type="date" value={formData[`q${q}_end_date`]}
+                        onChange={(e) => setFormData({ ...formData, [`q${q}_end_date`]: e.target.value })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent" />
+                    </div>
+                  </div>
+                ))}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Principal Name</label>

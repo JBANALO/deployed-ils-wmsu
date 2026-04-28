@@ -80,6 +80,7 @@ export default function EditGrades() {
   const [isGradeLocked, setIsGradeLocked] = useState(false);
   const [lockReason, setLockReason] = useState("");
   const [quarterEndDates, setQuarterEndDates] = useState({ q1: null, q2: null, q3: null, q4: null });
+  const [quarterOpenDates, setQuarterOpenDates] = useState({ q1: null, q2: null, q3: null, q4: null });
   const [gradeEditLocks, setGradeEditLocks] = useState({});
   const [showReportCard, setShowReportCard] = useState(false);
   const [reportCardStudent, setReportCardStudent] = useState(null); // null = all students, array = selected students
@@ -271,6 +272,7 @@ export default function EditGrades() {
 
         if (!target) {
           setQuarterEndDates({ q1: null, q2: null, q3: null, q4: null });
+          setQuarterOpenDates({ q1: null, q2: null, q3: null, q4: null });
           return;
         }
 
@@ -280,9 +282,16 @@ export default function EditGrades() {
           q3: target.q3_end_date || null,
           q4: target.q4_end_date || null,
         });
+        setQuarterOpenDates({
+          q1: target.q1_open_date || null,
+          q2: target.q2_open_date || null,
+          q3: target.q3_open_date || null,
+          q4: target.q4_open_date || null,
+        });
       } catch (error) {
         console.error('Failed to load quarter end dates:', error.message || error);
         setQuarterEndDates({ q1: null, q2: null, q3: null, q4: null });
+        setQuarterOpenDates({ q1: null, q2: null, q3: null, q4: null });
       }
     };
 
@@ -301,11 +310,29 @@ export default function EditGrades() {
     return d;
   };
 
+  const getQuarterOpenDate = (qKey) => {
+    const raw = quarterOpenDates?.[qKey] || null;
+    if (!raw) return null;
+    const d = new Date(raw);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  const getQuarterWindow = (qKey) => {
+    const openDate = getQuarterOpenDate(qKey);
+    const closeDate = getQuarterDeadline(qKey);
+    const now = new Date();
+    if (!openDate && !closeDate) return { status: 'no_schedule', daysLeft: null, openDate, closeDate };
+    if (openDate && now < openDate) return { status: 'not_open_yet', daysLeft: Math.ceil((openDate - now) / 86400000), openDate, closeDate };
+    if (closeDate && now > closeDate) return { status: 'closed', daysLeft: null, openDate, closeDate };
+    const daysLeft = closeDate ? Math.ceil((closeDate - now) / 86400000) : null;
+    return { status: 'open', daysLeft, openDate, closeDate };
+  };
+
   const isQuarterClosed = (qKey) => {
     if (userRole === 'admin') return false;
-    const deadline = getQuarterDeadline(qKey);
-    if (!deadline) return false;
-    return new Date() > deadline;
+    const { status } = getQuarterWindow(qKey);
+    return status === 'closed' || status === 'not_open_yet';
   };
 
   const quarterLabel = (qKey) => {
@@ -1461,6 +1488,35 @@ export default function EditGrades() {
 
       {activeTab === 'grades' ? (
         <>
+
+      {/* Grading Window Banner */}
+      {selectedQuarter !== 'all' && (() => {
+        const win = getQuarterWindow(selectedQuarter);
+        if (win.status === 'no_schedule') return null;
+        const fmt = (d) => d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+        const qLabel = { q1: 'Q1', q2: 'Q2', q3: 'Q3', q4: 'Q4' }[selectedQuarter];
+        let bg, dot, badge, msg;
+        if (win.status === 'open') {
+          bg = 'bg-green-50 border-green-200'; dot = 'bg-green-500'; badge = 'text-green-700 bg-green-100';
+          msg = win.daysLeft === 1 ? 'Open — closes tomorrow' : win.daysLeft > 0 ? `Open — ${win.daysLeft} days remaining` : 'Open — closes today';
+        } else if (win.status === 'not_open_yet') {
+          bg = 'bg-yellow-50 border-yellow-200'; dot = 'bg-yellow-500'; badge = 'text-yellow-700 bg-yellow-100';
+          msg = `Not open yet — opens in ${win.daysLeft} day${win.daysLeft !== 1 ? 's' : ''}`;
+        } else {
+          bg = 'bg-red-50 border-red-200'; dot = 'bg-red-500'; badge = 'text-red-700 bg-red-100';
+          msg = 'Closed';
+        }
+        return (
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border mb-4 text-sm font-medium ${bg}`}>
+            <span className={`inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 ${dot}`} />
+            <span className="text-gray-700">
+              <span className="font-semibold">{qLabel} grading window:</span>{' '}
+              {fmt(win.openDate)} – {fmt(win.closeDate)}
+            </span>
+            <span className={`ml-auto px-2.5 py-0.5 rounded-full text-xs font-semibold ${badge}`}>{msg}</span>
+          </div>
+        );
+      })()}
 
       {/* Filter Section */}
       <div className="bg-white rounded-2xl shadow-xl p-8 mb-8 border border-gray-200">
