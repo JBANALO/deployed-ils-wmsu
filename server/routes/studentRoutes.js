@@ -114,6 +114,25 @@ const logAuditEntry = async (studentId, syId, action, userId, userName, details)
   } catch (err) { console.warn('Audit log insert warning:', err.message); }
 };
 
+const getTeacherEmail = async (teacherId) => {
+  if (!teacherId) return null;
+
+  try {
+    const [userRow] = await query('SELECT email FROM users WHERE id = ?', [teacherId]);
+    if (userRow?.email) return userRow.email;
+  } catch (err) {
+    console.warn('Teacher email lookup (users) warning:', err.message);
+  }
+
+  try {
+    const [teacherRow] = await query('SELECT email FROM teachers WHERE id = ?', [teacherId]);
+    return teacherRow?.email || null;
+  } catch (err) {
+    console.warn('Teacher email lookup (teachers) warning:', err.message);
+    return null;
+  }
+};
+
 const ensureStudentSchoolYearColumn = async () => {
   if (studentSyEnsured) return;
   const cols = await query('SHOW COLUMNS FROM students');
@@ -472,19 +491,20 @@ const canEnterGrade = async (user, student, subject, schoolYearId) => {
 
     console.log('Subject teacher check - class identifiers:', classIdentifiers, 'subject:', subject, 'teacherName:', teacherName);
 
-    const subjectTeacherRecords = classIdentifiers.length > 0
-      ? await query(
-          `SELECT subject
-           FROM subject_teachers
-           WHERE LOWER(REPLACE(TRIM(class_id), ' ', '-')) IN (${classPlaceholders})
-             AND school_year_id = ?
-             AND (
-               LOWER(TRIM(CAST(teacher_id AS CHAR))) = LOWER(TRIM(?))
-               OR (? <> '' AND LOWER(TRIM(teacher_name)) = LOWER(TRIM(?)))
-             )`,
-          [...classIdentifiers, schoolYearId, String(user.id), teacherName, teacherName]
-        )
-      : [];
+    let subjectTeacherRecords = [];
+    if (classIdentifiers.length > 0) {
+      subjectTeacherRecords = await query(
+        `SELECT subject
+         FROM subject_teachers
+         WHERE LOWER(REPLACE(TRIM(class_id), ' ', '-')) IN (${classPlaceholders})
+           AND school_year_id = ?
+           AND (
+             LOWER(TRIM(CAST(teacher_id AS CHAR))) = LOWER(TRIM(?))
+             OR (? <> '' AND LOWER(TRIM(teacher_name)) = LOWER(TRIM(?)))
+           )`,
+        [...classIdentifiers, schoolYearId, String(user.id), teacherName, teacherName]
+      );
+    }
     console.log('Subject teacher records:', subjectTeacherRecords);
     
     if (subjectTeacherRecords && subjectTeacherRecords.length > 0) {
@@ -1092,11 +1112,11 @@ router.put('/grade-unlock-requests/:requestId/approve', verifyUserForGrades, asy
     await logAuditEntry(reqRow.student_id, reqRow.school_year_id, 'unlock_approved', user?.id, 'Admin', adminNote || null);
     // Send email notification to teacher
     try {
-      const [teacherUser] = await query('SELECT email FROM users WHERE id = ?', [reqRow.teacher_id]);
-      const [studentRow] = await query('SELECT CONCAT(COALESCE(first_name,\'\'),\' \',COALESCE(last_name,\'\')) AS full_name FROM students WHERE id = ?', [reqRow.student_id]);
-      if (teacherUser?.email) {
+      const teacherEmail = await getTeacherEmail(reqRow.teacher_id);
+      const [studentRow] = await query("SELECT CONCAT(COALESCE(first_name,''),' ',COALESCE(last_name,'')) AS full_name FROM students WHERE id = ?", [reqRow.student_id]);
+      if (teacherEmail) {
         await sendUnlockDecisionEmail({
-          teacherEmail: teacherUser.email,
+          teacherEmail,
           teacherName: reqRow.teacher_name,
           studentName: String(studentRow?.full_name || '').trim() || reqRow.student_id,
           decision: 'approved',
@@ -1126,11 +1146,11 @@ router.put('/grade-unlock-requests/:requestId/reject', verifyUserForGrades, asyn
     await logAuditEntry(reqRow.student_id, reqRow.school_year_id, 'unlock_rejected', user?.id, 'Admin', adminNote || null);
     // Send email notification to teacher
     try {
-      const [teacherUser] = await query('SELECT email FROM users WHERE id = ?', [reqRow.teacher_id]);
-      const [studentRow] = await query('SELECT CONCAT(COALESCE(first_name,\'\'),\' \',COALESCE(last_name,\'\')) AS full_name FROM students WHERE id = ?', [reqRow.student_id]);
-      if (teacherUser?.email) {
+      const teacherEmail = await getTeacherEmail(reqRow.teacher_id);
+      const [studentRow] = await query("SELECT CONCAT(COALESCE(first_name,''),' ',COALESCE(last_name,'')) AS full_name FROM students WHERE id = ?", [reqRow.student_id]);
+      if (teacherEmail) {
         await sendUnlockDecisionEmail({
-          teacherEmail: teacherUser.email,
+          teacherEmail,
           teacherName: reqRow.teacher_name,
           studentName: String(studentRow?.full_name || '').trim() || reqRow.student_id,
           decision: 'rejected',
