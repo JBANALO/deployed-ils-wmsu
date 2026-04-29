@@ -90,7 +90,9 @@ const StudentPortal = () => {
                 adviserName: studentData.adviserName || '',
                 schoolYearLabel: resolvedSchoolYearLabel,
                 principalName: resolvedPrincipalName,
-                assistantPrincipalName: resolvedAssistantPrincipalName
+                assistantPrincipalName: resolvedAssistantPrincipalName,
+                isTransferee: studentData.isTransferee || false,
+                transferQuarter: studentData.transferQuarter || null
               },
               grades: studentData.grades || [],
               gradeHistory: studentData.gradeHistory || [],
@@ -344,10 +346,10 @@ const StudentPortal = () => {
                 ${grades.length > 0 ? grades.map((g, i) => `
                   <tr>
                     <td style="border: 1px solid #333; padding: 4px; text-align: left;">${formatReportCardSubject(g.subject)}</td>
-                    <td style="border: 1px solid #333; padding: 4px;">${g.q1 || ''}</td>
-                    <td style="border: 1px solid #333; padding: 4px;">${g.q2 || ''}</td>
-                    <td style="border: 1px solid #333; padding: 4px;">${g.q3 || ''}</td>
-                    <td style="border: 1px solid #333; padding: 4px;">${g.q4 || ''}</td>
+                    <td style="border: 1px solid #333; padding: 4px;">${isNAQuarter('q1') ? 'N/A' : (g.q1 || '')}</td>
+                    <td style="border: 1px solid #333; padding: 4px;">${isNAQuarter('q2') ? 'N/A' : (g.q2 || '')}</td>
+                    <td style="border: 1px solid #333; padding: 4px;">${isNAQuarter('q3') ? 'N/A' : (g.q3 || '')}</td>
+                    <td style="border: 1px solid #333; padding: 4px;">${isNAQuarter('q4') ? 'N/A' : (g.q4 || '')}</td>
                     <td style="border: 1px solid #333; padding: 4px; font-weight: bold;">${hasAllQuarters(g) ? (g.average || '') : ''}</td>
                     <td style="border: 1px solid #333; padding: 4px;">${hasAllQuarters(g) ? (g.remarks || '') : ''}</td>
                   </tr>
@@ -584,7 +586,7 @@ const StudentPortal = () => {
     return clean;
   };
 
-  // Helper: true only when a subject has all 4 valid quarter grades
+  // Helper: true only when a subject has a valid numeric grade
   const isValidQuarterGrade = (value) => {
     if (value === null || value === undefined) return false;
     const normalized = String(value).trim();
@@ -593,18 +595,25 @@ const StudentPortal = () => {
     return Number.isFinite(parsed) && parsed > 0;
   };
 
-  const hasAllQuarters = (g) => (
-    isValidQuarterGrade(g.q1)
-    && isValidQuarterGrade(g.q2)
-    && isValidQuarterGrade(g.q3)
-    && isValidQuarterGrade(g.q4)
-  );
+  // Quarters that are N/A for a transferee (before their transfer quarter)
+  const transferQuarterOrder = ['q1', 'q2', 'q3', 'q4'];
+  const isNAQuarter = (q) => {
+    if (!profile.isTransferee || !profile.transferQuarter) return false;
+    return transferQuarterOrder.indexOf(q) < transferQuarterOrder.indexOf(profile.transferQuarter);
+  };
+  const requiredQuarters = transferQuarterOrder.filter(q => !isNAQuarter(q));
+
+  const hasAllQuarters = (g) => requiredQuarters.every(q => isValidQuarterGrade(g[q]));
   const allSubjectsComplete = grades.length > 0 && grades.every(hasAllQuarters);
 
-  // Helper function to compute general average (only when all subjects have all 4 quarters)
+  // Helper function to compute general average (only when all subjects have all required quarters)
   const computeGeneralAverage = () => {
     if (!allSubjectsComplete) return '';
-    const sum = grades.reduce((acc, cur) => acc + (parseFloat(cur.average) || 0), 0);
+    const sum = grades.reduce((acc, cur) => {
+      const vals = requiredQuarters.map(q => parseFloat(cur[q])).filter(v => !isNaN(v) && v > 0);
+      const subjectAvg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+      return acc + subjectAvg;
+    }, 0);
     return (sum / grades.length).toFixed(2);
   };
 
@@ -914,10 +923,10 @@ const StudentPortal = () => {
                   ${grades.length > 0 ? grades.map((g) => `
                     <tr>
                       <td style="border: 1px solid #333; padding: 4px; text-align: left;">${formatReportCardSubject(g.subject)}</td>
-                      <td style="border: 1px solid #333; padding: 4px;">${g.q1 || ''}</td>
-                      <td style="border: 1px solid #333; padding: 4px;">${g.q2 || ''}</td>
-                      <td style="border: 1px solid #333; padding: 4px;">${g.q3 || ''}</td>
-                      <td style="border: 1px solid #333; padding: 4px;">${g.q4 || ''}</td>
+                      <td style="border: 1px solid #333; padding: 4px;">${isNAQuarter('q1') ? 'N/A' : (g.q1 || '')}</td>
+                      <td style="border: 1px solid #333; padding: 4px;">${isNAQuarter('q2') ? 'N/A' : (g.q2 || '')}</td>
+                      <td style="border: 1px solid #333; padding: 4px;">${isNAQuarter('q3') ? 'N/A' : (g.q3 || '')}</td>
+                      <td style="border: 1px solid #333; padding: 4px;">${isNAQuarter('q4') ? 'N/A' : (g.q4 || '')}</td>
                       <td style="border: 1px solid #333; padding: 4px; font-weight: bold;">${hasAllQuarters(g) ? (g.average || '') : ''}</td>
                       <td style="border: 1px solid #333; padding: 4px;">${hasAllQuarters(g) ? (g.remarks || '') : ''}</td>
                     </tr>
@@ -1136,13 +1145,13 @@ const StudentPortal = () => {
                         {grades.map((g, i) => (
                           <tr key={i} className="border-b hover:bg-gray-50">
                             <td className="px-6 py-4 font-medium">{g.subject}</td>
-                            <td className="px-6 py-4 text-center">{g.q1 || '-'}</td>
-                            <td className="px-6 py-4 text-center">{g.q2 || '-'}</td>
-                            <td className="px-6 py-4 text-center">{g.q3 || '-'}</td>
-                            <td className="px-6 py-4 text-center">{g.q4 || '-'}</td>
-                            <td className="px-6 py-4 text-center font-bold text-blue-700">{(g.q1 && g.q2 && g.q3 && g.q4) ? (g.average || 'N/A') : '—'}</td>
+                            <td className="px-6 py-4 text-center">{isNAQuarter('q1') ? 'N/A' : (g.q1 || '-')}</td>
+                            <td className="px-6 py-4 text-center">{isNAQuarter('q2') ? 'N/A' : (g.q2 || '-')}</td>
+                            <td className="px-6 py-4 text-center">{isNAQuarter('q3') ? 'N/A' : (g.q3 || '-')}</td>
+                            <td className="px-6 py-4 text-center">{isNAQuarter('q4') ? 'N/A' : (g.q4 || '-')}</td>
+                            <td className="px-6 py-4 text-center font-bold text-blue-700">{hasAllQuarters(g) ? (g.average || 'N/A') : '—'}</td>
                             <td className="px-6 py-4 text-center">
-                              {(g.q1 && g.q2 && g.q3 && g.q4) ? (
+                              {hasAllQuarters(g) ? (
                                 <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                                   g.average >= 90 ? 'bg-green-100 text-green-800' :
                                   g.average >= 85 ? 'bg-blue-100 text-blue-800' :
@@ -1196,12 +1205,12 @@ const StudentPortal = () => {
                                 {(record.grades || []).map((g, subIdx) => (
                                   <tr key={`${g.subject}-${subIdx}`} className="border-b">
                                     <td className="px-4 py-2 font-medium">{g.subject}</td>
-                                    <td className="px-4 py-2 text-center">{g.q1 || '-'}</td>
-                                    <td className="px-4 py-2 text-center">{g.q2 || '-'}</td>
-                                    <td className="px-4 py-2 text-center">{g.q3 || '-'}</td>
-                                    <td className="px-4 py-2 text-center">{g.q4 || '-'}</td>
-                                    <td className="px-4 py-2 text-center">{g.average || 'N/A'}</td>
-                                    <td className="px-4 py-2 text-center">{g.remarks || 'Pending'}</td>
+                                    <td className="px-4 py-2 text-center">{isNAQuarter('q1') ? 'N/A' : (g.q1 || '-')}</td>
+                                    <td className="px-4 py-2 text-center">{isNAQuarter('q2') ? 'N/A' : (g.q2 || '-')}</td>
+                                    <td className="px-4 py-2 text-center">{isNAQuarter('q3') ? 'N/A' : (g.q3 || '-')}</td>
+                                    <td className="px-4 py-2 text-center">{isNAQuarter('q4') ? 'N/A' : (g.q4 || '-')}</td>
+                                    <td className="px-4 py-2 text-center">{(g.q1 && g.q2 && g.q3 && g.q4) ? (g.average || 'N/A') : '—'}</td>
+                                    <td className="px-4 py-2 text-center">{(g.q1 && g.q2 && g.q3 && g.q4) ? (g.remarks || 'Pending') : 'Incomplete'}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -1399,17 +1408,11 @@ const StudentPortal = () => {
 
                           {Array.isArray(record.schedule) && record.schedule.length > 0 ? (
                             <div className="grid gap-3">
-                              {(() => {
-                                const preferredOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-                                const rawDays = [...new Set((record.schedule || []).map((s) => s.day || 'N/A'))];
-                                const orderedDays = [
-                                  ...preferredOrder.filter((day) => rawDays.includes(day)),
-                                  ...rawDays.filter((day) => !preferredOrder.includes(day))
-                                ];
-
-                                return orderedDays.map(day => {
-                                const daySchedule = record.schedule.filter(s => s.day === day);
+                              {/* Group by day */}
+                              {scheduleDayBuckets.map(day => {
+                                const daySchedule = record.schedule.filter(s => normalizeScheduleDay(s.day) === day);
                                 if (daySchedule.length === 0) return null;
+                                
                                 return (
                                   <div key={day} className="border rounded-md overflow-hidden bg-white">
                                     <div className="bg-gray-200 text-gray-700 px-3 py-1 text-sm font-semibold">{day}</div>
@@ -1426,8 +1429,7 @@ const StudentPortal = () => {
                                     </div>
                                   </div>
                                 );
-                                });
-                              })()}
+                              })}
                             </div>
                           ) : (
                             <p className="text-sm text-gray-500">No saved schedule snapshot for this promotion record.</p>
@@ -1715,10 +1717,10 @@ const StudentPortal = () => {
                         grades.map((g, i) => (
                           <tr>
                             <td className="border border-gray-300 px-2 py-1 text-left">{formatReportCardSubject(g.subject)}</td>
-                            <td className="border border-gray-300 px-2 py-1">{g.q1 || ''}</td>
-                            <td className="border border-gray-300 px-2 py-1">{g.q2 || ''}</td>
-                            <td className="border border-gray-300 px-2 py-1">{g.q3 || ''}</td>
-                            <td className="border border-gray-300 px-2 py-1">{g.q4 || ''}</td>
+                            <td className="border border-gray-300 px-2 py-1">{isNAQuarter('q1') ? 'N/A' : (g.q1 || '')}</td>
+                            <td className="border border-gray-300 px-2 py-1">{isNAQuarter('q2') ? 'N/A' : (g.q2 || '')}</td>
+                            <td className="border border-gray-300 px-2 py-1">{isNAQuarter('q3') ? 'N/A' : (g.q3 || '')}</td>
+                            <td className="border border-gray-300 px-2 py-1">{isNAQuarter('q4') ? 'N/A' : (g.q4 || '')}</td>
                             <td className="border border-gray-300 px-2 py-1 font-semibold">{hasAllQuarters(g) ? (g.average || '') : ''}</td>
                             <td className="border border-gray-300 px-2 py-1">{hasAllQuarters(g) ? (g.remarks || '') : ''}</td>
                           </tr>

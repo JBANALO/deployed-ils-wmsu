@@ -32,6 +32,8 @@ export default function AdminCreateK6() {
     wmsuEmail: '',
     password: '',
     profilePic: null,
+    isTransferee: false,
+    transferQuarter: '',
   });
 
   const [profilePicPreview, setProfilePicPreview] = useState(null);
@@ -168,6 +170,8 @@ const handleSubmit = async (e) => {
       password: formData.password,
       profilePic: profilePicBase64,
       status: 'approved', // Students are now immediately approved
+      isTransferee: formData.isTransferee,
+      transferQuarter: formData.isTransferee ? formData.transferQuarter : null,
     };
 
     // ---------------------------
@@ -240,7 +244,7 @@ const handleSubmit = async (e) => {
         profilePic: "", lrn: "", firstName: "", middleName: "", lastName: "",
         birthDate: "", age: "", sex: "", gradeLevel: "", section: "", parentFirstName: "",
         parentLastName: "", parentEmail: "", parentContact: "",
-        wmsuEmail: "", password: ""
+        wmsuEmail: "", password: "", isTransferee: false, transferQuarter: ""
       });
       setProfilePicPreview(null);
       setGeneratedPassword("");
@@ -445,6 +449,42 @@ const handleSubmit = async (e) => {
               )}
             </select>
           </div>
+        </div>
+
+        {/* Transferee Section */}
+        <div className="border-t pt-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Transferee Information</h3>
+          <div className="flex items-center gap-3 mb-4">
+            <input
+              type="checkbox"
+              id="isTransferee"
+              checked={formData.isTransferee}
+              onChange={(e) => setFormData(prev => ({ ...prev, isTransferee: e.target.checked, transferQuarter: e.target.checked ? prev.transferQuarter : '' }))}
+              className="w-5 h-5 accent-red-800 cursor-pointer"
+            />
+            <label htmlFor="isTransferee" className="font-semibold text-gray-700 cursor-pointer">
+              This student is a transferee
+            </label>
+          </div>
+          {formData.isTransferee && (
+            <div className="max-w-xs">
+              <label className="block font-semibold mb-1">Started attending from Quarter <span className="text-red-600">*</span></label>
+              <select
+                name="transferQuarter"
+                value={formData.transferQuarter}
+                onChange={handleChange}
+                className="w-full border p-3 rounded-lg"
+                required={formData.isTransferee}
+              >
+                <option value="">Select Quarter</option>
+                <option value="q1">Quarter 1</option>
+                <option value="q2">Quarter 2</option>
+                <option value="q3">Quarter 3</option>
+                <option value="q4">Quarter 4</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Quarters before this will be marked N/A automatically.</p>
+            </div>
+          )}
         </div>
 
         {/* Parent/Guardian Information Section */}

@@ -12,6 +12,7 @@ let studentBirthDateEnsured = false;
 let studentArchiveColumnsEnsured = false;
 let studentLrnScopeEnsured = false;
 let studentProfileColumnsEnsured = false;
+let studentTransfereeColumnsEnsured = false;
 
 const HISTORICAL_SOURCE_EXISTS_CLAUSE = `(
   EXISTS (
@@ -220,6 +221,19 @@ async function getNearestStudentSchoolYearWithData(targetSy) {
   }
 
   return null;
+}
+
+async function ensureStudentTransfereeColumns() {
+  if (studentTransfereeColumnsEnsured) return;
+  const cols = await query('SHOW COLUMNS FROM students');
+  const colNames = cols.map(c => c.Field);
+  if (!colNames.includes('is_transferee')) {
+    await query('ALTER TABLE students ADD COLUMN is_transferee TINYINT(1) NOT NULL DEFAULT 0');
+  }
+  if (!colNames.includes('transfer_quarter')) {
+    await query("ALTER TABLE students ADD COLUMN transfer_quarter ENUM('q1','q2','q3','q4') NULL DEFAULT NULL");
+  }
+  studentTransfereeColumnsEnsured = true;
 }
 
 async function ensureStudentSchoolYearColumn() {
@@ -493,6 +507,8 @@ function formatStudent(s) {
     status: s.status,
     stoppedYear: s.stopped_year || null,
     stopReason: s.stop_reason || null,
+    isTransferee: s.is_transferee ? true : false,
+    transferQuarter: s.transfer_quarter || null,
     // Always report live average scoped from grades query results.
     // This prevents stale cached student.average from leaking into a new school year.
     average: s.live_average != null ? Number(s.live_average) : null,
@@ -550,6 +566,7 @@ exports.createStudent = async (req, res) => {
     await ensureGradesSchoolYearColumn();
     await ensureStudentLrnScopedUniqueness();
     await ensureStudentBirthDateColumn();
+    await ensureStudentTransfereeColumns();
     let targetSy;
     try {
       targetSy = await resolveTargetSchoolYear(req.body.schoolYearId);
@@ -572,7 +589,8 @@ exports.createStudent = async (req, res) => {
       parentFirstName, parentLastName, parentEmail, parentContact,
       parentContact: contact,
       password, gradeLevel, section, profilePic, qrCode, status: reqStatus,
-      birthDate: reqBirthDate, birth_date: reqBirthDateLegacy
+      birthDate: reqBirthDate, birth_date: reqBirthDateLegacy,
+      isTransferee, transferQuarter
     } = req.body;
 
     // Accept both 'age' and default to 0 for bulk imports
@@ -669,12 +687,14 @@ exports.createStudent = async (req, res) => {
         lrn, first_name, middle_name, last_name, age, birth_date, sex,
         grade_level, section, parent_first_name, parent_last_name,
         parent_email, parent_contact, student_email, password,
-        profile_pic, qr_code, status, created_by, school_year_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+        profile_pic, qr_code, status, created_by, school_year_id,
+        is_transferee, transfer_quarter
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
       [lrn, firstName, middleName || null, lastName, age, birthDate || null, sex || 'N/A',
         gradeLevel, section, parentFirstName || null, parentLastName || null,
         parentEmail || null, parentContact || null, studentEmail || null, hashedPassword,
-        safeProfilePic, safeQRCode, reqStatus || 'Active', 'admin', targetSy.id]
+        safeProfilePic, safeQRCode, reqStatus || 'Active', 'admin', targetSy.id,
+        isTransferee ? 1 : 0, (isTransferee && transferQuarter) ? transferQuarter : null]
     );
 
     const createdStudent = {

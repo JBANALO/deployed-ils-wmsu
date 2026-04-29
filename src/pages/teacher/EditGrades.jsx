@@ -1908,6 +1908,11 @@ export default function EditGrades() {
                 <h3 className="text-2xl font-bold">{selectedStudent.fullName}</h3>
                 <p className="text-red-100 text-sm mt-1">
                   {selectedStudent.gradeLevel} - {selectedStudent.section} | LRN: {selectedStudent.lrn}
+                  {selectedStudent.isTransferee && (
+                    <span className="ml-2 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-0.5 rounded">
+                      TRANSFEREE {selectedStudent.transferQuarter ? `(from ${selectedStudent.transferQuarter.toUpperCase()})` : ''}
+                    </span>
+                  )}
                 </p>
                 {lockReason && (
                   <p className={`text-sm mt-2 font-semibold ${isGradeLocked ? 'text-red-200' : 'text-yellow-200'}`}>
@@ -1947,12 +1952,20 @@ export default function EditGrades() {
                   const normalizeSubject = (s) => s.replace(/\s*\(Grade\s+\d+\)\s*$/i, '').replace(/\s*\(Kindergarten\)\s*$/i, '').trim().toLowerCase();
                   const normalizedAvailable = availableSubjects.map(normalizeSubject);
 
+                  const transferQuarter = selectedStudent?.transferQuarter || null;
+                  const quarterOrder2 = ['q1', 'q2', 'q3', 'q4'];
+                  const isTransfereeNAQuarter = (q) => {
+                    if (!selectedStudent?.isTransferee || !transferQuarter) return false;
+                    return quarterOrder2.indexOf(q) < quarterOrder2.indexOf(transferQuarter);
+                  };
+
                   const getQAvg = (q) => {
+                    if (isTransfereeNAQuarter(q)) return null;
                     const vals = subjects.map(s => parseFloat(gradeData[s]?.[q])).filter(v => !isNaN(v) && v > 0);
                     return vals.length > 0 ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : null;
                   };
                   const getSubjectAvg = (subject) => {
-                    const vals = quarterOrder.map(q => parseFloat(gradeData[subject]?.[q])).filter(v => !isNaN(v) && v > 0);
+                    const vals = quarterOrder.filter(q => !isTransfereeNAQuarter(q)).map(q => parseFloat(gradeData[subject]?.[q])).filter(v => !isNaN(v) && v > 0);
                     return vals.length > 0 ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : null;
                   };
                   const overallAvg = (() => {
@@ -1988,16 +2001,19 @@ export default function EditGrades() {
                                 )}
                               </td>
                               {quartersToShow.map(q => {
+                                const naQuarter = isTransfereeNAQuarter(q);
                                 const quarterClosed = isQuarterClosed(q);
                                 const lockedByQuarterSelection = !isEditableQ(q);
                                 const editWindowLocked = isEditWindowLocked(subject, q);
-                                const editable = canEdit && !lockedByQuarterSelection && !editWindowLocked && !isGradeLocked && !isViewOnlyMode && !quarterClosed;
+                                const editable = !naQuarter && canEdit && !lockedByQuarterSelection && !editWindowLocked && !isGradeLocked && !isViewOnlyMode && !quarterClosed;
                                 const val = gradeData[subject]?.[q];
                                 const hasVal = val && val !== 0 && val !== '';
                                 return (
-                                  <td key={q} className="px-4 py-3 border">
+                                  <td key={q} className={`px-4 py-3 border ${naQuarter ? 'bg-gray-100' : ''}`}>
                                     <div className="flex items-center justify-center gap-1">
-                                      {editable ? (
+                                      {naQuarter ? (
+                                        <span className="text-xs font-bold text-gray-400 bg-gray-200 px-2 py-1 rounded">N/A</span>
+                                      ) : editable ? (
                                         <>
                                           <input
                                             type="number"
