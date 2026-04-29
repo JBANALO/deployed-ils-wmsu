@@ -348,8 +348,8 @@ const StudentPortal = () => {
                     <td style="border: 1px solid #333; padding: 4px;">${g.q2 || ''}</td>
                     <td style="border: 1px solid #333; padding: 4px;">${g.q3 || ''}</td>
                     <td style="border: 1px solid #333; padding: 4px;">${g.q4 || ''}</td>
-                    <td style="border: 1px solid #333; padding: 4px; font-weight: bold;">${g.average || ''}</td>
-                    <td style="border: 1px solid #333; padding: 4px;">${g.remarks || ''}</td>
+                    <td style="border: 1px solid #333; padding: 4px; font-weight: bold;">${hasAllQuarters(g) ? (g.average || '') : ''}</td>
+                    <td style="border: 1px solid #333; padding: 4px;">${hasAllQuarters(g) ? (g.remarks || '') : ''}</td>
                   </tr>
                 `).join('') : Array.from({ length: 10 }).map(() => `
                   <tr>
@@ -361,9 +361,9 @@ const StudentPortal = () => {
                   <td style="border: 1px solid #333; padding: 4px;"></td>
                   <td colspan="4" style="border: 1px solid #333; padding: 4px; text-align: center;">General Average</td>
                   <td style="border: 1px solid #333; padding: 4px;">
-                    ${grades.length > 0 ? computeGeneralAverage() : ''}
+                    ${allSubjectsComplete ? computeGeneralAverage() : ''}
                   </td>
-                  <td style="border: 1px solid #333; padding: 4px;">${grades.length > 0 ? 'Passed' : ''}</td>
+                  <td style="border: 1px solid #333; padding: 4px;">${allSubjectsComplete ? (parseFloat(computeGeneralAverage()) >= 75 ? 'Passed' : 'Failed') : ''}</td>
                 </tr>
               </tbody>
             </table>
@@ -426,7 +426,7 @@ const StudentPortal = () => {
           <!-- Attendance Section -->
           <h2 style="font-size: 20px; font-weight: bold; text-align: center; margin-top: 48px; margin-bottom: 24px;">REPORT ON ATTENDANCE</h2>
           <div style="overflow-x-auto;">
-            <table style="width: 100%; border: 1px solid #333; font-size: 14px; text-align: center; margin-bottom: 32px;">
+            <table style="width: 100%; border: 1px solid #333; font-size: 14px; text-align: center;">
               <thead style="background-color: #f5f5f5;">
                 <tr>
                   <th style="border: 1px solid #333; padding: 4px;"></th>
@@ -584,9 +584,26 @@ const StudentPortal = () => {
     return clean;
   };
 
-  // Helper function to compute general average
+  // Helper: true only when a subject has all 4 valid quarter grades
+  const isValidQuarterGrade = (value) => {
+    if (value === null || value === undefined) return false;
+    const normalized = String(value).trim();
+    if (!normalized) return false;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) && parsed > 0;
+  };
+
+  const hasAllQuarters = (g) => (
+    isValidQuarterGrade(g.q1)
+    && isValidQuarterGrade(g.q2)
+    && isValidQuarterGrade(g.q3)
+    && isValidQuarterGrade(g.q4)
+  );
+  const allSubjectsComplete = grades.length > 0 && grades.every(hasAllQuarters);
+
+  // Helper function to compute general average (only when all subjects have all 4 quarters)
   const computeGeneralAverage = () => {
-    if (grades.length === 0) return "";
+    if (!allSubjectsComplete) return '';
     const sum = grades.reduce((acc, cur) => acc + (parseFloat(cur.average) || 0), 0);
     return (sum / grades.length).toFixed(2);
   };
@@ -901,8 +918,8 @@ const StudentPortal = () => {
                       <td style="border: 1px solid #333; padding: 4px;">${g.q2 || ''}</td>
                       <td style="border: 1px solid #333; padding: 4px;">${g.q3 || ''}</td>
                       <td style="border: 1px solid #333; padding: 4px;">${g.q4 || ''}</td>
-                      <td style="border: 1px solid #333; padding: 4px; font-weight: bold;">${g.average || ''}</td>
-                      <td style="border: 1px solid #333; padding: 4px;">${g.remarks || ''}</td>
+                      <td style="border: 1px solid #333; padding: 4px; font-weight: bold;">${hasAllQuarters(g) ? (g.average || '') : ''}</td>
+                      <td style="border: 1px solid #333; padding: 4px;">${hasAllQuarters(g) ? (g.remarks || '') : ''}</td>
                     </tr>
                   `).join('') : Array.from({ length: 10 }).map(() => `
                     <tr>
@@ -914,9 +931,9 @@ const StudentPortal = () => {
                     <td style="border: 1px solid #333; padding: 4px;"></td>
                     <td colspan="4" style="border: 1px solid #333; padding: 4px; text-align: center;">General Average</td>
                     <td style="border: 1px solid #333; padding: 4px;">
-                      ${grades.length > 0 ? computeGeneralAverage() : ''}
+                      ${allSubjectsComplete ? computeGeneralAverage() : ''}
                     </td>
-                    <td style="border: 1px solid #333; padding: 4px;">${grades.length > 0 ? 'Passed' : ''}</td>
+                    <td style="border: 1px solid #333; padding: 4px;">${allSubjectsComplete ? (parseFloat(computeGeneralAverage()) >= 75 ? 'Passed' : 'Failed') : ''}</td>
                   </tr>
                 </tbody>
               </table>
@@ -971,15 +988,15 @@ const StudentPortal = () => {
                 <tbody>
                   <tr>
                     <td style="border: 1px solid #333; padding: 4px; text-align: left;">No. of school days</td>
-                    ${months.map(() => '<td style="border: 1px solid #333; padding: 4px;">&nbsp;</td>').join('')}
+                    ${months.map(() => '<td style="border: 1px solid #333; padding: 4px;"></td>').join('')}
                   </tr>
                   <tr>
                     <td style="border: 1px solid #333; padding: 4px; text-align: left;">No. of days present</td>
-                    ${months.map(() => '<td style="border: 1px solid #333; padding: 4px;">&nbsp;</td>').join('')}
+                    ${months.map(() => '<td style="border: 1px solid #333; padding: 4px;"></td>').join('')}
                   </tr>
                   <tr>
                     <td style="border: 1px solid #333; padding: 4px; text-align: left;">No. of days absent</td>
-                    ${months.map(() => '<td style="border: 1px solid #333; padding: 4px;">&nbsp;</td>').join('')}
+                    ${months.map(() => '<td style="border: 1px solid #333; padding: 4px;"></td>').join('')}
                   </tr>
                 </tbody>
               </table>
@@ -1001,7 +1018,7 @@ const StudentPortal = () => {
               </div>
             </div>
 
-            <hr style="border: 1px solid #333; margin-top: 60px; margin-bottom: 8px;" />
+            <hr style="border: 1px solid #333; margin-top: 60px; margin-bottom: 8px;" /> 
 
             <!-- Parent Signatures -->
             <div style="margin-top: 40px; margin-bottom: 60px; text-align: center;">
@@ -1123,16 +1140,18 @@ const StudentPortal = () => {
                             <td className="px-6 py-4 text-center">{g.q2 || '-'}</td>
                             <td className="px-6 py-4 text-center">{g.q3 || '-'}</td>
                             <td className="px-6 py-4 text-center">{g.q4 || '-'}</td>
-                            <td className="px-6 py-4 text-center font-bold text-blue-700">{g.average || 'N/A'}</td>
+                            <td className="px-6 py-4 text-center font-bold text-blue-700">{(g.q1 && g.q2 && g.q3 && g.q4) ? (g.average || 'N/A') : '—'}</td>
                             <td className="px-6 py-4 text-center">
-                              <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                                g.average >= 90 ? 'bg-green-100 text-green-800' :
-                                g.average >= 85 ? 'bg-blue-100 text-blue-800' :
-                                g.average >= 80 ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-red-100 text-red-800'
-                              }`}>
-                                {g.remarks || 'Pending'}
-                              </span>
+                              {(g.q1 && g.q2 && g.q3 && g.q4) ? (
+                                <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                                  g.average >= 90 ? 'bg-green-100 text-green-800' :
+                                  g.average >= 85 ? 'bg-blue-100 text-blue-800' :
+                                  g.average >= 80 ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-red-100 text-red-800'
+                                }`}>
+                                  {g.remarks || 'Pending'}
+                                </span>
+                              ) : <span className="text-gray-400 text-xs">Incomplete</span>}
                             </td>
                           </tr>
                         ))}
@@ -1560,7 +1579,7 @@ const StudentPortal = () => {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handlePrintReportCard}
-                  className="flex items-center gap-2 text-[#ffffff] font-semibold px-4 py-2.5 hover:bg-red-800 transition"
+                  className="flex items-center gap-2 text-[#ffffff] font-semibold px-4 py-2.5 hover:bg-red-800 transition rounded"
                 >
                   <Printer className="w-5 h-5" />
                 </button>
@@ -1694,14 +1713,14 @@ const StudentPortal = () => {
                     <tbody>
                       {grades.length > 0 ? (
                         grades.map((g, i) => (
-                          <tr key={i}>
+                          <tr>
                             <td className="border border-gray-300 px-2 py-1 text-left">{formatReportCardSubject(g.subject)}</td>
                             <td className="border border-gray-300 px-2 py-1">{g.q1 || ''}</td>
                             <td className="border border-gray-300 px-2 py-1">{g.q2 || ''}</td>
                             <td className="border border-gray-300 px-2 py-1">{g.q3 || ''}</td>
                             <td className="border border-gray-300 px-2 py-1">{g.q4 || ''}</td>
-                            <td className="border border-gray-300 px-2 py-1 font-semibold">{g.average || ''}</td>
-                            <td className="border border-gray-300 px-2 py-1">{g.remarks || ''}</td>
+                            <td className="border border-gray-300 px-2 py-1 font-semibold">{hasAllQuarters(g) ? (g.average || '') : ''}</td>
+                            <td className="border border-gray-300 px-2 py-1">{hasAllQuarters(g) ? (g.remarks || '') : ''}</td>
                           </tr>
                         ))
                       ) : (
@@ -1718,9 +1737,9 @@ const StudentPortal = () => {
                         <td className="border border-gray-300 px-2 py-1"></td>
                         <td colSpan="4" className="border border-gray-300 px-2 py-1 text-center">General Average</td>
                         <td className="border border-gray-300 px-2 py-1">
-                          {grades.length > 0 ? computeGeneralAverage() : ""}
+                          {allSubjectsComplete ? computeGeneralAverage() : ""}
                         </td>
-                        <td className="border border-gray-300 px-2 py-1">{grades.length > 0 ? "Passed" : ""}</td>
+                        <td className="border border-gray-300 px-2 py-1">{allSubjectsComplete ? (parseFloat(computeGeneralAverage()) >= 75 ? "Passed" : "Failed") : ""}</td>
                       </tr>
                     </tbody>
                   </table>
