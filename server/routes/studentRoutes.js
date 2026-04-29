@@ -96,7 +96,14 @@ const ensureUnlockRequestsTable = async () => {
     const cols = await query('SHOW COLUMNS FROM grade_unlock_requests');
     const colNames = cols.map(c => c.Field);
     if (!colNames.includes('admin_note')) await query('ALTER TABLE grade_unlock_requests ADD COLUMN admin_note TEXT NULL');
-    if (!colNames.includes('approved_by')) await query('ALTER TABLE grade_unlock_requests ADD COLUMN approved_by VARCHAR(255) NULL');
+    if (!colNames.includes('approved_by')) {
+      await query('ALTER TABLE grade_unlock_requests ADD COLUMN approved_by VARCHAR(255) NULL');
+    } else {
+      const approvedByCol = cols.find(c => c.Field === 'approved_by');
+      if (approvedByCol && approvedByCol.Type.toUpperCase().includes('INT')) {
+        await query('ALTER TABLE grade_unlock_requests MODIFY COLUMN approved_by VARCHAR(255) NULL');
+      }
+    }
     if (!colNames.includes('expires_at')) await query('ALTER TABLE grade_unlock_requests ADD COLUMN expires_at DATETIME NULL');
     if (!colNames.includes('status')) await query("ALTER TABLE grade_unlock_requests ADD COLUMN status ENUM('pending','approved','rejected') DEFAULT 'pending'");
     if (!colNames.includes('teacher_name')) await query('ALTER TABLE grade_unlock_requests ADD COLUMN teacher_name VARCHAR(255) NULL');
@@ -112,6 +119,24 @@ const logAuditEntry = async (studentId, syId, action, userId, userName, details)
       [studentId, syId, action, userId || null, userName || null, details || null]
     );
   } catch (err) { console.warn('Audit log insert warning:', err.message); }
+};
+
+const getTeacherEmail = async (teacherId) => {
+  if (!teacherId) return null;
+  try {
+    const [userRow] = await query('SELECT email FROM users WHERE id = ?', [teacherId]);
+    if (userRow?.email) return userRow.email;
+  } catch (err) {
+    console.warn('Teacher email lookup (users) warning:', err.message);
+  }
+
+  try {
+    const [teacherRow] = await query('SELECT email FROM teachers WHERE id = ?', [teacherId]);
+    return teacherRow?.email || null;
+  } catch (err) {
+    console.warn('Teacher email lookup (teachers) warning:', err.message);
+    return null;
+  }
 };
 
 const ensureStudentSchoolYearColumn = async () => {
@@ -478,19 +503,19 @@ const canEnterGrade = async (user, student, subject, schoolYearId) => {
            FROM subject_teachers
            WHERE LOWER(REPLACE(TRIM(class_id), ' ', '-')) IN (${classPlaceholders})
              AND school_year_id = ?
-             AND (
-               LOWER(TRIM(CAST(teacher_id AS CHAR))) = LOWER(TRIM(?))
-               OR (? <> '' AND LOWER(TRIM(teacher_name)) = LOWER(TRIM(?)))
-             )`,
-          [...classIdentifiers, schoolYearId, String(user.id), teacherName, teacherName]
-        )
-      : [];
-    console.log('Subject teacher records:', subjectTeacherRecords);
-    
-    if (subjectTeacherRecords && subjectTeacherRecords.length > 0) {
-      for (const record of subjectTeacherRecords) {
-        console.log('Comparing:', record.subject, 'vs', subject);
-        if (normalizeSubject(record.subject) === normalizeSubject(subject)) return true;
+            try {
+              const teacherEmail = await getTeacherEmail(reqRow.teacher_id);
+              const [studentRow] = await query('SELECT CONCAT(COALESCE(first_name,\'\'),\' \\',COALESCE(last_name,\'\')) AS full_name FROM students WHERE id = ?', [reqRow.student_id]);
+              if (teacherEmail) {
+                await sendUnlockDecisionEmail({
+                  teacherEmail,
+                  teacherName: reqRow.teacher_name,
+                  studentName: String(studentRow?.full_name || '').trim() || reqRow.student_id,
+                  decision: 'approved',
+                  adminNote: adminNote || null
+                });
+              }
+            } catch (emailErr) { console.warn('Approve email error:', emailErr.message); }
       }
     }
   }
@@ -625,19 +650,19 @@ router.put('/:id/grades', verifyUserForGrades, async (req, res) => {
         const rowByKey = new Map(
           (existingRows || []).map((row) => [
             `${normalizeSubjectKey(row.subject)}||${String(row.quarter || '').toUpperCase()}`,
-            row
-          ])
-        );
-
-        const now = new Date();
-        const expiredEntry = attemptedGradeEntries.find((entry) => {
-          const key = `${normalizeSubjectKey(entry.subject)}||${String(entry.quarter || '').toUpperCase()}`;
-          const existing = rowByKey.get(key);
-          return existing && isEditWindowExpired(existing, now);
-        });
-
-        if (expiredEntry) {
-          return res.status(403).json({
+            try {
+              const teacherEmail = await getTeacherEmail(reqRow.teacher_id);
+              const [studentRow] = await query('SELECT CONCAT(COALESCE(first_name,\'\'),\' \\',COALESCE(last_name,\'\')) AS full_name FROM students WHERE id = ?', [reqRow.student_id]);
+              if (teacherEmail) {
+                await sendUnlockDecisionEmail({
+                  teacherEmail,
+                  teacherName: reqRow.teacher_name,
+                  studentName: String(studentRow?.full_name || '').trim() || reqRow.student_id,
+                  decision: 'rejected',
+                  adminNote: adminNote || null
+                });
+              }
+            } catch (emailErr) { console.warn('Reject email error:', emailErr.message); }
             success: false,
             error: 'Edit window expired',
             message: `${expiredEntry.subject} (${quarterLabel(String(expiredEntry.quarter || '').toLowerCase())}) can only be edited within ${EDIT_WINDOW_HOURS} hours after last save.`
