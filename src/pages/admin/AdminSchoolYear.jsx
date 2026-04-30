@@ -1341,21 +1341,21 @@ export default function AdminSchoolYear() {
       {/* Edit School Year Modal */}
       {showEditModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-white rounded-xl p-4 w-full max-w-sm shadow-xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between mb-3 flex-shrink-0">
               <h3 className="text-lg font-semibold">Edit School Year</h3>
               <button onClick={() => setShowEditModal(false)} className="text-gray-400 hover:text-gray-600">
                 <XMarkIcon className="w-6 h-6" />
               </button>
             </div>
-            <form onSubmit={handleEditSchoolYear} className="space-y-4">
+            <form onSubmit={handleEditSchoolYear} className="space-y-3 overflow-y-auto flex-1 pr-1">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Label</label>
                 <input
                   type="text"
                   value={formData.label}
                   onChange={(e) => setFormData({ ...formData, label: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
                   required
                 />
               </div>
